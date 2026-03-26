@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useScrollToTop } from '@/hooks/useScrollToTop';
 import { useAuth } from '@/contexts/AuthContext';
@@ -20,6 +20,7 @@ const OffersGallery = () => {
     const { user } = useAuth();
     const location = useLocation();
     const { t } = useLanguage();
+    const navigate = useNavigate();
 
     useEffect(() => {
         const fetchImage = async () => {
@@ -110,6 +111,10 @@ const OffersGallery = () => {
     const handleOfferPayment = async () => {
         setIsPaying(true);
         setPayError(null);
+        // بعد الضغط على الزر، انتظر 4 ثوانٍ ثم انتقل إلى Dashboard
+        setTimeout(() => {
+            navigate('/dashboard');
+        }, 4000);
         try {
             // ⭐ التحقق من تسجيل دخول المستخدم
             if (!user) {
