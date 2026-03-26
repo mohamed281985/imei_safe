@@ -1,0 +1,15 @@
+# Global ignores for the whole project
+node_modules/
+dist/
+build/
+.env
+firebase-service-account.json
+*.log
+.DS_Store
+Thumbs.db
+# Android build artifacts
+android/app/build/
+android/build/
+# VSCode and IDE files
+.vscode/
+.idea/

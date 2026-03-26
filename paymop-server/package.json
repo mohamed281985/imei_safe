@@ -1,0 +1,26 @@
+{
+  "name": "paymob-server",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Paymob backend for Android app",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "build": "npm install"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.55.0",
+    "cors": "^2.8.5",
+    "express-rate-limit": "^6.7.0",
+    "ioredis": "^5.3.2",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "googleapis": "^124.0.0",
+    "helmet": "^8.1.0",
+    "node-fetch": "^3.3.2",
+    "resend": "^2.0.0"
+  }
+}

@@ -1,0 +1,12 @@
+.env
+firebase-service-account.json
+node_modules/
+*.log
+dist/
+build/
+.DS_Store
+Thumbs.db
+# Ignore IDE and system files
+.vscode/
+.idea/
+

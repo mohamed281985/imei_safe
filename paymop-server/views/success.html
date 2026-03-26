@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تم الدفع بنجاح</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Cairo', sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e4eaf1 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            color: #333;
+            text-align: center;
+            padding: 5px;
+        }
+
+        .container {
+            background-color: #ffffff;
+            padding: 40px 30px;
+            border-radius: 20px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.1), 0 5px 15px rgba(0, 0, 0, 0.07);
+            max-width: 450px;
+            width: 90%;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .container::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 8px;
+            background: linear-gradient(90deg, #30c9ce, #5dade2);
+        }
+
+        .logo-container {
+            margin-bottom: 30px;
+        }
+
+        .logo {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 0 auto;
+            padding: 10px;
+        }
+
+        .icon-container {
+            margin-bottom: 30px;
+        }
+
+        .checkmark {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            display: block;
+            stroke-width: 3;
+            stroke: #30c9ce;
+            stroke-miterlimit: 10;
+            box-shadow: inset 0px 0px 0px rgba(48, 201, 206, 0.1);
+            animation: fill .4s ease-in-out .4s forwards, scale .3s ease-in-out .9s both;
+            margin: 0 auto;
+        }
+
+        .checkmark__circle {
+            stroke-dasharray: 166;
+            stroke-dashoffset: 166;
+            stroke-width: 3;
+            stroke-miterlimit: 10;
+            stroke: #30c9ce;
+            fill: rgba(48, 201, 206, 0.1);
+            animation: stroke .6s cubic-bezier(0.65, 0, 0.45, 1) forwards;
+        }
+
+        .checkmark__check {
+            transform-origin: 50% 50%;
+            stroke-dasharray: 48;
+            stroke-dashoffset: 48;
+            stroke-width: 4;
+            animation: stroke .3s cubic-bezier(0.65, 0, 0.45, 1) .8s forwards;
+        }
+
+        @keyframes stroke {
+            100% {
+                stroke-dashoffset: 0;
+            }
+        }
+
+        @keyframes scale {
+
+            0%,
+            100% {
+                transform: none;
+            }
+
+            50% {
+                transform: scale3d(1.1, 1.1, 1);
+            }
+        }
+
+        @keyframes fill {
+            100% {
+                box-shadow: inset 0px 0px 0px 30px rgba(76, 175, 80, 0.1);
+            }
+        }
+
+        h1 {
+            color: #30c9ce;
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 15px;
+            position: relative;
+            display: inline-block;
+        }
+
+        h1::after {
+            content: "";
+            position: absolute;
+            bottom: -8px;
+            left: 25%;
+            width: 50%;
+            height: 3px;
+            background: linear-gradient(90deg, #30c9ce, #5dade2);
+            border-radius: 3px;
+        }
+
+        p {
+            font-size: 16px;
+            line-height: 1.6;
+            margin-bottom: 25px;
+            color: #555;
+        }
+
+        .success-details {
+            background: rgba(76, 175, 80, 0.05);
+            border-left: 4px solid #4CAF50;
+            padding: 15px;
+            border-radius: 0 8px 8px 0;
+            margin: 20px 0 25px;
+            text-align: right;
+            font-size: 14px;
+            color: #555;
+        }
+
+        .buttons-container {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-top: 30px;
+        }
+
+        .button {
+            display: inline-block;
+            padding: 15px 30px;
+            background: linear-gradient(90deg, #30c9ce, #5dade2);
+            color: white;
+            text-decoration: none;
+            border-radius: 50px;
+            font-weight: 600;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(48, 201, 206, 0.3);
+            border: none;
+            cursor: pointer;
+        }
+
+        .button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(48, 201, 206, 0.4);
+        }
+
+        .button-secondary {
+            display: inline-block;
+            padding: 15px 30px;
+            background: white;
+            color: #30c9ce;
+            text-decoration: none;
+            border-radius: 50px;
+            font-weight: 600;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+            border: 2px solid #30c9ce;
+            cursor: pointer;
+        }
+
+        .button-secondary:hover {
+            background: #30c9ce;
+            color: white;
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(48, 201, 206, 0.3);
+        }
+
+        .contact-info {
+            margin-top: 30px;
+            font-size: 14px;
+            color: #777;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.02);
+            border-radius: 10px;
+        }
+
+        .contact-info a {
+            color: #30c9ce;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .contact-info a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+
+        <div class="logo">
+            <h1 style="font-size: 48px; font-weight: bold; color: #30c9ce; text-shadow: 1px 1px 2px rgba(0,0,0,0.3); background: rgba(48, 201, 206, 0.1); padding: 10px; border-radius: 10px; display: inline-block;">
+                IMEI<span style="font-size: 24px; margin-right: 5px;">•</span></h1>
+        </div>
+
+        <div class="icon-container">
+            <svg class="checkmark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 52 52">
+                <circle class="checkmark__circle" cx="26" cy="26" r="25" fill="none" />
+                <path class="checkmark__check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8" />
+            </svg>
+        </div>
+        <h1>تم الدفع بنجاح!</h1>
+        <p>شكراً لك. لقد تم تأكيد دفعتك بنجاح. سيتم تنشيط إعلانك خلال أوقات العمل.</p>
+        <div class="contact-info">
+            <p>لديك استفسار؟ تواصل معنا على <a href="mailto:imeiapp887@gmail.com">imeiapp887@gmail.com</a></p>
+            <p>أو اتصل بنا على <a href="https://wa.me/201023579280" target="_blank">+201023579280</a></p>
+        </div>
+    </div>
+
+    <script>
+        // يمكن إضافة أي كود إضافي مطلوب هنا
+    </script>
+</body>
+
+</html>
