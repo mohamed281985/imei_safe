@@ -1,0 +1,32 @@
+/* Custom styles for input fields with blue and orange borders */
+.input-field {
+  background-color: #ffffff !important;
+  color: #1f2937 !important;
+  border-radius: 0.75rem !important;
+  border: 2px solid #fb923c !important;
+  padding: 0.5rem 1rem !important;
+  outline: 0 !important;
+}
+
+.input-field:focus {
+  border-color: #fb923c !important;
+  border-width: 3px !important;
+  box-shadow: 0 0 0 1px #fb923c !important;
+}
+
+/* Styles for image upload fields */
+.image-upload-container {
+  background: linear-gradient(to right, #1e40af, #3b82f6, #1e40af) !important;
+  border: 2px solid #fb923c !important;
+  border-radius: 0.75rem !important;
+}
+
+.image-upload-area {
+  background-color: #ffffff !important;
+  border: 2px dashed rgba(251, 146, 60, 0.4) !important;
+  border-radius: 0.5rem !important;
+}
+
+.image-upload-area:hover {
+  border-color: rgba(251, 146, 60, 0.6) !important;
+}

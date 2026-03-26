@@ -1,0 +1,6 @@
+0000000000000000000000000000000000000000 63e948bdc77234223406e5df04aa971851c24c0d mohamed281985 <maly5424@gmail .com> 1755560689 +0300	commit (initial): Fix dependencies and update config
+63e948bdc77234223406e5df04aa971851c24c0d fe76b998300452bc59c75ee503eef1829dc45e80 mohamed281985 <maly5424@gmail .com> 1755568311 +0300	commit: تحديث: إضافة إمكانية الحصول على رقم هاتف المستخدم المسجل وتحسين إرسال البريد الإلكتروني
+fe76b998300452bc59c75ee503eef1829dc45e80 46be70102bde5222195139d51fba4bf4eacf73d8 mohamed281985 <maly5424@gmail .com> 1755569562 +0300	commit: إضافة ملف package-lock.json لضمان تثبيت الحزم بشكل صحيح على Render
+46be70102bde5222195139d51fba4bf4eacf73d8 9a596f222eeaf6c7d5ac25edd4e7c74444079a05 mohamed281985 <maly5424@gmail .com> 1755569659 +0300	commit: تعديل: استخدام Supabase عبر CDN كحل بديل لمشكلة التثبيت على Render
+9a596f222eeaf6c7d5ac25edd4e7c74444079a05 e18e99f929c96094e118fc5a6f87a8ca7d53cd59 mohamed281985 <maly5424@gmail .com> 1755571507 +0300	commit: fix: correct supabase import and add dependency
+e18e99f929c96094e118fc5a6f87a8ca7d53cd59 c154389c30970b40ff8b8539ccded6102cd55b91 mohamed281985 <maly5424@gmail .com> 1755571783 +0300	commit: fix: correct supabase import and ignore node_modules

@@ -1,0 +1,23 @@
+
+<svg viewBox="0 0 150 50" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .logo-text {
+      fill: #00E5FF;
+      font-family: Arial, sans-serif;
+      font-weight: bold;
+      font-size: 42px;
+    }
+    .logo-dot {
+      fill: #00E5FF;
+    }
+    @keyframes glow {
+      0%, 100% { filter: none; }
+      50% { filter: none; }
+    }
+    svg {
+      animation: glow 2s infinite;
+    }
+  </style>
+  <text x="25" y="40" class="logo-text">IMEI</text>
+  <circle cx="130" cy="15" r="4" class="logo-dot" />
+</svg>

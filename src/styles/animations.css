@@ -1,0 +1,53 @@
+/* src/styles/animations.css */
+.pyro > .before,
+.pyro > .after {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  box-shadow: -120px -218.66667px #ffc107, 248px -16.66667px #00ff84, 190px 16.33333px #00e1ff, -113px -228.66667px #ff4444, -199px -212.66667px #ffc107, -14px -333.66667px #ff4444, -100px -24.66667px #00ff84, -18px -388.66667px #00e1ff, -218px -347.66667px #ff4444, -134px -37.66667px #ffc107, -181px -39.66667px #00e1ff, 196px -352.66667px #ff4444, 57px -255.66667px #ffc107, -158px -129.66667px #00ff84, -106px -256.66667px #00e1ff, -245px -161.66667px #ff4444, -147px -392.66667px #ffc107, 86px -213.66667px #00ff84;
+  animation: 1s bang ease-out infinite backwards, 1s gravity ease-in infinite backwards, 5s position linear infinite backwards;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.pyro > .after {
+  animation-delay: 1.25s, 1.25s, 1.25s;
+  animation-duration: 1.25s, 1.25s, 6.25s;
+}
+
+@keyframes bang {
+  to {
+    box-shadow: -100px -417.7px #ffc107, 223px -20.7px #00ff84, 196px -165.7px #00e1ff, -213px -427.7px #ff4444, -114px -143.7px #ffc107, 17px -11.7px #ff4444, -120px -150.7px #00ff84, 149px -362.7px #00e1ff, 16px -340.7px #ff4444, 13px -367.7px #ffc107, -118px -173.7px #00e1ff, 144px -155.7px #ff4444, -210px -133.7px #ffc107, 207px -382.7px #00ff84, -130px -11.7px #00e1ff, -112px -13.7px #ff4444, -182px -416.7px #ffc107, -184px -193.7px #00ff84;
+  }
+}
+
+@keyframes gravity {
+  to {
+    transform: translateY(200px);
+    opacity: 0;
+  }
+}
+
+@keyframes position {
+  0%, 19.9% {
+    margin-top: 10%;
+    margin-left: 40%;
+  }
+  20%, 39.9% {
+    margin-top: 40%;
+    margin-left: 30%;
+  }
+  40%, 59.9% {
+    margin-top: 20%;
+    margin-left: 70%;
+  }
+  60%, 79.9% {
+    margin-top: 30%;
+    margin-left: 20%;
+  }
+  80%, 99.9% {
+    margin-top: 30%;
+    margin-left: 80%;
+  }
+}

@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>عروض فوازير فودافون</title>
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      min-height: 100vh;
+      min-width: 100vw;
+      width: 100vw;
+      height: 100vh;
+      margin: 0;
+      padding: 0;
+      font-family: 'Cairo', Tahoma, Arial, sans-serif;
+      background: #222;
+      color: #fff;
+      position: relative;
+      overflow: hidden;
+    }
+    .main-bg {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      width: 100vw;
+      height: 100vh;
+      object-fit: cover;
+      z-index: 1;
+      background: #222;
+    }
+    .overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0,0,0,0.25);
+      z-index: 2;
+    }
+    .center-btn {
+      position: fixed;
+      left: 50%;
+      bottom: 8%;
+      transform: translateX(-50%);
+      z-index: 3;
+      width: 80vw;
+      max-width: 340px;
+      padding: 18px 0;
+      border: none;
+      border-radius: 32px;
+      font-size: 1.2rem;
+      font-weight: bold;
+      cursor: pointer;
+      background: linear-gradient(90deg, #b8002e 60%, #e60044 100%);
+      color: #fff;
+      box-shadow: 0 2px 12px #0005;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+    }
+    @media (max-width: 480px) {
+      .center-btn { font-size: 1rem; padding: 14px 0; }
+    }
+  </style>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <img id="main-bg" class="main-bg" src="" alt="العرض" style="display:none;" />
+  <div class="overlay"></div>
+  <button class="center-btn" id="offerBtn">اشترك في العرض</button>
+  <script>
+    // جلب صورة العرض من API بناءً على الـ id الممرر في الرابط
+    async function fetchMainImage() {
+      try {
+        // الحصول على الـ id من الرابط
+        const urlParams = new URLSearchParams(window.location.search);
+        const adId = urlParams.get('id');
+        
+        // إذا كان هناك id في الرابط، جلب الصورة الخاصة به
+        if (adId) {
+          const res = await fetch(`/api/offers/mainimage?id=${adId}`);
+          const data = await res.json();
+          if (data && data.mainimage_url) {
+            const img = document.getElementById('main-bg');
+            img.src = data.mainimage_url;
+            img.style.display = 'block';
+            return;
+          }
+        }
+        
+        // إذا لم يكن هناك id أو لم يتم العثور على الصورة، جلب الصورة الافتراضية
+        const res = await fetch('/api/offers/mainimage');
+        const data = await res.json();
+        if (data && data.mainimage_url) {
+          const img = document.getElementById('main-bg');
+          img.src = data.mainimage_url;
+          img.style.display = 'block';
+        }
+      } catch (e) {
+        // fallback صورة افتراضية
+        document.getElementById('main-bg').src = 'https://i.imgur.com/6Qw1QwB.png';
+        document.getElementById('main-bg').style.display = 'block';
+      }
+    }
+    fetchMainImage();
+    // زر العرض
+    document.getElementById('offerBtn').onclick = function() {
+      alert('سيتم تحويلك للاشتراك في العرض قريبًا!');
+    };
+  </script>
+</body>
+</html>
