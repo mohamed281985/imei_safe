@@ -1,3 +1,26 @@
+// نقطة نهاية لتحديث finder_phone في جدول phone_reports باستخدام IMEI
+app.post('/api/update-finder-phone-by-imei', async (req, res) => {
+  try {
+    const { imei, finderPhone } = req.body;
+    if (!imei || !finderPhone) {
+      return res.status(400).json({ success: false, error: 'imei and finderPhone are required' });
+    }
+
+    // تحديث السجل في قاعدة البيانات
+    const { data, error } = await supabase
+      .from('phone_reports')
+      .update({ finder_phone: finderPhone })
+      .eq('imei', imei);
+
+    if (error) {
+      return res.status(500).json({ success: false, error: error.message });
+    }
+
+    return res.json({ success: true });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 import { google } from 'googleapis';
 import fs from 'fs';
