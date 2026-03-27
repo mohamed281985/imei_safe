@@ -113,7 +113,9 @@ const WelcomeSearch: React.FC = () => {
   // تم إزالة هذا useEffect لأننا نتحقق من الحد مباشرة في الدوال
 
   const handleNotifyOwner = async () => {
-    if (!phoneId || !user) {
+    // Debug: تحقق من القيم قبل التحقق
+    console.debug('handleNotifyOwner: user =', user, 'phoneId =', phoneId);
+    if (!phoneId || !user || !user.id) {
       toast({ title: t('error'), description: t('must_login_to_contact_owner'), variant: 'destructive' });
       return;
     }
@@ -312,9 +314,9 @@ const WelcomeSearch: React.FC = () => {
       // تحديث عدد عمليات البحث
       await updateSearchUsage(user.id);
 
-      // معالجة النتائج حسب ما يرججه السيرفر فقط
+      // معالجة النتائج حسب ما يرجعه السيرفر فقط
       if (result.found) {
-        setPhoneId(result.imei);
+        setPhoneId(result.imei || imei); // عيّن phoneId دائماً
         setSearchResult('found');
         // تخزين فقط الحالة والتاريخ الضروريين للعرض
         setFoundReportStatus(result.status || '');
@@ -323,7 +325,7 @@ const WelcomeSearch: React.FC = () => {
         setLossTime(result.loss_time || '');
         if (result.registeredPhone) {
           setRegisteredPhoneDetails({
-            imei: result.imei,
+            imei: result.imei || imei,
             registration_date: result.registeredPhone.registration_date,
             status: result.registeredPhone.status,
           });
@@ -338,6 +340,7 @@ const WelcomeSearch: React.FC = () => {
               status: result.status || 'registered',
             };
 
+        setPhoneId(rp.imei || imei); // عيّن phoneId دائماً
         setRegisteredPhoneDetails({
           imei: rp.imei,
           registration_date: rp.registration_date,
@@ -345,6 +348,7 @@ const WelcomeSearch: React.FC = () => {
         });
         setSearchResult('not_found');
       } else {
+        setPhoneId(imei); // حتى لو لم يوجد، عيّن IMEI المدخل
         setSearchResult('not_found');
         setRegisteredPhoneDetails(null);
         toast({
