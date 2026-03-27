@@ -1382,7 +1382,7 @@ if (!PAYMOB_API_KEY || !INTEGRATION_ID || !IFRAME_ID || !HMAC_SECRET) {
 }
 
 // إرسال بريد إلكتروني للمالك عند العثور على الهاتف
-app.post('/api/update-finder-phone-by-imei', async (req, res) => {
+app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) => {
   console.log('POST request received at /api/update-finder-phone-by-imei');
   const { imei, ownerName, finderPhone } = req.body;
 
