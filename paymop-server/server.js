@@ -1123,7 +1123,8 @@ app.post('/api/search-imei', async (req, res) => {
         loss_time: activeReportAny.loss_time,
         registered: !!regPhone,
         isRegistered: !!regPhone,
-        registeredPhone: regPhone ? { registration_date: regPhone.registration_date, status: regPhone.status, user_id: regPhone.user_id } : null
+        registeredPhone: regPhone ? { registration_date: regPhone.registration_date, status: regPhone.status, user_id: regPhone.user_id } : null,
+        imei_decrypted: normalizedIncoming // إضافة رقم IMEI المفكوك
       });
     } else if (regPhone && isOwner) {
       // الهاتف مسجل للمستخدم الحالي ولا يوجد بلاغ فعال
@@ -1133,7 +1134,8 @@ app.post('/api/search-imei', async (req, res) => {
         isOwner: true,
         registered: true,
         isRegistered: true,
-        registeredPhone: { registration_date: regPhone.registration_date, status: regPhone.status, user_id: regPhone.user_id }
+        registeredPhone: { registration_date: regPhone.registration_date, status: regPhone.status, user_id: regPhone.user_id },
+        imei_decrypted: normalizedIncoming
       });
     } else if (regPhone) {
       // الهاتف مسجل لمستخدم آخر
@@ -1143,7 +1145,8 @@ app.post('/api/search-imei', async (req, res) => {
         isOwner: false,
         registered: true,
         isRegistered: true,
-        registeredPhone: { registration_date: regPhone.registration_date, status: regPhone.status, user_id: regPhone.user_id }
+        registeredPhone: { registration_date: regPhone.registration_date, status: regPhone.status, user_id: regPhone.user_id },
+        imei_decrypted: normalizedIncoming
       });
     } else {
       // الهاتف غير مسجل ولا يوجد بلاغ
@@ -1151,7 +1154,8 @@ app.post('/api/search-imei', async (req, res) => {
         found: false,
         masked: false,
         isOwner: false,
-        registered: false
+        registered: false,
+        imei_decrypted: normalizedIncoming
       });
     }
     
