@@ -1110,13 +1110,6 @@ app.post('/api/search-imei', async (req, res) => {
     console.log('DEBUG: authenticatedUserId:', authenticatedUserId);
     console.log('DEBUG: activeReportAny:', activeReportAny);
 
-    let imeiDecrypted = null;
-    if (activeReportAny) {
-      imeiDecrypted = decryptField(activeReportAny.imei);
-    } else if (regPhone) {
-      imeiDecrypted = decryptField(regPhone.imei);
-    }
-
     if (activeReportAny) {
       // يوجد بلاغ فعال — نُظهره بغض النظر عن هوية المبلغ
       res.json({
@@ -1130,8 +1123,7 @@ app.post('/api/search-imei', async (req, res) => {
         loss_time: activeReportAny.loss_time,
         registered: !!regPhone,
         isRegistered: !!regPhone,
-        registeredPhone: regPhone ? { registration_date: regPhone.registration_date, status: regPhone.status, user_id: regPhone.user_id } : null,
-        imei_decrypted: imeiDecrypted
+        registeredPhone: regPhone ? { registration_date: regPhone.registration_date, status: regPhone.status, user_id: regPhone.user_id } : null
       });
     } else if (regPhone && isOwner) {
       // الهاتف مسجل للمستخدم الحالي ولا يوجد بلاغ فعال
@@ -1141,8 +1133,7 @@ app.post('/api/search-imei', async (req, res) => {
         isOwner: true,
         registered: true,
         isRegistered: true,
-        registeredPhone: { registration_date: regPhone.registration_date, status: regPhone.status, user_id: regPhone.user_id },
-        imei_decrypted: imeiDecrypted
+        registeredPhone: { registration_date: regPhone.registration_date, status: regPhone.status, user_id: regPhone.user_id }
       });
     } else if (regPhone) {
       // الهاتف مسجل لمستخدم آخر
@@ -1152,8 +1143,7 @@ app.post('/api/search-imei', async (req, res) => {
         isOwner: false,
         registered: true,
         isRegistered: true,
-        registeredPhone: { registration_date: regPhone.registration_date, status: regPhone.status, user_id: regPhone.user_id },
-        imei_decrypted: imeiDecrypted
+        registeredPhone: { registration_date: regPhone.registration_date, status: regPhone.status, user_id: regPhone.user_id }
       });
     } else {
       // الهاتف غير مسجل ولا يوجد بلاغ
@@ -1161,8 +1151,7 @@ app.post('/api/search-imei', async (req, res) => {
         found: false,
         masked: false,
         isOwner: false,
-        registered: false,
-        imei_decrypted: null
+        registered: false
       });
     }
     
