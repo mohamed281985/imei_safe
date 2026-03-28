@@ -1530,44 +1530,47 @@ app.post('/api/get-finder-phone', async (req, res) => {
   }
 
   let finderPhoneNumber = null;
+  let imeiNumber = null;
 
   try {
     console.log(`البحث عن رقم هاتف للمستخدم بالمعرف: ${userId}`);
 
-    // ⭐ إرسال طلبات البحث في كلا الجدولين في نفس الوقت
-    const [userResult, businessResult] = await Promise.allSettled([
-      supabase
-        .from('users')
-        .select('phone') // تصحيح: اسم العمود هو 'phone' وليس 'phone_number'
-        .eq('id', userId)
-        .single(),
-      supabase
-        .from('businesses')
-        .select('phone') // تصحيح: اسم العمود هو 'phone' وليس 'phone_number'
-        .eq('user_id', userId) // تصحيح: البحث باستخدام user_id بدلاً من id
-        .single()
-    ]);
+    // جلب بيانات الهاتف من جدول phone_reports بناءً على userId (أو أي معيار مناسب)
+    const { data: reportData, error: reportError } = await supabase
+      .from('phone_reports')
+      .select('finder_phone, imei')
+      .eq('finder_user_id', userId)
+      .order('id', { ascending: false })
+      .limit(1)
+      .single();
 
-    // ⭐ تحقق من نتيجة البحث في جدول users
-    if (userResult.status === 'fulfilled' && userResult.value.data && !userResult.value.error) {
-      finderPhoneNumber = userResult.value.data.phone;
-      console.log('تم العثور على رقم هاتف في جدول users:', finderPhoneNumber);
+    if (reportError || !reportData) {
+      console.log('لم يتم العثور على بيانات الهاتف في phone_reports.');
+      res.status(404).json({ error: 'Phone report not found for this user.' });
+      return;
     }
 
-    // ⭐ إذا لم يتم العثوره في users، تحقق من نتيجة البحث في جدول businesses
-    if (!finderPhoneNumber && businessResult.status === 'fulfilled' && businessResult.value.data && !businessResult.value.error) {
-      finderPhoneNumber = businessResult.value.data.phone;
-      console.log('تم العثور على رقم هاتف في جدول businesses:', finderPhoneNumber);
+    finderPhoneNumber = reportData.finder_phone;
+    // فك تشفير رقم الايمي إذا كان مشفراً
+    let realImei = null;
+    try {
+      if (typeof reportData.imei === 'object' && reportData.imei.encryptedData) {
+        realImei = decryptAES(reportData.imei.encryptedData, reportData.imei.iv, reportData.imei.authTag);
+      } else if (typeof reportData.imei === 'string' && reportData.imei.startsWith('{')) {
+        const enc = JSON.parse(reportData.imei);
+        if (enc.encryptedData && enc.iv && enc.authTag) {
+          realImei = decryptAES(enc.encryptedData, enc.iv, enc.authTag);
+        } else {
+          realImei = reportData.imei;
+        }
+      } else {
+        realImei = reportData.imei;
+      }
+    } catch (e) {
+      realImei = reportData.imei;
     }
 
-    // إذا تم العثور على الرقم في أي من الجدولين، أرسله
-    if (finderPhoneNumber) {
-      res.status(200).json({ finderPhone: finderPhoneNumber });
-    } else {
-      // إذا لم يتم العثور عليه في أي من الجدولين
-      console.log('لم يتم العثور على رقم هاتف للمستخدم في أي من الجدولين.');
-      res.status(404).json({ error: 'Phone number not found for the given userId in users or businesses table.' });
-    }
+    res.status(200).json({ finderPhone: finderPhoneNumber, imei: realImei });
 
   } catch (err) {
     console.error('Error in /api/get-finder-phone:', err);
