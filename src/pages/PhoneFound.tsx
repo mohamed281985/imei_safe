@@ -11,7 +11,6 @@ import { Smartphone, PartyPopper, Home } from 'lucide-react';
 import '../styles/animations.css';
 
 const PhoneFound: React.FC = () => {
-    const [email, setEmail] = useState<string | null>(null);
   const { t } = useLanguage();
   const navigate = useNavigate();
   const { imei: routeImei } = useParams<{ imei?: string }>();
@@ -19,7 +18,6 @@ const PhoneFound: React.FC = () => {
   const { width, height } = useWindowSize();
   const [showCelebration, setShowCelebration] = useState(false);
   const [finderPhone, setFinderPhone] = useState<string | null>(null);
-  const [finderPhoneDecrypted, setFinderPhoneDecrypted] = useState<string | null>(null);
   const [imei, setImei] = useState<string | null>(null);
   const [imeiDecrypted, setImeiDecrypted] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -71,26 +69,22 @@ const PhoneFound: React.FC = () => {
 
         setImei(imeiToUse);
         setImeiDecrypted(result.imei_decrypted || null);
-        setFinderPhoneDecrypted(result.finder_phone_decrypted || null);
-        setEmail(result.email || null);
-        // إذا لم يرجع الباك اند الرقم المفكوك لأي سبب، استخدم المنطق القديم كاحتياطي
-        if (!result.finder_phone_decrypted) {
-          const { data, error: fetchError } = await supabase
-            .from('phone_reports')
-            .select('finder_phone')
-            .eq('imei', imeiToUse)
-            .single();
-          if (fetchError) {
-            setError('حدث خطأ في جلب بيانات الهاتف: ' + fetchError.message);
-            setFinderPhone(null);
-          } else if (!data) {
-            setError('لم يتم العثور على بيانات الهاتف المبلغ عنه.');
-            setFinderPhone(null);
-          } else {
-            setFinderPhone(data.finder_phone);
-          }
+        // إذا كان لديك finder_phone في نفس الاستجابة أضفه هنا، وإلا أبقِ على المنطق القديم
+        // setFinderPhone(result.finder_phone || null);
+        // حالياً نستخدم المنطق القديم لجلب finder_phone من supabase
+        const { data, error: fetchError } = await supabase
+          .from('phone_reports')
+          .select('finder_phone')
+          .eq('imei', imeiToUse)
+          .single();
+        if (fetchError) {
+          setError('حدث خطأ في جلب بيانات الهاتف: ' + fetchError.message);
+          setFinderPhone(null);
+        } else if (!data) {
+          setError('لم يتم العثور على بيانات الهاتف المبلغ عنه.');
+          setFinderPhone(null);
         } else {
-          setFinderPhone(result.finder_phone_decrypted);
+          setFinderPhone(data.finder_phone);
         }
       } catch (err) {
         setError('حدث خطأ غير متوقع: ' + (err instanceof Error ? err.message : String(err)));
@@ -119,7 +113,7 @@ const PhoneFound: React.FC = () => {
       return;
     }
 
-    const cleanPhone = (finderPhoneDecrypted || finderPhone || '').replace(/\D/g, '');
+    const cleanPhone = finderPhone.replace(/\D/g, '');
     console.log('فتح واتساب مع الرقم:', cleanPhone);
     const whatsappUrl = `https://wa.me/${cleanPhone}`;
     window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
@@ -154,7 +148,7 @@ const PhoneFound: React.FC = () => {
           <div className="flex items-center justify-center gap-4">
             <Smartphone className="w-8 h-8 text-imei-cyan" />
             <div>
-              <p className="text-sm text-white/50">رقم IMEI للهاتف المفقود:</p>
+              <p className="text-sm text-gray-400">رقم IMEI للهاتف المفقود:</p>
               <p className="text-3xl font-mono tracking-widest text-imei-cyan">
                 {loading ? 'جاري التحميل...' : (imeiDecrypted ? imeiDecrypted : (imei ? imei : 'غير متوفر'))}
               </p>
@@ -181,9 +175,9 @@ const PhoneFound: React.FC = () => {
           {/* زر واتساب */}
           {!loading && finderPhone && (
             <div className="w-full max-w-md mb-4">
-                <div className="bg-red-500/20 border-2 border-red-500 rounded-lg p-3 text-center font-bold text-red-700 text-lg animate-pulse">
-                  تنبيه: عند مراسلة من عثر على هاتفك، يجب المطالبة بتصوير هاتفك للتأكد منه
-                </div>
+              <div className="bg-red-500/20 border-2 border-red-500 rounded-lg p-3 text-center font-bold text-red-200 text-lg animate-pulse">
+                 تنبيه: عند مراسلة من عثر على هاتفك، يجب المطالبة بتصوير هاتفك للتأكد منه
+              </div>
               <button
                 onClick={handleWhatsAppClick}
                 className="w-full bg-green-500 hover:bg-green-600 text-white font-bold text-xl py-4 px-4 rounded-xl flex items-center justify-center transition-transform transform hover:scale-105 shadow-lg mt-4"
