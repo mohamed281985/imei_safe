@@ -1437,10 +1437,20 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
 
     console.log(`Phone found for IMEI: ${imei}. Owner: ${foundReport.owner_name}`);
 
-    // 2. تحديث حقل finder_phone باستخدام id
+    // 2. تشفير finder_phone قبل الحفظ
+    let encryptedFinderPhone = null;
+    if (finderPhone) {
+      try {
+        const enc = encryptAES(finderPhone);
+        encryptedFinderPhone = JSON.stringify({ encryptedData: enc.encryptedData, iv: enc.iv, authTag: enc.authTag });
+      } catch (e) {
+        console.error('فشل تشفير finder_phone:', e);
+        encryptedFinderPhone = finderPhone; // fallback: حفظ الرقم كما هو
+      }
+    }
     const { error: updateError } = await supabase
       .from('phone_reports')
-      .update({ finder_phone: finderPhone })
+      .update({ finder_phone: encryptedFinderPhone })
       .eq('id', foundReport.id);
 
     if (updateError) {
