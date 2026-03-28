@@ -143,7 +143,17 @@ const WelcomeSearch: React.FC = () => {
         throw new Error(error || 'فشل في الحصول على رقم هاتف الواجد.');
       }
 
-      // 2. تحديث جدول phone_reports بوضع رقم هاتف الواجد في عمود finder_phone باستخدام IMEI
+      // تشفير رقم الهاتف قبل الإرسال
+      let encryptedFinderPhone = finderPhone;
+      try {
+        const { encryptIMEI } = await import('@/lib/imeiCrypto');
+        encryptedFinderPhone = encryptIMEI(finderPhone);
+      } catch (e) {
+        // إذا فشل التشفير لأي سبب، استخدم الرقم كما هو
+        encryptedFinderPhone = finderPhone;
+      }
+
+      // 2. تحديث جدول phone_reports بوضع رقم هاتف الواجد المشفر في عمود finder_phone باستخدام IMEI
       const updateResponse = await fetch('https://imei-safe.me/api/update-finder-phone-by-imei', {
         method: 'POST',
         headers: {
@@ -152,7 +162,7 @@ const WelcomeSearch: React.FC = () => {
         },
         body: JSON.stringify({
           imei: phoneId,
-          finderPhone: finderPhone
+          finderPhone: encryptedFinderPhone
         })
       });
       const updateResult = await updateResponse.json();
