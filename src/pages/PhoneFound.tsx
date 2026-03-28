@@ -56,12 +56,12 @@ const PhoneFound: React.FC = () => {
         // جلب بيانات الهاتف من قاعدة البيانات باستخدام رقم IMEI
         const { data, error: fetchError } = await supabase
           .from('phone_reports')
-          .select('finder_phone')
+          .select('finder_phone, imei')
           .eq('imei', imeiToUse)
           .single();
-          
+
         console.log('رد قاعدة البيانات:', data, fetchError);
-        
+
         if (fetchError) {
           console.error('خطأ في قاعدة البيانات:', fetchError);
           setError('حدث خطأ في جلب بيانات الهاتف: ' + fetchError.message);
@@ -71,9 +71,28 @@ const PhoneFound: React.FC = () => {
           setError('لم يتم العثور على بيانات الهاتف المبلغ عنه.');
           setFinderPhone(null);
         } else {
-          setImei(imeiToUse);
           setFinderPhone(data.finder_phone);
-          console.log('تم تعيين بيانات الهاتف من قاعدة البيانات:', { imei: imeiToUse, finderPhone: data.finder_phone });
+          // فك تشفير رقم الايمي إذا كان مشفراً
+          let realImei = '';
+          try {
+            if (typeof data.imei === 'string' && data.imei.startsWith('{')) {
+              // غالباً مشفر بصيغة JSON
+              const enc = JSON.parse(data.imei);
+              if (enc.encryptedData && enc.iv && enc.authTag) {
+                // استدعاء endpoint backend لفك التشفير أو نفذ نفس خوارزمية فك التشفير هنا إذا كانت متاحة
+                // هنا سنعرض النص المشفر فقط إذا لم تتوفر دالة فك التشفير في الواجهة
+                realImei = '[مشفّر]';
+              } else {
+                realImei = data.imei;
+              }
+            } else {
+              realImei = data.imei;
+            }
+          } catch (e) {
+            realImei = data.imei;
+          }
+          setImei(realImei);
+          console.log('تم تعيين بيانات الهاتف من قاعدة البيانات:', { imei: realImei, finderPhone: data.finder_phone });
         }
       } catch (err) {
         console.error('خطأ في جلب بيانات الهاتف:', err);
@@ -138,7 +157,7 @@ const PhoneFound: React.FC = () => {
           <div className="flex items-center justify-center gap-4">
             <Smartphone className="w-8 h-8 text-imei-cyan" />
             <div>
-              <p className="text-sm text-gray-400">رقم IMEI للهاتف المفقود:</p>
+              <p className="text-sm text-white/50">رقم IMEI للهاتف المفقود:</p>
               <p className="text-3xl font-mono tracking-widest text-imei-cyan">
                 {loading ? 'جاري التحميل...' : (imei ? imei : 'غير متوفر')}
               </p>
@@ -165,9 +184,9 @@ const PhoneFound: React.FC = () => {
           {/* زر واتساب */}
           {!loading && finderPhone && (
             <div className="w-full max-w-md mb-4">
-              <div className="bg-red-500/20 border-2 border-red-500 rounded-lg p-3 text-center font-bold text-red-200 text-lg animate-pulse">
-                 تنبيه: عند مراسلة من عثر على هاتفك، يجب المطالبة بتصوير هاتفك للتأكد منه
-              </div>
+                <div className="bg-red-500/20 border-2 border-red-500 rounded-lg p-3 text-center font-bold text-red-800 text-lg animate-pulse">
+                  تنبيه: عند مراسلة من عثر على هاتفك، يجب المطالبة بتصوير هاتفك للتأكد منه
+                </div>
               <button
                 onClick={handleWhatsAppClick}
                 className="w-full bg-green-500 hover:bg-green-600 text-white font-bold text-xl py-4 px-4 rounded-xl flex items-center justify-center transition-transform transform hover:scale-105 shadow-lg mt-4"
