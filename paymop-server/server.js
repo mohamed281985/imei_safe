@@ -1461,17 +1461,18 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
     }
 
     // ⭐ 3. إرسال الإشعار والبريد الإلكتروني بعد التحديث الناجح
-    if (reportData.fcm_token) {
-      console.log(`Found FCM token, sending push notification to: ${reportData.fcm_token}`);
+
+    if (foundReport.fcm_token) {
+      console.log(`Found FCM token, sending push notification to: ${foundReport.fcm_token}`);
       try {
         const notificationBody = `مبروك! تم العثور على هاتفك. للتواصل مع الشخص الذي وجده، يرجى الاتصال على الرقم: ${finderPhone}.`;
         await sendFCMNotificationV1({
-          token: reportData.fcm_token,
+          token: foundReport.fcm_token,
           title: 'تم العثور على هاتفك!',
           body: notificationBody,
           data: {
             type: 'phone_found',
-            imei: reportData.imei
+            imei: foundReport.imei
           }
         });
         console.log('Push notification sent successfully.');
@@ -1484,16 +1485,16 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
     }
 
     // 4. إرسال البريد الإلكتروني (كما كان)
-    if (reportData.email) {
-      const cleanEmail = reportData.email.trim();
+    if (foundReport.email) {
+      const cleanEmail = foundReport.email.trim();
       console.log('إرسال بريد إلكتروني إلى:', cleanEmail);
 
       await resend.emails.send({
         from: 'onboarding@resend.dev',
         to: cleanEmail,
         subject: 'تهانينا! تم العثور على هاتفك المفقود',
-        html: `<p>عزيزي ${ownerName || reportData.owner_name || ''},</p>
-          <p>مبروك! تم العثور على هاتفك المفقود (IMEI: ${reportData.imei || ''}).</p>
+        html: `<p>عزيزي ${ownerName || foundReport.owner_name || ''},</p>
+          <p>مبروك! تم العثور على هاتفك المفقود (IMEI: ${foundReport.imei || ''}).</p>
           <p>يرجى التواصل مع الشخص الذي وجد الهاتف على الرقم: <b>${finderPhone}</b> لاستلام هاتفك.</p>
           <p>نتمنى لك يوماً سعيداً!</p>`
       });
@@ -1503,7 +1504,7 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
     }
 
     // إذا لم يكن هناك بريد إلكتروني أو توكن، قد يكون هناك مشكلة
-    if (!reportData.fcm_token && !reportData.email) {
+    if (!foundReport.fcm_token && !foundReport.email) {
       return res.status(400).json({ error: 'لم يتم العثور على بريد إلكتروني أو توكن إشعارات مسجل لهذا الهاتف' });
     }
 
