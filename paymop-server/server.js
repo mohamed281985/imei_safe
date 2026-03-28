@@ -1406,28 +1406,42 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
   try {
     // 1. البحث عن الهاتف للحصول على معلومات المالك (بريد، اسم، وتوكن الإشعارات، ومعرف الواجد)
     console.log(`Searching for phone with IMEI: ${imei}`);
-    const { data: reportData, error: reportError } = await supabase
+    const { data: allReports, error: reportError } = await supabase
       .from('phone_reports')
-      .select('email, owner_name, imei, fcm_token, finder_user_id, id')
-      .eq('imei', imei)
-      .order('id', { ascending: true })
-      .limit(1)
-      .maybeSingle();
+      .select('id, imei, email, owner_name, fcm_token, finder_user_id')
+      .order('id', { ascending: true });
 
-    if (reportError || !reportData) {
-      console.error(`Phone not found for IMEI: ${imei}. Error:`, reportError);
+    if (reportError || !allReports || allReports.length === 0) {
+      console.error(`No phone_reports found. Error:`, reportError);
       return res.status(404).json({ error: 'لم يتم العثور على الهاتف في البلاغات', imei });
     }
-    
-    console.log(`Phone found for IMEI: ${imei}. Owner: ${reportData.owner_name}`);
 
-    // 2. تحديث حقل finder_phone باستخدام imei
+    // فك تشفير IMEI ومقارنته
+    const normalizedIncoming = imei.replace(/\D/g, '');
+    let foundReport = null;
+    for (const r of allReports) {
+      let decrypted = null;
+      try {
+        decrypted = decryptField(r.imei);
+      } catch (e) {}
+      if (decrypted && decrypted.replace(/\D/g, '') === normalizedIncoming) {
+        foundReport = r;
+        break;
+      }
+    }
+
+    if (!foundReport) {
+      console.error(`Phone not found for IMEI (decrypted match): ${imei}`);
+      return res.status(404).json({ error: 'لم يتم العثور على الهاتف في البلاغات', imei });
+    }
+
+    console.log(`Phone found for IMEI: ${imei}. Owner: ${foundReport.owner_name}`);
+
+    // 2. تحديث حقل finder_phone باستخدام id
     const { error: updateError } = await supabase
       .from('phone_reports')
       .update({ finder_phone: finderPhone })
-      .eq('imei', imei)
-      .order('id', { ascending: true })
-      .limit(1);
+      .eq('id', foundReport.id);
 
     if (updateError) {
       console.error('فشل تحديث finder_phone في phone_reports:', updateError);
