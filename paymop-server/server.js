@@ -1435,7 +1435,27 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
       return res.status(404).json({ error: 'لم يتم العثور على الهاتف في البلاغات', imei });
     }
 
-    console.log(`Phone found for IMEI: ${imei}. Owner: ${foundReport.owner_name}`);
+    const decryptedOwnerName = (() => {
+      if (!foundReport.owner_name) return undefined;
+      try {
+        return decryptField(foundReport.owner_name) || foundReport.owner_name;
+      } catch (e) {
+        console.error('فشل فك تشفير owner_name:', e);
+        return foundReport.owner_name;
+      }
+    })();
+
+    const decryptedOwnerEmail = (() => {
+      if (!foundReport.email) return undefined;
+      try {
+        return decryptField(foundReport.email) || foundReport.email;
+      } catch (e) {
+        console.error('فشل فك تشفير email:', e);
+        return foundReport.email;
+      }
+    })();
+
+    console.log(`Phone found for IMEI: ${imei}. Owner: ${decryptedOwnerName || foundReport.owner_name}`);
 
     // 2. تشفير finder_phone قبل الحفظ
     let encryptedFinderPhone = null;
@@ -1521,16 +1541,16 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
     }
 
     // 4. إرسال البريد الإلكتروني (كما كان)
-    if (foundReport.email) {
-      const cleanEmail = foundReport.email.trim();
+    if (decryptedOwnerEmail) {
+      const cleanEmail = decryptedOwnerEmail.trim();
       console.log('إرسال بريد إلكتروني إلى:', cleanEmail);
 
       await resend.emails.send({
         from: 'onboarding@resend.dev',
         to: cleanEmail,
         subject: 'تهانينا! تم العثور على هاتفك المفقود',
-        html: `<p>عزيزي ${ownerName || foundReport.owner_name || ''},</p>
-          <p>مبروك! تم العثور على هاتفك المفقود (IMEI: ${foundReport.imei || ''}).</p>
+        html: `<p>عزيزي ${ownerName || decryptedOwnerName || foundReport.owner_name || ''},</p>
+          <p>مبروك! تم العثور على هاتفك المفقود (IMEI: ${decryptedImei || foundReport.imei || ''}).</p>
           <p>يرجى التواصل مع الشخص الذي وجد الهاتف على الرقم: <b>${finderPhone}</b> لاستلام هاتفك.</p>
           <p>نتمنى لك يوماً سعيداً!</p>`
       });
@@ -1540,7 +1560,7 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
     }
 
     // إذا لم يكن هناك بريد إلكتروني أو توكن، قد يكون هناك مشكلة
-    if (!foundReport.fcm_token && !foundReport.email) {
+    if (!foundReport.fcm_token && !decryptedOwnerEmail) {
       return res.status(400).json({ error: 'لم يتم العثور على بريد إلكتروني أو توكن إشعارات مسجل لهذا الهاتف' });
     }
 
