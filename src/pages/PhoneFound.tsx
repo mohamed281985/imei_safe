@@ -10,6 +10,8 @@ import { FaWhatsapp } from 'react-icons/fa';
 import { Smartphone, PartyPopper, Home } from 'lucide-react';
 import '../styles/animations.css';
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://imei-safe.me';
+
 const PhoneFound: React.FC = () => {
   const { t } = useLanguage();
   const navigate = useNavigate();
@@ -19,17 +21,15 @@ const PhoneFound: React.FC = () => {
   const [showCelebration, setShowCelebration] = useState(false);
   const [finderPhone, setFinderPhone] = useState<string | null>(null);
   const [imei, setImei] = useState<string | null>(null);
-  const [imeiDecrypted, setImeiDecrypted] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-
     const fetchPhoneData = async () => {
       try {
         setLoading(true);
         setError(null);
-
+        
         // الحصول على رقم IMEI من المسار، ثم من query string، ثم من التخزين المحلي
         let imeiToUse = routeImei;
         if (!imeiToUse) {
@@ -41,52 +41,54 @@ const PhoneFound: React.FC = () => {
           imeiToUse = localStorage.getItem('imei') || undefined;
         }
 
+        console.log('قيمة IMEI من المسار:', routeImei);
+        console.log('قيمة IMEI من query:', (new URLSearchParams(location.search)).get('imei'));
+        console.log('قيمة IMEI من التخزين المحلي:', localStorage.getItem('imei'));
+        console.log('قيمة IMEI التي سيتم استخدامها:', imeiToUse);
+
         if (!imeiToUse) {
+          console.log('لم يتم العثور على رقم IMEI');
           setError('لم يتم العثور على رقم IMEI. يرجى التحقق من إعدادات التطبيق.');
           setLoading(false);
           return;
         }
 
-        // جلب بيانات الهاتف من الباك اند (يفضل أن يكون endpoint خاص)
-        const token = localStorage.getItem('access_token');
-        const response = await fetch('/api/search-imei', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-          },
-          body: JSON.stringify({ imei: imeiToUse })
-        });
-        const result = await response.json();
-        if (!response.ok) {
-          setError(result.error || 'حدث خطأ في جلب بيانات الهاتف');
+        console.log('جلب بيانات الهاتف باستخدام رقم IMEI:', imeiToUse);
+
+        const { data: sessionData } = await supabase.auth.getSession();
+        const accessToken = sessionData?.session?.access_token;
+
+        if (!accessToken) {
+          setError('يجب تسجيل الدخول لعرض بيانات الهاتف.');
           setFinderPhone(null);
-          setImei(imeiToUse);
-          setImeiDecrypted(null);
-          setLoading(false);
           return;
         }
 
-        setImei(imeiToUse);
-        setImeiDecrypted(result.imei_decrypted || null);
-        // إذا كان لديك finder_phone في نفس الاستجابة أضفه هنا، وإلا أبقِ على المنطق القديم
-        // setFinderPhone(result.finder_phone || null);
-        // حالياً نستخدم المنطق القديم لجلب finder_phone من supabase
-        const { data, error: fetchError } = await supabase
-          .from('phone_reports')
-          .select('finder_phone')
-          .eq('imei', imeiToUse)
-          .single();
-        if (fetchError) {
-          setError('حدث خطأ في جلب بيانات الهاتف: ' + fetchError.message);
-          setFinderPhone(null);
-        } else if (!data) {
-          setError('لم يتم العثور على بيانات الهاتف المبلغ عنه.');
+        const response = await fetch(`${API_BASE_URL}/api/phone-found-details`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`
+          },
+          body: JSON.stringify({ imei: imeiToUse })
+        });
+
+        const result = await response.json();
+        console.log('رد الخادم:', result);
+
+        if (!response.ok) {
+          const message = result?.error || 'حدث خطأ في جلب بيانات الهاتف.';
+          setError(message);
           setFinderPhone(null);
         } else {
-          setFinderPhone(data.finder_phone);
+          const imeiValue = result?.imei || imeiToUse || null;
+          const finderPhoneValue = result?.finder_phone || null;
+          setImei(imeiValue);
+          setFinderPhone(finderPhoneValue);
+          console.log('تم تعيين بيانات الهاتف من الخادم:', { imei: imeiValue, finderPhone: finderPhoneValue });
         }
       } catch (err) {
+        console.error('خطأ في جلب بيانات الهاتف:', err);
         setError('حدث خطأ غير متوقع: ' + (err instanceof Error ? err.message : String(err)));
         setFinderPhone(null);
       } finally {
@@ -150,7 +152,7 @@ const PhoneFound: React.FC = () => {
             <div>
               <p className="text-sm text-gray-400">رقم IMEI للهاتف المفقود:</p>
               <p className="text-3xl font-mono tracking-widest text-imei-cyan">
-                {loading ? 'جاري التحميل...' : (imeiDecrypted ? imeiDecrypted : (imei ? imei : 'غير متوفر'))}
+                {loading ? 'جاري التحميل...' : (imei ? imei : 'غير متوفر')}
               </p>
             </div>
           </div>

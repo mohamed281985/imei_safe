@@ -1123,8 +1123,7 @@ app.post('/api/search-imei', async (req, res) => {
         loss_time: activeReportAny.loss_time,
         registered: !!regPhone,
         isRegistered: !!regPhone,
-        registeredPhone: regPhone ? { registration_date: regPhone.registration_date, status: regPhone.status, user_id: regPhone.user_id } : null,
-        imei_decrypted: normalizedIncoming // إضافة رقم IMEI المفكوك
+        registeredPhone: regPhone ? { registration_date: regPhone.registration_date, status: regPhone.status, user_id: regPhone.user_id } : null
       });
     } else if (regPhone && isOwner) {
       // الهاتف مسجل للمستخدم الحالي ولا يوجد بلاغ فعال
@@ -1134,8 +1133,7 @@ app.post('/api/search-imei', async (req, res) => {
         isOwner: true,
         registered: true,
         isRegistered: true,
-        registeredPhone: { registration_date: regPhone.registration_date, status: regPhone.status, user_id: regPhone.user_id },
-        imei_decrypted: normalizedIncoming
+        registeredPhone: { registration_date: regPhone.registration_date, status: regPhone.status, user_id: regPhone.user_id }
       });
     } else if (regPhone) {
       // الهاتف مسجل لمستخدم آخر
@@ -1145,8 +1143,7 @@ app.post('/api/search-imei', async (req, res) => {
         isOwner: false,
         registered: true,
         isRegistered: true,
-        registeredPhone: { registration_date: regPhone.registration_date, status: regPhone.status, user_id: regPhone.user_id },
-        imei_decrypted: normalizedIncoming
+        registeredPhone: { registration_date: regPhone.registration_date, status: regPhone.status, user_id: regPhone.user_id }
       });
     } else {
       // الهاتف غير مسجل ولا يوجد بلاغ
@@ -1154,8 +1151,7 @@ app.post('/api/search-imei', async (req, res) => {
         found: false,
         masked: false,
         isOwner: false,
-        registered: false,
-        imei_decrypted: normalizedIncoming
+        registered: false
       });
     }
     
@@ -3812,12 +3808,67 @@ app.post('/api/report-details-decrypted', verifyJwtToken, async (req, res) => {
       report_date: report.report_date || null,
       status: report.status || null,
       receipt_image_url: report.receipt_image_url || null,
-      finder_phone: report.finder_phone || null
+      finder_phone: decryptField(report.finder_phone) || report.finder_phone || null
     };
 
     return res.json({ success: true, ...decrypted, data: decrypted });
   } catch (err) {
     console.error('Error in /api/report-details-decrypted:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// نقطة نهاية لجلب بيانات صفحة العثور على الهاتف (تفكيك IMEI و finder_phone)
+app.post('/api/phone-found-details', verifyJwtToken, async (req, res) => {
+  try {
+    const { imei } = req.body;
+
+    if (!imei) {
+      return res.status(400).json({ error: 'imei is required' });
+    }
+
+    const normalizedIncoming = imei.replace(/\D/g, '');
+
+    const { data: allReports, error: reportError } = await supabase
+      .from('phone_reports')
+      .select('id, imei, finder_phone, user_id')
+      .order('id', { ascending: true });
+
+    if (reportError || !allReports || allReports.length === 0) {
+      console.error('No phone_reports found. Error:', reportError);
+      return res.status(404).json({ error: 'لم يتم العثور على الهاتف في البلاغات' });
+    }
+
+    let foundReport = null;
+    for (const r of allReports) {
+      let decrypted = null;
+      try {
+        decrypted = decryptField(r.imei);
+      } catch (e) {}
+      if (decrypted && decrypted.replace(/\D/g, '') === normalizedIncoming) {
+        foundReport = r;
+        break;
+      }
+    }
+
+    if (!foundReport) {
+      return res.status(404).json({ error: 'لم يتم العثور على الهاتف في البلاغات' });
+    }
+
+    if (req.user.id !== foundReport.user_id) {
+      return res.status(403).json({ error: 'Forbidden: only owner can view details' });
+    }
+
+    const decryptedImei = decryptField(foundReport.imei) || foundReport.imei || null;
+    const decryptedFinderPhone = decryptField(foundReport.finder_phone) || foundReport.finder_phone || null;
+
+    return res.json({
+      success: true,
+      imei: decryptedImei,
+      finder_phone: decryptedFinderPhone
+    });
+  } catch (err) {
+    console.error('Error in /api/phone-found-details:', err);
     return res.status(500).json({ error: 'Server error' });
   }
 });
