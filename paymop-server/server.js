@@ -4443,30 +4443,73 @@ app.post('/api/notify-owner-email', verifyJwtToken, async (req, res) => {
       return res.status(400).json({ error: 'IMEI and finderPhone are required' });
     }
 
-    // البحث عن بيانات المالك باستخدام IMEI
-    const { data: reportData, error: reportError } = await supabase
+    const { data: allReports, error: reportError } = await supabase
       .from('phone_reports')
-      .select('email, owner_name, imei')
-      .eq('imei', imei)
-      .order('id', { ascending: true })
-      .limit(1)
-      .maybeSingle();
+      .select('id, imei, email, owner_name')
+      .order('id', { ascending: true });
 
-    if (reportError || !reportData) {
+    if (reportError || !allReports || allReports.length === 0) {
       return res.status(404).json({ error: 'لم يتم العثور على الهاتف في البلاغات' });
     }
 
+    const normalizedIncoming = imei.replace(/\D/g, '');
+    let reportData = null;
+    for (const r of allReports) {
+      let decrypted = null;
+      try {
+        decrypted = decryptField(r.imei);
+      } catch (e) {}
+      if (decrypted && decrypted.replace(/\D/g, '') === normalizedIncoming) {
+        reportData = r;
+        break;
+      }
+    }
+
+    if (!reportData) {
+      return res.status(404).json({ error: 'لم يتم العثور على الهاتف في البلاغات' });
+    }
+
+    const decryptedOwnerName = (() => {
+      if (!reportData.owner_name) return undefined;
+      try {
+        return decryptField(reportData.owner_name) || reportData.owner_name;
+      } catch (e) {
+        console.error('فشل فك تشفير owner_name:', e);
+        return reportData.owner_name;
+      }
+    })();
+
+    const decryptedOwnerEmail = (() => {
+      if (!reportData.email) return undefined;
+      try {
+        return decryptField(reportData.email) || reportData.email;
+      } catch (e) {
+        console.error('فشل فك تشفير email:', e);
+        return reportData.email;
+      }
+    })();
+
+    const decryptedImei = (() => {
+      if (!reportData.imei) return undefined;
+      try {
+        return decryptField(reportData.imei) || reportData.imei;
+      } catch (e) {
+        console.error('فشل فك تشفير IMEI:', e);
+        return reportData.imei;
+      }
+    })();
+
     // إرسال البريد الإلكتروني
-    if (reportData.email) {
-      const cleanEmail = reportData.email.trim();
+    if (decryptedOwnerEmail) {
+      const cleanEmail = decryptedOwnerEmail.trim();
       console.log('إرسال بريد إلكتروني إلى:', cleanEmail);
 
       await resend.emails.send({
         from: 'onboarding@resend.dev',
         to: cleanEmail,
         subject: 'تم العثور على هاتفك!',
-        html: `<p>عزيزي ${ownerName || reportData.owner_name || ''},</p>
-          <p>تم العثور على هاتفك المفقود (IMEI: ${reportData.imei || ''}).</p>
+        html: `<p>عزيزي ${ownerName || decryptedOwnerName || reportData.owner_name || ''},</p>
+          <p>تم العثور على هاتفك المفقود (IMEI: ${decryptedImei || reportData.imei || ''}).</p>
           <p>يرجى التواصل مع الشخص الذي وجد الهاتف على الرقم: <b>${finderPhone}</b> لاستلام هاتفك.</p>
           <p>نتمنى لك يوماً سعيداً!</p>`
       });
