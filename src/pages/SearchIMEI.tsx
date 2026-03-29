@@ -196,12 +196,38 @@ const WelcomeSearch: React.FC = () => {
             throw new Error('فشل في العثور على البريد الإلكتروني الخاص بهذا الهاتف');
           }
 
+          let imeiForNotification = phoneId || '';
+          try {
+            if (imeiForNotification && /\D/.test(imeiForNotification)) {
+              const { decryptIMEI } = await import('@/lib/imeiCrypto');
+              const decryptedCandidate = decryptIMEI(imeiForNotification);
+              if (/^\d{14,16}$/.test(decryptedCandidate)) {
+                imeiForNotification = decryptedCandidate;
+              }
+            }
+          } catch (e) {
+            // تجاهل أي خطأ في فك التشفير واستخدم القيمة كما هي
+          }
+
+          let finderPhoneForNotification = finderPhone;
+          try {
+            if (finderPhoneForNotification && /\D/.test(finderPhoneForNotification)) {
+              const { decryptIMEI } = await import('@/lib/imeiCrypto');
+              const decryptedCandidate = decryptIMEI(finderPhoneForNotification);
+              if (/^[+\d]{6,}$/.test(decryptedCandidate)) {
+                finderPhoneForNotification = decryptedCandidate;
+              }
+            }
+          } catch (e) {
+            // تجاهل أي خطأ في فك التشفير واستخدم القيمة كما هي
+          }
+
           const notificationPayload = {
             title: 'تم العثور على هاتفك!',
             body: `مبروك! تم العثور على هاتفك. للتواصل مع الشخص الذي وجده، يرجى الاتصال على الرقم: ${finderPhone}.`,
             user_id: user.id,
-            finder_phone: finderPhone,
-            imei: phoneId,
+            finder_phone: finderPhoneForNotification,
+            imei: imeiForNotification,
             email: ownerEmailForNotification,
             notification_type: 'phone_found',
             is_read: false,
