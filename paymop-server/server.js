@@ -1462,17 +1462,53 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
 
     // ⭐ 3. إرسال الإشعار والبريد الإلكتروني بعد التحديث الناجح
 
+    let finderPhoneFromDb = encryptedFinderPhone;
+    try {
+      const { data: refreshedReport, error: refreshError } = await supabase
+        .from('phone_reports')
+        .select('finder_phone')
+        .eq('id', foundReport.id)
+        .single();
+      if (refreshError) {
+        console.error('فشل جلب finder_phone بعد التحديث:', refreshError);
+      } else {
+        finderPhoneFromDb = refreshedReport?.finder_phone ?? finderPhoneFromDb;
+      }
+    } catch (e) {
+      console.error('خطأ أثناء جلب finder_phone بعد التحديث:', e);
+    }
+
+    const decryptedFinderPhone = (() => {
+      if (!finderPhoneFromDb) return finderPhone;
+      try {
+        return decryptField(finderPhoneFromDb) || finderPhone;
+      } catch (e) {
+        console.error('فشل فك تشفير finder_phone:', e);
+        return finderPhone;
+      }
+    })();
+
+    const decryptedImei = (() => {
+      if (!foundReport.imei) return undefined;
+      try {
+        return decryptField(foundReport.imei) || foundReport.imei;
+      } catch (e) {
+        console.error('فشل فك تشفير IMEI:', e);
+        return foundReport.imei;
+      }
+    })();
+
     if (foundReport.fcm_token) {
       console.log(`Found FCM token, sending push notification to: ${foundReport.fcm_token}`);
       try {
-        const notificationBody = `مبروك! تم العثور على هاتفك. للتواصل مع الشخص الذي وجده، يرجى الاتصال على الرقم: ${finderPhone}.`;
+        const notificationBody = `مبروك! تم العثور على هاتفك. للتواصل مع الشخص الذي وجده، يرجى الاتصال على الرقم: ${decryptedFinderPhone}.`;
         await sendFCMNotificationV1({
           token: foundReport.fcm_token,
           title: 'تم العثور على هاتفك!',
           body: notificationBody,
           data: {
             type: 'phone_found',
-            imei: foundReport.imei
+            imei: decryptedImei || foundReport.imei
           }
         });
         console.log('Push notification sent successfully.');
