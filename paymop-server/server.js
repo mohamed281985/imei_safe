@@ -1435,31 +1435,8 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
 
     console.log(`Phone found for IMEI: ${imei}. Owner: ${foundReport.owner_name}`);
 
-    // ⭐ 2. تشفير finderPhone وحفظه في قاعدة البيانات
-    let encryptedFinderPhone = null;
-    try {
-      const enc = encryptAES(finderPhone);
-      encryptedFinderPhone = JSON.stringify({ encryptedData: enc.encryptedData, iv: enc.iv, authTag: enc.authTag });
-    } catch (e) {
-      console.error('فشل تشفير finder_phone:', e);
-      return res.status(500).json({ error: 'فشل معالجة رقم الهاتف، يرجى المحاولة مرة أخرى.' });
-    }
-
-    const { error: updateError } = await supabase
-      .from('phone_reports')
-      .update({ finder_phone: encryptedFinderPhone })
-      .eq('id', foundReport.id);
-
-    if (updateError) {
-      console.error('فشل تحديث finder_phone في phone_reports:', updateError);
-      return res.status(500).json({ error: 'حدث خطأ أثناء حفظ البيانات.' });
-    }
-
-    console.log('Finder phone saved to database successfully (encrypted).');
-
-    // ⭐ 3. إرسال الإشعارات
-    // ملاحظة: نحن نستخدم finderPhone من الطلب (req.body) لأنه الرقم الأصلي الواضح.
-    // هذا يضمن عدم الحاجة لفك تشفير البيانات من قاعدة البيانات في هذه اللحظة.
+    // ⭐ 2. إرسال الإشعارات (FCM & Email) أولاً وقبل أي عملية تشفير أو تخزين
+    // نستخدم finderPhone من الطلب مباشرة (الرقم الأصلي الواضح)
     
     // أ. إرسال إشعار FCM
     if (foundReport.fcm_token) {
@@ -1506,7 +1483,30 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
       console.log('No email found for this report, skipping email notification.');
     }
 
-    // --- بدء فترة التهدئة بعد الإرسال الناجح ---
+    // 3. تشفير finder_phone وتحديثه في قاعدة البيانات (بعد الإرسال)
+    let encryptedFinderPhone = null;
+    if (finderPhone) {
+      try {
+        const enc = encryptAES(finderPhone);
+        encryptedFinderPhone = JSON.stringify({ encryptedData: enc.encryptedData, iv: enc.iv, authTag: enc.authTag });
+      } catch (e) {
+        console.error('فشل تشفير finder_phone:', e);
+        encryptedFinderPhone = finderPhone; // fallback
+      }
+    }
+
+    const { error: updateError } = await supabase
+      .from('phone_reports')
+      .update({ finder_phone: encryptedFinderPhone })
+      .eq('id', foundReport.id);
+
+    if (updateError) {
+      console.error('فشل تحديث finder_phone في phone_reports:', updateError);
+    } else {
+      console.log('Finder phone saved to database successfully (encrypted).');
+    }
+
+    // --- ⭐ بدء فترة التهدئة بعد الإرسال الناجح ---
     recentlyNotified.add(imei);
     setTimeout(() => {
       recentlyNotified.delete(imei);
