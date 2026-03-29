@@ -206,6 +206,31 @@ if (!PRIVATE_KEY) {
     keyFile: SERVICE_ACCOUNT_FILE,
     scopes: ['https://www.googleapis.com/auth/firebase.messaging'],
   });
+} else {
+  console.log('استخدام متغيرات البيئة للـ Firebase');
+  // ⭐ إضافة تحقق للتأكد من وجود المفاتيح المطلوبة
+  if (!CLIENT_EMAIL || !PRIVATE_KEY) {
+    console.error("❌ خطأ: متغيرات البيئة FIREBASE_CLIENT_EMAIL أو FIREBASE_PRIVATE_KEY غير موجودة.");
+    process.exit(1); // إيقاف الخادم إذا كانت المتغيرات ناقصة
+  }
+  auth = new google.auth.GoogleAuth({
+    credentials: {
+      type: "service_account",
+      project_id: PROJECT_ID,
+      client_email: CLIENT_EMAIL,
+      private_key: PRIVATE_KEY.replace(/\\n/g, '\n'),
+    },
+    scopes: ['https://www.googleapis.com/auth/firebase.messaging'],
+  });
+}
+
+// --- تهيئة Resend ---
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+const app = express();
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
 app.post('/api/get-owner-email-by-imei', verifyJwtToken, async (req, res) => {
   try {
     const { imei } = req.body;
@@ -250,30 +275,6 @@ app.post('/api/get-owner-email-by-imei', verifyJwtToken, async (req, res) => {
     res.status(500).json({ error: 'خطأ في الخادم' });
   }
 });
-} else {
-  console.log('استخدام متغيرات البيئة للـ Firebase');
-  // ⭐ إضافة تحقق للتأكد من وجود المفاتيح المطلوبة
-  if (!CLIENT_EMAIL || !PRIVATE_KEY) {
-    console.error("❌ خطأ: متغيرات البيئة FIREBASE_CLIENT_EMAIL أو FIREBASE_PRIVATE_KEY غير موجودة.");
-    process.exit(1); // إيقاف الخادم إذا كانت المتغيرات ناقصة
-  }
-  auth = new google.auth.GoogleAuth({
-    credentials: {
-      type: "service_account",
-      project_id: PROJECT_ID,
-      client_email: CLIENT_EMAIL,
-      private_key: PRIVATE_KEY.replace(/\\n/g, '\n'),
-    },
-    scopes: ['https://www.googleapis.com/auth/firebase.messaging'],
-  });
-}
-
-// --- تهيئة Resend ---
-const resend = new Resend(process.env.RESEND_API_KEY);
-
-const app = express();
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // If behind a proxy (Render, Heroku, etc.) trust proxy headers so req.secure and x-forwarded-proto work
 app.set('trust proxy', true);
