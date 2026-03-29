@@ -1466,14 +1466,13 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
       console.log(`Found FCM token, sending push notification to: ${foundReport.fcm_token}`);
       try {
         const notificationBody = `مبروك! تم العثور على هاتفك. للتواصل مع الشخص الذي وجده، يرجى الاتصال على الرقم: ${finderPhone}.`;
-        const decryptedReportImei = decryptField(foundReport.imei) || foundReport.imei;
         await sendFCMNotificationV1({
           token: foundReport.fcm_token,
           title: 'تم العثور على هاتفك!',
           body: notificationBody,
           data: {
             type: 'phone_found',
-            imei: decryptedReportImei
+            imei: foundReport.imei
           }
         });
         console.log('Push notification sent successfully.');
@@ -3809,79 +3808,12 @@ app.post('/api/report-details-decrypted', verifyJwtToken, async (req, res) => {
       report_date: report.report_date || null,
       status: report.status || null,
       receipt_image_url: report.receipt_image_url || null,
-      finder_phone: decryptField(report.finder_phone) || report.finder_phone || null
+      finder_phone: report.finder_phone || null
     };
 
     return res.json({ success: true, ...decrypted, data: decrypted });
   } catch (err) {
     console.error('Error in /api/report-details-decrypted:', err);
-    return res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// نقطة نهاية لجلب بيانات صفحة العثور على الهاتف (تفكيك IMEI و finder_phone)
-app.post('/api/phone-found-details', verifyJwtToken, async (req, res) => {
-  try {
-    const { imei } = req.body;
-
-    if (!imei) {
-      return res.status(400).json({ error: 'imei is required' });
-    }
-
-    let incomingImei = imei;
-    let normalizedIncoming = imei.replace(/\D/g, '');
-
-    // إذا كان IMEI القادم مشفّرًا، حاول فكّه
-    if (!normalizedIncoming || normalizedIncoming.length < 10) {
-      try {
-        const decryptedIncoming = decryptField(imei);
-        if (decryptedIncoming) {
-          incomingImei = decryptedIncoming;
-          normalizedIncoming = decryptedIncoming.replace(/\D/g, '');
-        }
-      } catch (e) {}
-    }
-
-    const { data: allReports, error: reportError } = await supabase
-      .from('phone_reports')
-      .select('id, imei, finder_phone, user_id')
-      .order('id', { ascending: true });
-
-    if (reportError || !allReports || allReports.length === 0) {
-      console.error('No phone_reports found. Error:', reportError);
-      return res.status(404).json({ error: 'لم يتم العثور على الهاتف في البلاغات' });
-    }
-
-    let foundReport = null;
-    for (const r of allReports) {
-      let decrypted = null;
-      try {
-        decrypted = decryptField(r.imei);
-      } catch (e) {}
-      if (decrypted && decrypted.replace(/\D/g, '') === normalizedIncoming) {
-        foundReport = r;
-        break;
-      }
-    }
-
-    if (!foundReport) {
-      return res.status(404).json({ error: 'لم يتم العثور على الهاتف في البلاغات' });
-    }
-
-    if (req.user.id !== foundReport.user_id) {
-      return res.status(403).json({ error: 'Forbidden: only owner can view details' });
-    }
-
-    const decryptedImei = decryptField(foundReport.imei) || foundReport.imei || incomingImei || null;
-    const decryptedFinderPhone = decryptField(foundReport.finder_phone) || foundReport.finder_phone || null;
-
-    return res.json({
-      success: true,
-      imei: decryptedImei,
-      finder_phone: decryptedFinderPhone
-    });
-  } catch (err) {
-    console.error('Error in /api/phone-found-details:', err);
     return res.status(500).json({ error: 'Server error' });
   }
 });
