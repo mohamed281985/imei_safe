@@ -2750,6 +2750,92 @@ const verifyJwtToken = async (req, res, next) => {
   }
 };
 
+app.get('/api/get-contact-info', verifyJwtToken, async (req, res) => {
+  try {
+    const phoneId = String(req.query.phoneId || '').trim();
+    if (!phoneId) {
+      return res.status(400).json({ error: 'phoneId is required' });
+    }
+
+    const { data: allReports, error: reportError } = await supabase
+      .from('phone_reports')
+      .select('id, imei, email, owner_name, finder_phone')
+      .order('id', { ascending: true });
+
+    if (reportError || !allReports || allReports.length === 0) {
+      console.error('No phone_reports found. Error:', reportError);
+      return res.status(404).json({ error: 'لم يتم العثور على الهاتف في البلاغات', phoneId });
+    }
+
+    const normalizedIncoming = phoneId.replace(/\D/g, '');
+    let foundReport = null;
+    for (const r of allReports) {
+      let decrypted = null;
+      try {
+        decrypted = decryptField(r.imei);
+      } catch (e) {}
+      if (decrypted && decrypted.replace(/\D/g, '') === normalizedIncoming) {
+        foundReport = r;
+        break;
+      }
+    }
+
+    if (!foundReport) {
+      return res.status(404).json({ error: 'لم يتم العثور على الهاتف في البلاغات' });
+    }
+
+    const decryptedPhone = (() => {
+      if (!foundReport.finder_phone) return null;
+      try {
+        return decryptField(foundReport.finder_phone) || foundReport.finder_phone;
+      } catch (e) {
+        console.error('فشل فك تشفير finder_phone:', e);
+        return foundReport.finder_phone;
+      }
+    })();
+
+    const decryptedEmail = (() => {
+      if (!foundReport.email) return null;
+      try {
+        return decryptField(foundReport.email) || foundReport.email;
+      } catch (e) {
+        console.error('فشل فك تشفير email:', e);
+        return foundReport.email;
+      }
+    })();
+
+    const decryptedOwnerName = (() => {
+      if (!foundReport.owner_name) return null;
+      try {
+        return decryptField(foundReport.owner_name) || foundReport.owner_name;
+      } catch (e) {
+        console.error('فشل فك تشفير owner_name:', e);
+        return foundReport.owner_name;
+      }
+    })();
+
+    const decryptedImei = (() => {
+      if (!foundReport.imei) return null;
+      try {
+        return decryptField(foundReport.imei) || foundReport.imei;
+      } catch (e) {
+        console.error('فشل فك تشفير IMEI:', e);
+        return foundReport.imei;
+      }
+    })();
+
+    return res.json({
+      phone: decryptedPhone,
+      email: decryptedEmail,
+      owner_name: decryptedOwnerName,
+      imei: decryptedImei
+    });
+  } catch (err) {
+    console.error('خطأ في جلب بيانات التواصل:', err);
+    return res.status(500).json({ error: 'خطأ في الخادم' });
+  }
+});
+
 app.post('/api/get-owner-email-by-imei', verifyJwtToken, async (req, res) => {
   try {
     const { imei } = req.body;
@@ -3909,7 +3995,7 @@ app.post('/api/report-details-decrypted', verifyJwtToken, async (req, res) => {
       report_date: report.report_date || null,
       status: report.status || null,
       receipt_image_url: report.receipt_image_url || null,
-      finder_phone: report.finder_phone || null
+      finder_phone: decryptField(report.finder_phone) || report.finder_phone || null
     };
 
     return res.json({ success: true, ...decrypted, data: decrypted });

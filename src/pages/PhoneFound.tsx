@@ -53,27 +53,24 @@ const PhoneFound: React.FC = () => {
 
         console.log('جلب بيانات الهاتف باستخدام رقم IMEI:', imeiToUse);
         
-        // جلب بيانات الهاتف من قاعدة البيانات باستخدام رقم IMEI
-        const { data, error: fetchError } = await supabase
-          .from('phone_reports')
-          .select('finder_phone')
-          .eq('imei', imeiToUse)
-          .single();
-          
-        console.log('رد قاعدة البيانات:', data, fetchError);
-        
-        if (fetchError) {
-          console.error('خطأ في قاعدة البيانات:', fetchError);
-          setError('حدث خطأ في جلب بيانات الهاتف: ' + fetchError.message);
-          setFinderPhone(null);
-        } else if (!data) {
-          console.error('لم يتم العثور على بيانات الهاتف');
-          setError('لم يتم العثور على بيانات الهاتف المبلغ عنه.');
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        const response = await fetch(`https://imei-safe.me/api/get-contact-info?phoneId=${encodeURIComponent(imeiToUse)}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        const result = await response.json();
+
+        console.log('رد السيرفر:', result);
+
+        if (!response.ok) {
+          setError(result?.error || 'حدث خطأ في جلب بيانات الهاتف');
           setFinderPhone(null);
         } else {
-          setImei(imeiToUse);
-          setFinderPhone(data.finder_phone);
-          console.log('تم تعيين بيانات الهاتف من قاعدة البيانات:', { imei: imeiToUse, finderPhone: data.finder_phone });
+          setImei(result?.imei || imeiToUse);
+          setFinderPhone(result?.phone || null);
+          console.log('تم تعيين بيانات الهاتف من السيرفر:', { imei: result?.imei || imeiToUse, finderPhone: result?.phone });
         }
       } catch (err) {
         console.error('خطأ في جلب بيانات الهاتف:', err);
