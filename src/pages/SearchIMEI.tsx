@@ -143,7 +143,7 @@ const WelcomeSearch: React.FC = () => {
         throw new Error(error || 'فشل في الحصول على رقم هاتف الواجد.');
       }
 
-      // تشفير رقم الهاتف للتخزين فقط
+      // تشفير رقم الهاتف قبل الإرسال
       let encryptedFinderPhone = finderPhone;
       try {
         const { encryptIMEI } = await import('@/lib/imeiCrypto');

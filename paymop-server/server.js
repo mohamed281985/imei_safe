@@ -1381,7 +1381,7 @@ if (!PAYMOB_API_KEY || !INTEGRATION_ID || !IFRAME_ID || !HMAC_SECRET) {
   process.exit(1); // إيقاف السيرفر إذا كانت المتغيرات ناقصة
 }
 
-// نقطة نهاية لتحديث رقم هاتف الواجد وإرسال الإشعارات
+// إرسال بريد إلكتروني للمالك عند العثور على الهاتف
 app.post('/api/update-finder-phone-by-imei', async (req, res) => {
   console.log('POST request received at /api/update-finder-phone-by-imei');
   const { imei, ownerName, finderPhone } = req.body;
@@ -1395,14 +1395,16 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
   // مجموعة لتتبع الإشعارات المرسلة مؤخرًا لمنع التكرار
   const recentlyNotified = new Set();
 
-  // --- التحقق من فترة التهدئة (Cooldown) ---
+  // --- ⭐ التحقق من فترة التهدئة (Cooldown) ---
+  // إذا تم إرسال إشعار لهذا الـ IMEI مؤخرًا، تجاهل الطلب الحالي.
   if (recentlyNotified.has(imei)) {
     console.log(`[Cooldown] Blocked duplicate notification request for IMEI: ${imei}`);
+    // أرسل ردًا ناجحًا لتجنب ظهور خطأ في الواجهة الأمامية
     return res.json({ ok: true, message: 'Notification already sent recently.' });
   }
 
   try {
-    // 1. البحث عن الهاتف للحصول على معلومات المالك
+    // 1. البحث عن الهاتف للحصول على معلومات المالك (بريد، اسم، وتوكن الإشعارات، ومعرف الواجد)
     console.log(`Searching for phone with IMEI: ${imei}`);
     const { data: allReports, error: reportError } = await supabase
       .from('phone_reports')
@@ -1435,10 +1437,31 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
 
     console.log(`Phone found for IMEI: ${imei}. Owner: ${foundReport.owner_name}`);
 
-    // ⭐ 2. إرسال الإشعارات (FCM & Email) أولاً وقبل أي عملية تشفير أو تخزين
-    // نستخدم finderPhone من الطلب مباشرة (الرقم الأصلي الواضح)
-    
-    // أ. إرسال إشعار FCM
+    // 2. تشفير finder_phone قبل الحفظ
+    let encryptedFinderPhone = null;
+    if (finderPhone) {
+      try {
+        const enc = encryptAES(finderPhone);
+        encryptedFinderPhone = JSON.stringify({ encryptedData: enc.encryptedData, iv: enc.iv, authTag: enc.authTag });
+      } catch (e) {
+        console.error('فشل تشفير finder_phone:', e);
+        encryptedFinderPhone = finderPhone; // fallback: حفظ الرقم كما هو
+      }
+    }
+    const { error: updateError } = await supabase
+      .from('phone_reports')
+      .update({ finder_phone: encryptedFinderPhone })
+      .eq('id', foundReport.id);
+
+    if (updateError) {
+      console.error('فشل تحديث finder_phone في phone_reports:', updateError);
+      // لا توقف العملية، فقط سجل الخطأ
+    } else {
+      console.log('Finder phone saved to database successfully');
+    }
+
+    // ⭐ 3. إرسال الإشعار والبريد الإلكتروني بعد التحديث الناجح
+
     if (foundReport.fcm_token) {
       console.log(`Found FCM token, sending push notification to: ${foundReport.fcm_token}`);
       try {
@@ -1454,59 +1477,39 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
         });
         console.log('Push notification sent successfully.');
       } catch (fcmError) {
+        // لا توقف العملية كلها إذا فشل الإشعار، فقط سجل الخطأ
         console.error('Failed to send FCM notification:', fcmError);
       }
     } else {
       console.log('No FCM token found for this report, skipping push notification.');
     }
 
-    // ب. إرسال البريد الإلكتروني
+    // 4. إرسال البريد الإلكتروني (كما كان)
     if (foundReport.email) {
       const cleanEmail = foundReport.email.trim();
       console.log('إرسال بريد إلكتروني إلى:', cleanEmail);
 
-      try {
-        await resend.emails.send({
-          from: 'onboarding@resend.dev',
-          to: cleanEmail,
-          subject: 'تهانينا! تم العثور على هاتفك المفقود',
-          html: `<p>عزيزي ${ownerName || foundReport.owner_name || ''},</p>
-            <p>مبروك! تم العثور على هاتفك المفقود (IMEI: ${foundReport.imei || ''}).</p>
-            <p>يرجى التواصل مع الشخص الذي وجد الهاتف على الرقم: <b>${finderPhone}</b> لاستلام هاتفك.</p>
-            <p>نتمنى لك يوماً سعيداً!</p>`
-        });
-        console.log('Email sent successfully.');
-      } catch (emailError) {
-        console.error('Failed to send email:', emailError);
-      }
+      await resend.emails.send({
+        from: 'onboarding@resend.dev',
+        to: cleanEmail,
+        subject: 'تهانينا! تم العثور على هاتفك المفقود',
+        html: `<p>عزيزي ${ownerName || foundReport.owner_name || ''},</p>
+          <p>مبروك! تم العثور على هاتفك المفقود (IMEI: ${foundReport.imei || ''}).</p>
+          <p>يرجى التواصل مع الشخص الذي وجد الهاتف على الرقم: <b>${finderPhone}</b> لاستلام هاتفك.</p>
+          <p>نتمنى لك يوماً سعيداً!</p>`
+      });
+      console.log('Email sent successfully.');
     } else {
       console.log('No email found for this report, skipping email notification.');
     }
 
-    // 3. تشفير finder_phone وتحديثه في قاعدة البيانات (بعد الإرسال)
-    let encryptedFinderPhone = null;
-    if (finderPhone) {
-      try {
-        const enc = encryptAES(finderPhone);
-        encryptedFinderPhone = JSON.stringify({ encryptedData: enc.encryptedData, iv: enc.iv, authTag: enc.authTag });
-      } catch (e) {
-        console.error('فشل تشفير finder_phone:', e);
-        encryptedFinderPhone = finderPhone; // fallback
-      }
-    }
-
-    const { error: updateError } = await supabase
-      .from('phone_reports')
-      .update({ finder_phone: encryptedFinderPhone })
-      .eq('id', foundReport.id);
-
-    if (updateError) {
-      console.error('فشل تحديث finder_phone في phone_reports:', updateError);
-    } else {
-      console.log('Finder phone saved to database successfully (encrypted).');
+    // إذا لم يكن هناك بريد إلكتروني أو توكن، قد يكون هناك مشكلة
+    if (!foundReport.fcm_token && !foundReport.email) {
+      return res.status(400).json({ error: 'لم يتم العثور على بريد إلكتروني أو توكن إشعارات مسجل لهذا الهاتف' });
     }
 
     // --- ⭐ بدء فترة التهدئة بعد الإرسال الناجح ---
+    // أضف الـ IMEI إلى المجموعة وقم بإزالته بعد 30 ثانية.
     recentlyNotified.add(imei);
     setTimeout(() => {
       recentlyNotified.delete(imei);
@@ -1514,7 +1517,7 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
 
     res.json({ success: true, message: 'Notifications sent.' });
   } catch (err) {
-    console.error('خطأ عام في إرسال الإشعارات:', err);
+    console.error('خطأ في إرسال الإشعارات:', err);
     res.status(500).json({ error: 'خطأ في إرسال الإشعارات' });
   }
 });
