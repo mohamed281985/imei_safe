@@ -206,6 +206,50 @@ if (!PRIVATE_KEY) {
     keyFile: SERVICE_ACCOUNT_FILE,
     scopes: ['https://www.googleapis.com/auth/firebase.messaging'],
   });
+app.post('/api/get-owner-email-by-imei', verifyJwtToken, async (req, res) => {
+  try {
+    const { imei } = req.body;
+
+    if (!imei) {
+      return res.status(400).json({ error: 'IMEI is required' });
+    }
+
+    const { data: allReports, error: reportError } = await supabase
+      .from('phone_reports')
+      .select('id, imei, email, owner_name')
+      .order('id', { ascending: true });
+
+    if (reportError || !allReports || allReports.length === 0) {
+      console.error('No phone_reports found. Error:', reportError);
+      return res.status(404).json({ error: 'لم يتم العثور على الهاتف في البلاغات', imei });
+    }
+
+    const normalizedIncoming = imei.replace(/\D/g, '');
+    let foundReport = null;
+    for (const r of allReports) {
+      let decrypted = null;
+      try {
+        decrypted = decryptField(r.imei);
+      } catch (e) {}
+      if (decrypted && decrypted.replace(/\D/g, '') === normalizedIncoming) {
+        foundReport = r;
+        break;
+      }
+    }
+
+    if (!foundReport || !foundReport.email) {
+      return res.status(404).json({ error: 'لم يتم العثور على البريد الإلكتروني لهذا الهاتف' });
+    }
+
+    return res.json({
+      email: foundReport.email,
+      owner_name: foundReport.owner_name || null
+    });
+  } catch (err) {
+    console.error('خطأ في جلب بريد المالك:', err);
+    res.status(500).json({ error: 'خطأ في الخادم' });
+  }
+});
 } else {
   console.log('استخدام متغيرات البيئة للـ Firebase');
   // ⭐ إضافة تحقق للتأكد من وجود المفاتيح المطلوبة

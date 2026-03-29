@@ -24,17 +24,7 @@ export const createNotification = async (payload: NotificationPayload) => {
       throw new Error('Email is required');
     }
 
-    // التحقق من وجود سجل في phone_reports يتطابق مع الـ IMEI
-    if (payload.imei) {
-      const { count: phoneReportCount } = await supabase
-        .from('phone_reports')
-        .select('*', { count: 'exact', head: true })
-        .eq('imei', payload.imei);
-
-      if (!phoneReportCount || phoneReportCount === 0) {
-        throw new Error('لا يوجد سجل للهاتف بهذا الـ IMEI في قاعدة البيانات. يجب تسجيل الهاتف أولاً.');
-      }
-    }
+    // تم إيقاف التحقق من IMEI هنا لأن العمود مشفر ولا يمكن مطابقته من الواجهة
 
     // إضافة رقم الايمي إلى العنوان إذا كان موجوداً
     let titleWithImei = payload.title;
