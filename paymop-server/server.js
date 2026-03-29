@@ -1551,7 +1551,7 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
         subject: 'تهانينا! تم العثور على هاتفك المفقود',
         html: `<p>عزيزي ${ownerName || decryptedOwnerName || foundReport.owner_name || ''},</p>
           <p>مبروك! تم العثور على هاتفك المفقود (IMEI: ${decryptedImei || foundReport.imei || ''}).</p>
-          <p>يرجى التواصل مع الشخص الذي وجد الهاتف على الرقم: <b>${finderPhone}</b> لاستلام هاتفك.</p>
+          <p>يرجى التواصل مع الشخص الذي وجد الهاتف على الرقم: <b>${decryptedFinderPhone}</b> لاستلام هاتفك.</p>
           <p>نتمنى لك يوماً سعيداً!</p>`
       });
       console.log('Email sent successfully.');
