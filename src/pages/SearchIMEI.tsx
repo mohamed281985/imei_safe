@@ -176,15 +176,21 @@ const WelcomeSearch: React.FC = () => {
           // جلب email لصاحب الهاتف من phone_reports باستخدام imei
           let ownerEmailForNotification = null;
           try {
-            const { data: phoneReport, error: reportError } = await supabase
-              .from('phone_reports')
-              .select('email')
-              .eq('imei', phoneId)
-              .single();
-            if (reportError || !phoneReport) {
-              throw new Error('لم يتم العثور على سجل للهاتف في قاعدة البيانات');
+            const { data: { session } } = await supabase.auth.getSession();
+            const token = session?.access_token;
+            const response = await fetch('https://imei-safe.me/api/get-owner-email-by-imei', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({ imei: phoneId })
+            });
+            const result = await response.json();
+            if (!response.ok || !result?.email) {
+              throw new Error(result?.error || 'لم يتم العثور على سجل للهاتف في قاعدة البيانات');
             }
-            ownerEmailForNotification = phoneReport.email;
+            ownerEmailForNotification = result.email;
           } catch (err) {
             console.debug('Error finding email for notification:', err);
             throw new Error('فشل في العثور على البريد الإلكتروني الخاص بهذا الهاتف');
