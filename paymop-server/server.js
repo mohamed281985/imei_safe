@@ -1466,13 +1466,14 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
       console.log(`Found FCM token, sending push notification to: ${foundReport.fcm_token}`);
       try {
         const notificationBody = `مبروك! تم العثور على هاتفك. للتواصل مع الشخص الذي وجده، يرجى الاتصال على الرقم: ${finderPhone}.`;
+        const decryptedReportImei = decryptField(foundReport.imei) || foundReport.imei;
         await sendFCMNotificationV1({
           token: foundReport.fcm_token,
           title: 'تم العثور على هاتفك!',
           body: notificationBody,
           data: {
             type: 'phone_found',
-            imei: foundReport.imei
+            imei: decryptedReportImei
           }
         });
         console.log('Push notification sent successfully.');
@@ -3827,7 +3828,19 @@ app.post('/api/phone-found-details', verifyJwtToken, async (req, res) => {
       return res.status(400).json({ error: 'imei is required' });
     }
 
-    const normalizedIncoming = imei.replace(/\D/g, '');
+    let incomingImei = imei;
+    let normalizedIncoming = imei.replace(/\D/g, '');
+
+    // إذا كان IMEI القادم مشفّرًا، حاول فكّه
+    if (!normalizedIncoming || normalizedIncoming.length < 10) {
+      try {
+        const decryptedIncoming = decryptField(imei);
+        if (decryptedIncoming) {
+          incomingImei = decryptedIncoming;
+          normalizedIncoming = decryptedIncoming.replace(/\D/g, '');
+        }
+      } catch (e) {}
+    }
 
     const { data: allReports, error: reportError } = await supabase
       .from('phone_reports')
@@ -3859,7 +3872,7 @@ app.post('/api/phone-found-details', verifyJwtToken, async (req, res) => {
       return res.status(403).json({ error: 'Forbidden: only owner can view details' });
     }
 
-    const decryptedImei = decryptField(foundReport.imei) || foundReport.imei || null;
+    const decryptedImei = decryptField(foundReport.imei) || foundReport.imei || incomingImei || null;
     const decryptedFinderPhone = decryptField(foundReport.finder_phone) || foundReport.finder_phone || null;
 
     return res.json({
