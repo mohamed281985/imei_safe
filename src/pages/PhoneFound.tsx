@@ -10,8 +10,6 @@ import { FaWhatsapp } from 'react-icons/fa';
 import { Smartphone, PartyPopper, Home } from 'lucide-react';
 import '../styles/animations.css';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://imei-safe.me';
-
 const PhoneFound: React.FC = () => {
   const { t } = useLanguage();
   const navigate = useNavigate();
@@ -54,38 +52,28 @@ const PhoneFound: React.FC = () => {
         }
 
         console.log('جلب بيانات الهاتف باستخدام رقم IMEI:', imeiToUse);
-
-        const { data: sessionData } = await supabase.auth.getSession();
-        const accessToken = sessionData?.session?.access_token;
-
-        if (!accessToken) {
-          setError('يجب تسجيل الدخول لعرض بيانات الهاتف.');
+        
+        // جلب بيانات الهاتف من قاعدة البيانات باستخدام رقم IMEI
+        const { data, error: fetchError } = await supabase
+          .from('phone_reports')
+          .select('finder_phone')
+          .eq('imei', imeiToUse)
+          .single();
+          
+        console.log('رد قاعدة البيانات:', data, fetchError);
+        
+        if (fetchError) {
+          console.error('خطأ في قاعدة البيانات:', fetchError);
+          setError('حدث خطأ في جلب بيانات الهاتف: ' + fetchError.message);
           setFinderPhone(null);
-          return;
-        }
-
-        const response = await fetch(`${API_BASE_URL}/api/phone-found-details`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${accessToken}`
-          },
-          body: JSON.stringify({ imei: imeiToUse })
-        });
-
-        const result = await response.json();
-        console.log('رد الخادم:', result);
-
-        if (!response.ok) {
-          const message = result?.error || 'حدث خطأ في جلب بيانات الهاتف.';
-          setError(message);
+        } else if (!data) {
+          console.error('لم يتم العثور على بيانات الهاتف');
+          setError('لم يتم العثور على بيانات الهاتف المبلغ عنه.');
           setFinderPhone(null);
         } else {
-          const imeiValue = result?.imei || imeiToUse || null;
-          const finderPhoneValue = result?.finder_phone || null;
-          setImei(imeiValue);
-          setFinderPhone(finderPhoneValue);
-          console.log('تم تعيين بيانات الهاتف من الخادم:', { imei: imeiValue, finderPhone: finderPhoneValue });
+          setImei(imeiToUse);
+          setFinderPhone(data.finder_phone);
+          console.log('تم تعيين بيانات الهاتف من قاعدة البيانات:', { imei: imeiToUse, finderPhone: data.finder_phone });
         }
       } catch (err) {
         console.error('خطأ في جلب بيانات الهاتف:', err);
