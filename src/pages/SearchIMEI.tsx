@@ -165,7 +165,6 @@ const WelcomeSearch: React.FC = () => {
         try {
           // جلب email لصاحب الهاتف من phone_reports باستخدام imei
           let ownerEmailForNotification = null;
-          let ownerLanguageForNotification: string | null = null;
           try {
             const { data: { session } } = await supabase.auth.getSession();
             const token = session?.access_token;
@@ -182,33 +181,10 @@ const WelcomeSearch: React.FC = () => {
               throw new Error(result?.error || 'لم يتم العثور على سجل للهاتف في قاعدة البيانات');
             }
             ownerEmailForNotification = result.email;
-            ownerLanguageForNotification = result.language || null;
           } catch (err) {
             console.debug('Error finding email for notification:', err);
             throw new Error('فشل في العثور على البريد الإلكتروني الخاص بهذا الهاتف');
           }
-
-          const normalizedLang = String(ownerLanguageForNotification || 'ar').toLowerCase();
-          const contentByLang = {
-            ar: {
-              title: 'تم العثور على هاتفك!',
-              body: `مبروك! تم العثور على هاتفك. للتواصل مع الشخص الذي وجده، يرجى الاتصال على الرقم: ${finderPhone}.`
-            },
-            en: {
-              title: 'Your phone was found!',
-              body: `Congratulations! Your phone was found. To contact the finder, please call: ${finderPhone}.`
-            },
-            fr: {
-              title: 'Votre téléphone a été retrouvé !',
-              body: `Félicitations ! Votre téléphone a été retrouvé. Pour contacter la personne qui l'a trouvé, appelez : ${finderPhone}.`
-            },
-            hi: {
-              title: 'आपका फोन मिल गया है!',
-              body: `बधाई हो! आपका फोन मिल गया है। खोजने वाले से संपर्क करने के लिए कॉल करें: ${finderPhone}.`
-            }
-          };
-
-          const localizedContent = contentByLang[normalizedLang] || contentByLang.ar;
 
           let imeiForNotification = phoneId || '';
           try {
@@ -224,8 +200,8 @@ const WelcomeSearch: React.FC = () => {
           }
 
           const notificationPayload = {
-            title: localizedContent.title,
-            body: localizedContent.body,
+            title: 'تم العثور على هاتفك!',
+            body: `مبروك! تم العثور على هاتفك. للتواصل مع الشخص الذي وجده، يرجى الاتصال على الرقم: ${finderPhone}.`,
             user_id: user.id,
             finder_phone: finderPhone,
             imei: imeiForNotification,

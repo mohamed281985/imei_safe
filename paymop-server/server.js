@@ -2929,47 +2929,9 @@ app.post('/api/get-owner-email-by-imei', verifyJwtToken, async (req, res) => {
       return res.status(404).json({ error: 'لم يتم العثور على البريد الإلكتروني لهذا الهاتف' });
     }
 
-    const decryptedOwnerEmail = (() => {
-      try {
-        return decryptField(foundReport.email) || foundReport.email;
-      } catch (e) {
-        console.error('فشل فك تشفير email:', e);
-        return foundReport.email;
-      }
-    })();
-
-    const decryptedOwnerName = (() => {
-      try {
-        return decryptField(foundReport.owner_name) || foundReport.owner_name;
-      } catch (e) {
-        console.error('فشل فك تشفير owner_name:', e);
-        return foundReport.owner_name;
-      }
-    })();
-
-    const ownerLanguage = await (async () => {
-      if (!decryptedOwnerEmail) return null;
-      try {
-        const { data, error } = await supabase
-          .from('users')
-          .select('language')
-          .ilike('email', decryptedOwnerEmail)
-          .maybeSingle();
-        if (error) {
-          console.error('فشل جلب لغة المستخدم:', error);
-          return null;
-        }
-        return data?.language || null;
-      } catch (e) {
-        console.error('خطأ أثناء جلب لغة المستخدم:', e);
-        return null;
-      }
-    })();
-
     return res.json({
-      email: decryptedOwnerEmail,
-      owner_name: decryptedOwnerName || null,
-      language: ownerLanguage
+      email: foundReport.email,
+      owner_name: foundReport.owner_name || null
     });
   } catch (err) {
     console.error('خطأ في جلب بريد المالك:', err);
