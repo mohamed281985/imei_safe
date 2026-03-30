@@ -198,8 +198,6 @@ export default {
   "enter_password_to_confirm": "Entrez le mot de passe pour confirmer",
   "notify_owner": "Notifier le propriétaire",
   "notification_sent": "Notification envoyée",
-  "notification_phone_found_title": "Votre téléphone a été retrouvé ! (IMEI : {{imei}})",
-  "notification_phone_found_body": "Félicitations ! Votre téléphone a été retrouvé. Pour contacter la personne qui l'a trouvé, appelez : {{phone}}.",
   "owner_notified_success": "Le propriétaire a été informé que vous avez trouvé son téléphone",
   "report_and_box_image": "Image du procès-verbal et de la boîte",
 
