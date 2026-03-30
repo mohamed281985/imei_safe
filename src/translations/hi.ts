@@ -190,8 +190,6 @@ export default {
   "enter_password_to_confirm": "पुष्ट करने के लिए पासवर्ड दर्ज करें",
   "notify_owner": "मालिक को सूचित करें",
   "notification_sent": "सूचना भेजी गई",
-  "notification_phone_found_title": "आपका फोन मिल गया है! (IMEI: {{imei}})",
-  "notification_phone_found_body": "बधाई हो! आपका फोन मिल गया है। खोजने वाले से संपर्क करने के लिए कॉल करें: {{phone}}.",
   "owner_notified_success": "मालिक को सूचित कर दिया गया है कि आपने उनका फ़ोन ढूंढ लिया है",
   "report_and_box_image": "रिपोर्ट और बॉक्स की छवि",
 

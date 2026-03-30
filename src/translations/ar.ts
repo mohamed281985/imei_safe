@@ -188,8 +188,6 @@ export default {
   "enter_password_to_confirm": "أدخل كلمة المرور للتأكيد",
   "notify_owner": "إبلاغ المالك بالعثور على الهاتف",
   "notification_sent": "تم إرسال الإشعار",
-  "notification_phone_found_title": "تم العثور على هاتفك! (IMEI: {{imei}})",
-  "notification_phone_found_body": "مبروك! تم العثور على هاتفك. للتواصل مع الشخص الذي وجده، يرجى الاتصال على الرقم: {{phone}}.",
   "owner_notified_success": "تم إبلاغ المالك بأنك وجدت هاتفه",
   "report_and_box_image": "صورة المحضر والعلبة",
   // Phone Details

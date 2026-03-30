@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { markNotificationAsRead, markAllNotificationsAsRead } from '../lib/notificationService';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { decryptIMEI, encryptIMEI } from '@/lib/imeiCrypto';
 
 interface Notification {
   id: string;
@@ -39,10 +40,11 @@ const NotificationBell: React.FC = () => {
 
     setLoading(true);
     try {
+      const encryptedEmail = encryptIMEI(user.email || '');
       const { data, error } = await supabase
         .from('notifications')
         .select('*')
-        .eq('email', user.email)
+        .eq('email', encryptedEmail)
         .eq('is_read', false)
         .order('created_at', { ascending: false });
 
@@ -82,8 +84,19 @@ const NotificationBell: React.FC = () => {
         refreshNotifications();
       }
 
+      const decodeImei = (value?: string) => {
+        if (!value) return '';
+        try {
+          const decoded = decryptIMEI(value);
+          if (/^\d{14,16}$/.test(decoded)) return decoded;
+        } catch (e) {
+          // ignore
+        }
+        return value;
+      };
+
       if (notification.notification_type === 'phone_found') {
-        const imei = notification.imei || (notification.metadata && notification.metadata.imei);
+        const imei = decodeImei(notification.imei || (notification.metadata && notification.metadata.imei));
         if (imei) {
           navigate(`/phone-found?imei=${encodeURIComponent(imei)}`);
           setShowNotifications(false);

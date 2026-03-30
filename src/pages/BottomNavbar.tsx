@@ -201,21 +201,6 @@ const BottomNavbar: React.FC<BottomNavbarProps> = ({ isVisible = true }) => {
     { id: 'profile-menu', icon: User, label: t('my_account'), side: 'right', action: () => setMenuOpen(prev => !prev) },
   ];
 
-  const getLocalizedNotificationText = (notification: Notification) => {
-    if (notification.notification_type !== 'phone_found') {
-      return { title: notification.title, body: notification.body };
-    }
-
-    const imei = notification.imei || (notification.metadata && notification.metadata.imei) || '';
-    const phoneMatch = (notification.body || '').match(/\+?\d{6,}/);
-    const phone = phoneMatch ? phoneMatch[0] : '';
-
-    return {
-      title: t('notification_phone_found_title', { imei: imei || '-' }),
-      body: t('notification_phone_found_body', { phone: phone || '-' })
-    };
-  };
-
   return (
     <div
       ref={navbarRef}
@@ -293,17 +278,10 @@ const BottomNavbar: React.FC<BottomNavbarProps> = ({ isVisible = true }) => {
                   >
                     <div className="flex justify-between items-start">
                       <div className="flex-1">
-                        {(() => {
-                          const localized = getLocalizedNotificationText(notification);
-                          return (
-                            <>
-                              <h4 className={cn("font-semibold mb-1", !notification.is_read ? "text-orange-400" : "text-orange-300")}>
-                                {localized.title}
-                              </h4>
-                              <p className="text-sm text-white font-medium leading-relaxed drop-shadow-md">{localized.body}</p>
-                            </>
-                          );
-                        })()}
+                        <h4 className={cn("font-semibold mb-1", !notification.is_read ? "text-orange-400" : "text-orange-300")}>
+                          {notification.title}
+                        </h4>
+                        <p className="text-sm text-white font-medium leading-relaxed drop-shadow-md">{notification.body}</p>
                         <div className="flex items-center mt-2 text-xs text-gray-500">
                           <Clock className="w-3 h-3 ml-1" />
                           <span>{new Date(notification.created_at).toLocaleString()}</span>

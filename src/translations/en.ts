@@ -187,8 +187,6 @@ export default {
   "enter_password_to_confirm": "Enter password to confirm",
   "notify_owner": "Notify Owner That Phone Was Found",
   "notification_sent": "Notification Sent",
-  "notification_phone_found_title": "Your phone was found! (IMEI: {{imei}})",
-  "notification_phone_found_body": "Congratulations! Your phone was found. To contact the finder, please call: {{phone}}.",
   "owner_notified_success": "Owner has been notified that you found their phone",
   "report_and_box_image": "Report and Box Image",
   // Phone Details
