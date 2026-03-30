@@ -143,16 +143,6 @@ const WelcomeSearch: React.FC = () => {
         throw new Error(error || 'فشل في الحصول على رقم هاتف الواجد.');
       }
 
-      // تشفير رقم الهاتف قبل الإرسال
-      let encryptedFinderPhone = finderPhone;
-      try {
-        const { encryptIMEI } = await import('@/lib/imeiCrypto');
-        encryptedFinderPhone = encryptIMEI(finderPhone);
-      } catch (e) {
-        // إذا فشل التشفير لأي سبب، استخدم الرقم كما هو
-        encryptedFinderPhone = finderPhone;
-      }
-
       // 2. تحديث جدول phone_reports بوضع رقم هاتف الواجد المشفر في عمود finder_phone باستخدام IMEI
       const updateResponse = await fetch('https://imei-safe.me/api/update-finder-phone-by-imei', {
         method: 'POST',
@@ -162,7 +152,7 @@ const WelcomeSearch: React.FC = () => {
         },
         body: JSON.stringify({
           imei: phoneId,
-          finderPhone: encryptedFinderPhone
+          finderPhone: finderPhone
         })
       });
       const updateResult = await updateResponse.json();
@@ -175,6 +165,7 @@ const WelcomeSearch: React.FC = () => {
         try {
           // جلب email لصاحب الهاتف من phone_reports باستخدام imei
           let ownerEmailForNotification = null;
+          let ownerLanguageForNotification: string | null = null;
           try {
             const { data: { session } } = await supabase.auth.getSession();
             const token = session?.access_token;
@@ -191,10 +182,33 @@ const WelcomeSearch: React.FC = () => {
               throw new Error(result?.error || 'لم يتم العثور على سجل للهاتف في قاعدة البيانات');
             }
             ownerEmailForNotification = result.email;
+            ownerLanguageForNotification = result.language || null;
           } catch (err) {
             console.debug('Error finding email for notification:', err);
             throw new Error('فشل في العثور على البريد الإلكتروني الخاص بهذا الهاتف');
           }
+
+          const normalizedLang = String(ownerLanguageForNotification || 'ar').toLowerCase();
+          const contentByLang = {
+            ar: {
+              title: 'تم العثور على هاتفك!',
+              body: `مبروك! تم العثور على هاتفك. للتواصل مع الشخص الذي وجده، يرجى الاتصال على الرقم: ${finderPhone}.`
+            },
+            en: {
+              title: 'Your phone was found!',
+              body: `Congratulations! Your phone was found. To contact the finder, please call: ${finderPhone}.`
+            },
+            fr: {
+              title: 'Votre téléphone a été retrouvé !',
+              body: `Félicitations ! Votre téléphone a été retrouvé. Pour contacter la personne qui l'a trouvé, appelez : ${finderPhone}.`
+            },
+            hi: {
+              title: 'आपका फोन मिल गया है!',
+              body: `बधाई हो! आपका फोन मिल गया है। खोजने वाले से संपर्क करने के लिए कॉल करें: ${finderPhone}.`
+            }
+          };
+
+          const localizedContent = contentByLang[normalizedLang] || contentByLang.ar;
 
           let imeiForNotification = phoneId || '';
           try {
@@ -209,24 +223,11 @@ const WelcomeSearch: React.FC = () => {
             // تجاهل أي خطأ في فك التشفير واستخدم القيمة كما هي
           }
 
-          let finderPhoneForNotification = finderPhone;
-          try {
-            if (finderPhoneForNotification && /\D/.test(finderPhoneForNotification)) {
-              const { decryptIMEI } = await import('@/lib/imeiCrypto');
-              const decryptedCandidate = decryptIMEI(finderPhoneForNotification);
-              if (/^[+\d]{6,}$/.test(decryptedCandidate)) {
-                finderPhoneForNotification = decryptedCandidate;
-              }
-            }
-          } catch (e) {
-            // تجاهل أي خطأ في فك التشفير واستخدم القيمة كما هي
-          }
-
           const notificationPayload = {
-            title: 'تم العثور على هاتفك!',
-            body: `مبروك! تم العثور على هاتفك. للتواصل مع الشخص الذي وجده، يرجى الاتصال على الرقم: ${finderPhone}.`,
+            title: localizedContent.title,
+            body: localizedContent.body,
             user_id: user.id,
-            finder_phone: finderPhoneForNotification,
+            finder_phone: finderPhone,
             imei: imeiForNotification,
             email: ownerEmailForNotification,
             notification_type: 'phone_found',

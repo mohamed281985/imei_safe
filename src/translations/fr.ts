@@ -198,6 +198,8 @@ export default {
   "enter_password_to_confirm": "Entrez le mot de passe pour confirmer",
   "notify_owner": "Notifier le propriétaire",
   "notification_sent": "Notification envoyée",
+  "notification_phone_found_title": "Votre téléphone a été retrouvé ! (IMEI : {{imei}})",
+  "notification_phone_found_body": "Félicitations ! Votre téléphone a été retrouvé. Pour contacter la personne qui l'a trouvé, appelez : {{phone}}.",
   "owner_notified_success": "Le propriétaire a été informé que vous avez trouvé son téléphone",
   "report_and_box_image": "Image du procès-verbal et de la boîte",
 
@@ -598,6 +600,11 @@ export default {
   "special_offer_near_you": "Offre spéciale près de vous",
   "congratulations_phone_found_title": "Félicitations ! Votre téléphone a été retrouvé !",
   "congratulations_phone_found_desc": "Nous avons été informés que votre téléphone a été trouvé. Cela signifie que quelqu'un l'a trouvé et l'a signalé via notre système.",
+  "lost_phone_imei_label": "IMEI du téléphone perdu :",
+  "loading_contact_info": "Chargement des infos de contact...",
+  "finder_contact_warning": "Avertissement : lorsque vous contactez la personne qui a trouvé le téléphone, demandez une photo pour vérifier.",
+  "contact_finder_whatsapp": "Contacter le trouveur sur WhatsApp",
+  "finder_phone_not_found": "Numéro du trouveur introuvable",
   "go_to_dashboard": "Aller au tableau de bord",
   "privacy_notice_search": "Ces données sont privées et ont été vérifiées par le système sous la responsabilité du déclarant",
 

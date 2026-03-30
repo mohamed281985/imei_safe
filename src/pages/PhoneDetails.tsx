@@ -169,28 +169,57 @@ const PhoneDetails: React.FC = () => {
         
         // حفظ البيانات في جدول notifications
         try {
-          // جلب email لصاحب الهاتف من phone_reports باستخدام imei
+          // جلب email واللغة لصاحب الهاتف من السيرفر باستخدام imei
           let ownerEmailForNotification = null;
+          let ownerLanguageForNotification: string | null = null;
           try {
-            const { data: phoneReport, error: reportError } = await supabase
-              .from('phone_reports')
-              .select('email')
-              .eq('imei', phone.imei)
-              .single();
-            if (reportError || !phoneReport) {
-              console.error('Error finding phone report:', reportError);
-              throw new Error('لم يتم العثور على سجل للهاتف في قاعدة البيانات');
+            const { data: { session } } = await supabase.auth.getSession();
+            const token = session?.access_token;
+            const response = await fetch('https://imei-safe.me/api/get-owner-email-by-imei', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({ imei: phone.imei })
+            });
+            const result = await response.json();
+            if (!response.ok || !result?.email) {
+              throw new Error(result?.error || 'لم يتم العثور على سجل للهاتف في قاعدة البيانات');
             }
-            ownerEmailForNotification = phoneReport.email;
+            ownerEmailForNotification = result.email;
+            ownerLanguageForNotification = result.language || null;
             console.log('Found email from phone report:', ownerEmailForNotification);
           } catch (err) {
             console.error('Error finding email for notification:', err);
             throw new Error('فشل في العثور على البريد الإلكتروني الخاص بهذا الهاتف');
           }
 
+          const normalizedLang = String(ownerLanguageForNotification || 'ar').toLowerCase();
+          const contentByLang = {
+            ar: {
+              title: 'تم العثور على هاتفك!',
+              body: `مبروك! تم العثور على هاتفك. للتواصل مع الشخص الذي وجده، يرجى الاتصال على الرقم: ${finderPhone}.`
+            },
+            en: {
+              title: 'Your phone was found!',
+              body: `Congratulations! Your phone was found. To contact the finder, please call: ${finderPhone}.`
+            },
+            fr: {
+              title: 'Votre téléphone a été retrouvé !',
+              body: `Félicitations ! Votre téléphone a été retrouvé. Pour contacter la personne qui l'a trouvé, appelez : ${finderPhone}.`
+            },
+            hi: {
+              title: 'आपका फोन मिल गया है!',
+              body: `बधाई हो! आपका फोन मिल गया है। खोजने वाले से संपर्क करने के लिए कॉल करें: ${finderPhone}.`
+            }
+          };
+
+          const localizedContent = contentByLang[normalizedLang] || contentByLang.ar;
+
           const notificationPayload = { 
-            title: 'تم العثور على هاتفك!', 
-            body: `مبروك! تم العثور على هاتفك. للتواصل مع الشخص الذي وجده، يرجى الاتصال على الرقم: ${finderPhone}.`,
+            title: localizedContent.title, 
+            body: localizedContent.body,
             user_id: currentUserId, // لم نعد نستخدم user_id في الإشعارات
             finder_phone: finderPhone,
             imei: phone.imei,

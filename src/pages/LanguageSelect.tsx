@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '../contexts/LanguageContext';
+import { supabase } from '../lib/supabase';
 import { AlertTriangle, Globe } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -11,10 +12,23 @@ const LanguageSelect: React.FC = () => {
   const [showWarning, setShowWarning] = useState(false);
   const [selectedLang, setSelectedLang] = useState<string>('');
 
-  const handleLanguageSelect = (lang: 'en' | 'ar' | 'fr' | 'hi') => {
+  const handleLanguageSelect = async (lang: 'en' | 'ar' | 'fr' | 'hi') => {
     setSelectedLang(lang);
     changeLanguage(lang);
     setShowWarning(true);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+      if (userId) {
+        await supabase
+          .from('users')
+          .update({ language: lang.toUpperCase() })
+          .eq('id', userId);
+      }
+    } catch (e) {
+      console.error('Failed to update user language:', e);
+    }
   };
 
   const getWarningMessage = (lang: string) => {

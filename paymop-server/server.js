@@ -1518,13 +1518,74 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
       }
     })();
 
+    const ownerLanguage = await (async () => {
+      if (!decryptedOwnerEmail) return 'ar';
+      try {
+        const { data, error } = await supabase
+          .from('users')
+          .select('language')
+          .ilike('email', decryptedOwnerEmail)
+          .maybeSingle();
+        if (error) {
+          console.error('فشل جلب لغة المستخدم:', error);
+          return 'ar';
+        }
+        return data?.language || 'ar';
+      } catch (e) {
+        console.error('خطأ أثناء جلب لغة المستخدم:', e);
+        return 'ar';
+      }
+    })();
+
+    const normalizedLang = String(ownerLanguage || 'ar').toLowerCase();
+    const notificationsByLang = {
+      ar: {
+        title: 'تم العثور على هاتفك!',
+        body: `مبروك! تم العثور على هاتفك. للتواصل مع الشخص الذي وجده، يرجى الاتصال على الرقم: ${decryptedFinderPhone}.`,
+        emailSubject: 'تهانينا! تم العثور على هاتفك المفقود',
+        emailHtml: `<p>عزيزي ${ownerName || decryptedOwnerName || foundReport.owner_name || ''},</p>
+          <p>مبروك! تم العثور على هاتفك المفقود (IMEI: ${decryptedImei || foundReport.imei || ''}).</p>
+          <p>يرجى التواصل مع الشخص الذي وجد الهاتف على الرقم: <b>${decryptedFinderPhone}</b> لاستلام هاتفك.</p>
+          <p>نتمنى لك يوماً سعيداً!</p>`
+      },
+      en: {
+        title: 'Your phone was found!',
+        body: `Congratulations! Your phone was found. To contact the finder, please call: ${decryptedFinderPhone}.`,
+        emailSubject: 'Great news! Your lost phone was found',
+        emailHtml: `<p>Dear ${ownerName || decryptedOwnerName || foundReport.owner_name || ''},</p>
+          <p>Good news! Your lost phone was found (IMEI: ${decryptedImei || foundReport.imei || ''}).</p>
+          <p>Please contact the finder at: <b>${decryptedFinderPhone}</b> to retrieve your phone.</p>
+          <p>Have a great day!</p>`
+      },
+      fr: {
+        title: 'Votre téléphone a été retrouvé !',
+        body: `Félicitations ! Votre téléphone a été retrouvé. Pour contacter la personne qui l'a trouvé, appelez : ${decryptedFinderPhone}.`,
+        emailSubject: 'Bonne nouvelle ! Votre téléphone a été retrouvé',
+        emailHtml: `<p>Cher/Chère ${ownerName || decryptedOwnerName || foundReport.owner_name || ''},</p>
+          <p>Bonne nouvelle ! Votre téléphone perdu a été retrouvé (IMEI : ${decryptedImei || foundReport.imei || ''}).</p>
+          <p>Veuillez contacter la personne qui l'a trouvé au : <b>${decryptedFinderPhone}</b> pour le récupérer.</p>
+          <p>Bonne journée !</p>`
+      },
+      hi: {
+        title: 'आपका फोन मिल गया है!',
+        body: `बधाई हो! आपका फोन मिल गया है। खोजने वाले से संपर्क करने के लिए कॉल करें: ${decryptedFinderPhone}.`,
+        emailSubject: 'खुशखबरी! आपका खोया फोन मिल गया है',
+        emailHtml: `<p>प्रिय ${ownerName || decryptedOwnerName || foundReport.owner_name || ''},</p>
+          <p>खुशखबरी! आपका खोया हुआ फोन मिल गया है (IMEI: ${decryptedImei || foundReport.imei || ''}).</p>
+          <p>कृपया फोन प्राप्त करने के लिए खोजने वाले से संपर्क करें: <b>${decryptedFinderPhone}</b>.</p>
+          <p>आपका दिन शुभ हो!</p>`
+      }
+    };
+
+    const localizedContent = notificationsByLang[normalizedLang] || notificationsByLang.ar;
+
     if (foundReport.fcm_token) {
       console.log(`Found FCM token, sending push notification to: ${foundReport.fcm_token}`);
       try {
-        const notificationBody = `مبروك! تم العثور على هاتفك. للتواصل مع الشخص الذي وجده، يرجى الاتصال على الرقم: ${decryptedFinderPhone}.`;
+        const notificationBody = localizedContent.body;
         await sendFCMNotificationV1({
           token: foundReport.fcm_token,
-          title: 'تم العثور على هاتفك!',
+          title: localizedContent.title,
           body: notificationBody,
           data: {
             type: 'phone_found',
@@ -1548,11 +1609,8 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
       await resend.emails.send({
         from: 'onboarding@resend.dev',
         to: cleanEmail,
-        subject: 'تهانينا! تم العثور على هاتفك المفقود',
-        html: `<p>عزيزي ${ownerName || decryptedOwnerName || foundReport.owner_name || ''},</p>
-          <p>مبروك! تم العثور على هاتفك المفقود (IMEI: ${decryptedImei || foundReport.imei || ''}).</p>
-          <p>يرجى التواصل مع الشخص الذي وجد الهاتف على الرقم: <b>${decryptedFinderPhone}</b> لاستلام هاتفك.</p>
-          <p>نتمنى لك يوماً سعيداً!</p>`
+        subject: localizedContent.emailSubject,
+        html: localizedContent.emailHtml
       });
       console.log('Email sent successfully.');
     } else {
@@ -2871,9 +2929,47 @@ app.post('/api/get-owner-email-by-imei', verifyJwtToken, async (req, res) => {
       return res.status(404).json({ error: 'لم يتم العثور على البريد الإلكتروني لهذا الهاتف' });
     }
 
+    const decryptedOwnerEmail = (() => {
+      try {
+        return decryptField(foundReport.email) || foundReport.email;
+      } catch (e) {
+        console.error('فشل فك تشفير email:', e);
+        return foundReport.email;
+      }
+    })();
+
+    const decryptedOwnerName = (() => {
+      try {
+        return decryptField(foundReport.owner_name) || foundReport.owner_name;
+      } catch (e) {
+        console.error('فشل فك تشفير owner_name:', e);
+        return foundReport.owner_name;
+      }
+    })();
+
+    const ownerLanguage = await (async () => {
+      if (!decryptedOwnerEmail) return null;
+      try {
+        const { data, error } = await supabase
+          .from('users')
+          .select('language')
+          .ilike('email', decryptedOwnerEmail)
+          .maybeSingle();
+        if (error) {
+          console.error('فشل جلب لغة المستخدم:', error);
+          return null;
+        }
+        return data?.language || null;
+      } catch (e) {
+        console.error('خطأ أثناء جلب لغة المستخدم:', e);
+        return null;
+      }
+    })();
+
     return res.json({
-      email: foundReport.email,
-      owner_name: foundReport.owner_name || null
+      email: decryptedOwnerEmail,
+      owner_name: decryptedOwnerName || null,
+      language: ownerLanguage
     });
   } catch (err) {
     console.error('خطأ في جلب بريد المالك:', err);
@@ -4585,6 +4681,59 @@ app.post('/api/notify-owner-email', verifyJwtToken, async (req, res) => {
       }
     })();
 
+    const ownerLanguage = await (async () => {
+      if (!decryptedOwnerEmail) return 'ar';
+      try {
+        const { data, error } = await supabase
+          .from('users')
+          .select('language')
+          .ilike('email', decryptedOwnerEmail)
+          .maybeSingle();
+        if (error) {
+          console.error('فشل جلب لغة المستخدم:', error);
+          return 'ar';
+        }
+        return data?.language || 'ar';
+      } catch (e) {
+        console.error('خطأ أثناء جلب لغة المستخدم:', e);
+        return 'ar';
+      }
+    })();
+
+    const normalizedLang = String(ownerLanguage || 'ar').toLowerCase();
+    const notificationsByLang = {
+      ar: {
+        emailSubject: 'تم العثور على هاتفك!',
+        emailHtml: `<p>عزيزي ${ownerName || decryptedOwnerName || reportData.owner_name || ''},</p>
+          <p>تم العثور على هاتفك المفقود (IMEI: ${decryptedImei || reportData.imei || ''}).</p>
+          <p>يرجى التواصل مع الشخص الذي وجد الهاتف على الرقم: <b>${finderPhone}</b> لاستلام هاتفك.</p>
+          <p>نتمنى لك يوماً سعيداً!</p>`
+      },
+      en: {
+        emailSubject: 'Your phone was found!',
+        emailHtml: `<p>Dear ${ownerName || decryptedOwnerName || reportData.owner_name || ''},</p>
+          <p>Your lost phone was found (IMEI: ${decryptedImei || reportData.imei || ''}).</p>
+          <p>Please contact the finder at: <b>${finderPhone}</b> to retrieve your phone.</p>
+          <p>Have a great day!</p>`
+      },
+      fr: {
+        emailSubject: 'Votre téléphone a été retrouvé !',
+        emailHtml: `<p>Cher/Chère ${ownerName || decryptedOwnerName || reportData.owner_name || ''},</p>
+          <p>Votre téléphone perdu a été retrouvé (IMEI : ${decryptedImei || reportData.imei || ''}).</p>
+          <p>Veuillez contacter la personne qui l'a trouvé au : <b>${finderPhone}</b> pour le récupérer.</p>
+          <p>Bonne journée !</p>`
+      },
+      hi: {
+        emailSubject: 'आपका फोन मिल गया है!',
+        emailHtml: `<p>प्रिय ${ownerName || decryptedOwnerName || reportData.owner_name || ''},</p>
+          <p>आपका खोया हुआ फोन मिल गया है (IMEI: ${decryptedImei || reportData.imei || ''}).</p>
+          <p>कृपया फोन प्राप्त करने के लिए खोजने वाले से संपर्क करें: <b>${finderPhone}</b>.</p>
+          <p>आपका दिन शुभ हो!</p>`
+      }
+    };
+
+    const localizedContent = notificationsByLang[normalizedLang] || notificationsByLang.ar;
+
     // إرسال البريد الإلكتروني
     if (decryptedOwnerEmail) {
       const cleanEmail = decryptedOwnerEmail.trim();
@@ -4593,11 +4742,8 @@ app.post('/api/notify-owner-email', verifyJwtToken, async (req, res) => {
       await resend.emails.send({
         from: 'onboarding@resend.dev',
         to: cleanEmail,
-        subject: 'تم العثور على هاتفك!',
-        html: `<p>عزيزي ${ownerName || decryptedOwnerName || reportData.owner_name || ''},</p>
-          <p>تم العثور على هاتفك المفقود (IMEI: ${decryptedImei || reportData.imei || ''}).</p>
-          <p>يرجى التواصل مع الشخص الذي وجد الهاتف على الرقم: <b>${finderPhone}</b> لاستلام هاتفك.</p>
-          <p>نتمنى لك يوماً سعيداً!</p>`
+        subject: localizedContent.emailSubject,
+        html: localizedContent.emailHtml
       });
       console.log('Email sent successfully.');
       return res.json({ success: true, message: 'Email sent successfully' });

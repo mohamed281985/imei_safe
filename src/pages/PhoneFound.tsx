@@ -126,7 +126,7 @@ const PhoneFound: React.FC = () => {
           {t('congratulations_phone_found_title')}
         </h1>
         
-        <p className="text-lg text-gray-300 mb-8 max-w-lg">
+        <p className="text-lg text-black mb-8 max-w-lg">
           {t('congratulations_phone_found_desc')}
         </p>
 
@@ -135,8 +135,8 @@ const PhoneFound: React.FC = () => {
           <div className="flex items-center justify-center gap-4">
             <Smartphone className="w-8 h-8 text-imei-cyan" />
             <div>
-              <p className="text-sm text-gray-400">رقم IMEI للهاتف المفقود:</p>
-              <p className="text-3xl font-mono tracking-widest text-imei-cyan">
+              <p className="text-sm text-white">{t('lost_phone_imei_label')}</p>
+              <p className="text-3xl font-mono tracking-widest text-imei-cyan text-center w-full">
                 {loading ? 'جاري التحميل...' : (imei ? imei : 'غير متوفر')}
               </p>
             </div>
@@ -155,22 +155,22 @@ const PhoneFound: React.FC = () => {
           {/* رسالة التحميل */}
           {loading && (
             <div className="text-gray-300">
-              جاري تحميل معلومات الاتصال...
+              {t('loading_contact_info')}
             </div>
           )}
           
           {/* زر واتساب */}
           {!loading && finderPhone && (
             <div className="w-full max-w-md mb-4">
-              <div className="bg-red-500/20 border-2 border-red-500 rounded-lg p-3 text-center font-bold text-red-200 text-lg animate-pulse">
-                 تنبيه: عند مراسلة من عثر على هاتفك، يجب المطالبة بتصوير هاتفك للتأكد منه
-              </div>
+                <div className="bg-red-500/20 border-2 border-red-500 rounded-lg p-3 text-center font-bold text-red-500 text-lg animate-pulse">
+                  {t('finder_contact_warning')}
+                </div>
               <button
                 onClick={handleWhatsAppClick}
                 className="w-full bg-green-500 hover:bg-green-600 text-white font-bold text-xl py-4 px-4 rounded-xl flex items-center justify-center transition-transform transform hover:scale-105 shadow-lg mt-4"
               >
                 <FaWhatsapp size={30} className="mr-4" />
-                الاتصال بمن عثر على هاتفك
+                {t('contact_finder_whatsapp')}
               </button>
             </div>
           )}
@@ -178,7 +178,7 @@ const PhoneFound: React.FC = () => {
           {/* رسالة عند عدم العثور على رقم الهاتف */}
           {!loading && !finderPhone && !error && (
             <div className="w-full bg-gray-500 text-white font-bold text-xl py-4 px-4 rounded-xl flex items-center justify-center">
-              لم يتم العثور على رقم هاتف من عثر على الهاتف
+              {t('finder_phone_not_found')}
             </div>
           )}
 

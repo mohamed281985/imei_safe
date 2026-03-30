@@ -190,6 +190,8 @@ export default {
   "enter_password_to_confirm": "पुष्ट करने के लिए पासवर्ड दर्ज करें",
   "notify_owner": "मालिक को सूचित करें",
   "notification_sent": "सूचना भेजी गई",
+  "notification_phone_found_title": "आपका फोन मिल गया है! (IMEI: {{imei}})",
+  "notification_phone_found_body": "बधाई हो! आपका फोन मिल गया है। खोजने वाले से संपर्क करने के लिए कॉल करें: {{phone}}.",
   "owner_notified_success": "मालिक को सूचित कर दिया गया है कि आपने उनका फ़ोन ढूंढ लिया है",
   "report_and_box_image": "रिपोर्ट और बॉक्स की छवि",
 
@@ -590,6 +592,11 @@ export default {
   "special_offer_near_you": "आपके पास विशेष प्रस्ताव",
   "congratulations_phone_found_title": "बधाई हो! आपका फ़ोन मिल गया है!",
   "congratulations_phone_found_desc": "हमें सूचित किया गया है कि आपका फ़ोन मिल गया है। इसका मतलब है कि किसी ने इसे ढूंढ लिया है और हमारे सिस्टम के माध्यम से इसकी सूचना दी है।",
+  "lost_phone_imei_label": "खोए हुए फोन का IMEI:",
+  "loading_contact_info": "संपर्क जानकारी लोड हो रही है...",
+  "finder_contact_warning": "चेतावनी: जब आप खोजने वाले से संपर्क करें, पुष्टि के लिए फोन की फोटो मांगें।",
+  "contact_finder_whatsapp": "व्हाट्सएप पर खोजने वाले से संपर्क करें",
+  "finder_phone_not_found": "खोजने वाले का फोन नंबर नहीं मिला",
   "go_to_dashboard": "डैशबोर्ड पर जाएं",
   "privacy_notice_search": "यह डेटा निजी है और रिपोर्टर की जिम्मेदारी के तहत सिस्टम द्वारा सत्यापित किया गया है",
 
