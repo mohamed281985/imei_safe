@@ -187,6 +187,8 @@ export default {
   "enter_password_to_confirm": "Enter password to confirm",
   "notify_owner": "Notify Owner That Phone Was Found",
   "notification_sent": "Notification Sent",
+  "notification_phone_found_title": "Your phone was found! (IMEI: {{imei}})",
+  "notification_phone_found_body": "Congratulations! Your phone was found. To contact the finder, please call: {{phone}}.",
   "owner_notified_success": "Owner has been notified that you found their phone",
   "report_and_box_image": "Report and Box Image",
   // Phone Details
@@ -591,6 +593,11 @@ export default {
   "special_offer_near_you": "Special Offer Near You",
   "congratulations_phone_found_title": "Congratulations! Your Phone Was Found!",
   "congratulations_phone_found_desc": "We have been notified that your phone was found. This means someone found it and reported it through our system.",
+  "lost_phone_imei_label": "Lost phone IMEI:",
+  "loading_contact_info": "Loading contact info...",
+  "finder_contact_warning": "Warning: when contacting the finder, ask for a photo of your phone to verify it.",
+  "contact_finder_whatsapp": "Contact the finder on WhatsApp",
+  "finder_phone_not_found": "Finder phone number not found",
   "go_to_dashboard": "Go to Dashboard",
   "privacy_notice_search": "This data is private and has been verified by the system at the responsibility of the reporter",
 

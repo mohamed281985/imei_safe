@@ -188,6 +188,8 @@ export default {
   "enter_password_to_confirm": "أدخل كلمة المرور للتأكيد",
   "notify_owner": "إبلاغ المالك بالعثور على الهاتف",
   "notification_sent": "تم إرسال الإشعار",
+  "notification_phone_found_title": "تم العثور على هاتفك! (IMEI: {{imei}})",
+  "notification_phone_found_body": "مبروك! تم العثور على هاتفك. للتواصل مع الشخص الذي وجده، يرجى الاتصال على الرقم: {{phone}}.",
   "owner_notified_success": "تم إبلاغ المالك بأنك وجدت هاتفه",
   "report_and_box_image": "صورة المحضر والعلبة",
   // Phone Details
@@ -595,6 +597,11 @@ export default {
   "special_offer_near_you": "عرض خاص بالقرب منك",
     "congratulations_phone_found_title": "تهانينا! تم العثور على هاتفك!",
   "congratulations_phone_found_desc": "لقد تم إبلاغنا بالعثور على هاتفك. هذا يعني أن شخصًا ما قد وجده وأبلغ عنه عبر نظامنا.",
+    "lost_phone_imei_label": "رقم IMEI للهاتف المفقود:",
+    "loading_contact_info": "جاري تحميل معلومات الاتصال...",
+    "finder_contact_warning": "تنبيه: عند مراسلة من عثر على هاتفك، يجب المطالبة بتصوير هاتفك للتأكد منه",
+    "contact_finder_whatsapp": "الاتصال بمن عثر على هاتفك",
+    "finder_phone_not_found": "لم يتم العثور على رقم هاتف من عثر على الهاتف",
   "go_to_dashboard": "العودة إلى لوحة التحكم",
   "privacy_notice_search": "هذه البيانات لها خصوصية وقد تمت مراجعتها من النظام على مسئولية صاحب البلاغ",
 
