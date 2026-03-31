@@ -231,11 +231,6 @@ const app = express();
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// --- تهيئة Supabase (مبكراً) ---
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-
 // If behind a proxy (Render, Heroku, etc.) trust proxy headers so req.secure and x-forwarded-proto work
 app.set('trust proxy', true);
 
@@ -360,11 +355,6 @@ function sendError(res, status = 500, userMessage = 'حدث خطأ في الخا
     console.error('Failed to log error:', logErr);
   }
   if (res.headersSent) return; // avoid double responses
-  // In non-production include error details to help debugging
-  if (process.env.NODE_ENV !== 'production' && err) {
-    const detail = (err && err.message) ? err.message : String(err);
-    return res.status(status).json({ ...extra, error: userMessage, detail });
-  }
   return res.status(status).json({ ...extra, error: userMessage });
 }
 
@@ -415,85 +405,10 @@ app.post('/api/encrypt', async (req, res) => {
   }
 });
 
-// Endpoint آمن لنشر الإعلان: يقوم بتشفير رقم الهاتف وإدراج السجل باستخدام مفتاح الخدمة
-app.post('/api/publish-ad', async (req, res) => {
-  try {
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('[publish-ad] incoming body:', JSON.stringify(req.body).slice(0, 2000));
-      const ah = req.headers['authorization'] || req.headers['Authorization'];
-      if (ah) console.log('[publish-ad] auth header present (masked):', ('' + ah).slice(0, 10) + '...');
-    }
-    // التحقق من المصادقة عبر توكن Supabase المرسل في Authorization header
-    const authHeader = req.headers['authorization'];
-    if (!authHeader) return res.status(401).json({ error: 'Unauthorized: missing token' });
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
-    // Guard: call getUser in try/catch to capture unexpected errors
-    let user = null;
-    try {
-      const gu = await supabase.auth.getUser(token);
-      if (gu && gu.data) user = gu.data.user;
-      if (gu && gu.error) {
-        console.warn('[publish-ad] supabase.auth.getUser returned error:', gu.error);
-      }
-    } catch (authEx) {
-      console.error('[publish-ad] getUser threw:', authEx);
-      return sendError(res, 401, 'Unauthorized: token validation failed', authEx);
-    }
-    if (!user) return res.status(401).json({ error: 'Unauthorized: invalid token' });
-
-    const body = req.body || {};
-    const adData = body.adData || body;
-    const mode = body.mode || 'pending'; // 'pending' or 'bonus'
-
-    if (!adData) return res.status(400).json({ error: 'No ad data provided' });
-
-    // Basic validation
-    if (!adData.store_name) return res.status(400).json({ error: 'store_name is required' });
-    if (!adData.duration_days) return res.status(400).json({ error: 'duration_days is required' });
-
-    // Ensure the user cannot set another user_id
-    adData.user_id = user.id;
-
-    // Encrypt phone on server side if present
-    if (adData.phone) {
-      const encrypted = encryptAES(adData.phone);
-      if (!encrypted) return res.status(500).json({ error: 'Phone encryption failed' });
-      adData.phone = JSON.stringify(encrypted);
-    }
-
-    // Normalize some fields
-    adData.upload_date = adData.upload_date || new Date().toISOString();
-    adData.is_active = typeof adData.is_active === 'boolean' ? adData.is_active : true;
-
-    // If mode is 'bonus' we may need to update the bonus record atomically
-    if (mode === 'bonus' && body.lastBonusId) {
-      const lastBonusId = body.lastBonusId;
-      // Update the bonus record only if it belongs to the user
-      const { error: bonusErr } = await supabase
-        .from('ads_payment')
-        .update({ bonus_offer: body.newBonusValue || 0, payment_date: new Date().toISOString(), is_paid: true, payment_status: 'paid', transaction: 'bonus_add', Actual_bonus: body.previousBonusAmount || 0 })
-        .eq('id', lastBonusId)
-        .eq('user_id', user.id);
-      if (bonusErr) return sendError(res, 500, 'Failed to update bonus record', bonusErr);
-    }
-
-    // Insert the ad record using the service-role Supabase client
-    const { data: inserted, error: insertErr } = await supabase
-      .from('ads_payment')
-      .insert([adData])
-      .select()
-      .single();
-
-    if (insertErr) return sendError(res, 500, 'Failed to insert ad record', insertErr);
-
-    return res.json({ success: true, ad: inserted });
-  } catch (e) {
-    console.error('/api/publish-ad error', e);
-    return sendError(res, 500, 'Server error while publishing ad', e);
-  }
-});
-
-// Supabase client initialized earlier
+// --- تهيئة Supabase ---
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // Endpoint: /api/lost-phones
 // يعيد قائمة الهواتف المفقودة مع فك تشفير حقل imei و phone_type فقط

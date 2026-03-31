@@ -25,7 +25,7 @@ import { Upload, Store, Link as LinkIcon, CalendarDays, Send, MapPin, X, Phone, 
 import { useScrollToTop } from '@/hooks/useScrollToTop';
 import AdImagePreviewModal from '../components/AdImagePreviewModal';
 
-const PublishAd = () => {
+const PublishAd: React.FC = () => {
   useScrollToTop();
   const { t } = useLanguage();
   const navigate = useNavigate();
@@ -411,6 +411,7 @@ const PublishAd = () => {
     }
 
     setIsLoading(true);
+    try {
       // 1. رفع الصورة إذا كانت جديدة
       let imageUrl = adImagePreview;
       if (adImage) {
@@ -458,61 +459,56 @@ const PublishAd = () => {
       if (!isUpdateMode && lastBonusId && bonusAmount >= (adPrice || 0)) {
         try {
           const newBonus = bonusAmount - (adPrice || 0);
-          // Call server to atomically update bonus and insert ad (phone encrypted on server)
-          try {
-            const { data: { session } } = await supabase.auth.getSession();
-            const token = session?.access_token || '';
-
-            const adData = {
-              store_name: storeName,
-              image_url: imageUrl,
-              website_url: websiteUrl,
-              duration_days: duration ? parseInt(duration, 10) : null,
-              latitude: coords?.latitude,
-              longitude: coords?.longitude,
-              phone: phoneNumber,
-              upload_date: new Date().toISOString(),
-              expires_at: (() => { const d = new Date(); d.setDate(d.getDate() + parseInt(duration, 10)); return d.toISOString(); })(),
+          const { error: updateBonusError } = await supabase
+            .from('ads_payment')
+            .update({
+              bonus_offer: newBonus,
+              payment_date: new Date().toISOString(),
               is_paid: true,
               payment_status: 'paid',
-              transaction: 'ad_payment',
-              type: 'publish',
-              is_active: true,
-              amount: adPrice || 0
-            };
+              transaction: 'bonus_add',
+              Actual_bonus: bonusAmount
+            })
+            .eq('id', lastBonusId);
+          if (updateBonusError) throw updateBonusError;
 
-            const resp = await fetch('/api/publish-ad', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-              },
-              body: JSON.stringify({ mode: 'bonus', lastBonusId, adData, newBonusValue: newBonus, previousBonusAmount: bonusAmount })
-            });
-            if (!resp.ok) {
-              const err = await resp.json().catch(() => ({}));
-              throw new Error(err.error || 'Failed to publish ad on server');
-            }
-            const result = await resp.json();
-            if (!result.success) throw new Error(result.error || 'Publish failed');
+          // إضافة سجل إعلان جديد
+          const adData = {
+            user_id: user.id,
+            store_name: storeName,
+            image_url: imageUrl,
+            website_url: websiteUrl,
+            duration_days: duration ? parseInt(duration, 10) : null,
+            latitude: coords?.latitude,
+            longitude: coords?.longitude,
+            phone: phoneNumber,
+            upload_date: new Date().toISOString(),
+            expires_at: (() => { const d = new Date(); d.setDate(d.getDate() + parseInt(duration, 10)); return d.toISOString(); })(),
+            is_paid: true,
+            payment_status: 'paid',
+            transaction: 'ad_payment',
+            type: 'publish',
+            is_active: true, // تعيين الإعلان كنشط
+            amount: adPrice || 0
+          };
+          const { error: insertAdError } = await supabase
+            .from('ads_payment')
+            .insert([adData]);
+          if (insertAdError) throw insertAdError;
 
-            window.dispatchEvent(new CustomEvent('bonusUpdated'));
-            toast({
-              title: t('ad_published_from_bonus'),
-              description: `تم خصم ${adPrice} ج.م من أحدث بونص (${bonusAmount} ← ${bonusAmount - (adPrice || 0)}) ونشر الإعلان بنجاح!`,
-              variant: 'default'
-            });
-            setIsLoading(false);
-            setTimeout(() => navigate('/myads'), 2000);
-            return;
-          } catch (err) {
-            throw err;
-          }
-        } catch (error) {
+          window.dispatchEvent(new CustomEvent('bonusUpdated'));
+          toast({
+            title: t('ad_published_from_bonus'),
+            description: `تم خصم ${adPrice} ج.م من أحدث بونص (${bonusAmount} ← ${bonusAmount - (adPrice || 0)}) ونشر الإعلان بنجاح!`,
+            variant: 'default'
+          });
+          setTimeout(() => navigate('/myads'), 2000);
+          return;
+        } catch (error: any) {
           console.error('خطأ في خصم البونص:', error);
           toast({
             title: t('bonus_deduction_error_title'),
-            description: (error && error.message) ? error.message : t('bonus_deduction_error_desc'),
+            description: error.message || t('bonus_deduction_error_desc'),
             variant: 'destructive'
           });
           setIsLoading(false);
@@ -540,69 +536,45 @@ const PublishAd = () => {
         is_active: true, // تعيين الإعلان كنشط
         Actual_payment_date: new Date().toISOString()
       };
-      // Create a pending ad record on server (phone will be encrypted server-side)
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token || '';
-
-        const createResp = await fetch('/api/publish-ad', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-          },
-          body: JSON.stringify({ mode: 'pending', adData: fullAdData })
-        });
-        if (!createResp.ok) {
-          const err = await createResp.json().catch(() => ({}));
-          throw new Error(err.error || 'Failed to create pending ad');
-        }
-
-        const createJson = await createResp.json();
-        const createdAdId = createJson?.ad?.id || `AD-${Date.now()}`;
-
-        const paymentData = {
-          amount,
-          email: user.email,
-          name: storeName,
-          phone: phoneNumber,
-          merchantOrderId: createdAdId,
-          isSpecialAd: false,
-          adData: fullAdData,
-          redirect_url_success: `https://imei-safe.me/paymob/redirect-success`,
-          redirect_url_failed: `https://imei-safe.me/paymob/redirect-failed`
-        };
-
-        const response = await fetch('https://imei-safe.me/paymob/create-payment', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(paymentData)
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error || 'فشل في إنشاء عملية الدفع');
-        }
-
-        const data = await response.json();
-        if (data.iframe_url) {
-          if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser) {
-            await window.Capacitor.Plugins.Browser.open({ url: data.iframe_url, toolbarColor: '#000000' });
-          } else {
-            window.open(data.iframe_url, '_blank', 'noopener,noreferrer');
-          }
-          toast({ title: t('redirecting_to_payment'), description: t('redirecting_to_payment_desc') });
-        } else if (data.payment_url) {
-          window.open(data.payment_url, '_blank', 'noopener,noreferrer');
-          toast({ title: t('redirecting_to_payment'), description: t('redirecting_to_payment_desc') });
-        } else {
-          toast({ title: t('error'), description: t('payment_link_error'), variant: 'destructive' });
-        }
-      } catch (error) {
-        toast({ title: t('error'), description: (error && (error as any).message) ? (error as any).message : t('operation_error'), variant: 'destructive' });
-      } finally {
-        setIsLoading(false);
+      const paymentData = {
+        amount: amount,
+        email: user.email,
+        name: storeName,
+        phone: phoneNumber,
+        merchantOrderId: `AD-${Date.now()}`,
+        isSpecialAd: false,
+        adData: fullAdData,
+        redirect_url_success: `https://imei-safe.me/paymob/redirect-success`,
+        redirect_url_failed: `https://imei-safe.me/paymob/redirect-failed`
+      };
+      const response = await fetch('https://imei-safe.me/paymob/create-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(paymentData)
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'فشل في إنشاء عملية الدفع');
       }
+      const data = await response.json();
+      if (data.iframe_url) {
+        if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser) {
+          await window.Capacitor.Plugins.Browser.open({ url: data.iframe_url, toolbarColor: '#000000' });
+        } else {
+          window.open(data.iframe_url, '_blank', 'noopener,noreferrer');
+        }
+        toast({ title: t('redirecting_to_payment'), description: t('redirecting_to_payment_desc') });
+      } else if (data.payment_url) {
+        window.open(data.payment_url, '_blank', 'noopener,noreferrer');
+        toast({ title: t('redirecting_to_payment'), description: t('redirecting_to_payment_desc') });
+      } else {
+        toast({ title: t('error'), description: t('payment_link_error'), variant: 'destructive' });
+      }
+    } catch (error: any) {
+      toast({ title: t('error'), description: error.message || t('operation_error'), variant: 'destructive' });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const closePaymentModal = () => {
