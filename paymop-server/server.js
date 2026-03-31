@@ -5064,15 +5064,15 @@ app.post('/api/signup', signupLimiter, rateLimitMiddleware({ windowMs: 60 * 60 *
     const fullPhone = (countryCode || '') + (phoneNumber || '');
 
     // Create user via Supabase auth (service key client)
+    // ملاحظة: لا نمرر البيانات الحساسة في options.data لتجنب التخزين التلقائي غير المشفر
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
         data: {
           full_name: username || null,
-          phone: fullPhone || null,
-          id_last6: idLast6 || null,
           role: 'free_user'
+          // البيانات الحساسة (phone, id_last6) سيتم تخزينها مشفرة في جدول users فقط
         },
         emailRedirectTo: `${process.env.FRONTEND_URL || 'https://'+(process.env.HOST||'')}/login`
       }
