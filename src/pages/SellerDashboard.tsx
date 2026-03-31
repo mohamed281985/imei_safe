@@ -98,7 +98,8 @@ const SellerDashboard: React.FC = () => {
       const { error } = await supabase
         .from(tableName)
         .delete()
-        .eq('id', id);
+        .eq('id', id)
+        .eq('seller_id', user?.id);
 
       if (error) throw error;
 

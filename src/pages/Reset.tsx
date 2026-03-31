@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useLanguage } from '../contexts/LanguageContext';
 
 export default function Reset() {
@@ -10,12 +10,23 @@ export default function Reset() {
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleReset = async () => {
     setError('');
     setSuccess('');
     setLoading(true);
-    const token = localStorage.getItem('resetToken');
+    // Password strength validation: min 8 chars, at least one lowercase, one uppercase, one digit
+    const pwd = password || '';
+    const pwdValid = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/.test(pwd);
+    if (!pwdValid) {
+      setError(t('password_requirements') || 'Password must be at least 8 characters and include uppercase, lowercase and a number.');
+      setLoading(false);
+      return;
+    }
+    // Read reset token from URL query parameter to avoid persistent storage (localStorage)
+    const params = new URLSearchParams(location.search);
+    const token = params.get('token') || params.get('resetToken');
     if (!token) {
       setError(t('token_not_found'));
       setLoading(false);
@@ -29,7 +40,6 @@ export default function Reset() {
         setError(t('failed') + ': ' + error.message);
       } else {
         setSuccess(t('password_changed_successfully'));
-        localStorage.removeItem('resetToken');
         setTimeout(() => navigate('/login'), 1200);
       }
     } catch (e) {

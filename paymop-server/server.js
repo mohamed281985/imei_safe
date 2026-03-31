@@ -593,6 +593,15 @@ const paymentLimiter = rateLimit({
 // Apply global limiter to all requests
 app.use(globalLimiter);
 
+// Signup-specific rate limiter: stricter limits to prevent brute-force account creation
+const signupLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 5, // limit each IP to 5 signup requests per windowMs
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: 'Too many signup attempts from this IP, please try again later.'
+});
+
 // -----------------------------
 // HMAC signing / verification for payment requests
 // -----------------------------
@@ -5037,6 +5046,117 @@ app.post('/api/claim-phone-by-email', verifyJwtToken, async (req, res) => {
   } catch (error) {
     console.error('Error claiming phone:', error);
     return sendError(res, 500, 'حدث خطأ في الخادم', error);
+  }
+});
+
+// Rate-limited signup proxy endpoint
+// Lightweight endpoint to check if an email is already registered.
+// Returns: { emailExists: true/false }
+app.post('/api/check-email', async (req, res) => {
+  try {
+    const { email } = req.body || {};
+    if (!email || typeof email !== 'string') return res.status(400).json({ error: 'email_required' });
+
+    // 1) Prefer server-side RPC if available (most efficient and respects encrypted storage)
+    try {
+      const { data: rpcResult, error: rpcError } = await supabase.rpc('check_email_in_both_tables', { email_to_check: email });
+      if (!rpcError && rpcResult !== undefined) {
+        return res.json({ emailExists: !!rpcResult });
+      }
+    } catch (e) {
+      // RPC may not exist; fall through to other checks
+    }
+
+    // 2) Check Supabase Auth users (service role client) if supported
+    try {
+      if (supabase.auth && supabase.auth.admin && typeof supabase.auth.admin.getUserByEmail === 'function') {
+        const { data: userData, error: userErr } = await supabase.auth.admin.getUserByEmail(email);
+        if (!userErr && userData) return res.json({ emailExists: true });
+      } else if (supabase.auth && typeof supabase.auth.getUserByEmail === 'function') {
+        const { data: userData, error: userErr } = await supabase.auth.getUserByEmail(email);
+        if (!userErr && userData) return res.json({ emailExists: true });
+      }
+    } catch (e) {
+      // ignore and continue to check businesses table
+    }
+
+    // 3) Fallback: check businesses table (users table may store encrypted emails)
+    try {
+      const { data: biz, error: bizErr } = await supabase.from('businesses').select('id').eq('email', email).limit(1);
+      if (!bizErr && biz && biz.length > 0) return res.json({ emailExists: true });
+    } catch (e) {
+      // ignore
+    }
+
+    return res.json({ emailExists: false });
+  } catch (err) {
+    console.error('/api/check-email error', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// Signup endpoint
+app.post('/api/signup', signupLimiter, rateLimitMiddleware({ windowMs: 60 * 60 * 1000, max: 6 }), async (req, res) => {
+  try {
+    const { email, password, username, phoneNumber, idLast6, countryCode } = req.body || {};
+    if (!email || !password) return res.status(400).json({ error: 'email_and_password_required' });
+
+    // Server-side password complexity validation
+    const pwd = String(password || '');
+    const pwdValid = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/.test(pwd);
+    if (!pwdValid) return res.status(400).json({ error: 'weak_password', message: 'Password does not meet complexity requirements' });
+
+    // Optional: sanitize/validate other fields briefly
+    const fullPhone = (countryCode || '') + (phoneNumber || '');
+
+    // Create user via Supabase auth (service key client)
+    // DO NOT store sensitive fields in auth.user metadata. We'll store encrypted values in the users profile row.
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          role: 'free_user'
+        },
+        emailRedirectTo: `${process.env.FRONTEND_URL || 'https://'+(process.env.HOST||'')}/login`
+      }
+    });
+
+    if (error) {
+      console.error('Signup RPC error:', error);
+      return res.status(400).json({ error: 'signup_failed', message: error.message });
+    }
+
+    // Insert users profile row if auth created a user id
+    if (data?.user?.id) {
+      try {
+        // Encrypt sensitive fields before storing in the users table
+        const encName = username ? encryptAES(username) : null;
+        const encEmail = email ? encryptAES(email) : null;
+        const encPhone = fullPhone ? encryptAES(fullPhone) : null;
+        const encIdLast6 = idLast6 ? encryptAES(idLast6) : null;
+
+        // Insert JSON objects (encryptedData, iv, authTag) into the profile row
+        await supabase.from('users').insert([
+          {
+            id: data.user.id,
+            full_name: encName,
+            email: encEmail,
+            phone: encPhone,
+            id_last6: encIdLast6,
+            role: 'customer',
+            status: 'active'
+          }
+        ]);
+      } catch (insertErr) {
+        console.warn('Warning: failed to insert user profile row:', insertErr?.message || insertErr);
+      }
+    }
+
+    return res.json({ ok: true, data });
+  } catch (err) {
+    console.error('/api/signup error', err);
+    return res.status(500).json({ error: 'internal_error' });
   }
 });
 
