@@ -432,6 +432,20 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// ⭐ إنشاء client منفصل باستخدام service_role key للعمليات الحساسة
+// هذا client يتجاوز سياسات RLS
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false
+  }
+});
+
+console.log('✅ تم تهيئة Supabase clients:');
+console.log('- supabase (عميل عام)');
+console.log('- supabaseAdmin (عميل بصلاحيات كاملة للعمليات الحساسة)');
+
 // Endpoint: /api/lost-phones
 // يعيد قائمة الهواتف المفقودة مع فك تشفير حقل imei و phone_type فقط
 app.get('/api/lost-phones', async (req, res) => {
@@ -5128,7 +5142,18 @@ app.post('/api/signup', signupLimiter, rateLimitMiddleware({ windowMs: 60 * 60 *
         }
 
         // إدراج البيانات المشفرة في جدول users
-        await supabase.from('users').insert([{
+        console.log('[Signup] محاولة إدراج البيانات المشفرة في جدول users للمعرف:', data.user.id);
+        console.log('[Signup] البيانات المراد إدراجها:', {
+          id: data.user.id,
+          full_name: username || null,
+          hasEncryptedEmail: !!encryptedEmail,
+          hasEncryptedPhone: !!encryptedPhone,
+          hasEncryptedIdLast6: !!encryptedIdLast6,
+          role: 'customer',
+          status: 'active'
+        });
+
+        const { error: insertError } = await supabaseAdmin.from('users').insert([{
           id: data.user.id,
           full_name: username || null,
           email: encryptedEmail,
@@ -5138,9 +5163,31 @@ app.post('/api/signup', signupLimiter, rateLimitMiddleware({ windowMs: 60 * 60 *
           status: 'active'
         }]);
 
+        if (insertError) {
+          console.error('[Signup] خطأ في إدراج البيانات في جدول users:', {
+            code: insertError.code,
+            message: insertError.message,
+            details: insertError.details,
+            hint: insertError.hint
+          });
+
+          // إذا كان الخطأ متعلق بسياسات الأمان، نحاول استخدام service role key
+          if (insertError.code === '42501') {
+            console.error('[Signup] خطأ في سياسة الأمان (RLS). يرجى التحقق من إعدادات RLS في Supabase');
+            return res.status(403).json({ 
+              error: 'permission_denied', 
+              message: 'فشل في إنشاء ملف المستخدم بسبب قيود الأمان',
+              details: 'يرجى التواصل مع الدعم الفني'
+            });
+          }
+
+          throw insertError;
+        }
+
         console.log(`[Signup] تم إنشاء حساب جديد للمستخدم ${data.user.id} مع تشفير البيانات الحساسة`);
       } catch (insertErr) {
-        console.warn('Warning: failed to insert user profile row:', insertErr?.message || insertErr);
+        console.error('[Signup] خطأ عام في إدراج ملف المستخدم:', insertErr?.message || insertErr);
+        console.error('[Signup] تفاصيل الخطأ الكاملة:', insertErr);
       }
     }
 
