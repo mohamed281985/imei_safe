@@ -231,6 +231,11 @@ const app = express();
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+// --- تهيئة Supabase (مبكراً) ---
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
 // If behind a proxy (Render, Heroku, etc.) trust proxy headers so req.secure and x-forwarded-proto work
 app.set('trust proxy', true);
 
@@ -467,10 +472,7 @@ app.post('/api/publish-ad', async (req, res) => {
   }
 });
 
-// --- تهيئة Supabase ---
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+// Supabase client initialized earlier
 
 // Endpoint: /api/lost-phones
 // يعيد قائمة الهواتف المفقودة مع فك تشفير حقل imei و phone_type فقط
