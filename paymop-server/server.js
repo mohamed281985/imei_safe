@@ -5050,52 +5050,6 @@ app.post('/api/claim-phone-by-email', verifyJwtToken, async (req, res) => {
 });
 
 // Rate-limited signup proxy endpoint
-// Lightweight endpoint to check if an email is already registered.
-// Returns: { emailExists: true/false }
-app.post('/api/check-email', async (req, res) => {
-  try {
-    const { email } = req.body || {};
-    if (!email || typeof email !== 'string') return res.status(400).json({ error: 'email_required' });
-
-    // 1) Prefer server-side RPC if available (most efficient and respects encrypted storage)
-    try {
-      const { data: rpcResult, error: rpcError } = await supabase.rpc('check_email_in_both_tables', { email_to_check: email });
-      if (!rpcError && rpcResult !== undefined) {
-        return res.json({ emailExists: !!rpcResult });
-      }
-    } catch (e) {
-      // RPC may not exist; fall through to other checks
-    }
-
-    // 2) Check Supabase Auth users (service role client) if supported
-    try {
-      if (supabase.auth && supabase.auth.admin && typeof supabase.auth.admin.getUserByEmail === 'function') {
-        const { data: userData, error: userErr } = await supabase.auth.admin.getUserByEmail(email);
-        if (!userErr && userData) return res.json({ emailExists: true });
-      } else if (supabase.auth && typeof supabase.auth.getUserByEmail === 'function') {
-        const { data: userData, error: userErr } = await supabase.auth.getUserByEmail(email);
-        if (!userErr && userData) return res.json({ emailExists: true });
-      }
-    } catch (e) {
-      // ignore and continue to check businesses table
-    }
-
-    // 3) Fallback: check businesses table (users table may store encrypted emails)
-    try {
-      const { data: biz, error: bizErr } = await supabase.from('businesses').select('id').eq('email', email).limit(1);
-      if (!bizErr && biz && biz.length > 0) return res.json({ emailExists: true });
-    } catch (e) {
-      // ignore
-    }
-
-    return res.json({ emailExists: false });
-  } catch (err) {
-    console.error('/api/check-email error', err);
-    return res.status(500).json({ error: 'internal_error' });
-  }
-});
-
-// Signup endpoint
 app.post('/api/signup', signupLimiter, rateLimitMiddleware({ windowMs: 60 * 60 * 1000, max: 6 }), async (req, res) => {
   try {
     const { email, password, username, phoneNumber, idLast6, countryCode } = req.body || {};
@@ -5110,12 +5064,14 @@ app.post('/api/signup', signupLimiter, rateLimitMiddleware({ windowMs: 60 * 60 *
     const fullPhone = (countryCode || '') + (phoneNumber || '');
 
     // Create user via Supabase auth (service key client)
-    // DO NOT store sensitive fields in auth.user metadata. We'll store encrypted values in the users profile row.
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
         data: {
+          full_name: username || null,
+          phone: fullPhone || null,
+          id_last6: idLast6 || null,
           role: 'free_user'
         },
         emailRedirectTo: `${process.env.FRONTEND_URL || 'https://'+(process.env.HOST||'')}/login`
@@ -5130,24 +5086,7 @@ app.post('/api/signup', signupLimiter, rateLimitMiddleware({ windowMs: 60 * 60 *
     // Insert users profile row if auth created a user id
     if (data?.user?.id) {
       try {
-        // Encrypt sensitive fields before storing in the users table
-        const encName = username ? encryptAES(username) : null;
-        const encEmail = email ? encryptAES(email) : null;
-        const encPhone = fullPhone ? encryptAES(fullPhone) : null;
-        const encIdLast6 = idLast6 ? encryptAES(idLast6) : null;
-
-        // Insert JSON objects (encryptedData, iv, authTag) into the profile row
-        await supabase.from('users').insert([
-          {
-            id: data.user.id,
-            full_name: encName,
-            email: encEmail,
-            phone: encPhone,
-            id_last6: encIdLast6,
-            role: 'customer',
-            status: 'active'
-          }
-        ]);
+        await supabase.from('users').insert([{ id: data.user.id, full_name: username || null, email, phone: fullPhone || null, id_last6: idLast6 || null, role: 'customer', status: 'active' }]);
       } catch (insertErr) {
         console.warn('Warning: failed to insert user profile row:', insertErr?.message || insertErr);
       }
