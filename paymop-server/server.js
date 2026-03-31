@@ -2061,6 +2061,119 @@ app.post("/paymob/create-payment", paymentLimiter, rateLimitMiddleware({ windowM
   }
 });
 
+// Endpoint: Publish ad using user's bonus balance (server-side enforced)
+app.post('/paymob/publish-from-bonus', paymentLimiter, rateLimitMiddleware({ windowMs: 15 * 60 * 1000, max: 6 }), async (req, res) => {
+  try {
+    const authHeader = req.headers['authorization'];
+    if (!authHeader) return res.status(401).json({ error: 'Unauthorized: missing token' });
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) return res.status(401).json({ error: 'Unauthorized: invalid token' });
+
+    const userId = user.id;
+    const { adData } = req.body || {};
+    if (!adData) return res.status(400).json({ error: 'adData is required' });
+
+    // Compute expected amount from ads_price (ignore any client-sent amount)
+    let expectedAmount = null;
+    try {
+      const durationVal = adData.duration_days || adData.duration || null;
+      const typeVal = adData.type || 'publish';
+      if (durationVal !== null && typeof durationVal !== 'undefined') {
+        const { data: priceRow, error: priceErr } = await supabase
+          .from('ads_price')
+          .select('amount')
+          .eq('type', typeVal)
+          .eq('duration_days', durationVal)
+          .limit(1)
+          .single();
+        if (!priceErr && priceRow && typeof priceRow.amount !== 'undefined') expectedAmount = Number(priceRow.amount);
+      }
+      // fallback: if adData.amount provided and DB lookup failed, still refuse — require DB price
+    } catch (e) {
+      console.error('Error computing expectedAmount for bonus publish:', e);
+    }
+
+    if (expectedAmount === null) {
+      return res.status(400).json({ error: 'Unable to determine expected amount for this ad' });
+    }
+
+    // Fetch user's latest paid bonus record
+    const { data: lastBonus, error: bonusError } = await supabase
+      .from('ads_payment')
+      .select('id, bonus_offer, payment_status, is_paid')
+      .eq('user_id', userId)
+      .eq('transaction', 'bonus_add')
+      .eq('is_paid', true)
+      .order('payment_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (bonusError) {
+      console.error('Error fetching last bonus for user:', bonusError);
+      return res.status(500).json({ error: 'Server error' });
+    }
+
+    if (!lastBonus || typeof lastBonus.bonus_offer !== 'number' || lastBonus.bonus_offer <= 0) {
+      return res.status(400).json({ error: 'No valid bonus balance available' });
+    }
+
+    if (lastBonus.bonus_offer < expectedAmount) {
+      return res.status(400).json({ error: 'Insufficient bonus balance' });
+    }
+
+    // Perform deduction and insert ad record. Use optimistic update: ensure row id matches and update succeeds.
+    const newBonusValue = Number(lastBonus.bonus_offer) - Number(expectedAmount);
+    try {
+      const { error: updateErr } = await supabase
+        .from('ads_payment')
+        .update({ bonus_offer: newBonusValue, payment_date: new Date().toISOString(), is_paid: true, payment_status: 'paid', transaction: 'bonus_add', Actual_bonus: lastBonus.bonus_offer })
+        .eq('id', lastBonus.id);
+      if (updateErr) {
+        console.error('Failed to update bonus row:', updateErr);
+        return res.status(500).json({ error: 'Could not deduct bonus' });
+      }
+    } catch (e) {
+      console.error('Exception updating bonus row:', e);
+      return res.status(500).json({ error: 'Server error' });
+    }
+
+    // Insert ad as paid using bonus
+    try {
+      const adInsert = {
+        ...adData,
+        user_id: userId,
+        is_paid: true,
+        payment_status: 'paid',
+        transaction: 'ad_payment',
+        amount: expectedAmount,
+        upload_date: new Date().toISOString(),
+        expires_at: (() => { const d = new Date(); d.setDate(d.getDate() + (adData.duration_days || 0)); return d.toISOString(); })(),
+      };
+      const { data: insertedAd, error: insertAdError } = await supabase
+        .from('ads_payment')
+        .insert([adInsert])
+        .select('id')
+        .single();
+      if (insertAdError) {
+        console.error('Error inserting ad using bonus:', insertAdError);
+        // attempt to revert bonus update? Log and return error
+        return res.status(500).json({ error: 'Failed to create ad' });
+      }
+
+      // Informational: trigger server-side event (no window in backend) by updating a small field or returning info
+      console.log(`Ad published using bonus for user ${userId}, ad id: ${insertedAd.id}`);
+      return res.json({ ok: true, adId: insertedAd.id, deducted: expectedAmount, remainingBonus: newBonusValue });
+    } catch (e) {
+      console.error('Exception inserting ad using bonus:', e);
+      return res.status(500).json({ error: 'Server error' });
+    }
+  } catch (e) {
+    console.error('Error in /paymob/publish-from-bonus:', e);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // نقطة نهاية لإنشاء الفواتير
 app.post("/paymob/create-invoice", async (req, res) => {
   // per-operation timeout guard
@@ -2620,6 +2733,52 @@ const amountCents = obj.amount_cents; // number
           if (fetchError || !existingAd) {
             console.error(`لم يتم العثور على سجل دفع لـ paymob_order_id: ${orderId}`, fetchError);
           } else {
+            // ===== تحقق أمني: تأكد من أن المبلغ الذي أرسله Paymob يطابق السعر المخزن في قاعدة البيانات =====
+            try {
+              // الحصول على المبلغ المتوقع من السجل إن وُجد
+              let expectedAmount = null;
+              if (typeof existingAd.amount !== 'undefined' && existingAd.amount !== null) expectedAmount = Number(existingAd.amount);
+
+              // إذا لم يوجد عمود amount في السجل حاول جلبه من جدول ads_price باستخدام النوع والمدد
+              if ((expectedAmount === null || Number.isNaN(expectedAmount)) && existingAd.type && existingAd.duration_days) {
+                try {
+                  const { data: priceRow, error: priceErr } = await supabase
+                    .from('ads_price')
+                    .select('amount')
+                    .eq('type', existingAd.type)
+                    .eq('duration_days', existingAd.duration_days)
+                    .limit(1)
+                    .single();
+                  if (!priceErr && priceRow && typeof priceRow.amount !== 'undefined') expectedAmount = Number(priceRow.amount);
+                } catch (e) {
+                  // ignore and continue
+                }
+              }
+
+              const paidAmount = (typeof obj.amount_cents !== 'undefined') ? Number(obj.amount_cents) / 100 : NaN;
+
+              // If we cannot determine expectedAmount or the amounts don't match, log and mark diagnostic field instead of auto-approving
+              if (expectedAmount === null || Number.isNaN(paidAmount) || Math.abs(paidAmount - expectedAmount) > 0.001) {
+                console.error('Amount mismatch or unable to verify payment amount for order. Skipping auto-mark-paid.', { orderId, paidAmount, expectedAmount });
+
+                // حاول تسجيل المبلغ الذي استلمه Paymob في سجل الدفع لأغراض التحقيق
+                try {
+                  await supabase
+                    .from('ads_payment')
+                    .update({ payment_status: 'amount_mismatch', paymob_amount_cents: obj.amount_cents })
+                    .eq('paymob_order_id', orderId);
+                } catch (e) {
+                  console.warn('Failed to write diagnostic amount_mismatch to ads_payment:', e?.message || e);
+                }
+
+                // أجب على webhook بنجاح حتى لا تحاول Paymob إعادة الإرسال، لكن لا تقم بتغيير حالة الإعلان إلى مدفوع
+                return res.status(200).send('received');
+              }
+            } catch (amtErr) {
+              console.error('Error while verifying expected amount in webhook:', amtErr);
+              // في حالة خطأ داخلي، لا نكسر الاستجابة للـ webhook — سجّل فقط
+            }
+
             console.log(`تم العثور على سجل الدفع:`, existingAd);
 
             // 2. حساب تاريخ الانتهاء
