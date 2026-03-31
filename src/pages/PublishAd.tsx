@@ -430,87 +430,60 @@ const PublishAd: React.FC = () => {
         imageUrl = publicUrl;
       }
 
-      // 2. جلب أحدث بونص للمستخدم
-      let bonusAmount = 0;
-      let lastBonusId: string | null = null;
-      if (!isUpdateMode) {
-        try {
-          const { data: lastBonus, error: bonusError } = await supabase
-            .from('ads_payment')
-            .select('id, bonus_offer, payment_status, payment_date')
-            .eq('user_id', user.id)
-            .eq('transaction', 'bonus_add')
-            .order('payment_date', { ascending: false })
-            .limit(1)
-            .single();
-          if (bonusError && bonusError.code !== 'PGRST116') {
-            console.error('Error fetching last bonus:', bonusError);
-          }
-          if (lastBonus && typeof lastBonus.bonus_offer === 'number' && lastBonus.payment_status === 'paid') {
-            bonusAmount = lastBonus.bonus_offer;
-            lastBonusId = lastBonus.id;
-          }
-        } catch (error) {
-          console.error('Error checking user bonus:', error);
-        }
-      }
+      // Build ad payload (server is source-of-truth for pricing and bonus deduction)
+      const adPayload = {
+        user_id: user.id,
+        store_name: storeName,
+        image_url: imageUrl,
+        website_url: websiteUrl,
+        duration_days: duration ? parseInt(duration, 10) : null,
+        latitude: coords?.latitude,
+        longitude: coords?.longitude,
+        phone: phoneNumber,
+        upload_date: new Date().toISOString(),
+        expires_at: (() => { const d = new Date(); d.setDate(d.getDate() + parseInt(duration, 10)); return d.toISOString(); })(),
+        type: 'publish',
+        is_active: true
+      };
 
-      // 3. إذا كان البونص كافيًا، خصم من البونص وإنشاء إعلان مدفوع مباشرة
-      if (!isUpdateMode && lastBonusId && bonusAmount >= (adPrice || 0)) {
+      // If user has enough bonus (displayed balance), call secure server endpoint to publish using bonus.
+      if (!isUpdateMode && bonusBalance > 0 && adPrice !== null && bonusBalance >= adPrice) {
         try {
-          const newBonus = bonusAmount - (adPrice || 0);
-          const { error: updateBonusError } = await supabase
-            .from('ads_payment')
-            .update({
-              bonus_offer: newBonus,
-              payment_date: new Date().toISOString(),
-              is_paid: true,
-              payment_status: 'paid',
-              transaction: 'bonus_add',
-              Actual_bonus: bonusAmount
-            })
-            .eq('id', lastBonusId);
-          if (updateBonusError) throw updateBonusError;
+          // get session token
+          let token: string | undefined;
+          try {
+            // supabase v2
+            const sessionRes: any = await supabase.auth.getSession();
+            token = sessionRes?.data?.session?.access_token;
+          } catch (e) {
+            try {
+              // fallback for older versions
+              // @ts-ignore
+              const sess = await supabase.auth.session();
+              // @ts-ignore
+              token = sess?.access_token;
+            } catch (e2) {
+              token = undefined;
+            }
+          }
 
-          // إضافة سجل إعلان جديد
-          const adData = {
-            user_id: user.id,
-            store_name: storeName,
-            image_url: imageUrl,
-            website_url: websiteUrl,
-            duration_days: duration ? parseInt(duration, 10) : null,
-            latitude: coords?.latitude,
-            longitude: coords?.longitude,
-            phone: phoneNumber,
-            upload_date: new Date().toISOString(),
-            expires_at: (() => { const d = new Date(); d.setDate(d.getDate() + parseInt(duration, 10)); return d.toISOString(); })(),
-            is_paid: true,
-            payment_status: 'paid',
-            transaction: 'ad_payment',
-            type: 'publish',
-            is_active: true, // تعيين الإعلان كنشط
-            amount: adPrice || 0
-          };
-          const { error: insertAdError } = await supabase
-            .from('ads_payment')
-            .insert([adData]);
-          if (insertAdError) throw insertAdError;
+          const resp = await fetch('https://imei-safe.me/paymob/publish-from-bonus', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+            body: JSON.stringify({ adData: adPayload })
+          });
+          const respJson = await resp.json().catch(() => ({}));
+          if (!resp.ok) {
+            throw new Error(respJson.error || 'فشل في نشر الإعلان باستخدام البونص');
+          }
 
           window.dispatchEvent(new CustomEvent('bonusUpdated'));
-          toast({
-            title: t('ad_published_from_bonus'),
-            description: `تم خصم ${adPrice} ج.م من أحدث بونص (${bonusAmount} ← ${bonusAmount - (adPrice || 0)}) ونشر الإعلان بنجاح!`,
-            variant: 'default'
-          });
-          setTimeout(() => navigate('/myads'), 2000);
+          toast({ title: t('ad_published_from_bonus'), description: respJson.message || t('ad_published_successfully') || '', variant: 'default' });
+          setTimeout(() => navigate('/myads'), 1500);
           return;
-        } catch (error: any) {
-          console.error('خطأ في خصم البونص:', error);
-          toast({
-            title: t('bonus_deduction_error_title'),
-            description: error.message || t('bonus_deduction_error_desc'),
-            variant: 'destructive'
-          });
+        } catch (err: any) {
+          console.error('Error publishing using bonus (client):', err);
+          toast({ title: t('error'), description: err.message || t('bonus_deduction_error_desc'), variant: 'destructive' });
           setIsLoading(false);
           return;
         }

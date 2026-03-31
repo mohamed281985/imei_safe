@@ -231,8 +231,28 @@ const app = express();
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// If behind a proxy (Render, Heroku, etc.) trust proxy headers so req.secure and x-forwarded-proto work
-app.set('trust proxy', true);
+// Configure `trust proxy` securely.
+// Set environment variable `TRUST_PROXY` to control behavior. Examples:
+// - not set or empty -> disabled (default, safest)
+// - "1" or "true" -> trust first proxy (common for PaaS like Heroku)
+// - a number N -> trust first N proxies
+// - a string/list (e.g. "127.0.0.1", "127.0.0.1,::1", "loopback") -> passed directly to Express
+const TRUST_PROXY = process.env.TRUST_PROXY;
+if (TRUST_PROXY) {
+  if (TRUST_PROXY === 'true' || TRUST_PROXY === '1') {
+    app.set('trust proxy', 1);
+    console.log('trust proxy: set to 1 (first proxy)');
+  } else if (/^[0-9]+$/.test(TRUST_PROXY)) {
+    app.set('trust proxy', Number(TRUST_PROXY));
+    console.log(`trust proxy: set to first ${TRUST_PROXY} proxies`);
+  } else {
+    app.set('trust proxy', TRUST_PROXY);
+    console.log(`trust proxy: set to '${TRUST_PROXY}'`);
+  }
+} else {
+  app.set('trust proxy', false);
+  console.log('trust proxy: disabled (default). Set TRUST_PROXY env var to enable trusted proxies.');
+}
 
 // Security headers with explicit HSTS in production
 if (process.env.NODE_ENV === 'production') {
@@ -274,7 +294,8 @@ const globalRateMiddleware = (req, res, next) => {
     // async handler using Redis
     (async () => {
       try {
-        const key = `globalrl:${req.ip}`;
+        const ip = req.ip || req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.socket.remoteAddress;
+        const key = `globalrl:${ip}`;
         const current = await redisClient.incr(key);
         if (current === 1) await redisClient.pexpire(key, GLOBAL_RATE_WINDOW_MS);
         if (current > GLOBAL_RATE_MAX) {
@@ -289,7 +310,8 @@ const globalRateMiddleware = (req, res, next) => {
     })();
   } else {
     try {
-      const key = req.ip;
+      const ip = req.ip || req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || req.socket.remoteAddress;
+      const key = ip;
       const now = Date.now();
       const entry = localGlobalRate.get(key) || { count: 0, start: now };
       if (now - entry.start > GLOBAL_RATE_WINDOW_MS) {
@@ -4881,6 +4903,11 @@ app.post('/api/notify-owner-email', verifyJwtToken, async (req, res) => {
 app.get('/api/check-unclaimed-phones', verifyJwtToken, async (req, res) => {
   try {
     const userEmail = req.user.email;
+    // Require verified email to reduce risk of claiming by email-only knowledge
+    if (!req.user.email_confirmed_at && !req.user.confirmed_at) {
+      console.log('[Check Unclaimed] Rejecting unverified email user:', userEmail);
+      return res.status(403).json({ error: 'Email not verified' });
+    }
     console.log(`[Check Unclaimed] Checking for user: ${userEmail}`);
     
     // جلب الهواتف التي ليس لها user_id
@@ -4903,10 +4930,13 @@ app.get('/api/check-unclaimed-phones', verifyJwtToken, async (req, res) => {
             decryptedEmail.trim().toLowerCase() === userEmail.trim().toLowerCase()) {
           // فك تشفير البيانات الأخرى للعرض
           let decryptedImei = decryptField(phone.imei);
-          
+          // Do NOT return full IMEI to the client here; only return a masked preview
+          const last4 = decryptedImei ? String(decryptedImei).slice(-4) : null;
+          const masked = last4 ? `****${last4}` : null;
+
           myPhones.push({
             id: phone.id,
-            imei: decryptedImei,
+            imei_preview: masked,
             phone_type: phone.phone_type
           });
         }
@@ -4925,31 +4955,59 @@ app.get('/api/check-unclaimed-phones', verifyJwtToken, async (req, res) => {
 
 // نقطة نهاية لربط الهاتف بالمستخدم عن طريق البريد الإلكتروني (Claim Phone)
 app.post('/api/claim-phone-by-email', verifyJwtToken, async (req, res) => {
-  const { imei } = req.body;
+  const { imei, id } = req.body;
   const user = req.user;
 
   if (!imei) {
-    return res.status(400).json({ error: 'IMEI is required' });
+    if (!id) return res.status(400).json({ error: 'IMEI or id is required' });
   }
 
   try {
+    // Require verified email to reduce risk of claiming by knowledge of email alone
+    if (!user.email_confirmed_at && !user.confirmed_at) {
+      console.log('[Claim Phone] Rejecting claim from unverified email user:', user.email);
+      return res.status(403).json({ error: 'Email not verified' });
+    }
     // 1. التحقق من أن الهاتف موجود وليس له user_id
     // بما أن IMEI مشفر، نحتاج للبحث عنه. 
     // ملاحظة: البحث عن IMEI المشفر يتطلب أن يكون التشفير حتمي (Deterministic) أو البحث في الكل.
     // هنا سنفترض أننا سنبحث في الكل ونطابق (أو إذا كان العميل أرسل الـ IMEI الأصلي، سنبحث عنه في القائمة التي جلبناها سابقاً أو نعيد البحث).
     // للأمان، سنعيد البحث في الهواتف غير المطالب بها.
     
-    const { data: phones, error: fetchError } = await supabase
-      .from('registered_phones')
-      .select('id, email, user_id, imei')
-      .is('user_id', null);
+    let targetPhone = null;
 
-    if (fetchError) throw fetchError;
+    if (id) {
+      const { data: phoneRows, error: fetchError } = await supabase
+        .from('registered_phones')
+        .select('id, email, user_id, imei')
+        .eq('id', id)
+        .maybeSingle();
 
-    const targetPhone = phones.find(p => decryptField(p.imei) === imei && decryptField(p.email) === user.email);
+      if (fetchError) throw fetchError;
+      if (!phoneRows || phoneRows.user_id) {
+        return res.status(404).json({ error: 'Phone not found or already claimed' });
+      }
 
-    if (!targetPhone) {
-      return res.status(404).json({ error: 'Phone not found or email mismatch' });
+      // Verify email matches the registered (decrypted) email
+      if (decryptField(phoneRows.email).trim().toLowerCase() !== user.email.trim().toLowerCase()) {
+        return res.status(404).json({ error: 'Phone not found or email mismatch' });
+      }
+
+      targetPhone = phoneRows;
+    } else {
+      // Fallback: legacy behavior when IMEI provided (less efficient)
+      const { data: phones, error: fetchError } = await supabase
+        .from('registered_phones')
+        .select('id, email, user_id, imei')
+        .is('user_id', null);
+
+      if (fetchError) throw fetchError;
+
+      targetPhone = phones.find(p => decryptField(p.imei) === imei && decryptField(p.email).trim().toLowerCase() === user.email.trim().toLowerCase());
+
+      if (!targetPhone) {
+        return res.status(404).json({ error: 'Phone not found or email mismatch' });
+      }
     }
 
     // 2. تحديث user_id
@@ -4959,6 +5017,20 @@ app.post('/api/claim-phone-by-email', verifyJwtToken, async (req, res) => {
       .eq('id', targetPhone.id);
 
     if (updateError) throw updateError;
+
+    // Audit log (best-effort). If table doesn't exist this will be ignored by catching errors.
+    try {
+      await supabase.from('phone_claims_audit').insert({
+        phone_id: targetPhone.id,
+        user_id: user.id,
+        email: user.email,
+        claimed_at: new Date().toISOString()
+      });
+    } catch (auditErr) {
+      console.warn('Audit insert failed (table may not exist):', auditErr?.message || auditErr);
+    }
+
+    console.log(`[Claim Phone] User ${user.id} (${user.email}) claimed phone ${targetPhone.id}`);
 
     res.json({ success: true, message: 'Phone claimed successfully' });
 
