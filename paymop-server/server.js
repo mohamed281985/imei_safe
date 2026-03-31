@@ -5083,18 +5083,66 @@ app.post('/api/signup', signupLimiter, rateLimitMiddleware({ windowMs: 60 * 60 *
       return res.status(400).json({ error: 'signup_failed', message: error.message });
     }
 
-    // Insert users profile row if auth created a user id
-    if (data?.user?.id) {
-      try {
-        await supabase.from('users').insert([{ id: data.user.id, full_name: username || null, email, phone: fullPhone || null, id_last6: idLast6 || null, role: 'customer', status: 'active' }]);
-      } catch (insertErr) {
-        console.warn('Warning: failed to insert user profile row:', insertErr?.message || insertErr);
-      }
-    }
+    // Do NOT insert profile into `users` here. Profile creation and encryption
+    // must happen only after the user confirms their email. The frontend should
+    // call `/api/complete-profile` after the user clicks the verification link
+    // (or the client can call it after detecting email confirmed). This endpoint
+    // will perform server-side encryption and upsert into `users`.
 
-    return res.json({ ok: true, data });
+    return res.json({ ok: true, data, message: 'signup_created; please verify email then call /api/complete-profile to finish profile setup' });
   } catch (err) {
     console.error('/api/signup error', err);
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
+// Endpoint to complete profile after email confirmation
+app.post('/api/complete-profile', verifyJwtToken, async (req, res) => {
+  try {
+    const user = req.user;
+    // Require verified email before accepting profile data
+    if (!user.email_confirmed_at && !user.confirmed_at) {
+      return res.status(403).json({ error: 'email_not_verified' });
+    }
+
+    // Accept profile fields in body; prefer explicit values from client
+    const { username, phoneNumber, idLast6 } = req.body || {};
+
+    // If client didn't provide fields, try to read them from auth user_metadata
+    const meta = user?.raw_user_meta_data || user?.user_metadata || {};
+    const fullName = String(username || meta.full_name || meta.fullName || meta.name || '').trim() || null;
+    const phone = String(phoneNumber || meta.phone || meta.phone_number || '').trim() || null;
+    const id6 = String(idLast6 || meta.id_last6 || meta.idLast6 || '').trim() || null;
+
+    // Prepare encrypted payloads using server-side AES-GCM helper
+    const encName = fullName ? encryptObject(fullName) : null;
+    const encPhone = phone ? encryptObject(phone) : null;
+    const encId6 = id6 ? encryptObject(id6) : null;
+    const encEmail = user.email ? encryptObject(user.email) : null;
+
+    const profileRow = {
+      id: user.id,
+      email: encEmail,
+      full_name: encName,
+      phone: encPhone,
+      id_last6: encId6,
+      role: 'customer',
+      status: 'active'
+    };
+
+    // Upsert into users table (insert or update existing record)
+    const { data: upsertData, error: upsertErr } = await supabase
+      .from('users')
+      .upsert([profileRow], { onConflict: 'id' });
+
+    if (upsertErr) {
+      console.error('Error upserting encrypted profile:', upsertErr);
+      return res.status(500).json({ error: 'failed_upsert_profile' });
+    }
+
+    return res.json({ ok: true, data: upsertData });
+  } catch (err) {
+    console.error('/api/complete-profile error', err);
     return res.status(500).json({ error: 'internal_error' });
   }
 });
