@@ -65,150 +65,41 @@ const RewardsPage: React.FC = () => {
         fetchRewards();
     }, [user, toast]);
 
-    // استرداد مكافأة
+    // استرداد مكافأة - استخدام RPC في قاعدة البيانات لتنفيذ العملية بشكل ذرّي وتفادي حالات السباق
     const claimReward = async (rewardId: string) => {
         setClaimingId(rewardId);
         try {
-            // جلب بيانات المكافأة أولاً
-            const { data: reward, error: fetchError } = await supabase
-                .from('user_rewards')
-                .select('*')
-                .eq('id', rewardId)
-                .eq('user_id', user?.id)
-                .eq('claimed', false)
-                .single();
-            
-            if (fetchError || !reward) {
-                console.error('لم يتم العثور على المكافأة أو أنها مستردة بالفعل:', fetchError);
-                toast({
-                    title: 'خطأ',
-                    description: 'لم يتم العثور على المكافأة أو أنها مستردة بالفعل',
-                    variant: 'destructive'
-                });
-                return;
-            }
-            
-            // تحديث حالة المكافأة إلى مستردة
-            const { error: updateError } = await supabase
-                .from('user_rewards')
-                .update({ 
-                    claimed: true,
-                    claimed_at: new Date().toISOString()
-                })
-                .eq('id', rewardId)
-                .eq('user_id', user?.id);
-            
-            if (updateError) {
-                console.error('خطأ في تحديث حالة المكافأة:', updateError);
-                toast({
-                    title: 'خطأ',
-                    description: 'حدث خطأ في تحديث حالة المكافأة',
-                    variant: 'destructive'
-                });
-                return;
-            }
-            
-            // تطبيق الجائزة للمستخدم بناءً على نوعها
-            let message = '';
-            
-            // استنتاج نوع الجائزة من اسمها
-            const rewardType = reward.reward_name.includes('بونص') || reward.reward_name.includes('bonus') || reward.reward_name.includes('bouns') 
-                ? 'bonus' 
-                : reward.reward_name.includes('نقاط') || reward.reward_name.includes('points') 
-                    ? 'points' 
-                    : reward.reward_name.includes('مال') || reward.reward_name.includes('money') 
-                        ? 'money' 
-                        : 'other';
-            
-            if (rewardType === 'bonus') {
-                // جلب قيمة البونص الحالية
-                const { data: currentBonus } = await supabase
-                    .from('users_plans')
-                    .select('bonus')
-                    .eq('user_id', user?.id)
-                    .single();
-                
-                // تحديث رصيد البونص للمستخدم
-                const { error: bonusError } = await supabase
-                    .from('users_plans')
-                    .upsert({
-                        user_id: user?.id,
-                        bonus: (currentBonus?.bonus || 0) + parseInt(reward.prizes || '0')
-                    });
-                
-                if (bonusError) {
-                    console.error('خطأ في تحديث رصيد البونص:', bonusError);
-                    message = 'حدث خطأ في تحديث رصيد البونص';
-                } else {
-                    message = `تم إضافة ${reward.prizes} بونص إلى حسابك`;
-                }
-            } else if (rewardType === 'points') {
-                // جلب قيمة النقاط الحالية
-                const { data: currentPoints } = await supabase
-                    .from('users_plans')
-                    .select('points')
-                    .eq('user_id', user?.id)
-                    .single();
-                
-                // تحديث رصيد النقاط للمستخدم
-                const { error: pointsError } = await supabase
-                    .from('users_plans')
-                    .upsert({
-                        user_id: user?.id,
-                        points: (currentPoints?.points || 0) + parseInt(reward.prizes || '0')
-                    });
-                
-                if (pointsError) {
-                    console.error('خطأ في تحديث رصيد النقاط:', pointsError);
-                    message = 'حدث خطأ في تحديث رصيد النقاط';
-                } else {
-                    message = `تم إضافة ${reward.prizes} نقطة إلى حسابك`;
-                }
-            } else if (rewardType === 'money') {
-                // جلب قيمة المال الحالية
-                const { data: currentMoney } = await supabase
-                    .from('users_plans')
-                    .select('money')
-                    .eq('user_id', user?.id)
-                    .single();
-                
-                // تحديث رصيد المال للمستخدم
-                const { error: moneyError } = await supabase
-                    .from('users_plans')
-                    .upsert({
-                        user_id: user?.id,
-                        money: (currentMoney?.money || 0) + parseInt(reward.prizes || '0')
-                    });
-                
-                if (moneyError) {
-                    console.error('خطأ في تحديث رصيد المال:', moneyError);
-                    message = 'حدث خطأ في تحديث رصيد المال';
-                } else {
-                    message = `تم إضافة ${reward.prizes} دولار إلى حسابك`;
-                }
-            } else {
-                // نوع جائزة آخر
-                message = 'تم استرداد الجائزة بنجاح';
-            }
-            
-            // تحديث الحالة بعد تأخير بسيط لإظهار التأثير البصري
-            setTimeout(() => {
-                setRewards(prev => prev.map(r => 
-                    r.id === rewardId ? { ...r, claimed: true, claimed_at: new Date().toISOString() } : r
-                ));
-            }, 500);
+            if (!user) throw new Error('User not authenticated');
 
-            toast({
-                title: 'نجاح',
-                description: message || 'تم استرداد المكافأة بنجاح'
-            });
+            const { data, error } = await supabase.rpc('claim_user_reward', { p_reward_id: rewardId, p_user_id: user.id });
+
+            if (error) {
+                console.error('RPC error claiming reward:', error);
+                toast({ title: 'خطأ', description: 'حدث خطأ أثناء استرداد المكافأة', variant: 'destructive' });
+                return;
+            }
+
+            // data is expected to be the JSON returned by the function
+            const result = data as any;
+            if (!result || result.ok === false) {
+                const msg = result?.error || 'لم يتم العثور على المكافأة أو أنها مستردة بالفعل';
+                toast({ title: 'خطأ', description: msg, variant: 'destructive' });
+                return;
+            }
+
+            // تحديث الحالة محلياً لعرض النتيجة فوراً
+            setRewards(prev => prev.map(r => r.id === rewardId ? { ...r, claimed: true, claimed_at: new Date().toISOString() } : r));
+
+            let message = '';
+            if (result.applied === 'bonus') message = `تم إضافة ${result.prize} بونص إلى حسابك`;
+            else if (result.applied === 'points') message = `تم إضافة ${result.prize} نقطة إلى حسابك`;
+            else if (result.applied === 'money') message = `تم إضافة ${result.prize} دولار إلى حسابك`;
+            else message = 'تم استرداد الجائزة بنجاح';
+
+            toast({ title: 'نجاح', description: message });
         } catch (err) {
             console.error('Error claiming reward:', err);
-            toast({
-                title: 'خطأ',
-                description: 'حدث خطأ أثناء استرداد المكافأة',
-                variant: 'destructive'
-            });
+            toast({ title: 'خطأ', description: 'حدث خطأ أثناء استرداد المكافأة', variant: 'destructive' });
         } finally {
             setTimeout(() => setClaimingId(null), 1000);
         }

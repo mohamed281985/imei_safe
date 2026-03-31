@@ -22,12 +22,18 @@ export default function ResetRegister() {
   const { toast } = useToast();
   const imei = location.state?.imei; // جلب رقم IMEI من الحالة
 
+  // عرض معاينة مقنّعة من الـ IMEI فقط (آخر 4 أرقام) لتقليل تسريب المعلومات الحساسة
+  const maskedImei = imei ? `****${String(imei).slice(-4)}` : '';
+
   const handleReset = async () => {
     setError('');
     setLoading(true);
 
-    if (password.length < 6) {
-      setError(t('password_too_short'));
+    // Password complexity: minimum 8 chars, at least one lowercase, one uppercase, and one digit
+    const pwd = password || '';
+    const pwdValid = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/.test(pwd);
+    if (!pwdValid) {
+      setError(t('password_requirements') || 'Password must be at least 8 characters and include uppercase, lowercase and a number.');
       setLoading(false);
       return;
     }
@@ -89,7 +95,7 @@ export default function ResetRegister() {
         <div className="space-y-6">
           <p className="text-center text-gray-300">
             {t('changing_password_for_phone')}
-            <span className="font-bold text-cyan-400 block mt-2">{imei}</span>
+            <span className="font-bold text-cyan-400 block mt-2">{maskedImei}</span>
           </p>
           
           <div className="space-y-2">

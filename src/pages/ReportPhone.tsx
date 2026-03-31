@@ -19,7 +19,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import PageAdvertisement from '@/components/advertisements/PageAdvertisement';
 import { useScrollToTop } from '../hooks/useScrollToTop';
 import { supabase } from '@/lib/supabase'; // استيراد Supabase
-import CryptoJS from 'crypto-js';
 
 import { useAuth } from '../contexts/AuthContext';
 import CountryCodeSelector from '../components/CountryCodeSelector';
