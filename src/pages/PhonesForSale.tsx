@@ -8,6 +8,13 @@ import AppNavbar from '@/components/AppNavbar';
 import BackButton from '@/components/BackButton';
 import { Smartphone, Eye, Search, Filter, SortAsc, Star } from 'lucide-react';
 
+// Utility function to disable console logs in production
+if (import.meta.env.MODE === 'production') {
+  console.log = () => {};
+  console.warn = () => {};
+  console.error = () => {};
+}
+
 // دالة مساعدة للحصول على الصورة الرئيسية للهاتف
 const getPhoneMainImage = (phone: any): string | null => {
   if (!phone?.phone_images?.length) {
@@ -63,44 +70,24 @@ const PhonesForSale: React.FC = () => {
   const [selectedCondition, setSelectedCondition] = useState('all');
   const [priceRange, setPriceRange] = useState({ min: '', max: '' });
   const [sortBy, setSortBy] = useState('newest');
+  const [page, setPage] = useState(1); // Current page for pagination
+  const [totalPages, setTotalPages] = useState(1); // Total number of pages
+  const itemsPerPage = 10; // Number of items per page
 
   useEffect(() => {
     const fetchPhoneListings = async () => {
       setLoading(true);
       try {
-        const { data, error } = await supabase
+        const { data, error, count } = await supabase
           .from('phones')
-          .select(`*, phone_images(image_path, main_image)`)
-          .eq('status', 'active');
+          .select(`*, phone_images(image_path, main_image)`, { count: 'exact' })
+          .eq('status', 'active')
+          .range((page - 1) * itemsPerPage, page * itemsPerPage - 1); // Fetch items for the current page
 
         if (error) throw error;
-        
-        // ترتيب الهواتف حسب دور البائع وتاريخ الإنشاء
-        const rolePriority: { [key: string]: number } = {
-          'gold_business': 1,
-          'silver_business': 2,
-          'free_business': 3,
-        };
-        
-        const sortedPhones = (data || []).sort((a, b) => {
-          // إذا كان أحد الهواتف ليس له دور، ضعه في النهاية
-          const hasRoleA = !!a.role && a.role.trim() !== '';
-          const hasRoleB = !!b.role && b.role.trim() !== '';
-          if (!hasRoleA && hasRoleB) return 1;
-          if (hasRoleA && !hasRoleB) return -1;
-          
-          // 1. الترتيب حسب أولوية الدور (الأولوية الأعلى أولاً)
-          const priorityA = rolePriority[a.role as keyof typeof rolePriority] || 99;
-          const priorityB = rolePriority[b.role as keyof typeof rolePriority] || 99;
-          if (priorityA !== priorityB) {
-            return priorityA - priorityB;
-          }
-          
-          // 2. إذا تساوت الأولوية، يتم الترتيب حسب الأحدث (الأحدث أولاً)
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-        });
-        
-        setPhoneListings(sortedPhones);
+
+        setPhoneListings(data || []);
+        setTotalPages(Math.ceil((count || 0) / itemsPerPage)); // Calculate total pages
       } catch (error) {
         console.error('Error fetching phone listings:', error);
       } finally {
@@ -109,7 +96,7 @@ const PhonesForSale: React.FC = () => {
     };
 
     fetchPhoneListings();
-  }, []);
+  }, [page]); // Fetch data when page changes
 
   // تحسين دالة الفلترة
   const getFilteredPhones = () => {
@@ -162,6 +149,12 @@ const PhonesForSale: React.FC = () => {
 
   // عرض النتائج مع رسالة في حالة عدم وجود نتائج
   const filteredPhones = getFilteredPhones();
+
+  const handlePageChange = (newPage: number) => {
+    if (newPage >= 1 && newPage <= totalPages) {
+      setPage(newPage);
+    }
+  };
 
   return (
     <PageContainer>
@@ -257,9 +250,15 @@ const PhonesForSale: React.FC = () => {
         ) : (
           <div className="grid grid-cols-2 gap-4">
             {filteredPhones.map((phone) => {
+              if (!phone || !phone.title) {
+                console.warn('Skipping phone due to missing title:', phone);
+                return null;
+              }
+
               const titleParts = phone.title.split(' ');
-              const brand = titleParts[0];
-              const model = titleParts[1];
+              const brand = titleParts[0] || t('unknown_brand');
+              const model = titleParts[1] || t('unknown_model');
+
               return (
                 <Link
                   key={phone.id}
@@ -285,7 +284,7 @@ const PhonesForSale: React.FC = () => {
                                 alt={phone.title || 'صورة الهاتف'}
                                 className="absolute inset-0 w-full h-full object-cover opacity-0 transition-opacity duration-300"
                                 loading="lazy"
-                               onLoad={(e) => {
+                                onLoad={(e) => {
                                   const target = e.target as HTMLImageElement;
                                   target.classList.remove('opacity-0');
                                   target.classList.add('opacity-100');
@@ -296,19 +295,6 @@ const PhonesForSale: React.FC = () => {
                                 }}
                                 onError={(e) => {
                                   console.error('Image failed to load:', e);
-                                  console.error('Image URL:', imageUrl);
-                                  fetch(imageUrl)
-                                    .then(response => {
-                                      console.error('Response status:', response.status);
-                                      console.error('Response headers:', response.headers);
-                                      return response.text();
-                                    })
-                                    .then(text => {
-                                      console.error('Response body:', text);
-                                    })
-                                    .catch(error => {
-                                      console.error('Fetch error:', error);
-                                    });
                                   const target = e.target as HTMLImageElement;
                                   target.style.display = 'none';
                                   const placeholder = target.parentElement?.querySelector('.phone-placeholder');
@@ -349,48 +335,74 @@ const PhonesForSale: React.FC = () => {
                     )}
                   </div>
                   <div className="p-2.5 flex flex-col gap-1.5">
-                            {/* Title */}
-                            <h3 className="text-lg font-bold text-gray-800 truncate leading-tight mb-0.5 px-2">
-                              {phone.brand}
-                            </h3>
-                            <h4 className="text-base font-medium text-gray-700 truncate leading-tight mb-1 px-2">
-                              {phone.model}
-                            </h4>
+                    {/* Title */}
+                    <h3 className="text-lg font-bold text-gray-800 truncate leading-tight mb-0.5 px-2">
+                      {brand}
+                    </h3>
+                    <h4 className="text-base font-medium text-gray-700 truncate leading-tight mb-1 px-2">
+                      {model}
+                    </h4>
 
-                            {/* Specs Line */}
-                            <div className="flex items-center gap-1.5 text-xs text-gray-500 truncate font-bold">
-                              {phone.specs?.ram && <span>{phone.specs.ram}GB</span>}
-                              {phone.specs?.storage && (
-                                <>
-                                  <span className="w-0.5 h-0.5 rounded-full bg-gray-400"></span>
-                                  <span>{phone.specs.storage}GB</span>
-                                </>
-                              )}
-                              {phone.condition && (
-                                <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${phone.condition === 'used' ? 'bg-orange-50 text-orange-700 border-orange-100' : 'bg-cyan-50 text-cyan-700 border-cyan-100'}`}>
-                                  {t(phone.condition)}
-                                </span>
-                              )}
-                            </div>
+                    {/* Specs Line */}
+                    <div className="flex items-center gap-1.5 text-xs text-gray-500 truncate font-bold">
+                      {phone.specs?.ram && <span>{phone.specs.ram}GB</span>}
+                      {phone.specs?.storage && (
+                        <>
+                          <span className="w-0.5 h-0.5 rounded-full bg-gray-400"></span>
+                          <span>{phone.specs.storage}GB</span>
+                        </>
+                      )}
+                      {phone.condition && (
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${phone.condition === 'used' ? 'bg-orange-50 text-orange-700 border-orange-100' : 'bg-cyan-50 text-cyan-700 border-cyan-100'}`}>
+                          {t(phone.condition)}
+                        </span>
+                      )}
+                    </div>
 
-                            {/* Price */}
-                            <div className="mt-0.5 flex items-center justify-between">
-                              <div className="text-purple-700 font-bold text-lg" dir="ltr">
-                                {phone.price.toLocaleString('en-US')} <span className="text-xs font-normal text-gray-500">{t('currency_short')}</span>
-                              </div>
-                              {phone.is_verified && (
-                                <span className="text-[10px] bg-green-50 text-green-700 px-1.5 py-0.5 rounded border border-green-100 font-medium">
-                                  {t('verified')}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                  {/* تم إزالة زر التعديل */}
+                    {/* Price */}
+                    <div className="mt-0.5 flex items-center justify-between">
+                      <div className="text-purple-700 font-bold text-lg" dir="ltr">
+                        {phone.price.toLocaleString('en-US')} <span className="text-xs font-normal text-gray-500">{t('currency_short')}</span>
+                      </div>
+                      {phone.is_verified && (
+                        <span className="text-[10px] bg-green-50 text-green-700 px-1.5 py-0.5 rounded border border-green-100 font-medium">
+                          {t('verified')}
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </Link>
               );
             })}
           </div>
         )}
+
+        {/* Pagination Controls */}
+        <div className="flex justify-center items-center mt-4">
+          <button
+            onClick={() => handlePageChange(page - 1)}
+            disabled={page === 1}
+            className="px-4 py-2 mx-1 bg-gray-200 rounded disabled:opacity-50"
+          >
+            {t('previous')}
+          </button>
+          {Array.from({ length: totalPages }, (_, index) => (
+            <button
+              key={index + 1}
+              onClick={() => handlePageChange(index + 1)}
+              className={`px-4 py-2 mx-1 rounded ${page === index + 1 ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+            >
+              {index + 1}
+            </button>
+          ))}
+          <button
+            onClick={() => handlePageChange(page + 1)}
+            disabled={page === totalPages}
+            className="px-4 py-2 mx-1 bg-gray-200 rounded disabled:opacity-50"
+          >
+            {t('next')}
+          </button>
+        </div>
       </div>
     </PageContainer>
   );
