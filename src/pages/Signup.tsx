@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
 // Contexts
@@ -73,52 +73,151 @@ const Signup: React.FC = () => {
       ...prev,
       [name]: processedValue
     }));
-    // Simplified email existence check: debounce one API call to server
+
+    // تعديل التحقق من البريد الإلكتروني
     if (name === 'email') {
+      // إعادة تعيين الحالات
       setEmailExists(false);
       setCheckingEmail(false);
       setIsEmailRegistered(false);
-      // clear previous timer
-      if (emailTimerRef.current) {
-        clearTimeout(emailTimerRef.current);
-      }
-
+      
+      // إظهار رسالة جارٍ التحقق فقط إذا كان البريد الإلكتروني صالحًا
       if (value && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
         setCheckingEmail(true);
-        emailTimerRef.current = window.setTimeout(async () => {
+        
+        // تأخير التحقق قليلاً لتحسين تجربة المستخدم
+        setTimeout(async () => {
           try {
-            const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://imei-safe.me';
-            const resp = await fetch(`${API_BASE_URL}/api/check-email`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ email: value })
-            });
-            const json = await resp.json().catch(() => null);
-            const exists = !!(json && json.emailExists);
-            setEmailExists(exists);
-            setIsEmailRegistered(exists);
-            if (exists) {
-              toast({ title: t('alert_title'), description: t('email_registered_before'), variant: 'destructive' });
+            // التحقق من وجود البريد الإلكتروني في جدول users و businesses
+            try {
+              let emailExists = false;
+              
+              // 1. محاولة استخدام دالة RPC للتحقق من كلا الجدولين
+              try {
+                const { data: rpcResult, error: rpcError } = await supabase
+                  .rpc('check_email_in_both_tables', { email_to_check: value });
+                
+                if (!rpcError && rpcResult !== undefined) {
+                  // الدالة RPC نجحت، استخدم النتيجة
+                  emailExists = rpcResult;
+                  if (emailExists) {
+                    setEmailExists(true);
+                    setIsEmailRegistered(true);
+                    toast({
+                      title: t('alert_title'),
+                      description: t('email_registered_before'),
+                      variant: "destructive",
+                    });
+                  } else {
+                    setEmailExists(false);
+                    setIsEmailRegistered(false);
+                  }
+                  return;
+                }
+              } catch (rpcError: any) {
+                console.log("RPC function not available, will use direct queries");
+              }
+              
+              // 2. التحقق من جدول users
+              try {
+                const { data: usersData, error: usersError } = await supabase
+                  .from('users')
+                  .select('email')
+                  .eq('email', value)
+                  .limit(1);
+                  
+                if (!usersError && usersData && usersData.length > 0) {
+                  emailExists = true;
+                } else if (usersError) {
+                  console.error("Error checking users table:", usersError);
+                  
+                  // في حالة وجود خطأ في الصلاحيات، حاول استعلام بديل
+                  if (usersError.code === 'PGRST116' || usersError.code === 'PGRST202') {
+                    console.log("Permission error on users table, trying alternative");
+                    
+                    const { data: altData, error: altError } = await supabase
+                      .from('users')
+                      .select('id')
+                      .ilike('email', `%${value}%`)
+                      .limit(1);
+                      
+                    if (!altError && altData && altData.length > 0) {
+                      emailExists = true;
+                    }
+                  }
+                }
+              } catch (usersError: any) {
+                console.error("Unexpected error checking users table:", usersError);
+              }
+              
+              // 3. التحقق من جدول businesses إذا لم يتم العثور على البريد في users
+              if (!emailExists) {
+                try {
+                  const { data: businessesData, error: businessesError } = await supabase
+                    .from('businesses')
+                    .select('email')
+                    .eq('email', value)
+                    .limit(1);
+                    
+                  if (!businessesError && businessesData && businessesData.length > 0) {
+                    emailExists = true;
+                  } else if (businessesError) {
+                    console.error("Error checking businesses table:", businessesError);
+                    
+                    // في حالة وجود خطأ في الصلاحيات، حاول استعلام بديل
+                    if (businessesError.code === 'PGRST116' || businessesError.code === 'PGRST202') {
+                      console.log("Permission error on businesses table, trying alternative");
+                      
+                      const { data: altData, error: altError } = await supabase
+                        .from('businesses')
+                        .select('id')
+                        .ilike('email', `%${value}%`)
+                        .limit(1);
+                        
+                      if (!altError && altData && altData.length > 0) {
+                        emailExists = true;
+                      }
+                    }
+                  }
+                } catch (businessesError: any) {
+                  console.error("Unexpected error checking businesses table:", businessesError);
+                }
+              }
+              
+              // تحديث الحالة بناءً على النتيجة النهائية
+              setEmailExists(emailExists);
+              setIsEmailRegistered(emailExists);
+              
+              if (emailExists) {
+                toast({
+                  title: t('alert_title'),
+                  description: t('email_registered_before'),
+                  variant: "destructive",
+                });
+              }
+            } catch (error: any) {
+              console.error("Unexpected error checking email:", error);
+              setEmailExists(false);
+              setIsEmailRegistered(false);
             }
-          } catch (e) {
-            console.error('Email check failed', e);
+            
+            setLastCheckedEmail(value);
+          } catch (error: any) {
+            console.error("Email verification error:", error);
+            setEmailExists(false);
+            setIsEmailRegistered(false);
+            setLastCheckedEmail(value);
           } finally {
             setCheckingEmail(false);
           }
-        }, 600);
+        }, 500); // تأخير نصف ثانية
       } else {
-        setCheckingEmail(false);
+        // إذا كان البريد الإلكتروني فارغًا أو غير صالح
+        setLastCheckedEmail('');
+        setIsEmailRegistered(false);
       }
     }
   };
-
-  // Debounce timer ref and cleanup
-  const emailTimerRef = useRef<number | null>(null);
-  useEffect(() => {
-    return () => {
-      if (emailTimerRef.current) clearTimeout(emailTimerRef.current);
-    };
-  }, []);
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -148,23 +247,45 @@ const Signup: React.FC = () => {
     }
 
     try {
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://imei-safe.me';
-      const resp = await fetch(`${API_BASE_URL}/api/signup`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, username, phoneNumber, idLast6, countryCode })
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: username,
+            phone: fullPhoneNumber,
+            id_last6: idLast6,
+            role: 'free_user',
+          },
+          emailRedirectTo: `${window.location.origin}/login`,
+        },
       });
 
-      const json = await resp.json().catch(() => null);
-      if (!resp.ok) {
-        const msg = (json && (json.error || json.message)) || t('signup_error');
-        setSignupError(msg);
-        setIsSubmitting(false);
-        return;
+      if (error) {
+        setSignupError(error.message.includes('User already registered') ? t('phone_registered_before') : error.message);
+      } else if (data.user) {
+        // إضافة بيانات المستخدم في جدول users بعد نجاح التسجيل
+        await supabase
+          .from('users')
+          .insert([
+            {
+              id: data.user.id, // معرف المستخدم من Supabase Auth
+              full_name: username,
+              email: email,
+              phone: fullPhoneNumber,
+              id_last6: idLast6,
+              role: 'customer',
+              status: 'active', // إضافة الحالة الافتراضية للمستخدم الجديد
+            }
+          ]);
+        toast({
+          title: t('signup_successful'),
+          description: t('verification_email_sent'),
+        });
+        navigate('/login');
+      } else {
+        setSignupError(t('signup_error'));
       }
-
-      toast({ title: t('signup_successful'), description: t('verification_email_sent') });
-      navigate('/login');
     } catch (error: any) {
       setSignupError(error.message || t('signup_error'));
     } finally {
