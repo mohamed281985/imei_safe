@@ -360,6 +360,11 @@ function sendError(res, status = 500, userMessage = 'حدث خطأ في الخا
     console.error('Failed to log error:', logErr);
   }
   if (res.headersSent) return; // avoid double responses
+  // In non-production include error details to help debugging
+  if (process.env.NODE_ENV !== 'production' && err) {
+    const detail = (err && err.message) ? err.message : String(err);
+    return res.status(status).json({ ...extra, error: userMessage, detail });
+  }
   return res.status(status).json({ ...extra, error: userMessage });
 }
 
@@ -413,12 +418,28 @@ app.post('/api/encrypt', async (req, res) => {
 // Endpoint آمن لنشر الإعلان: يقوم بتشفير رقم الهاتف وإدراج السجل باستخدام مفتاح الخدمة
 app.post('/api/publish-ad', async (req, res) => {
   try {
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[publish-ad] incoming body:', JSON.stringify(req.body).slice(0, 2000));
+      const ah = req.headers['authorization'] || req.headers['Authorization'];
+      if (ah) console.log('[publish-ad] auth header present (masked):', ('' + ah).slice(0, 10) + '...');
+    }
     // التحقق من المصادقة عبر توكن Supabase المرسل في Authorization header
     const authHeader = req.headers['authorization'];
     if (!authHeader) return res.status(401).json({ error: 'Unauthorized: missing token' });
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !user) return res.status(401).json({ error: 'Unauthorized: invalid token' });
+    // Guard: call getUser in try/catch to capture unexpected errors
+    let user = null;
+    try {
+      const gu = await supabase.auth.getUser(token);
+      if (gu && gu.data) user = gu.data.user;
+      if (gu && gu.error) {
+        console.warn('[publish-ad] supabase.auth.getUser returned error:', gu.error);
+      }
+    } catch (authEx) {
+      console.error('[publish-ad] getUser threw:', authEx);
+      return sendError(res, 401, 'Unauthorized: token validation failed', authEx);
+    }
+    if (!user) return res.status(401).json({ error: 'Unauthorized: invalid token' });
 
     const body = req.body || {};
     const adData = body.adData || body;
