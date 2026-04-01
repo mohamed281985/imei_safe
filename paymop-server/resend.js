@@ -1,8 +1,9 @@
 import { Resend } from 'resend';
+import { safeError } from './scripts/logging.js';
 
 // التحقق من وجود مفتاح API
 if (!process.env.RESEND_API_KEY) {
-  console.error('RESEND_API_KEY is not defined in environment variables');
+  safeError('resend:init', 'RESEND_API_KEY is not defined in environment variables');
   process.exit(1);
 }
 
