@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { safeLog, safeError } from './scripts/logging.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,11 +14,11 @@ const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
-  console.error('Supabase config missing in .env');
+  safeError('env_missing', { message: 'Supabase config missing in .env' });
   process.exit(1);
 }
 if (!ENCRYPTION_KEY) {
-  console.error('ENCRYPTION_KEY missing in .env');
+  safeError('env_missing', { message: 'ENCRYPTION_KEY missing in .env' });
   process.exit(1);
 }
 
@@ -73,30 +74,30 @@ const tryDecryptField = (field) => {
       .limit(200);
     if (error) throw error;
 
-    console.log(`Fetched ${data.length} registered_phones rows. Attempting to decrypt IMEIs (if encrypted)...`);
+    safeLog('fetched_rows', { table: 'registered_phones', count: data.length, note: 'attempting_decrypt' });
 
     const results = data.map(row => {
       const decrypted = tryDecryptField(row.imei);
       return { id: row.id, decryptedImei: decrypted, status: row.status, user_id: row.user_id };
     });
 
-    // Print first 50 results
-    results.slice(0, 50).forEach(r => console.log(JSON.stringify(r)));
+    // Print first 50 results (redacted)
+    safeLog('result_preview', results.slice(0,50));
 
     // Also ask user for an IMEI to search (via env var TEST_IMEI)
     const testImei = process.env.TEST_IMEI;
     if (testImei) {
       const found = results.find(r => r.decryptedImei === testImei);
       if (found) {
-        console.log('Found matching IMEI row:', found);
+        safeLog('found_match', found);
       } else {
-        console.log('No matching IMEI found for', testImei);
+        safeLog('no_match', { testImei });
       }
     }
 
     process.exit(0);
   } catch (e) {
-    console.error('Error inspecting IMEIs:', e.message || e);
+    safeError('inspect_error', { message: e.message || String(e) });
     process.exit(1);
   }
 })();
