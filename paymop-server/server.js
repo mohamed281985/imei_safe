@@ -593,15 +593,6 @@ const paymentLimiter = rateLimit({
 // Apply global limiter to all requests
 app.use(globalLimiter);
 
-// Signup-specific rate limiter: stricter limits to prevent brute-force account creation
-const signupLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 5, // limit each IP to 5 signup requests per windowMs
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: 'Too many signup attempts from this IP, please try again later.'
-});
-
 // -----------------------------
 // HMAC signing / verification for payment requests
 // -----------------------------
@@ -5046,56 +5037,6 @@ app.post('/api/claim-phone-by-email', verifyJwtToken, async (req, res) => {
   } catch (error) {
     console.error('Error claiming phone:', error);
     return sendError(res, 500, 'حدث خطأ في الخادم', error);
-  }
-});
-
-// Rate-limited signup proxy endpoint
-app.post('/api/signup', signupLimiter, rateLimitMiddleware({ windowMs: 60 * 60 * 1000, max: 6 }), async (req, res) => {
-  try {
-    const { email, password, username, phoneNumber, idLast6, countryCode } = req.body || {};
-    if (!email || !password) return res.status(400).json({ error: 'email_and_password_required' });
-
-    // Server-side password complexity validation
-    const pwd = String(password || '');
-    const pwdValid = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/.test(pwd);
-    if (!pwdValid) return res.status(400).json({ error: 'weak_password', message: 'Password does not meet complexity requirements' });
-
-    // Optional: sanitize/validate other fields briefly
-    const fullPhone = (countryCode || '') + (phoneNumber || '');
-
-    // Create user via Supabase auth (service key client)
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: username || null,
-          phone: fullPhone || null,
-          id_last6: idLast6 || null,
-          role: 'free_user'
-        },
-        emailRedirectTo: `${process.env.FRONTEND_URL || 'https://'+(process.env.HOST||'')}/login`
-      }
-    });
-
-    if (error) {
-      console.error('Signup RPC error:', error);
-      return res.status(400).json({ error: 'signup_failed', message: error.message });
-    }
-
-    // Insert users profile row if auth created a user id
-    if (data?.user?.id) {
-      try {
-        await supabase.from('users').insert([{ id: data.user.id, full_name: username || null, email, phone: fullPhone || null, id_last6: idLast6 || null, role: 'customer', status: 'active' }]);
-      } catch (insertErr) {
-        console.warn('Warning: failed to insert user profile row:', insertErr?.message || insertErr);
-      }
-    }
-
-    return res.json({ ok: true, data });
-  } catch (err) {
-    console.error('/api/signup error', err);
-    return res.status(500).json({ error: 'internal_error' });
   }
 });
 
