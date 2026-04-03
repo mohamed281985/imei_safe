@@ -35,17 +35,17 @@ const DEV_BYPASS_TOKEN = process.env.DEV_BYPASS_TOKEN || null;
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
 
 if (!ENCRYPTION_KEY) {
-  console.error('config: ENCRYPTION_KEY missing from environment');
+  console.error("⛔️ خطأ: يجب تعيين ENCRYPTION_KEY في متغيرات البيئة. ضع مفتاح AES-256 (32 bytes) في صيغة hex.");
   process.exit(1);
 }
 
 // تحقق من الطول (64 hex chars -> 32 bytes)
 if (typeof ENCRYPTION_KEY !== 'string' || ENCRYPTION_KEY.length !== 64 || !/^[0-9a-fA-F]+$/.test(ENCRYPTION_KEY)) {
-  console.error('config: ENCRYPTION_KEY invalid format');
+  console.error('⛔️ ENCRYPTION_KEY غير صحيحة. يجب أن تكون سلسلة hex بطول 64 (32 bytes).');
   process.exit(1);
 }
 
-console.log('config: ENCRYPTION_KEY_loaded');
+console.log('✅ تم تحميل ENCRYPTION_KEY من متغيرات البيئة.');
 
 // متجه التشفير (IV) - يجب أن يكون عشوائياً لكل عملية تشفير
 const generateIV = () => crypto.randomBytes(12); // 96-bit nonce recommended for GCM
@@ -164,13 +164,13 @@ const decryptField = (encryptedField) => {
             try {
               return decryptAES(parsed.encryptedData, parsed.iv, parsed.authTag);
             } catch (e) {
-              if (process.env.NODE_ENV !== 'production') safeLog('decryptField', { msg: 'decryptAES_failed', error: String(e) });
+              if (process.env.NODE_ENV !== 'production') console.warn('[decryptField] decryptAES failed:', e);
               return null;
             }
           }
         }
       } catch (e) {
-        if (process.env.NODE_ENV !== 'production') safeLog('decryptField', { msg: 'json_parse_failed', error: String(e) });
+        if (process.env.NODE_ENV !== 'production') console.debug('[decryptField] JSON parse attempt failed:', e);
         // استمر لمحاولات أخرى
       }
     }
@@ -200,19 +200,19 @@ let auth;
 
 // إذا لم يتم تعريف المفتاح الخاص في متغيرات البيئة، استخدم ملف الخدمة
 if (!PRIVATE_KEY) {
-  safeLog('firebase', { msg: 'using-service-account-file' });
+  console.log('استخدام ملف الخدمة للـ Firebase');
   const SERVICE_ACCOUNT_FILE = path.join(__dirname, 'firebase-service-account.json');
   auth = new google.auth.GoogleAuth({
     keyFile: SERVICE_ACCOUNT_FILE,
     scopes: ['https://www.googleapis.com/auth/firebase.messaging'],
   });
-  } else {
-    safeLog('firebase', { msg: 'using-env-credentials' });
-    // ⭐ إضافة تحقق للتأكد من وجود المفاتيح المطلوبة
-    if (!CLIENT_EMAIL || !PRIVATE_KEY) {
-      safeLog('firebase', { level: 'fatal', msg: 'FIREBASE_CLIENT_EMAIL or FIREBASE_PRIVATE_KEY missing' });
-      process.exit(1); // إيقاف الخادم إذا كانت المتغيرات ناقصة
-    }
+} else {
+  console.log('استخدام متغيرات البيئة للـ Firebase');
+  // ⭐ إضافة تحقق للتأكد من وجود المفاتيح المطلوبة
+  if (!CLIENT_EMAIL || !PRIVATE_KEY) {
+    console.error("❌ خطأ: متغيرات البيئة FIREBASE_CLIENT_EMAIL أو FIREBASE_PRIVATE_KEY غير موجودة.");
+    process.exit(1); // إيقاف الخادم إذا كانت المتغيرات ناقصة
+  }
   auth = new google.auth.GoogleAuth({
     credentials: {
       type: "service_account",
@@ -241,17 +241,17 @@ const TRUST_PROXY = process.env.TRUST_PROXY;
 if (TRUST_PROXY) {
   if (TRUST_PROXY === 'true' || TRUST_PROXY === '1') {
     app.set('trust proxy', 1);
-    safeLog('config', { msg: 'trust-proxy', value: '1' });
+    console.log('trust proxy: set to 1 (first proxy)');
   } else if (/^[0-9]+$/.test(TRUST_PROXY)) {
     app.set('trust proxy', Number(TRUST_PROXY));
-    safeLog('config', { msg: 'trust-proxy', value: String(TRUST_PROXY) });
+    console.log(`trust proxy: set to first ${TRUST_PROXY} proxies`);
   } else {
     app.set('trust proxy', TRUST_PROXY);
-    safeLog('config', { msg: 'trust-proxy', value: String(TRUST_PROXY) });
+    console.log(`trust proxy: set to '${TRUST_PROXY}'`);
   }
 } else {
   app.set('trust proxy', false);
-  safeLog('config', { msg: 'trust-proxy-disabled' });
+  console.log('trust proxy: disabled (default). Set TRUST_PROXY env var to enable trusted proxies.');
 }
 
 // Security headers with explicit HSTS in production
@@ -279,7 +279,7 @@ app.use((req, res, next) => {
     }
   } catch (e) {
     // don't break requests if enforcement middleware fails
-    safeLog('https', { msg: 'enforcement_error', error: String(e) });
+    console.warn('HTTPS enforcement middleware error', e);
   }
   return next();
 });
@@ -304,9 +304,9 @@ const globalRateMiddleware = (req, res, next) => {
         }
         next();
       } catch (e) {
-          safeLog('redis', { msg: 'rate_limit_error', error: String(e) });
-          next();
-        }
+        console.error('Redis rate limit error:', e);
+        next();
+      }
     })();
   } else {
     try {
@@ -339,13 +339,13 @@ app.use((req, res, next) => {
     if (body && body.encryptedData && body.iv && body.authTag) {
       try {
         const decrypted = decryptObject(body.encryptedData, body.iv, body.authTag);
-          if (decrypted) {
+        if (decrypted) {
           // Replace body with decrypted object
           req.body = decrypted;
-          safeLog('decrypt-middleware', { msg: 'decrypted incoming payload' });
+          if (process.env.NODE_ENV !== 'production') console.log('[decrypt-middleware] decrypted incoming payload');
         }
       } catch (e) {
-        safeLog('decrypt-middleware', { msg: 'failed_to_decrypt_incoming', error: String(e) });
+        console.warn('[decrypt-middleware] failed to decrypt incoming payload', e);
         // fall through: keep original body
       }
     }
@@ -361,10 +361,10 @@ let redisClient = null;
 if (REDIS_URL) {
   try {
     redisClient = new Redis(REDIS_URL);
-    redisClient.on('error', (err) => safeLog('redis', { msg: 'error', error: String(err) }));
-    safeLog('redis', { msg: 'connected' });
+    redisClient.on('error', (err) => console.error('Redis error:', err));
+    console.log('Connected to Redis for shared state');
   } catch (e) {
-    safeLog('redis', { msg: 'init_failed', error: String(e) });
+    console.error('Failed to initialize Redis client:', e);
     redisClient = null;
   }
 }
@@ -372,9 +372,9 @@ if (REDIS_URL) {
 // Helper to log internal errors and return a generic message to clients
 function sendError(res, status = 500, userMessage = 'حدث خطأ في الخادم', err = null, extra = {}) {
   try {
-    if (err) safeLog('error', { error: String(err) });
+    if (err) console.error(err);
   } catch (logErr) {
-    safeLog('error', { msg: 'failed_to_log_error', error: String(logErr) });
+    console.error('Failed to log error:', logErr);
   }
   if (res.headersSent) return; // avoid double responses
   return res.status(status).json({ ...extra, error: userMessage });
@@ -422,7 +422,7 @@ app.post('/api/encrypt', async (req, res) => {
     if (!encrypted) return res.status(500).json({ error: 'Encryption failed' });
     return res.json(encrypted);
   } catch (e) {
-    safeLog('encrypt', { msg: 'encrypt_endpoint_error', error: String(e) });
+    console.error('/api/encrypt error', e);
     return res.status(500).json({ error: 'Encryption error' });
   }
 });
@@ -432,18 +432,6 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// ⭐ إنشاء client منفصل باستخدام service_role key للعمليات الحساسة
-// هذا client يتجاوز سياسات RLS
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
-const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false
-  }
-});
-
-safeLog('supabase', { msg: 'clients-initialized', clients: ['supabase','supabaseAdmin'] });
-
 // Endpoint: /api/lost-phones
 // يعيد قائمة الهواتف المفقودة مع فك تشفير حقل imei و phone_type فقط
 app.get('/api/lost-phones', async (req, res) => {
@@ -452,13 +440,8 @@ app.get('/api/lost-phones', async (req, res) => {
     const apiKey = req.headers['x-api-key'];
     const authHeader = req.headers['authorization'];
 
-    // If no auth header, allow dev bypass only in non-production via x-api-key
-    if (!authHeader) {
-      if (process.env.NODE_ENV !== 'production' && DEV_BYPASS_TOKEN && apiKey === DEV_BYPASS_TOKEN) {
-        // allow in dev
-      } else {
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
+    if (!authHeader && DEV_BYPASS_TOKEN && apiKey !== DEV_BYPASS_TOKEN) {
+      return res.status(401).json({ error: 'Unauthorized' });
     }
 
     // جلب الحقول المشفرة من قاعدة البيانات (اقتصر على 50 سجل لتفادي التحميل الزائد)
@@ -470,7 +453,7 @@ app.get('/api/lost-phones', async (req, res) => {
       .limit(50);
 
     if (error) {
-      safeLog('supabase', { msg: 'fetch_lost_phones_error', error: String(error) });
+      console.error('Supabase error fetching lost phones:', error);
       return res.status(500).json({ error: 'Database error' });
     }
 
@@ -519,7 +502,7 @@ app.get('/api/lost-phones', async (req, res) => {
 
     return res.json(result);
   } catch (err) {
-    safeLog('lost_phones', { msg: 'handler_error', error: String(err) });
+    console.error('Error in /api/lost-phones:', err);
     return res.status(500).json({ error: 'Server error' });
   }
 });
@@ -611,10 +594,9 @@ const paymentLimiter = rateLimit({
 app.use(globalLimiter);
 
 // Signup-specific rate limiter: stricter limits to prevent brute-force account creation
-// ملاحظة: تم زيادة الحد مؤقتاً للاختبار
 const signupLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
-  max: 20, // limit each IP to 20 signup requests per windowMs (زيادة للاختبار)
+  max: 5, // limit each IP to 5 signup requests per windowMs
   standardHeaders: true,
   legacyHeaders: false,
   message: 'Too many signup attempts from this IP, please try again later.'
@@ -625,7 +607,7 @@ const signupLimiter = rateLimit({
 // -----------------------------
 const PAYMENT_SIGNING_KEY = process.env.PAYMENT_SIGNING_KEY || null;
 if (!PAYMENT_SIGNING_KEY) {
-  safeLog('payment', { msg: 'PAYMENT_SIGNING_KEY_not_set' });
+  console.warn('PAYMENT_SIGNING_KEY not set; sign/verify endpoints will fail until configured');
 }
 
 // Payment security & timeout settings
@@ -686,7 +668,7 @@ const verifySignatureHmac = async ({ merchantOrderId, amount, timestamp, signatu
 
     return true;
   } catch (e) {
-    safeLog('payment', { msg: 'verifySignatureHmac_error', error: String(e) });
+    console.error('verifySignatureHmac error:', e);
     return false;
   }
 };
@@ -723,7 +705,7 @@ app.post('/paymob/sign', paymentLimiter, rateLimitMiddleware({ windowMs: 15 * 60
 
         // Debug (redacted minimal): type and duration candidate types
         try {
-          safeLog('paymob-sign', { msg: 'offer-lookup', offerId: maskString(offerId || '', 0, 4), offerData_type: bodyOfferData.type, durationCandidates });
+          console.log('/paymob/sign debug: offerId=', offerId, 'offerData_type=', bodyOfferData.type, 'durationCandidates=', durationCandidates);
         } catch (e) { }
 
         let found = false;
@@ -781,7 +763,7 @@ app.post('/paymob/sign', paymentLimiter, rateLimitMiddleware({ windowMs: 15 * 60
         }
       }
     } catch (e) {
-      safeLog('paymob', { msg: 'compute_expected_amount_error', error: String(e) });
+      console.error('Error computing expectedAmount in /paymob/sign:', e);
     }
 
     if (expectedAmount === null) {
@@ -791,7 +773,7 @@ app.post('/paymob/sign', paymentLimiter, rateLimitMiddleware({ windowMs: 15 * 60
     const sig = generateSignatureHmac({ merchantOrderId, amount: expectedAmount, timestamp });
     return res.json({ signature: sig, expectedAmount });
   } catch (e) {
-    safeLog('paymob', { msg: 'sign_endpoint_error', error: String(e) });
+    console.error('Error in /paymob/sign:', e);
     return res.status(500).json({ error: 'Server error' });
   }
 });
@@ -865,70 +847,6 @@ const normalizeDigitsOnly = (s) => {
   }
 };
 
-// ===== Helpers: redaction and safe logging =====
-const SENSITIVE_KEYS = new Set(['api_key','payment_token','token','card_number','cvv','password','authorization','hmac','HMAC','HMAC_SECRET','encryptedData','iv','authTag','pan','source_data','email','phone','id_last6']);
-
-const maskString = (v, keepStart = 0, keepEnd = 4) => {
-  try {
-    const s = String(v || '');
-    if (!s) return '';
-    if (s.length <= keepStart + keepEnd) return '*'.repeat(s.length);
-    return s.slice(0, keepStart) + '*'.repeat(Math.max(0, s.length - keepStart - keepEnd)) + s.slice(s.length - keepEnd);
-  } catch (e) {
-    return 'REDACTED';
-  }
-};
-
-const redactObject = (input) => {
-  if (input === null || input === undefined) return input;
-  if (typeof input !== 'object') return input;
-  const seen = new WeakSet();
-  const walk = (obj) => {
-    if (!obj || typeof obj !== 'object') return obj;
-    if (seen.has(obj)) return '[Circular]';
-    seen.add(obj);
-    if (Array.isArray(obj)) return obj.map(walk);
-    const out = {};
-    for (const k of Object.keys(obj)) {
-      try {
-        const low = String(k).toLowerCase();
-        if (SENSITIVE_KEYS.has(low)) {
-          out[k] = 'REDACTED';
-        } else if (typeof obj[k] === 'string') {
-          // mask long strings that look sensitive (tokens, ids, pans)
-          if (/^[0-9a-fA-F]{32,}$/.test(obj[k]) || obj[k].length > 64) out[k] = maskString(obj[k], 0, 6);
-          else out[k] = obj[k];
-        } else if (typeof obj[k] === 'object') {
-          out[k] = walk(obj[k]);
-        } else {
-          out[k] = obj[k];
-        }
-      } catch (e) {
-        out[k] = 'REDACTED';
-      }
-    }
-    return out;
-  };
-  return walk(input);
-};
-
-function safeLog(label, data) {
-  try {
-    if (data === undefined) {
-      console.log(label);
-      return;
-    }
-    if (typeof data === 'string' || typeof data === 'number' || typeof data === 'boolean') {
-      console.log(label + ':', data);
-      return;
-    }
-    console.log(label + ':', JSON.stringify(redactObject(data), null, 2));
-  } catch (e) {
-    try { console.log(label + ': [unserializable]'); } catch (e2) {}
-  }
-}
-
-
 // دالة مساعدة للبحث عن FCM token باستخدام IMEI
 async function getFCMTokenByImei(imei) {
   const { data, error } = await supabase
@@ -938,7 +856,7 @@ async function getFCMTokenByImei(imei) {
     .maybeSingle();
 
   if (error || !data) {
-    safeLog('fcm', { msg: 'fetch_token_error', error: String(error) });
+    console.error('Error fetching FCM token by IMEI:', error);
     return null;
   }
 
@@ -965,7 +883,8 @@ const paymobRequest = async (url, body, method = "POST", timeoutMs = PAYMENT_OP_
       walk(copy);
       return copy;
     };
-    safeLog('paymob', { msg: 'request', method, url: String(url), body_sample: redact(body) });
+    console.log(`Making ${method} request to Paymob API:`, url);
+    console.log("Request body (redacted):", JSON.stringify(redact(body), null, 2));
     
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -976,57 +895,57 @@ const paymobRequest = async (url, body, method = "POST", timeoutMs = PAYMENT_OP_
       signal: controller.signal
     }).finally(() => clearTimeout(timeoutId));
     
-    safeLog('paymob', { msg: 'response-status', status: res.status });
+    console.log(`Response status: ${res.status}`);
     
     if (!res.ok) {
       let errorData;
       try {
         errorData = await res.json();
-        safeLog('paymob', { msg: 'error-response', body: redact(errorData) });
+        console.log("Error response (redacted):", JSON.stringify(redact(errorData), null, 2));
       } catch (jsonError) {
         errorData = { message: res.statusText };
-        safeLog('paymob', { msg: 'error-no-json', statusText: res.statusText });
+        console.log("Error parsing JSON, using status text:", res.statusText);
       }
       
       throw new Error(`Paymob API Error (${url}): ${errorData.message || res.statusText}`);
     }
     
     const data = await res.json();
-    safeLog('paymob', { msg: 'success-response', body: redact(data) });
+    console.log("Success response (redacted):", JSON.stringify(redact(data), null, 2));
     return data;
   } catch (error) {
     if (error && error.name === 'AbortError') {
-      safeLog('paymob', { msg: 'request-timeout', url: String(url) });
+      console.error(`Paymob request timed out: ${url}`);
       throw new Error('Paymob request timed out');
     }
-    safeLog('paymob', { msg: 'request-failed', error: (error && error.message) ? error.message : String(error) });
+    console.error(`Failed to make request to Paymob API (${url}):`, error.message || error);
     throw error;
   }
 };
 
 const getAuthToken = async () => {
   try {
-    safeLog('paymob', { msg: 'request-auth-token' });
+    console.log("Requesting auth token from Paymob...");
     const authData = await paymobRequest("https://accept.paymob.com/api/auth/tokens", { 
       api_key: PAYMOB_API_KEY 
     });
     
     if (!authData || !authData.token) {
-      safeLog('paymob', { msg: 'invalid_auth_response', body: redactObject(authData) });
+      console.error("Invalid auth response from Paymob:", JSON.stringify(authData, null, 2));
       throw new Error("فشل في الحصول على توكن المصادقة من Paymob - استجابة غير صالحة");
     }
     
-    safeLog('paymob', { msg: 'auth-token-obtained' });
+    console.log("Successfully obtained auth token");
     return authData.token;
   } catch (error) {
-    safeLog('paymob', { msg: 'auth-token-error', error: (error && error.message) ? error.message : String(error) });
+    console.error("Error getting auth token:", error.message);
     throw new Error(`فشل في الحصول على توكن المصادقة من Paymob: ${error.message}`);
   }
 };
 
 const registerOrder = async (token, { amount, merchantOrderId }) => {
   try {
-    safeLog('paymob', { msg: 'registering-order', merchantOrderId: maskString(merchantOrderId || '', 0, 4) });
+    console.log("Registering order with Paymob...");
     
     const amountCents = Math.round(Number(amount) * 100);
     if (isNaN(amountCents)) {
@@ -1045,14 +964,14 @@ const registerOrder = async (token, { amount, merchantOrderId }) => {
     });
     
     if (!orderData || !orderData.id) {
-      safeLog('paymob', { msg: 'invalid-order-response', body: orderData });
+      console.error("Invalid order response from Paymob:", JSON.stringify(orderData, null, 2));
       throw new Error("فشل في إنشاء الطلب لدى Paymob - استجابة غير صالحة");
     }
     
-    safeLog('paymob', { msg: 'order-registered', orderId: maskString(String(orderData.id || ''), 0, 4) });
+    console.log(`Successfully registered order with ID: ${orderData.id}`);
     return orderData;
   } catch (error) {
-    safeLog('paymob', { msg: 'register-order-error', error: (error && error.message) ? error.message : String(error) });
+    console.error("Error registering order:", error.message);
     throw new Error(`فشل في إنشاء الطلب لدى Paymob: ${error.message}`);
   }
 };
@@ -1069,7 +988,7 @@ app.post('/api/send-fcm-v1', async (req, res) => {
     const result = await sendFCMNotificationV1({ token, title, body, data });
     res.json({ success: true, result });
   } catch (err) {
-    safeLog('fcm', { msg: 'v1_error', error: String(err) });
+    console.error('FCM V1 Error:', err);
     return sendError(res, 500, 'حدث خطأ في الخادم', err, { success: false });
   }
 });
@@ -1108,7 +1027,7 @@ app.post('/api/send-notification-by-imei', async (req, res) => {
         data: notificationData
       });
     } catch (fcmError) {
-      safeLog('fcm', { msg: 'send_failed', error: String(fcmError) });
+      console.error('فشل إرسال الإشعار عبر FCM:', fcmError);
       // لا نرجع خطأ هنا، فقط نستمر في تسجيل الإشعار في قاعدة البيانات
     }
 
@@ -1125,10 +1044,10 @@ app.post('/api/send-notification-by-imei', async (req, res) => {
         }]);
 
       if (dbError) {
-        safeLog('db', { msg: 'insert_notification_failed', error: String(dbError) });
+        console.error('خطأ في تسجيل الإشعار في قاعدة البيانات:', dbError);
       }
     } catch (dbErr) {
-      safeLog('db', { msg: 'insert_notification_exception', error: String(dbErr) });
+      console.error('خطأ في تسجيل الإشعار في قاعدة البيانات:', dbErr);
     }
 
     res.json({ 
@@ -1137,7 +1056,7 @@ app.post('/api/send-notification-by-imei', async (req, res) => {
       message: result ? 'Notification sent successfully' : 'Notification recorded but failed to send'
     });
   } catch (err) {
-    safeLog('notifications', { msg: 'send_error', error: String(err) });
+    console.error('خطأ في إرسال الإشعار:', err);
     return sendError(res, 500, 'حدث خطأ في الخادم', err, { success: false });
   }
 });
@@ -1180,7 +1099,7 @@ app.post('/api/search-imei', async (req, res) => {
       .select('imei, registration_date, status, user_id');
 
     if (regError) {
-      safeLog('search', { msg: 'search_registered_phone_error', error: String(regError) });
+      console.error('Error searching for registered phone:', regError);
       throw regError;
     }
 
@@ -1195,7 +1114,7 @@ app.post('/api/search-imei', async (req, res) => {
       .in('status', ['active', 'resolved']);
 
     if (reportError) {
-      safeLog('search', { msg: 'search_reported_phone_error', error: String(reportError) });
+      console.error('Error searching for reported phone:', reportError);
       throw reportError;
     }
 
@@ -1208,7 +1127,7 @@ app.post('/api/search-imei', async (req, res) => {
           report_date: r.report_date,
           updated_at: r.updated_at
         })) : [];
-        safeLog('DEBUG: allReports (decrypted)', { count: (debugReports || []).length, sample: debugReports.slice(0,5) });
+        console.log('DEBUG: allReports (decrypted):', debugReports);
 
     // ابحث عن أي بلاغ موجود: سنُظهر البلاغ فقط إذا كان "active" صريحاً
     // تحقق هل المستخدم هو المالك (بمقارنة userId فقط)
@@ -1218,7 +1137,9 @@ app.post('/api/search-imei', async (req, res) => {
     }
     // ابحث عن بلاغ active يطابق الـ IMEI
     const activeReportAny = allReports ? allReports.find(r => normalizeDigitsOnly(decryptField(r.imei)) === normalizedIncoming && r.status === 'active') : null;
-    safeLog('DEBUG: search-info', { imei: maskString(imei, 2, 2), authenticatedUserId, activeReportExists: !!activeReportAny });
+    console.log('DEBUG: imei to search:', imei);
+    console.log('DEBUG: authenticatedUserId:', authenticatedUserId);
+    console.log('DEBUG: activeReportAny:', activeReportAny);
 
     if (activeReportAny) {
       // يوجد بلاغ فعال — نُظهره بغض النظر عن هوية المبلغ
@@ -1275,10 +1196,10 @@ app.post('/api/search-imei', async (req, res) => {
       });
     } catch (logError) {
       // لا نوقف العملية إذا فشل تسجيل البحث
-      safeLog('search_history', { msg: 'log_error', error: String(logError) });
+      console.error('Error logging search history:', logError);
     }
   } catch (error) {
-    safeLog('search', { msg: 'search_error', error: String(error) });
+    console.error('Error searching IMEI:', error);
     res.status(500).json({ error: 'Error searching IMEI' });
   }
 });
@@ -1323,16 +1244,16 @@ app.post('/api/send-notification', async (req, res) => {
           }]);
 
         if (dbError) {
-          safeLog('db', { msg: 'insert_notification_failed', error: String(dbError) });
+          console.error('خطأ في تسجيل الإشعار في قاعدة البيانات:', dbError);
         }
       } catch (dbErr) {
-        safeLog('db', { msg: 'insert_notification_exception', error: String(dbErr) });
+        console.error('خطأ في تسجيل الإشعار في قاعدة البيانات:', dbErr);
       }
     }
 
     res.json({ success: true, result });
   } catch (err) {
-    safeLog('notifications', { msg: 'send_error', error: String(err) });
+    console.error('خطأ في إرسال الإشعار:', err);
     return sendError(res, 500, 'حدث خطأ في الخادم', err, { success: false });
   }
 });
@@ -1416,7 +1337,7 @@ app.post('/api/report-lost-phone', async (req, res) => {
           data.masked_imei = masked;
         }
       } catch (e) {
-        safeLog('report', { msg: 'masked_imei_failed', error: String(e) });
+        console.warn('Warning: failed to compute masked_imei', e);
       }
 
       const encryptedImei = encryptAES(data.imei);
@@ -1462,12 +1383,12 @@ app.post('/api/report-lost-phone', async (req, res) => {
       .insert([data])
       .select();
     if (error) {
-      safeLog('report', { msg: 'save_failed', error: String(error) });
+      console.error('Error saving report:', error);
       return sendError(res, 500, 'حدث خطأ في الخادم', error, { success: false });
     }
     res.json({ success: true, data: inserted });
   } catch (err) {
-    safeLog('report', { msg: 'handler_error', error: String(err) });
+    console.error('Error in /api/report-lost-phone:', err);
     res.status(500).json({ success: false, error: 'Server error' });
   }
 });
@@ -1479,24 +1400,28 @@ const IFRAME_ID = process.env.PAYMOB_IFRAME_ID;
 const HMAC_SECRET = process.env.PAYMOB_HMAC_SECRET;
 
 // طباعة متغيرات Paymob للتحقق
-safeLog('paymob-env-check', { PAYMOB_API_KEY: !!PAYMOB_API_KEY, INTEGRATION_ID: !!INTEGRATION_ID, IFRAME_ID: !!IFRAME_ID, HMAC_SECRET: !!HMAC_SECRET });
+console.log('Paymob variables check:');
+console.log('PAYMOB_API_KEY:', PAYMOB_API_KEY ? 'Found' : 'Not found');
+console.log('INTEGRATION_ID:', INTEGRATION_ID ? 'Found' : 'Not found');
+console.log('IFRAME_ID:', IFRAME_ID ? 'Found' : 'Not found');
+console.log('HMAC_SECRET:', HMAC_SECRET ? 'Found' : 'Not found');
 
 // التحقق من متغيرات البيئة عند بدء التشغيل
 if (!PAYMOB_API_KEY || !INTEGRATION_ID || !IFRAME_ID || !HMAC_SECRET) {
-  safeLog('paymob', { level: 'fatal', msg: 'Paymob environment variables incomplete' });
+  console.error("❌ خطأ: متغيرات البيئة الخاصة بـ Paymob غير مكتملة. يرجى التحقق من ملف .env");
   process.exit(1); // إيقاف السيرفر إذا كانت المتغيرات ناقصة
 }
 
 // إرسال بريد إلكتروني للمالك عند العثور على الهاتف
 app.post('/api/update-finder-phone-by-imei', async (req, res) => {
-  safeLog('/api/update-finder-phone-by-imei', { msg: 'received' });
+  console.log('POST request received at /api/update-finder-phone-by-imei');
   const { imei, ownerName, finderPhone } = req.body;
 
   if (!imei || !finderPhone) {
     return res.status(400).json({ error: 'IMEI and finderPhone are required' });
   }
   
-  safeLog('update-finder-phone', { imei: maskString(imei || '', 2, 2), finderPhone: maskString(finderPhone || '', 0, 2), ownerName: maskName(ownerName || 'Not provided') });
+  console.log(`Processing IMEI: ${imei}, Finder phone: ${finderPhone}, Owner name: ${ownerName || 'Not provided'}`);
 
   // مجموعة لتتبع الإشعارات المرسلة مؤخرًا لمنع التكرار
   const recentlyNotified = new Set();
@@ -1504,21 +1429,21 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
   // --- ⭐ التحقق من فترة التهدئة (Cooldown) ---
   // إذا تم إرسال إشعار لهذا الـ IMEI مؤخرًا، تجاهل الطلب الحالي.
   if (recentlyNotified.has(imei)) {
-    safeLog('cooldown', { msg: 'blocked-duplicate-notification', imei: maskString(imei || '', 2, 2) });
+    console.log(`[Cooldown] Blocked duplicate notification request for IMEI: ${imei}`);
     // أرسل ردًا ناجحًا لتجنب ظهور خطأ في الواجهة الأمامية
     return res.json({ ok: true, message: 'Notification already sent recently.' });
   }
 
   try {
     // 1. البحث عن الهاتف للحصول على معلومات المالك (بريد، اسم، وتوكن الإشعارات، ومعرف الواجد)
-    safeLog('search-for-phone', { msg: 'searching', imei: maskString(imei || '', 2, 2) });
+    console.log(`Searching for phone with IMEI: ${imei}`);
     const { data: allReports, error: reportError } = await supabase
       .from('phone_reports')
       .select('id, imei, email, owner_name, fcm_token, finder_user_id')
       .order('id', { ascending: true });
 
     if (reportError || !allReports || allReports.length === 0) {
-      safeLog('phone-search', { msg: 'no_phone_reports', error: String(reportError) });
+      console.error(`No phone_reports found. Error:`, reportError);
       return res.status(404).json({ error: 'لم يتم العثور على الهاتف في البلاغات', imei });
     }
 
@@ -1537,7 +1462,7 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
     }
 
     if (!foundReport) {
-      safeLog('phone-search', { msg: 'phone_not_found_after_decrypt', imei: maskString(imei || '', 2, 2) });
+      console.error(`Phone not found for IMEI (decrypted match): ${imei}`);
       return res.status(404).json({ error: 'لم يتم العثور على الهاتف في البلاغات', imei });
     }
 
@@ -1546,7 +1471,7 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
       try {
         return decryptField(foundReport.owner_name) || foundReport.owner_name;
       } catch (e) {
-        safeLog('phone-search', { msg: 'decrypt_owner_name_failed', error: String(e) });
+        console.error('فشل فك تشفير owner_name:', e);
         return foundReport.owner_name;
       }
     })();
@@ -1556,12 +1481,12 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
       try {
         return decryptField(foundReport.email) || foundReport.email;
       } catch (e) {
-        safeLog('phone-search', { msg: 'decrypt_email_failed', error: String(e) });
+        console.error('فشل فك تشفير email:', e);
         return foundReport.email;
       }
     })();
 
-    safeLog('phone-search', { msg: 'phone-found', imei: maskString(imei, 2, 2), owner: maskName(decryptedOwnerName || foundReport.owner_name) });
+    console.log(`Phone found for IMEI: ${imei}. Owner: ${decryptedOwnerName || foundReport.owner_name}`);
 
     // 2. تشفير finder_phone قبل الحفظ
     let encryptedFinderPhone = null;
@@ -1570,7 +1495,7 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
         const enc = encryptAES(finderPhone);
         encryptedFinderPhone = JSON.stringify({ encryptedData: enc.encryptedData, iv: enc.iv, authTag: enc.authTag });
       } catch (e) {
-        safeLog('finder', { msg: 'encrypt_finder_phone_failed', error: String(e) });
+        console.error('فشل تشفير finder_phone:', e);
         encryptedFinderPhone = finderPhone; // fallback: حفظ الرقم كما هو
       }
     }
@@ -1580,10 +1505,10 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
       .eq('id', foundReport.id);
 
     if (updateError) {
-      safeLog('finder', { msg: 'update_finder_phone_failed', error: String(updateError) });
+      console.error('فشل تحديث finder_phone في phone_reports:', updateError);
       // لا توقف العملية، فقط سجل الخطأ
     } else {
-      safeLog('finder', { msg: 'finder-phone-saved' });
+      console.log('Finder phone saved to database successfully');
     }
 
     // ⭐ 3. إرسال الإشعار والبريد الإلكتروني بعد التحديث الناجح
@@ -1596,12 +1521,12 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
         .eq('id', foundReport.id)
         .single();
       if (refreshError) {
-        safeLog('finder', { msg: 'refresh_finder_phone_failed', error: String(refreshError) });
+        console.error('فشل جلب finder_phone بعد التحديث:', refreshError);
       } else {
         finderPhoneFromDb = refreshedReport?.finder_phone ?? finderPhoneFromDb;
       }
     } catch (e) {
-      safeLog('finder', { msg: 'refresh_fetch_error', error: String(e) });
+      console.error('خطأ أثناء جلب finder_phone بعد التحديث:', e);
     }
 
     const decryptedFinderPhone = (() => {
@@ -1609,7 +1534,7 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
       try {
         return decryptField(finderPhoneFromDb) || finderPhone;
       } catch (e) {
-        safeLog('finder', { msg: 'decrypt_finder_phone_failed', error: String(e) });
+        console.error('فشل فك تشفير finder_phone:', e);
         return finderPhone;
       }
     })();
@@ -1619,7 +1544,7 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
       try {
         return decryptField(foundReport.imei) || foundReport.imei;
       } catch (e) {
-        safeLog('phone-search', { msg: 'decrypt_imei_failed', error: String(e) });
+        console.error('فشل فك تشفير IMEI:', e);
         return foundReport.imei;
       }
     })();
@@ -1633,12 +1558,12 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
           .ilike('email', decryptedOwnerEmail)
           .maybeSingle();
         if (error) {
-          safeLog('user', { msg: 'fetch_language_failed', error: String(error) });
+          console.error('فشل جلب لغة المستخدم:', error);
           return 'ar';
         }
         return data?.language || 'ar';
       } catch (e) {
-        safeLog('user', { msg: 'fetch_language_exception', error: String(e) });
+        console.error('خطأ أثناء جلب لغة المستخدم:', e);
         return 'ar';
       }
     })();
@@ -1686,7 +1611,7 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
     const localizedContent = notificationsByLang[normalizedLang] || notificationsByLang.ar;
 
     if (foundReport.fcm_token) {
-      safeLog('fcm', { msg: 'found-fcm-token', token_sample: maskString(foundReport.fcm_token || '', 0, 4) });
+      console.log(`Found FCM token, sending push notification to: ${foundReport.fcm_token}`);
       try {
         const notificationBody = localizedContent.body;
         await sendFCMNotificationV1({
@@ -1698,19 +1623,19 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
             imei: decryptedImei || foundReport.imei
           }
         });
-        safeLog('fcm', { msg: 'push-sent' });
+        console.log('Push notification sent successfully.');
       } catch (fcmError) {
         // لا توقف العملية كلها إذا فشل الإشعار، فقط سجل الخطأ
-          safeLog('fcm', { msg: 'push-send-failed', error: (fcmError && fcmError.message) ? fcmError.message : String(fcmError) });
+        console.error('Failed to send FCM notification:', fcmError);
       }
     } else {
-        safeLog('fcm', { msg: 'no-fcm-token-for-report' });
+      console.log('No FCM token found for this report, skipping push notification.');
     }
 
     // 4. إرسال البريد الإلكتروني (كما كان)
     if (decryptedOwnerEmail) {
       const cleanEmail = decryptedOwnerEmail.trim();
-      safeLog('email', { msg: 'sending-email', to: maskEmail(cleanEmail) });
+      console.log('إرسال بريد إلكتروني إلى:', cleanEmail);
 
       await resend.emails.send({
         from: 'onboarding@resend.dev',
@@ -1718,9 +1643,9 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
         subject: localizedContent.emailSubject,
         html: localizedContent.emailHtml
       });
-      safeLog('email', { msg: 'sent' });
+      console.log('Email sent successfully.');
     } else {
-      safeLog('email', { msg: 'no-email-found' });
+      console.log('No email found for this report, skipping email notification.');
     }
 
     // إذا لم يكن هناك بريد إلكتروني أو توكن، قد يكون هناك مشكلة
@@ -1737,7 +1662,7 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
 
     res.json({ success: true, message: 'Notifications sent.' });
   } catch (err) {
-    safeLog('notifications', { msg: 'send_all_error', error: String(err) });
+    console.error('خطأ في إرسال الإشعارات:', err);
     res.status(500).json({ error: 'خطأ في إرسال الإشعارات' });
   }
 });
@@ -1752,7 +1677,7 @@ app.post('/api/get-finder-phone', async (req, res) => {
   let finderPhoneNumber = null;
 
   try {
-  safeLog('finder', { msg: 'lookup-by-userId', userId: maskString(userId, 0, 4) });
+    console.log(`البحث عن رقم هاتف للمستخدم بالمعرف: ${userId}`);
 
     // ⭐ إرسال طلبات البحث في كلا الجدولين في نفس الوقت
     const [userResult, businessResult] = await Promise.allSettled([
@@ -1771,13 +1696,13 @@ app.post('/api/get-finder-phone', async (req, res) => {
     // ⭐ تحقق من نتيجة البحث في جدول users
     if (userResult.status === 'fulfilled' && userResult.value.data && !userResult.value.error) {
       finderPhoneNumber = userResult.value.data.phone;
-      safeLog('finder', { msg: 'found-in-users', phone: maskPhoneNumber(finderPhoneNumber) });
+      console.log('تم العثور على رقم هاتف في جدول users:', finderPhoneNumber);
     }
 
     // ⭐ إذا لم يتم العثوره في users، تحقق من نتيجة البحث في جدول businesses
     if (!finderPhoneNumber && businessResult.status === 'fulfilled' && businessResult.value.data && !businessResult.value.error) {
       finderPhoneNumber = businessResult.value.data.phone;
-      safeLog('finder', { msg: 'found-in-businesses', phone: maskPhoneNumber(finderPhoneNumber) });
+      console.log('تم العثور على رقم هاتف في جدول businesses:', finderPhoneNumber);
     }
 
     // إذا تم العثور على الرقم في أي من الجدولين، أرسله
@@ -1785,12 +1710,12 @@ app.post('/api/get-finder-phone', async (req, res) => {
       res.status(200).json({ finderPhone: finderPhoneNumber });
     } else {
       // إذا لم يتم العثور عليه في أي من الجدولين
-      safeLog('finder', { msg: 'not-found-in-any-table', userId: maskString(userId, 0, 4) });
+      console.log('لم يتم العثور على رقم هاتف للمستخدم في أي من الجدولين.');
       res.status(404).json({ error: 'Phone number not found for the given userId in users or businesses table.' });
     }
 
   } catch (err) {
-    safeLog('finder', { msg: 'get_finder_phone_error', error: String(err) });
+    console.error('Error in /api/get-finder-phone:', err);
     res.status(500).json({ error: 'An internal server error occurred' });
   }
 });
@@ -1871,7 +1796,7 @@ app.get("/", (req, res) => {
 // 2. تسجيل الفاتورة
 const registerInvoice = async (token, { amount, currency, shippingData, items }) => {
   try {
-    safeLog('paymob', { msg: 'registering-invoice', amount, currency });
+    console.log("Registering invoice with Paymob...");
     
     const amountCents = Math.round(Number(amount) * 100);
     if (isNaN(amountCents)) {
@@ -1897,14 +1822,14 @@ const registerInvoice = async (token, { amount, currency, shippingData, items })
     });
     
     if (!orderData || !orderData.id) {
-      safeLog('paymob', { msg: 'invalid-invoice-response', body: orderData });
+      console.error("Invalid invoice response from Paymob:", JSON.stringify(orderData, null, 2));
       throw new Error("فشل في إنشاء الفاتورة لدى Paymob - استجابة غير صالحة");
     }
     
-    safeLog('paymob', { msg: 'invoice-registered', invoiceId: maskString(String(orderData.id || ''), 0, 4) });
+    console.log(`Successfully registered invoice with ID: ${orderData.id}`);
     return orderData;
   } catch (error) {
-    safeLog('paymob', { msg: 'register-invoice-error', error: (error && error.message) ? error.message : String(error) });
+    console.error("Error registering invoice:", error.message);
     throw new Error(`فشل في إنشاء الفاتورة لدى Paymob: ${error.message}`);
   }
 };
@@ -1950,7 +1875,7 @@ const getPaymentKey = async (token, { amount, orderId, email, name, phone, redir
     if (!paymentKeyData.token) throw new Error("فشل في الحصول على مفتاح الدفع من Paymob");
     return paymentKeyData.token;
   } catch (error) {
-    safeLog('paymob', { msg: 'get_payment_key_error', error: String(error && error.message) });
+    console.error("Error getting payment key:", error.message);
     
     // إذا فشل الاول، حاول بدون خصومات أو قسائم
     try {
@@ -1970,7 +1895,7 @@ const getPaymentKey = async (token, { amount, orderId, email, name, phone, redir
       if (!paymentKeyData.token) throw new Error("فشل في الحصول على مفتاح الدفع من Paymob");
       return paymentKeyData.token;
     } catch (secondError) {
-      safeLog('paymob', { msg: 'get_payment_key_second_attempt_failed', error: String(secondError && secondError.message) });
+      console.error("Second attempt to get payment key failed:", secondError.message);
       throw new Error(`فشل في الحصول على مفتاح الدفع من Paymob: ${secondError.message}`);
     }
   }
@@ -1996,7 +1921,7 @@ app.post("/paymob/create-payment", paymentLimiter, rateLimitMiddleware({ windowM
   };
 
   try {
-    safeLog('create-payment-request', { body: req.body });
+    console.log("Received create-payment request:", JSON.stringify(req.body, null, 2));
     
     // ⭐ تعديل: استقبال adId للتمييز بين الإنشاء والتحديث
     const { amount, email, name, phone, merchantOrderId, adData, redirect_url_success, redirect_url_failed, isSpecialAd, adId, signature, timestamp } = req.body;
@@ -2055,38 +1980,38 @@ app.post("/paymob/create-payment", paymentLimiter, rateLimitMiddleware({ windowM
 
       // أخيرًا، إذا لم نستطع تحديد سعر متوقع، نفّذ فشل صريح
       if (expectedAmount === null) {
-        safeLog('payment', { msg: 'unable_determine_expected_amount', adId, adData: redactObject(adData) });
+        console.warn('Unable to determine expected amount for payment verification', { adId, adData });
         return safeStatusJson(400, { error: 'تعذر التحقق من قيمة الدفع' });
       }
 
       // الآن نتحقق من التوقيع مقابل المبلغ المتوقع (أكثر صرامة)
       if (!(await verifySignatureHmac({ merchantOrderId, amount: expectedAmount, timestamp, signature }))) {
-        safeLog('payment', { msg: 'rejected_create_payment_invalid_signature', merchantOrderId, expectedAmount });
+        console.warn('Rejected create-payment due to invalid/missing signature (post-amount)', { merchantOrderId, expectedAmount });
         return safeStatusJson(401, { error: 'Invalid or missing signature' });
       }
 
       // قارن السعر المتوقع بالمبلغ المرسل (تحقق صارم)
       const numericAmount = Number(amount);
       if (isNaN(numericAmount) || numericAmount !== expectedAmount) {
-        safeLog('payment', { msg: 'amount_mismatch', expectedAmount, provided: amount, adId });
+        console.warn('Payment amount mismatch', { expectedAmount, provided: amount, adId });
         return safeStatusJson(400, { error: 'قيمة الدفع غير مطابقة للسعر المتوقع' });
       }
 
     } catch (verifyErr) {
-      safeLog('payment', { msg: 'amount_verification_error', error: String(verifyErr) });
+      console.error('Error during amount verification:', verifyErr);
       return safeStatusJson(500, { error: 'خطأ في التحقق من المبلغ' });
     }
 
     // 1. الحصول على توكن المصادقة
-    safeLog('create-payment', { msg: 'step', step: 1 });
+    console.log("Step 1: Getting auth token...");
     const token = await getAuthToken();
     
     // 2. تسجيل الطلب
-    safeLog('create-payment', { msg: 'step', step: 2 });
+    console.log("Step 2: Registering order...");
     const orderData = await registerOrder(token, { amount, merchantOrderId });
     
     // 3. الحصول على مفتاح الدفع
-    safeLog('create-payment', { msg: 'step', step: 3 });
+    console.log("Step 3: Getting payment key...");
     const paymentKey = await getPaymentKey(token, {
       amount,
       orderId: orderData.id,
@@ -2098,13 +2023,13 @@ app.post("/paymob/create-payment", paymentLimiter, rateLimitMiddleware({ windowM
     });
     
   // 4. بناء رابط الدفع
-  safeLog('create-payment', { msg: 'step', step: 4 });
+  console.log("Step 4: Building iframe URL...");
   const iframe_url = `https://accept.paymob.com/api/acceptance/iframes/${IFRAME_ID}?payment_token=${paymentKey}`;
     
     // 5. حفظ بيانات الإعلان في قاعدة البيانات
     let newAdId = null;
     if (adId) { // حالة تحديث إعلان موجود
-      safeLog('ads', { msg: 'updating-ad', adId: maskString(adId, 0, 4) });
+      console.log(`Step 5: Updating existing ad with ID: ${adId}`);
       const tableName = isSpecialAd ? 'ads_payment' : 'ads_payment';
       // adData هنا يحتوي فقط على الحقول المراد تحديثها
       const { error: updateError } = await supabase
@@ -2113,12 +2038,12 @@ app.post("/paymob/create-payment", paymentLimiter, rateLimitMiddleware({ windowM
         .eq('id', adId);
 
       if (updateError) {
-        safeLog('ads', { msg: 'update-error', table: tableName, error: updateError });
+        console.error(`خطأ في تحديث الإعلان في جدول ${tableName}:`, updateError);
         throw updateError;
       }
-      safeLog('ads', { msg: 'ad-updated' });
+      console.log(`تم تحديث الإعلان بنجاح.`);
     } else if (adData) { // حالة إنشاء إعلان جديد
-      safeLog('ads', { msg: 'saving-new-ad' });
+      console.log("Step 5: Saving new ad data to database...");
       const tableName = isSpecialAd ? 'ads_payment' : 'ads_payment';
       const adInsertData = {
         ...adData,
@@ -2135,13 +2060,13 @@ app.post("/paymob/create-payment", paymentLimiter, rateLimitMiddleware({ windowM
           .single();
 
         if (adError) {
-          safeLog('ads', { msg: 'insert-error', table: tableName, error: adError });
+          console.error(`خطأ في حفظ الإعلان المبدئي في جدول ${tableName}:`, adError);
           throw adError;
         }
         newAdId = insertedAd.id;
-        safeLog('ads', { msg: 'ad-inserted', newAdId: maskString(String(newAdId || ''), 0, 4) });
+        console.log(`تم حفظ الإعلان المبدئي بنجاح في جدول ${tableName} with ID: ${newAdId}`);
       } catch (insertError) {
-        safeLog('ads', { msg: 'insert-exception', table: tableName, error: insertError });
+        console.error(`خطأ في حفظ الإعلان المبدئي في جدول ${tableName}:`, insertError);
         throw insertError;
       }
     }
@@ -2158,10 +2083,10 @@ app.post("/paymob/create-payment", paymentLimiter, rateLimitMiddleware({ windowM
     };
     
     // سجل استجابة مُخفّفة لتجنب طباعة الحقول الحساسة مثل payment_token
-    safeLog('create-payment', { msg: 'sending-response', response: Object.assign({}, response, { payment_token: response.payment_token ? 'REDACTED' : null }) });
+    console.log("Sending response (redacted):", JSON.stringify(Object.assign({}, response, { payment_token: response.payment_token ? 'REDACTED' : null }), null, 2));
     return safeJson(response);
   } catch (e) {
-    safeLog('create-payment', { msg: 'handler_error', error: String(e) });
+    console.error("Error in create-payment:", e);
     if (_timedOut) return;
     return sendError(res, 500, 'حدث خطأ في الخادم', e);
   }
@@ -2197,7 +2122,7 @@ app.post('/paymob/publish-from-bonus', paymentLimiter, rateLimitMiddleware({ win
       }
       // fallback: if adData.amount provided and DB lookup failed, still refuse — require DB price
     } catch (e) {
-      safeLog('bonus', { msg: 'compute_expected_amount_error', error: String(e) });
+      console.error('Error computing expectedAmount for bonus publish:', e);
     }
 
     if (expectedAmount === null) {
@@ -2216,7 +2141,7 @@ app.post('/paymob/publish-from-bonus', paymentLimiter, rateLimitMiddleware({ win
       .maybeSingle();
 
     if (bonusError) {
-      safeLog('bonus', { msg: 'fetch_last_bonus_error', error: String(bonusError) });
+      console.error('Error fetching last bonus for user:', bonusError);
       return res.status(500).json({ error: 'Server error' });
     }
 
@@ -2236,11 +2161,11 @@ app.post('/paymob/publish-from-bonus', paymentLimiter, rateLimitMiddleware({ win
         .update({ bonus_offer: newBonusValue, payment_date: new Date().toISOString(), is_paid: true, payment_status: 'paid', transaction: 'bonus_add', Actual_bonus: lastBonus.bonus_offer })
         .eq('id', lastBonus.id);
       if (updateErr) {
-        safeLog('bonus', { msg: 'update_bonus_failed', error: String(updateErr) });
+        console.error('Failed to update bonus row:', updateErr);
         return res.status(500).json({ error: 'Could not deduct bonus' });
       }
     } catch (e) {
-      safeLog('bonus', { msg: 'update_bonus_exception', error: String(e) });
+      console.error('Exception updating bonus row:', e);
       return res.status(500).json({ error: 'Server error' });
     }
 
@@ -2262,20 +2187,20 @@ app.post('/paymob/publish-from-bonus', paymentLimiter, rateLimitMiddleware({ win
         .select('id')
         .single();
       if (insertAdError) {
-        safeLog('ads', { msg: 'insert_ad_using_bonus_failed', error: String(insertAdError) });
+        console.error('Error inserting ad using bonus:', insertAdError);
         // attempt to revert bonus update? Log and return error
         return res.status(500).json({ error: 'Failed to create ad' });
       }
 
       // Informational: trigger server-side event (no window in backend) by updating a small field or returning info
-      safeLog('ads', { msg: 'published-from-bonus', userId: maskString(userId,0,4), adId: maskString(String(insertedAd?.id||''),0,4) });
+      console.log(`Ad published using bonus for user ${userId}, ad id: ${insertedAd.id}`);
       return res.json({ ok: true, adId: insertedAd.id, deducted: expectedAmount, remainingBonus: newBonusValue });
     } catch (e) {
-      safeLog('ads', { msg: 'insert_ad_using_bonus_exception', error: String(e) });
+      console.error('Exception inserting ad using bonus:', e);
       return res.status(500).json({ error: 'Server error' });
     }
   } catch (e) {
-    safeLog('ads', { msg: 'publish_from_bonus_error', error: String(e) });
+    console.error('Error in /paymob/publish-from-bonus:', e);
     return res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2301,7 +2226,7 @@ app.post("/paymob/create-invoice", async (req, res) => {
   };
 
   try {
-    safeLog('create-invoice-request', { body: req.body });
+    console.log("Received create-invoice request:", JSON.stringify(req.body, null, 2));
     
     const { amount, currency, shippingData, items, merchantOrderId } = req.body;
     
@@ -2317,11 +2242,11 @@ app.post("/paymob/create-invoice", async (req, res) => {
     }
     
     // 1. الحصول على توكن المصادقة
-    safeLog('create-invoice', { msg: 'step', step: 1 });
+    console.log("Step 1: Getting auth token...");
     const token = await getAuthToken();
     
     // 2. تسجيل الفاتورة
-    safeLog('create-invoice', { msg: 'step', step: 2 });
+    console.log("Step 2: Registering invoice...");
     const invoiceData = await registerInvoice(token, { 
       amount, 
       currency, 
@@ -2330,7 +2255,7 @@ app.post("/paymob/create-invoice", async (req, res) => {
     });
     
     // 3. بناء رابط الفاتورة
-    safeLog('create-invoice', { msg: 'step', step: 3 });
+    console.log("Step 3: Building invoice URL...");
     let invoiceUrl = null;
     
     if (invoiceData && invoiceData.id) {
@@ -2345,10 +2270,10 @@ app.post("/paymob/create-invoice", async (req, res) => {
     };
     
     // سجل استجابة مُخفّفة لتجنب طباعة الحقول الحساسة
-    safeLog('create-invoice', { msg: 'sending-response', response: Object.assign({}, response, { payment_token: response.payment_token ? 'REDACTED' : null }) });
+    console.log("Sending response (redacted):", JSON.stringify(Object.assign({}, response, { payment_token: response.payment_token ? 'REDACTED' : null }), null, 2));
     return safeJson(response);
   } catch (e) {
-    safeLog('create-invoice', { msg: 'handler_error', error: String(e) });
+    console.error("Error in create-invoice:", e);
     if (_timedOut) return;
     return sendError(res, 500, 'حدث خطأ في الخادم', e);
   }
@@ -2376,7 +2301,7 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
 
     try {
       // سجل الحدث بدون طباعة الحقول الحساسة
-      safeLog('offer-payment', { msg: 'received-request', merchantOrderId: maskString(req.body?.merchantOrderId || '',0,4), offerId: maskString(req.body?.offerId || '',0,4), timestamp: req.body?.timestamp || null });
+      console.log("Received create-offer-payment request:", JSON.stringify({ merchantOrderId: req.body?.merchantOrderId || null, offerId: req.body?.offerId || null, timestamp: req.body?.timestamp || null }));
       const { amount, email, name, phone, merchantOrderId, offerData, redirect_url_success, redirect_url_failed, offerId, signature, timestamp } = req.body;
       // الملاحظة: الآن يمكن للعميل ألا يرسل حقل `amount`؛ الخادم سيحسب المبلغ المتوقع من قاعدة البيانات
 
@@ -2401,7 +2326,7 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
               .limit(1)
               .single();
             // Debug log: record result of price lookup for given type+duration
-            safeLog('offer-payment', { msg: 'ads_price-lookup', type: offerData.type, durationDays, priceRow: priceRow || null, priceErr: priceErr || null });
+            console.log('ads_price lookup (by type+duration):', { type: offerData.type, durationDays, priceRow: priceRow || null, priceErr: priceErr || null });
             if (!priceErr && priceRow && typeof priceRow.amount !== 'undefined') expectedAmount = Number(priceRow.amount);
           }
 
@@ -2419,7 +2344,7 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
             .single();
           if (!offerErr && offerRow) {
             // Debug log: show fetched offerRow
-            safeLog('offer-payment', { msg: 'ads_offar-lookup', offerId: maskString(offerId||'',0,4), offerRow: offerRow || null, offerErr: offerErr || null });
+            console.log('ads_offar lookup result:', { offerId, offerRow: offerRow || null, offerErr: offerErr || null });
             // استخدم عمود amount إن وُجد، وإلا عمود price
             if (typeof offerRow.amount !== 'undefined' && offerRow.amount !== null) expectedAmount = Number(offerRow.amount);
             else if (typeof offerRow.price !== 'undefined' && offerRow.price !== null) expectedAmount = Number(offerRow.price);
@@ -2431,7 +2356,7 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
                 .limit(1)
                 .single();
               // Debug log: record result of fallback price lookup by offerRow.type
-              safeLog('offer-payment', { msg: 'ads_price-fallback', type: offerRow.type, priceRow: priceRow || null, priceErr: priceErr || null });
+              console.log('ads_price fallback lookup (by offerRow.type):', { type: offerRow.type, priceRow: priceRow || null, priceErr: priceErr || null });
               if (!priceErr && priceRow && typeof priceRow.amount !== 'undefined') expectedAmount = Number(priceRow.amount);
             }
           }
@@ -2439,12 +2364,16 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
 
         if (expectedAmount === null) {
           // Provide more detailed diagnostic info in logs to help root-cause investigation
-          safeLog('offer-payment', { msg: 'unable_determine_expected_amount', offerId: offerId || null, offerData: redactObject(offerData) });
+          console.warn('Unable to determine expected amount for offer payment', {
+            offerId: offerId || null,
+            offerData: offerData || null,
+            note: 'Checked ads_price by type/duration, fallback to offerData.price, then ads_offar and ads_price by offerRow.type'
+          });
           return safeStatusJson(400, { error: 'تعذر التحقق من قيمة الدفع للعرض' });
         }
         // Verify signature against server-computed expectedAmount (strict)
         if (!(await verifySignatureHmac({ merchantOrderId, amount: expectedAmount, timestamp, signature }))) {
-          safeLog('offer-payment', { msg: 'rejected_create_offer_payment_invalid_signature', merchantOrderId, expectedAmount });
+          console.warn('Rejected create-offer-payment due to invalid/missing signature', { merchantOrderId, expectedAmount });
           return safeStatusJson(401, { error: 'Invalid or missing signature' });
         }
 
@@ -2452,7 +2381,7 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
         const providedAmount = (typeof amount !== 'undefined' && amount !== null) ? Number(amount) : null;
         if (providedAmount !== null) {
           if (isNaN(providedAmount) || providedAmount !== expectedAmount) {
-            safeLog('offer-payment', { msg: 'offer_payment_amount_mismatch', expectedAmount, provided: amount, offerId });
+            console.warn('Offer payment amount mismatch', { expectedAmount, provided: amount, offerId });
             return safeStatusJson(400, { error: 'قيمة الدفع غير مطابقة للسعر المتوقع للعرض' });
           }
         }
@@ -2460,14 +2389,14 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
         // استخدم المبلغ المحسوب من الخادم لإنشاء الطلب ومفتاح الدفع
         numericAmount = Number(expectedAmount);
       } catch (amtErr) {
-        safeLog('offer-payment', { msg: 'verify_offer_amount_error', error: String(amtErr) });
+        console.error('Error verifying offer amount:', amtErr);
         return safeStatusJson(500, { error: 'خطأ في التحقق من المبلغ' });
       }
-      safeLog('offer-payment', { msg: 'step', step: 1 });
+      console.log("Step 1: Getting auth token...");
       const token = await getAuthToken();
-      safeLog('offer-payment', { msg: 'step', step: 2 });
+      console.log("Step 2: Registering order...");
       const orderData = await registerOrder(token, { amount: numericAmount, merchantOrderId });
-      safeLog('offer-payment', { msg: 'step', step: 3 });
+      console.log("Step 3: Getting payment key...");
       const paymentKey = await getPaymentKey(token, {
         amount: numericAmount,
         orderId: orderData.id,
@@ -2477,9 +2406,9 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
         redirect_url: redirect_url_success,
         failed_redirect_url: redirect_url_failed
       });
-      safeLog('offer-payment', { msg: 'step', step: 4 });
+      console.log("Step 4: Building iframe URL...");
       const iframe_url = `https://accept.paymob.com/api/acceptance/iframes/${IFRAME_ID}?payment_token=${paymentKey}`;
-      safeLog('offer-payment', { msg: 'step', step: 5 });
+      console.log("Step 5: Saving payment data to ads_payment table...");
       const offerRowId = (offerData && offerData.offer_id) ? offerData.offer_id : offerId;
       const { data: adData, error: adError } = await supabase
         .from('ads_offar')
@@ -2495,12 +2424,12 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
           .eq('type', offerData.type)
           .single();
         if (priceError) {
-          safeLog('ads', { msg: 'duration_not_found_in_ads_price', error: String(priceError && priceError.message) });
-          } else if (priceData && priceData.duration_days) {
+          console.warn('لم يتم العثور على مدة في ads_price, سيتم استخدام القيمة الافتراضية:', priceError.message);
+        } else if (priceData && priceData.duration_days) {
           durationDays = priceData.duration_days;
-          safeLog('ads', { msg: 'duration-fetched', durationDays });
+          console.log(`تم جلب مدة الإعلان: ${durationDays} يوم`);
         }
-      } catch (e) { safeLog('ads', { msg: 'duration_fetch_error', error: String(e) }); }
+      } catch (e) { console.warn('خطأ أثناء جلب مدة الإعلان:', e); }
       let currentUserData = null;
       try {
         const { data: userData, error: userError } = await supabase
@@ -2509,7 +2438,7 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
           .eq('id', offerData.user_id)
           .single();
         if (userError || !userData) {
-          safeLog('user', { msg: 'fetch_user_from_users_failed', error: String(userError) });
+          console.error('خطأ في جلب بيانات المستخدم من جدول users:', userError);
           const { data: businessData, error: businessError } = await supabase
             .from('businesses')
             .select('store_name, phone')
@@ -2528,7 +2457,7 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
           };
         }
       } catch (error) {
-        safeLog('user', { msg: 'fetch_user_exception', error: String(error) });
+        console.error('خطأ في جلب بيانات المستخدم:', error);
         currentUserData = {
           store_name: offerData.store_name || '',
           phone: offerData.phone || '',
@@ -2560,24 +2489,24 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
           .single();
         if (_timedOut) return; // abort remaining processing if timed out
         if (paymentError) {
-          safeLog('ads', { msg: 'save_payment_error', error: String(paymentError) });
+          console.error('خطأ في حفظ بيانات الدفع في جدول ads_payment:', paymentError);
           throw paymentError;
         }
         insertedPaymentId = insertedPayment.id;
-        safeLog('ads', { msg: 'payment-saved', insertedPaymentId: maskString(String(insertedPaymentId || ''),0,4) });
+        console.log(`تم حفظ بيانات الدفع بنجاح في جدول ads_payment with ID: ${insertedPaymentId}`);
         // حاول تخزين tokens و iframe_url في السجل إن وُجدت الأعمدة، لكن لا تفشل العملية إذا لم توجد الأعمدة
         try {
           await supabase
             .from('ads_payment')
             .update({ iframe_url, payment_token: paymentKey })
             .eq('id', insertedPaymentId);
-          safeLog('ads', { msg: 'stored-iframe-and-token' });
+          console.log('تم حفظ iframe_url و payment_token في ads_payment (إن وُجدت الأعمدة)');
         } catch (storeErr) {
-          safeLog('ads', { msg: 'store_token_warning', error: String(storeErr && (storeErr.message || storeErr)) });
+          console.warn('Could not store payment token/iframe_url in ads_payment (column may not exist):', storeErr.message || storeErr);
           // لا نُعيد الخطأ لأننا نريد إرجاع الـ iframe إلى العميل مهما حدث
         }
       } catch (insertError) {
-        safeLog('ads', { msg: 'insert_payment_error', error: String(insertError) });
+        console.error('خطأ في حفظ بيانات الدفع في جدول ads_payment:', insertError);
         throw insertError;
       }
       const response = {
@@ -2589,10 +2518,10 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
         offerId: offerId || null,
         payment_id: insertedPaymentId // ⭐ إضافة payment_id في الرد
       };
-      safeLog('offer-payment', { msg: 'sending-response', response: Object.assign({}, response, { payment_token: response.payment_token ? 'REDACTED' : null }) });
+      console.log("Sending response:", JSON.stringify(response, null, 2));
       return safeJson(response);
     } catch (e) {
-      safeLog('offer-payment', { msg: 'handler_error', error: String(e) });
+      console.error("Error in create-offer-payment:", e);
       if (_timedOut) return;
       return sendError(res, 500, 'حدث خطأ في الخادم', e);
     }
@@ -2603,7 +2532,7 @@ app.get('/paymob/payment-link', async (req, res) => {
   try {
     const paymentId = req.query.payment_id;
     const merchantOrderId = req.query.merchant_order_id;
-    safeLog('payment-link', { msg: 'called', paymentId: maskString(paymentId || '',0,4), merchantOrderId: maskString(merchantOrderId || '',0,4) });
+    console.log('/paymob/payment-link called with', { paymentId, merchantOrderId });
 
     if (!paymentId && !merchantOrderId) return res.status(400).json({ error: 'payment_id or merchant_order_id required' });
 
@@ -2614,7 +2543,7 @@ app.get('/paymob/payment-link', async (req, res) => {
     const { data: paymentRow, error } = await query.maybeSingle();
 
     if (error) {
-      safeLog('payment-link', { msg: 'supabase_error', error: String(error) });
+      console.error('/paymob/payment-link supabase error:', error);
       return res.status(500).json({ error: 'Database error' });
     }
 
@@ -2622,7 +2551,7 @@ app.get('/paymob/payment-link', async (req, res) => {
 
     return res.json({ ok: true, payment_id: paymentRow.id, iframe_url: paymentRow.iframe_url || null, payment_token: paymentRow.payment_token || null, order_id: paymentRow.paymob_order_id || null });
   } catch (e) {
-    safeLog('payment-link', { msg: 'handler_error', error: String(e) });
+    console.error('Error in /paymob/payment-link:', e);
     return res.status(500).json({ error: 'Server error' });
   }
 });
@@ -2634,12 +2563,12 @@ app.get('/paymob/payment-link', async (req, res) => {
 // صفحة نجاح الدفع المخصصة (مع زر العودة للتطبيق)
 app.get('/paymob/redirect-success', (req, res) => {
   try {
-    safeLog('paymob-redirect', { msg: 'redirect-hit', query: redactObject(req.query) });
+    console.log('تم الوصول إلى نقطة إعادة التوجيه', req.query);
     const { success } = req.query;
 
     // التحقق من حالة الدفع من خلال query parameter
     if (success === 'true') {
-      safeLog('paymob-redirect', { msg: 'redirect-success' });
+      console.log('الدفع ناجح، عرض صفحة النجاح.');
       const successPath = path.join(__dirname, 'views', 'success.html');
       if (fs.existsSync(successPath)) {
         res.sendFile(successPath);
@@ -2647,7 +2576,7 @@ app.get('/paymob/redirect-success', (req, res) => {
         res.status(404).send('صفحة النجاح غير موجودة');
       }
     } else {
-      safeLog('paymob-redirect', { msg: 'redirect-failed' });
+      console.log('الدفع فاشل، عرض صفحة الفشل.');
       const failurePath = path.join(__dirname, 'views', 'failure.html');
       if (fs.existsSync(failurePath)) {
         res.sendFile(failurePath);
@@ -2656,7 +2585,7 @@ app.get('/paymob/redirect-success', (req, res) => {
       }
     }
   } catch (error) {
-    safeLog('paymob-redirect', { msg: 'render_success_error', error: String(error) });
+    console.error('خطأ في عرض صفحة النجاح:', error);
     res.status(500).send('خطأ في عرض الصفحة');
   }
 });
@@ -2664,18 +2593,18 @@ app.get('/paymob/redirect-success', (req, res) => {
 // صفحة فشل الدفع المخصصة
 app.get('/paymob/redirect-failed', (req, res) => {
   try {
-    safeLog('paymob-redirect', { msg: 'redirect-failed-hit', query: redactObject(req.query) });
+    console.log('تم الوصول إلى صفحة الفشل', req.query);
     const failurePath = path.join(__dirname, 'views', 'failure.html');
     
     // التحقق من وجود الملف قبل إرساله
     if (fs.existsSync(failurePath)) {
       res.sendFile(failurePath);
     } else {
-      safeLog('paymob-redirect', { msg: 'failure_page_missing', path: failurePath });
+      console.error('ملف failure.html غير موجود في:', failurePath);
       res.status(404).send('صفحة الفشل غير موجودة');
     }
   } catch (error) {
-    safeLog('paymob-redirect', { msg: 'render_failure_error', error: String(error) });
+    console.error('خطأ في عرض صفحة الفشل:', error);
     res.status(500).send('خطأ في عرض الصفحة');
   }
 });
@@ -2684,21 +2613,21 @@ app.post("/paymob/webhook", async (req, res) => {
   const payload = req.body;
   const receivedHmac = req.query.hmac;
   
-  safeLog('paymob-webhook', { msg: 'webhook-received', event: (payload && payload.event) || (payload && payload.type) || 'unknown', hasHmac: !!receivedHmac });
+  console.log("=== PAYMOB WEBHOOK NOTIFICATION ===");
+  console.log("WEBHOOK RECEIVED:", JSON.stringify(payload, null, 2));
+  console.log("Received HMAC:", receivedHmac);
+  console.log("======================================");
 
   // --- 1. التحقق من صحة HMAC (مهم جداً للأمان) ---
   // التحقق من وجود HMAC في الطلب
   if (!receivedHmac) {
-    safeLog('paymob-webhook', { msg: 'hmac_missing' });
+    console.error("HMAC not found in request");
     return res.status(400).send("HMAC missing");
   }
 
   // استخدام payload.obj بدلاً من obj فقط
   const { obj } = payload;
-  safeLog('paymob-webhook-payload', { event: payload?.event || payload?.type, obj: {
-    id: obj?.id, orderId: obj?.order?.id, merchantOrderId: obj?.order?.merchant_order_id,
-    amount_cents: obj?.amount_cents, currency: obj?.currency, source_type: obj?.source_data?.type
-  }});
+  console.log("Processing webhook payload:", JSON.stringify(obj, null, 2));
 
   // التأكد من وجود جميع الحقول المطلوبة لبناء سلسلة التحقق
   // const requiredFields = [
@@ -2725,7 +2654,7 @@ app.post("/paymob/webhook", async (req, res) => {
   // }
 
   // بناء سلسلة التحقق كما هو مطلوب بواسطة Paymob
-  safeLog('paymob-webhook', { msg: 'building-hmac' });
+  console.log("Building HMAC string...");
   
   // استخدام الترتيب المحدد في وثائق Paymob مع تحويل القيم المنطقية إلى نص
 const amountCents = obj.amount_cents; // number
@@ -2772,36 +2701,58 @@ const amountCents = obj.amount_cents; // number
     success
   ].join("");
   
+  console.log("HMAC string:", concatenatedString);
+
   // حساب HMAC
+  console.log("Calculating HMAC with secret...");
   const calculatedHmac = crypto
     .createHmac('sha512', HMAC_SECRET)
     .update(concatenatedString)
     .digest('hex');
+
+  // مقارنة HMACs
+  console.log("Received HMAC:", receivedHmac);
+  console.log("Calculated HMAC:", calculatedHmac);
   
   // تحقق من تطابق HMACs
   if (calculatedHmac !== receivedHmac) {
-    safeLog('paymob-webhook', { msg: 'hmac-mismatch', orderId: obj?.order?.id, merchantOrderId: obj?.order?.merchant_order_id });
-    // Strict: do not accept mismatched HMACs by default. Allow a development bypass only when explicitly enabled.
-    if (process.env.NODE_ENV !== 'production' && process.env.ALLOW_WEBHOOK_BYPASS === 'true') {
-      safeLog('paymob-webhook', { msg: 'development-bypass-used' });
+    console.error("HMAC validation failed. Request might be tampered.");
+    console.error("Concatenated string:", concatenatedString);
+    console.error("HMAC Secret length:", HMAC_SECRET.length);
+    console.error("HMAC Secret (first 10 chars):", HMAC_SECRET.substring(0, 10));
+    
+    // في بيئة التطوير، قد يكون من المفيد تجاهل التحقق من HMAC
+    // لكن في بيئة الإنتاج، يجب إبقاء هذا التحقق
+    if (process.env.NODE_ENV === 'development') {
+      console.log("Development mode: accepting webhook despite HMAC mismatch");
     } else {
-      return res.status(401).send('Invalid HMAC');
+      return res.status(401).send("Invalid HMAC");
     }
   } else {
-    safeLog('paymob-webhook', { msg: 'hmac-valid' });
+    console.log("HMAC validation successful");
   }
 
   // --- 2. معالجة الإشعار بعد التحقق من صحته ---
   try {
-    safeLog('paymob-webhook', { msg: 'processing-notification' });
+    console.log("Processing webhook notification...");
     
     // تحقق من نجاح الدفع
     if (obj?.success === true && obj?.pending === false) {
-      safeLog('paymob-payment', { msg: 'payment-success', orderId: maskString(payload?.obj?.order?.id || '' , 0, 6), merchantOrderId: maskString(payload?.obj?.order?.merchant_order_id || '', 0, 6), amount_cents: obj?.amount_cents, currency: obj?.currency, source_type: obj?.source_data?.type });
+      console.log('تم تأكيد نجاح الدفع، سيتم تحديث حالة الإعلان');
+      const orderId = payload.obj.order?.id;
+      const merchantOrderId = payload.obj.order?.merchant_order_id;
+      
+      console.log("=== PAYMENT SUCCESS ===");
+      console.log(`تم استلام دفع ناجح. orderId: ${orderId}, merchantOrderId: ${merchantOrderId}`);
+      console.log(`مبلغ الدفع: ${obj.amount_cents} ${obj.currency}`);
+      console.log(`طريقة الدفع: ${obj.source_data.type}`);
+      console.log(`رقم المعاملة: ${obj.id}`);
+      console.log(`حالة الدفع: ${obj.payment_status || "غير محددة"}`);
+      console.log("========================");
 
       if (orderId && merchantOrderId) {
         // ⭐ توحيد منطق تحديث جميع أنواع الدفعات في جدول ads_payment
-        safeLog('paymob-webhook', { msg: 'updating-pay-record', orderId: maskString(orderId || '', 0, 6) });
+        console.log(`تحديث سجل الدفع المرتبط بـ paymob_order_id: ${orderId}`);
         try {
           // 1. البحث عن سجل الدفع عبر paymob_order_id
           const { data: existingAd, error: fetchError } = await supabase
@@ -2811,7 +2762,7 @@ const amountCents = obj.amount_cents; // number
             .single();
 
           if (fetchError || !existingAd) {
-            safeLog('webhook', { msg: 'payment_record_not_found', orderId: maskString(orderId||'',0,6), error: String(fetchError) });
+            console.error(`لم يتم العثور على سجل دفع لـ paymob_order_id: ${orderId}`, fetchError);
           } else {
             // ===== تحقق أمني: تأكد من أن المبلغ الذي أرسله Paymob يطابق السعر المخزن في قاعدة البيانات =====
             try {
@@ -2839,7 +2790,7 @@ const amountCents = obj.amount_cents; // number
 
               // If we cannot determine expectedAmount or the amounts don't match, log and mark diagnostic field instead of auto-approving
               if (expectedAmount === null || Number.isNaN(paidAmount) || Math.abs(paidAmount - expectedAmount) > 0.001) {
-                safeLog('webhook', { msg: 'amount_mismatch_skip_mark_paid', orderId: maskString(orderId||'',0,6), paidAmount, expectedAmount });
+                console.error('Amount mismatch or unable to verify payment amount for order. Skipping auto-mark-paid.', { orderId, paidAmount, expectedAmount });
 
                 // حاول تسجيل المبلغ الذي استلمه Paymob في سجل الدفع لأغراض التحقيق
                 try {
@@ -2848,18 +2799,18 @@ const amountCents = obj.amount_cents; // number
                     .update({ payment_status: 'amount_mismatch', paymob_amount_cents: obj.amount_cents })
                     .eq('paymob_order_id', orderId);
                 } catch (e) {
-                  safeLog('webhook', { msg: 'diagnostic_write_failed', error: String(e) });
+                  console.warn('Failed to write diagnostic amount_mismatch to ads_payment:', e?.message || e);
                 }
 
                 // أجب على webhook بنجاح حتى لا تحاول Paymob إعادة الإرسال، لكن لا تقم بتغيير حالة الإعلان إلى مدفوع
                 return res.status(200).send('received');
               }
             } catch (amtErr) {
-              safeLog('webhook', { msg: 'verify_expected_amount_error', error: String(amtErr) });
+              console.error('Error while verifying expected amount in webhook:', amtErr);
               // في حالة خطأ داخلي، لا نكسر الاستجابة للـ webhook — سجّل فقط
             }
 
-            safeLog('paymob-webhook', { msg: 'found-ads_payment', id: existingAd?.id, paymob_order_id: maskString(existingAd?.paymob_order_id || '', 0, 6), user_id: existingAd?.user_id });
+            console.log(`تم العثور على سجل الدفع:`, existingAd);
 
             // 2. حساب تاريخ الانتهاء
             const paymentDate = new Date();
@@ -2875,66 +2826,54 @@ const amountCents = obj.amount_cents; // number
               .eq('paymob_order_id', orderId);
 
             if (updateError) {
-              safeLog('webhook', { msg: 'supabase_update_error', error: String(updateError) });
+              console.error('خطأ في تحديث حالة الدفع في Supabase:', updateError);
             } else {
-              safeLog('paymob-webhook', { msg: 'ads_payment-updated', paymob_order_id: maskString(orderId || '', 0, 6), expires_at: expiresAt.toISOString() });
+              console.log(`تم تحديث سجل الدفع ${orderId} بنجاح. تاريخ الانتهاء: ${expiresAt.toISOString()}`);
 
               // --- ⭐ بداية: تحديث رصيد البونص للمستخدم ---
               const { user_id, bonus_offer } = existingAd;
               if (user_id && bonus_offer > 0) {
-                safeLog('paymob-webhook', { msg: 'award-bonus', user_id, bonus_offer });
-                // Call the RPC defined in migrations: increment_bonus(p_user_id uuid, p_amount int)
-                try {
-                  const { error: rpcError } = await supabase.rpc('increment_bonus', {
-                    p_user_id: user_id,
-                    p_amount: Number(bonus_offer)
-                  });
-                  if (rpcError) {
-                    safeLog('webhook', { msg: 'rpc_bonus_update_error', error: String(rpcError), user_id, bonus_offer });
-                  } else {
-                    // verify by fetching the updated bonus
-                    try {
-                      const { data: up, error: upErr } = await supabase
-                        .from('users_plans')
-                        .select('bonus')
-                        .eq('user_id', user_id)
-                        .single();
-                      if (upErr) {
-                        safeLog('webhook', { msg: 'fetch_updated_bonus_failed', error: String(upErr), user_id });
-                      } else {
-                        safeLog('paymob-webhook', { msg: 'bonus-updated', user_id, new_bonus: up?.bonus });
-                      }
-                    } catch (e) {
-                      safeLog('webhook', { msg: 'fetch_updated_bonus_exception', error: String(e), user_id });
-                    }
-                  }
-                } catch (e) {
-                  safeLog('webhook', { msg: 'rpc_call_exception', error: String(e), user_id, bonus_offer });
+                console.log(`إضافة بونص بقيمة ${bonus_offer} للمستخدم ${user_id}`);
+                const { error: rpcError } = await supabase.rpc('add_to_bonus_balance', {
+                  p_user_id: user_id,
+                  p_amount_to_add: bonus_offer
+                });
+
+                if (rpcError) {
+                  console.error('خطأ في تحديث رصيد البونص عبر RPC:', rpcError);
+                } else {
+                  console.log(`تم تحديث رصيد البونص للمستخدم ${user_id} بنجاح.`);
                 }
               } else {
-                safeLog('paymob-webhook', { msg: 'no-bonus-or-user' });
+                console.log('لا يوجد بونص لإضافته أو لا يوجد معرّف مستخدم.');
               }
               // --- ⭐ نهاية: تحديث رصيد البونص للمستخدم ---
             }
           }
         } catch (dbError) {
-          safeLog('webhook', { msg: 'db_update_payment_error', error: String(dbError) });
+          console.error('خطأ في قاعدة البيانات عند تحديث سجل الدفع:', dbError);
         }
       } else {
-        safeLog('paymob-webhook', { msg: 'missing-order-data', order: redactObject(payload.obj.order || {}) });
+        console.error('الطلب يحتوي على بيانات ناقصة:', JSON.stringify(payload.obj.order, null, 2));
       }
     } else {
-      safeLog('paymob-webhook', { msg: 'payment-not-successful', status: { success: obj?.success, pending: obj?.pending } });
+      console.log("=== PAYMENT STATUS ===");
+      console.log('الدفع لم ينجح أو لا يزال معلقاً:', JSON.stringify({ success: obj?.success, pending: obj?.pending }, null, 2));
       
       if (obj?.success === false && obj?.error_occurred) {
-        safeLog('paymob-webhook', { msg: 'payment-error', error: obj.error || null, message: obj.data?.message || null });
+        console.log("حدث خطأ في الدفع:", obj.error);
+        if (obj.data && obj.data.message) {
+          console.log("رسالة الخطأ:", obj.data.message);
+        }
       } else if (obj?.pending === true) {
-        safeLog('paymob-webhook', { msg: 'payment-pending' });
+        console.log("الدفع معلق بانتظار الموافقة");
       }
+      
+      console.log("======================");
     }
     res.status(200).send("received");
-    } catch (e) {
-    safeLog('webhook', { msg: 'processing_exception', error: String(e) });
+  } catch (e) {
+    console.error(e);
     res.status(200).send("received");
   }
 });
@@ -2961,7 +2900,7 @@ app.get("/api/offer-details", async (req, res) => {
       return res.status(400).json({ error: "معرّف الإعلان مطلوب" });
     }
     
-    safeLog('offer-details', { msg: 'fetch', adId: maskString(adId, 0, 4) });
+    console.log(`جلب تفاصيل الإعلان بالمعرّف: ${adId}`);
     
     // 1. جلب بيانات الإعلان من جدول ads_offar
     const { data: offerData, error: offerError } = await supabase
@@ -2971,15 +2910,15 @@ app.get("/api/offer-details", async (req, res) => {
       .single();
     
     if (offerError || !offerData) {
-      safeLog('offer-details', { msg: 'fetch_offer_error', error: String(offerError) });
+      console.error('خطأ في جلب بيانات العرض:', offerError);
       return res.status(404).json({ error: "لم يتم العثور على الإعلان" });
     }
     
-    safeLog('offer-details', { msg: 'offerData', offerData: redactObject(offerData) });
+    console.log("بيانات الإعلان الكاملة:", JSON.stringify(offerData, null, 2));
     
     // 2. جلب سعر الإعلان من جدول ads_price بناءً على النوع
     const adType = offerData.type;
-    safeLog('offer-details', { msg: 'ad-type', adType });
+    console.log(`نوع الإعلان: ${adType}`);
     
     // 2.1. جلب سعر الإعلان من جدول ads_price بناءً على النوع
     const { data: priceData, error: priceError } = await supabase
@@ -2987,15 +2926,15 @@ app.get("/api/offer-details", async (req, res) => {
       .select('*')
       .eq('type', adType);
     
-    safeLog('offer-details', { msg: 'price-data', priceData: redactObject(priceData) });
+    console.log("بيانات السعر من ads_price:", JSON.stringify(priceData, null, 2));
     
     if (priceError || !priceData || priceData.length === 0) {
-      safeLog('offer-details', { msg: 'fetch_price_error', error: String(priceError) });
-      safeLog('offer-details', { msg: 'trying_price_lookup', adType });
+      console.error('خطأ في جلب سعر الإعلان:', priceError);
+      console.log(`محاولة البحث عن سعر للنوع: ${adType}`);
       
       // محاولة الحصول على السعر من الإعلان نفسه إذا كان موجودًا
       if (offerData.price) {
-        safeLog('offer-details', { msg: 'price-found-in-offer', price: maskString(String(offerData.price || ''), 0, 4) });
+        console.log("تم العثور على السعر مباشرة في بيانات الإعلان:", offerData.price);
         return res.json({
           ok: true,
           adId: parseInt(adId),
@@ -3009,7 +2948,7 @@ app.get("/api/offer-details", async (req, res) => {
     
     // استخدام أول سعر متاح
     const price = priceData[0].price || priceData[0].amount;
-    safeLog('offer-details', { msg: 'price-selected', price });
+    console.log(`سعر الإعلان: ${price}`);
     
     // 3. إرجاع الرد
     const response = {
@@ -3019,10 +2958,10 @@ app.get("/api/offer-details", async (req, res) => {
       price
     };
     
-    safeLog('offer-details', { msg: 'sending-response', response: redactObject(response) });
+    console.log("إرسال تفاصيل الإعلان:", JSON.stringify(response, null, 2));
     res.json(response);
   } catch (e) {
-    safeLog('offer-details', { msg: 'fetch_ad_details_error', error: String(e) });
+    console.error("خطأ في جلب تفاصيل الإعلان:", e);
     return sendError(res, 500, 'حدث خطأ في الخادم', e);
   }
 });
@@ -3037,8 +2976,8 @@ const verifyJwtToken = async (req, res, next) => {
 
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
 
-    // Local dev bypass: only allow when not in production
-    if (process.env.NODE_ENV !== 'production' && DEV_BYPASS_TOKEN && token === DEV_BYPASS_TOKEN) {
+    // Local dev bypass: if DEV_BYPASS_TOKEN is set and matches, inject a fake user
+    if (DEV_BYPASS_TOKEN && token === DEV_BYPASS_TOKEN) {
       req.user = { id: 'dev-user-id', email: 'dev@local.test', role: 'admin' };
       return next();
     }
@@ -3054,7 +2993,7 @@ const verifyJwtToken = async (req, res, next) => {
     req.user = user;
     next();
   } catch (error) {
-    safeLog('auth', { msg: 'jwt_verify_error', error: String(error) });
+    console.error('Error verifying JWT token:', error);
     return res.status(401).json({ error: 'Unauthorized: Invalid token' });
   }
 };
@@ -3072,7 +3011,7 @@ app.get('/api/get-contact-info', verifyJwtToken, async (req, res) => {
       .order('id', { ascending: true });
 
     if (reportError || !allReports || allReports.length === 0) {
-      safeLog('contact-info', { msg: 'no_phone_reports', error: String(reportError) });
+      console.error('No phone_reports found. Error:', reportError);
       return res.status(404).json({ error: 'لم يتم العثور على الهاتف في البلاغات', phoneId });
     }
 
@@ -3098,7 +3037,7 @@ app.get('/api/get-contact-info', verifyJwtToken, async (req, res) => {
       try {
         return decryptField(foundReport.finder_phone) || foundReport.finder_phone;
       } catch (e) {
-        safeLog('contact-info', { msg: 'decrypt_finder_phone_failed', error: String(e) });
+        console.error('فشل فك تشفير finder_phone:', e);
         return foundReport.finder_phone;
       }
     })();
@@ -3108,7 +3047,7 @@ app.get('/api/get-contact-info', verifyJwtToken, async (req, res) => {
       try {
         return decryptField(foundReport.email) || foundReport.email;
       } catch (e) {
-        safeLog('contact-info', { msg: 'decrypt_email_failed', error: String(e) });
+        console.error('فشل فك تشفير email:', e);
         return foundReport.email;
       }
     })();
@@ -3118,7 +3057,7 @@ app.get('/api/get-contact-info', verifyJwtToken, async (req, res) => {
       try {
         return decryptField(foundReport.owner_name) || foundReport.owner_name;
       } catch (e) {
-        safeLog('contact-info', { msg: 'decrypt_owner_name_failed', error: String(e) });
+        console.error('فشل فك تشفير owner_name:', e);
         return foundReport.owner_name;
       }
     })();
@@ -3128,7 +3067,7 @@ app.get('/api/get-contact-info', verifyJwtToken, async (req, res) => {
       try {
         return decryptField(foundReport.imei) || foundReport.imei;
       } catch (e) {
-        safeLog('contact-info', { msg: 'decrypt_imei_failed', error: String(e) });
+        console.error('فشل فك تشفير IMEI:', e);
         return foundReport.imei;
       }
     })();
@@ -3140,7 +3079,7 @@ app.get('/api/get-contact-info', verifyJwtToken, async (req, res) => {
       imei: decryptedImei
     });
   } catch (err) {
-    safeLog('contact-info', { msg: 'fetch_contact_error', error: String(err) });
+    console.error('خطأ في جلب بيانات التواصل:', err);
     return res.status(500).json({ error: 'خطأ في الخادم' });
   }
 });
@@ -3159,7 +3098,7 @@ app.post('/api/get-owner-email-by-imei', verifyJwtToken, async (req, res) => {
       .order('id', { ascending: true });
 
     if (reportError || !allReports || allReports.length === 0) {
-      safeLog('owner-email', { msg: 'no_phone_reports', error: String(reportError) });
+      console.error('No phone_reports found. Error:', reportError);
       return res.status(404).json({ error: 'لم يتم العثور على الهاتف في البلاغات', imei });
     }
 
@@ -3185,7 +3124,7 @@ app.post('/api/get-owner-email-by-imei', verifyJwtToken, async (req, res) => {
       owner_name: foundReport.owner_name || null
     });
   } catch (err) {
-    safeLog('owner-email', { msg: 'fetch_owner_email_error', error: String(err) });
+    console.error('خطأ في جلب بريد المالك:', err);
     res.status(500).json({ error: 'خطأ في الخادم' });
   }
 });
@@ -3232,7 +3171,7 @@ app.get('/api/user-phones', verifyJwtToken, async (req, res) => {
 
     res.json({ success: true, data: processedPhones });
   } catch (error) {
-    safeLog('user-phones', { msg: 'fetch_error', error: String(error) });
+    console.error('Error fetching user phones:', error);
     return sendError(res, 500, 'حدث خطأ في الخادم', error, { success: false });
   }
 });
@@ -3260,7 +3199,7 @@ app.post('/api/resolve-report', verifyJwtToken, async (req, res) => {
       try {
         targetImei = decryptAES(imei_encrypted.encryptedData, imei_encrypted.iv, imei_encrypted.authTag);
       } catch (e) {
-        safeLog('resolve-report', { msg: 'decrypt_provided_imei_failed', error: String(e) });
+        console.error('Failed to decrypt provided imei_encrypted:', e);
         return res.status(400).json({ error: 'Invalid encrypted IMEI' });
       }
     }
@@ -3284,7 +3223,7 @@ app.post('/api/resolve-report', verifyJwtToken, async (req, res) => {
 
     res.json({ success: true, message: 'Report resolved successfully' });
   } catch (error) {
-    safeLog('resolve-report', { msg: 'resolve_error', error: String(error) });
+    console.error('Error resolving report:', error);
     return sendError(res, 500, 'حدث خطأ في الخادم', error);
   }
 });
@@ -3299,7 +3238,8 @@ app.post('/api/verify-and-resolve-report', verifyJwtToken, async (req, res) => {
   }
 
   try {
-  safeLog('verify-and-resolve-report', { msg: 'called', userId: maskString(userId,0,4), reportId: maskString(reportId,0,4), bodyKeys: Object.keys(req.body) });
+    console.log('/api/verify-and-resolve-report called by user:', userId, 'reportId:', reportId);
+    console.log('Request body keys:', Object.keys(req.body));
     // جلب البلاغ للتأكد من ملكيته وحالته
     const { data: reports, error: fetchError } = await supabase
       .from('phone_reports')
@@ -3307,19 +3247,20 @@ app.post('/api/verify-and-resolve-report', verifyJwtToken, async (req, res) => {
       .eq('id', reportId)
       .limit(1);
 
-    if (fetchError) safeLog('verify-and-resolve-report', { msg: 'supabase_fetchError_for_report', error: String(fetchError) });
+    if (fetchError) console.error('supabase fetchError for report:', fetchError);
     if (fetchError) throw fetchError;
     const report = reports && reports[0];
-    safeLog('verify-and-resolve-report', { msg: 'fetched-report', found: !!report, report: report ? { id: maskString(String(report.id||''),0,4), user_id: maskString(String(report.user_id||''),0,4), status: report.status, passwordExists: !!report.password } : null });
+    console.log('Fetched report:', !!report, report ? { id: report.id, user_id: report.user_id, status: report.status, passwordExists: !!report.password } : null);
     if (!report) return res.status(404).json({ success: false, error: 'Report not found' });
     if (report.user_id !== userId) return res.status(403).json({ success: false, error: 'Not authorized' });
     if (report.status !== 'active') return res.status(400).json({ success: false, error: 'Report not active' });
 
     // تحقق من كلمة المرور عن طريق هاش SHA256
     const hashed = crypto.createHash('sha256').update(String(password)).digest('hex');
-    safeLog('verify-and-resolve-report', { msg: 'computed-hash', hasStoredPassword: !!report.password });
+    console.log('Computed hashed password (sha256):', hashed);
+    console.log('Stored password (raw):', String(report.password).slice(0, 8) + '...');
     if (!report.password || String(report.password).toLowerCase() !== String(hashed).toLowerCase()) {
-      safeLog('verify-and-resolve-report', { msg: 'password_mismatch', reportId: maskString(reportId,0,4) });
+      console.warn('Password mismatch for report:', reportId);
       return res.status(401).json({ success: false, error: 'Invalid password' });
     }
 
@@ -3330,14 +3271,14 @@ app.post('/api/verify-and-resolve-report', verifyJwtToken, async (req, res) => {
       .eq('id', reportId)
       .select();
     if (updateError) {
-      safeLog('verify-and-resolve-report', { msg: 'supabase_updateError_resolving_report', error: String(updateError) });
+      console.error('supabase updateError resolving report:', updateError);
       throw updateError;
     }
-    safeLog('verify-and-resolve-report', { msg: 'report-updated', result: redactObject(updateData) });
+    console.log('Report update result:', updateData);
 
     res.json({ success: true, message: 'Report verified and resolved' });
   } catch (error) {
-    safeLog('verify-and-resolve-report', { msg: 'handler_error', error: String(error) });
+    console.error('Error in /api/verify-and-resolve-report:', error);
     return sendError(res, 500, 'حدث خطأ في الخادم', error, { success: false });
   }
 });
@@ -3392,7 +3333,7 @@ app.post('/api/reset-phone-password', verifyJwtToken, async (req, res) => {
     res.json({ success: true, message: 'Password updated successfully' });
 
   } catch (error) {
-    safeLog('reset-phone-password', { msg: 'handler_error', error: String(error) });
+    console.error('Error resetting phone password:', error);
     return sendError(res, 500, 'حدث خطأ في الخادم', error);
   }
 });
@@ -3415,7 +3356,7 @@ const checkRegisterLimit = async (userId) => {
       .maybeSingle();
 
     if (paymentError) {
-      safeLog('plans', { msg: 'payment_query_error', error: String(paymentError) });
+      console.error('Payment query error:', paymentError);
       throw paymentError;
     }
 
@@ -3423,7 +3364,7 @@ const checkRegisterLimit = async (userId) => {
     if (latestPayment && latestPayment.type) {
       userType = latestPayment.type;
     }
-    safeLog('plans', { msg: 'user-type-detected', userType });
+    console.log('نوع المستخدم بعد التحقق:', userType);
 
     // 2. جلب تفاصيل الخطة بناءً على type
     const { data: planData, error: planError } = await supabase
@@ -3433,7 +3374,7 @@ const checkRegisterLimit = async (userId) => {
       .maybeSingle();
 
     if (planError || !planData) {
-      safeLog('plans', { msg: 'plan_query_error', error: String(planError) });
+      console.error('Plan query error:', planError);
       throw new Error('لم يتم العثور على تفاصيل الخطة لهذا النوع');
     }
 
@@ -3488,7 +3429,7 @@ const checkRegisterLimit = async (userId) => {
       message: isLastUsage ? 'هذا هو آخر تسجيل مسموح' : null
     };
   } catch (error) {
-    safeError('checkRegisterLimit', error);
+    console.error('Error in checkRegisterLimit:', error);
     throw error;
   }
 };
@@ -3500,11 +3441,11 @@ const updateRegisterUsage = async (userId) => {
       p_user_id: userId
     });
     if (error) {
-      safeError('updateRegisterUsage', error);
+      console.error('خطأ في تحديث الاستخدام:', error);
       throw error;
     }
   } catch (error) {
-    safeError('updateRegisterUsage', error);
+    console.error('خطأ في تحديث استخدام التسجيل:', error);
     throw error;
   }
 };
@@ -3521,12 +3462,12 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
       .eq('status', 'active');
     
     if (reportsFetchError) {
-      safeError('check-imei:fetch-phone_reports', reportsFetchError);
+      console.error('Error fetching phone_reports:', reportsFetchError);
     } else if (allReports && allReports.length > 0) {
       // فك تشفير جميع أرقام IMEI والمقارنة
       const matchingReport = allReports.find(report => {
         const decryptedImei = decryptField(report.imei);
-        safeLog('check-imei', { msg: 'report-decrypted-imei', normalized: normalizeDigitsOnly(decryptedImei), sample: maskString(decryptedImei || '', 2, 2) });
+        if (process.env.NODE_ENV !== 'production') console.log('[check-imei] report decrypted IMEI:', decryptedImei, 'normalized:', normalizeDigitsOnly(decryptedImei));
         return normalizeDigitsOnly(decryptedImei) === normalizeDigitsOnly(imei);
       });
       
@@ -3549,28 +3490,31 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
       .select('owner_name, phone_number, phone_image_url, phone_type, status, user_id, imei, id_last6');
 
     if (phonesFetchError) {
-      safeError('check-imei:fetch-registered_phones', phonesFetchError);
+      console.error('Error fetching registered_phones:', phonesFetchError);
       return res.status(500).json({ error: 'Error fetching registered phones' });
     }
     
     // فك تشفير جميع أرقام IMEI والبحث عن المطابقة (بما في ذلك الهواتف التي قد تكون بحالة 'transferred')
     const matchingPhone = allPhones ? allPhones.find(phone => {
       const decryptedImei = decryptField(phone.imei);
-      safeLog('check-imei', { msg: 'phone-row-scan', normalized: normalizeDigitsOnly(decryptedImei), sample: maskString(decryptedImei || '', 2, 2) });
+      if (process.env.NODE_ENV !== 'production') console.log('[check-imei] phone row decrypted IMEI:', decryptedImei, 'normalized:', normalizeDigitsOnly(decryptedImei));
       return normalizeDigitsOnly(decryptedImei) === normalizeDigitsOnly(imei);
     }) : null;
 
-    // If not found, log a small masked summary instead of full decrypted list
-    if (!matchingPhone) {
-      const sample = (allPhones || []).slice(0,50).map((p, idx) => {
+    // If not found, in non-prod print a summary of all decrypted IMEIs to help debugging
+    if (!matchingPhone && process.env.NODE_ENV !== 'production') {
+      console.log('[check-imei] incoming IMEI raw/norm ->', imei, '/', normalizeDigitsOnly(imei));
+      console.log('[check-imei] registered_phones rows count ->', (allPhones || []).length);
+      console.log('[check-imei] No matching phone found. Listing decrypted IMEIs (first 50 rows):');
+      (allPhones || []).slice(0,50).forEach((p, idx) => {
         try {
           const d = decryptField(p.imei);
-          return { idx, id_last6: maskIdLast6(String(p.id_last6||'')), user_id: maskString(String(p.user_id||''),0,4), status: p.status, imei_sample: maskString(d||'',2,2) };
+          const norm = normalizeDigitsOnly(d);
+          console.log(`  [${idx}] id_last6=${p.id_last6} user_id=${p.user_id} status=${p.status} decryptedImei=${d} normalized=${norm}`);
         } catch (e) {
-          return { idx, error: 'decrypt-failed' };
+          console.log(`  [${idx}] error decrypting row:`, e?.message || e);
         }
       });
-      safeLog('check-imei', { msg: 'no-match-summary', incoming: { raw: maskString(imei,2,2), normalized: normalizeDigitsOnly(imei) }, count: (allPhones||[]).length, sample });
     }
 
     // إذا كان الهاتف مسجلاً (وليس منقول الملكية)
@@ -3624,7 +3568,7 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
           .eq('status', 'active');
 
         if (reportError2) {
-          safeError('check-imei:phone_reports', reportError2);
+          console.error('Error checking phone_reports:', reportError2);
           // في حالة فشل التحقق من البلاغ، ارجع للسلوك الأصلي
           return res.json({ exists: true, phoneDetails: null, isOtherUser: true, hasActiveReport: false });
         }
@@ -3657,7 +3601,7 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
 
     res.json({ exists: false, phoneDetails: null });
   } catch (error) {
-    safeError('check-imei', error);
+    console.error('Error checking IMEI:', error);
     return sendError(res, 500, 'حدث خطأ في الخادم', error);
   }
 });
@@ -3691,7 +3635,7 @@ const recordAuthFailure = (key) => {
       authFailures.delete(key);
     }
   } catch (e) {
-    safeError('recordAuthFailure', e);
+    console.error('recordAuthFailure error:', e);
   }
 };
 
@@ -3700,7 +3644,7 @@ const clearAuthFailures = (key) => {
     authFailures.delete(key);
     authBlockedUntil.delete(key);
   } catch (e) {
-    safeError('clearAuthFailures', e);
+    console.error('clearAuthFailures error:', e);
   }
 };
 
@@ -3718,7 +3662,7 @@ const checkAuthBlocked = (key) => {
     }
     return { blocked: false };
   } catch (e) {
-    safeError('checkAuthBlocked', e);
+    console.error('checkAuthBlocked error:', e);
     return { blocked: false };
   }
 };
@@ -3828,8 +3772,8 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
         .eq('status', 'active');
       
       if (reportsFetchError) {
-          safeError('register-phone:check-phone_reports', reportsFetchError);
-        } else if (allReports && allReports.length > 0) {
+        console.error('Error checking phone_reports:', reportsFetchError);
+      } else if (allReports && allReports.length > 0) {
         // فك تشفير جميع أرقام IMEI والمقارنة
         const matchingReport = allReports.find(report => {
           const decryptedImei = decryptField(report.imei);
@@ -3874,7 +3818,7 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
 
     res.json({ success: true, data });
   } catch (error) {
-    safeError('register-phone', error);
+    console.error('Error registering phone:', error);
     return sendError(res, 500, 'حدث خطأ في الخادم', error);
   }
 });
@@ -3911,7 +3855,7 @@ app.post('/api/validate-image', async (req, res) => {
       message: 'الصورة صالحة' 
     });
   } catch (error) {
-    safeError('validate-image', error);
+    console.error('خطأ في التحقق من الصورة:', error);
     res.status(500).json({ error: 'خطأ في التحقق من الصورة' });
   }
 });
@@ -3968,7 +3912,7 @@ app.post('/api/get-user-data-for-registration', verifyJwtToken, async (req, res)
       res.json({ success: false, message: 'User data not found' });
     }
   } catch (error) {
-    safeError('get-user-data-for-registration', error);
+    console.error('Error fetching user data for registration:', error);
     return sendError(res, 500, 'حدث خطأ في الخادم', error);
   }
 });
@@ -3987,7 +3931,7 @@ app.get('/api/my-buyer-info', verifyJwtToken, async (req, res) => {
       .maybeSingle();
 
     if (bizErr) {
-      safeError('my-buyer-info:businesses', bizErr);
+      console.error('my-buyer-info: businesses query error', bizErr);
       return res.status(500).json({ error: 'Database error' });
     }
 
@@ -4012,7 +3956,7 @@ app.get('/api/my-buyer-info', verifyJwtToken, async (req, res) => {
       .maybeSingle();
 
     if (userErr) {
-      safeError('my-buyer-info:users', userErr);
+      console.error('my-buyer-info: users query error', userErr);
       return res.status(500).json({ error: 'Database error' });
     }
 
@@ -4031,7 +3975,7 @@ app.get('/api/my-buyer-info', verifyJwtToken, async (req, res) => {
 
     return res.json({ success: false, data: null });
   } catch (err) {
-    safeError('my-buyer-info', err);
+    console.error('my-buyer-info error:', err);
     return res.status(500).json({ error: 'Server error' });
   }
 });
@@ -4065,10 +4009,11 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
     // ⚠️ Diagnostic logging in development to help debug missing matches
     if (process.env.NODE_ENV === 'development') {
       try {
-        const decryptedList = (phones || []).map(p => ({ id: p.id, user_id: p.user_id, imei_sample: maskString(decryptField(p.imei) || '', 2, 2) }));
-        safeLog('IMEI-MASKED-INFO', { msg: 'incoming-imei-sample', incoming: maskString(imei || '', 2, 2), total: (decryptedList || []).length, sample: decryptedList.slice(0,20) });
+        const decryptedList = (phones || []).map(p => ({ id: p.id, user_id: p.user_id, imei_decrypted: decryptField(p.imei) }));
+        console.log('[IMEI-MASKED-INFO][DEBUG] incoming imei:', imei);
+        console.log('[IMEI-MASKED-INFO][DEBUG] decrypted registered_phones sample (first 20):', decryptedList.slice(0,20));
       } catch (dbgErr) {
-        safeLog('IMEI-MASKED-INFO', { msg: 'failed-to-decrypt-sample-list', error: String(dbgErr) });
+        console.error('[IMEI-MASKED-INFO][DEBUG] failed to decrypt sample list:', dbgErr);
       }
     }
 
@@ -4077,8 +4022,14 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
     if (activeReport) {
       if (registeredPhone) {
         const isOwner = userId && registeredPhone.user_id === userId;
-        // Debug info (redacted)
-        safeLog('IMEI-MASKED-INFO', { msg: 'report-and-registered', incoming: maskString(imei || '', 2, 2), userId, registeredPhoneUserId: registeredPhone.user_id, isOwner, status: registeredPhone.status });
+        // Debug info
+        console.log('[IMEI-MASKED-INFO][REPORT+REG]', {
+          imei,
+          userId,
+          registeredPhoneUserId: registeredPhone.user_id,
+          isOwner,
+          status: registeredPhone.status
+        });
         if (registeredPhone.status === 'transferred') {
           // If transferred, allow the new owner (matching userId) to see owner details
           if (userId && registeredPhone.user_id === userId) {
@@ -4101,7 +4052,7 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
               phone_image_url: phoneImageUrl
             });
           }
-          safeLog('imei-masked', { msg: 'transferred-returning-masked' });
+          console.log('[IMEI-MASKED-INFO] حالة transferred: returning masked transferred info');
           const decryptedPhoneNumber = decryptField(registeredPhone.phone_number);
           const decryptedIdLast6 = decryptField(registeredPhone.id_last6);
           const decryptedOwnerName = decryptField(registeredPhone.owner_name) || registeredPhone.owner_name || '';
@@ -4141,7 +4092,7 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
           phone_type: phoneType,
           phone_image_url: phoneImageUrl
         };
-        safeLog('imei-masked', { msg: 'response', response: redactObject(response) });
+        console.log('[IMEI-MASKED-INFO] Response:', response);
         return res.json(response);
       } else {
         // عليه بلاغ وغير مسجل
@@ -4151,8 +4102,14 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
 
     if (registeredPhone) {
       const isOwner = userId && registeredPhone.user_id === userId;
-      // Debug info (masked)
-      safeLog('imei-masked', { msg: 'reg-only', imei: maskString(imei || '', 2, 2), userId: maskString(userId || '', 0, 4), registeredPhoneUserId: maskString(String(registeredPhone.user_id||''),0,4), isOwner, status: registeredPhone.status });
+      // Debug info
+      console.log('[IMEI-MASKED-INFO][REG ONLY]', {
+        imei,
+        userId,
+        registeredPhoneUserId: registeredPhone.user_id,
+        isOwner,
+        status: registeredPhone.status
+      });
       if (registeredPhone.status === 'transferred') {
         // If transferred and requesting user is the new owner, return owner-visible details
         if (userId && registeredPhone.user_id === userId) {
@@ -4176,7 +4133,7 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
           });
         }
 
-        safeLog('imei-masked', { msg: 'transferred-returning-masked' });
+        console.log('[IMEI-MASKED-INFO] حالة transferred: returning masked transferred info');
         const decryptedPhoneNumber = decryptField(registeredPhone.phone_number);
         const decryptedIdLast6 = decryptField(registeredPhone.id_last6);
         const maskedPhoneDetails = {
@@ -4214,15 +4171,15 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
         phone_type: phoneType,
         phone_image_url: phoneImageUrl
       };
-      safeLog('imei-masked', { msg: 'response', response: redactObject(response) });
+      console.log('[IMEI-MASKED-INFO] Response:', response);
       return res.json(response);
     }
 
-    safeLog('imei-masked', { msg: 'not-registered' });
+    console.log('[IMEI-MASKED-INFO] Not registered: found=false');
     return res.json({ found: false, masked: false, isOwner: false, isRegistered: false });
 
   } catch (error) {
-    safeError('imei-masked-info', error);
+    console.error('Error in imei-masked-info:', error);
     return res.status(500).json({ error: 'Server error', details: error?.message || '' });
   }
 });
@@ -4261,7 +4218,7 @@ app.post('/api/report-details-decrypted', verifyJwtToken, async (req, res) => {
       .maybeSingle();
 
     if (error) {
-      safeError('report-details-decrypted:fetch-report', error);
+      console.error('Error fetching report for decrypted details:', error);
       return res.status(500).json({ error: 'Database error' });
     }
     if (!report) return res.status(404).json({ error: 'Report not found' });
@@ -4291,7 +4248,7 @@ app.post('/api/report-details-decrypted', verifyJwtToken, async (req, res) => {
 
     return res.json({ success: true, ...decrypted, data: decrypted });
   } catch (err) {
-    safeError('report-details-decrypted', err);
+    console.error('Error in /api/report-details-decrypted:', err);
     return res.status(500).json({ error: 'Server error' });
   }
 });
@@ -4301,7 +4258,7 @@ app.post('/api/reveal-imei', verifyJwtToken, async (req, res) => {
   try {
     const { imei_encrypted, imei_plain } = req.body;
 
-    safeLog('reveal-imei', { msg: 'payload-keys', keys: Object.keys(req.body) });
+    console.log('[reveal-imei] payload keys:', Object.keys(req.body));
 
     let imeiValue = null;
 
@@ -4312,7 +4269,7 @@ app.post('/api/reveal-imei', verifyJwtToken, async (req, res) => {
         try {
           imeiValue = decryptAES(imei_encrypted.encryptedData, imei_encrypted.iv, imei_encrypted.authTag);
         } catch (e) {
-          safeLog('reveal-imei', { warn: 'decryptAES failed', message: String(e?.message || e) });
+          console.warn('[reveal-imei] decryptAES failed for imei_encrypted object:', e.message);
         }
       }
 
@@ -4321,7 +4278,7 @@ app.post('/api/reveal-imei', verifyJwtToken, async (req, res) => {
         try {
           imeiValue = decryptField(typeof imei_encrypted === 'string' ? imei_encrypted : JSON.stringify(imei_encrypted));
         } catch (e) {
-          safeLog('reveal-imei', { warn: 'decryptField failed', message: String(e?.message || e) });
+          console.warn('[reveal-imei] decryptField failed:', e.message);
         }
       }
     }
@@ -4332,7 +4289,7 @@ app.post('/api/reveal-imei', verifyJwtToken, async (req, res) => {
     }
 
     if (!imeiValue) {
-      safeLog('reveal-imei', { warn: 'imei-not-determined' });
+      console.warn('[reveal-imei] IMEI value could not be determined');
       return res.status(404).json({ success: false, error: 'IMEI not found or could not be decrypted' });
     }
 
@@ -4342,10 +4299,10 @@ app.post('/api/reveal-imei', verifyJwtToken, async (req, res) => {
     // أرفق مسافات كل 4 محارف لسهولة القراءة
     const maskedWithSpaces = masked.replace(/(.{4})/g, '$1 ').trim();
 
-    safeLog('reveal-imei', { msg: 'success', last_digits: imeiValue ? imeiValue.slice(-4) : null });
+    console.log('[reveal-imei] success for imei:', imeiValue && imeiValue.slice(-8));
     return res.json({ success: true, maskedImei: maskedWithSpaces });
   } catch (err) {
-    safeError('reveal-imei', err);
+    console.error('Error in /api/reveal-imei:', err);
     return sendError(res, 500, 'حدث خطأ في الخادم', err, { success: false });
   }
 });
@@ -4386,7 +4343,7 @@ app.post('/api/verify-seller-password', verifyJwtToken, async (req, res) => {
     clearAuthFailures(userKey);
     return res.json({ ok: true });
   } catch (err) {
-    safeError('verify-seller-password', err);
+    console.error('verify-seller-password error:', err);
     return res.status(500).json({ error: 'Server error' });
   }
 });
@@ -4485,7 +4442,7 @@ app.post('/api/transfer-ownership', verifyJwtToken, async (req, res) => {
           buyerUserId = userRecord.id;
         }
       } catch (e) {
-        safeError('transfer-ownership:lookup-buyer', e);
+        console.error('transfer-ownership: failed to lookup buyer user by email in users table', e);
       }
     }
     updateData.user_id = buyerUserId;
@@ -4504,7 +4461,7 @@ app.post('/api/transfer-ownership', verifyJwtToken, async (req, res) => {
           if (enc) updateData.email = JSON.stringify({ encryptedData: enc.encryptedData, iv: enc.iv, authTag: enc.authTag });
         }
       } catch (e) {
-        safeError('transfer-ownership:fetch-buyer-email', e);
+        console.error('transfer-ownership: failed to fetch buyer email from users table', e);
       }
     }
 
@@ -4543,11 +4500,11 @@ app.post('/api/transfer-ownership', verifyJwtToken, async (req, res) => {
       .select();
 
     if (transferErr) {
-      safeError('transfer-ownership:insert-transfer', transferErr);
+      console.error('transfer-ownership: failed to insert transfer record', transferErr);
     }
     return res.json({ success: true, data: updated, previousOwnerIdLast6, transferRecordId: transferInserted?.[0]?.id || null });
   } catch (err) {
-    safeError('transfer-ownership', err);
+    console.error('transfer-ownership error:', err);
     return sendError(res, 500, 'حدث خطأ في الخادم', err);
   }
 });
@@ -4585,7 +4542,7 @@ app.post('/api/transfer-records', verifyJwtToken, async (req, res) => {
 
     return res.json({ success: true, data: decrypted });
   } catch (err) {
-    safeError('transfer-records', err);
+    console.error('transfer-records error:', err);
     return res.status(500).json({ error: 'Server error', details: err?.message || '' });
   }
 });
@@ -4606,7 +4563,7 @@ app.post('/api/update-phone-status', verifyJwtToken, async (req, res) => {
     if (error) throw error;
     return res.json({ success: true, data });
   } catch (err) {
-    safeError('update-phone-status', err);
+    console.error('update-phone-status error:', err);
     return res.status(500).json({ error: 'Server error' });
   }
 });
@@ -4654,7 +4611,7 @@ app.post('/api/reset-registered-phone-password', verifyJwtToken, async (req, res
     clearAuthFailures(userKey);
     return res.json({ success: true, data: updated });
   } catch (err) {
-    safeError('reset-registered-phone-password', err);
+    console.error('reset-registered-phone-password error:', err);
     return res.status(500).json({ error: 'Server error' });
   }
 });
@@ -4683,7 +4640,7 @@ app.post('/api/check-limit', verifyJwtToken, async (req, res) => {
       .maybeSingle();
 
     if (paymentError && paymentError.code !== 'PGRST116') {
-      safeError('check-limit:payment-query', paymentError);
+      console.error('Payment query error:', paymentError);
       throw paymentError;
     }
 
@@ -4700,7 +4657,7 @@ app.post('/api/check-limit', verifyJwtToken, async (req, res) => {
       .single();
 
     if (planError || !planData) {
-      safeError('check-limit:plan-query', planError);
+      console.error('Plan query error:', planError);
       return res.status(500).json({ error: 'Plan details not found' });
     }
 
@@ -4729,10 +4686,10 @@ app.post('/api/check-limit', verifyJwtToken, async (req, res) => {
           .select()
           .single();
 
-          if (insertError) {
-            safeError('check-limit:insert-usage', insertError);
-            return res.status(500).json({ error: 'Failed to initialize usage data' });
-          }
+        if (insertError) {
+           console.error('Insert usage error:', insertError);
+           return res.status(500).json({ error: 'Failed to initialize usage data' });
+        }
         
         const limitKey = `${type}_limit`;
         const limit = parseInt(planData[limitKey]);
@@ -4776,7 +4733,7 @@ app.post('/api/check-limit', verifyJwtToken, async (req, res) => {
     });
 
   } catch (error) {
-    safeError('check-limit', error);
+    console.error('Error checking limit:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -4802,7 +4759,7 @@ app.post('/api/increment-usage', verifyJwtToken, async (req, res) => {
         
         res.json({ success: true });
     } catch (error) {
-        safeError('increment-usage', error);
+        console.error('Error incrementing usage:', error);
       return sendError(res, 500, 'حدث خطأ في الخادم', error);
     }
 });
@@ -4851,7 +4808,7 @@ app.post('/api/notify-owner-email', verifyJwtToken, async (req, res) => {
       try {
         return decryptField(reportData.owner_name) || reportData.owner_name;
       } catch (e) {
-        safeError('notify-owner-email:decrypt-owner_name', e);
+        console.error('فشل فك تشفير owner_name:', e);
         return reportData.owner_name;
       }
     })();
@@ -4861,7 +4818,7 @@ app.post('/api/notify-owner-email', verifyJwtToken, async (req, res) => {
       try {
         return decryptField(reportData.email) || reportData.email;
       } catch (e) {
-        safeError('notify-owner-email:decrypt-email', e);
+        console.error('فشل فك تشفير email:', e);
         return reportData.email;
       }
     })();
@@ -4871,7 +4828,7 @@ app.post('/api/notify-owner-email', verifyJwtToken, async (req, res) => {
       try {
         return decryptField(reportData.imei) || reportData.imei;
       } catch (e) {
-        safeError('notify-owner-email:decrypt-imei', e);
+        console.error('فشل فك تشفير IMEI:', e);
         return reportData.imei;
       }
     })();
@@ -4885,12 +4842,12 @@ app.post('/api/notify-owner-email', verifyJwtToken, async (req, res) => {
           .ilike('email', decryptedOwnerEmail)
           .maybeSingle();
         if (error) {
-          safeError('notify-owner-email:fetch-language', error);
+          console.error('فشل جلب لغة المستخدم:', error);
           return 'ar';
         }
         return data?.language || 'ar';
       } catch (e) {
-        safeError('notify-owner-email:fetch-language-exception', e);
+        console.error('خطأ أثناء جلب لغة المستخدم:', e);
         return 'ar';
       }
     })();
@@ -4932,7 +4889,7 @@ app.post('/api/notify-owner-email', verifyJwtToken, async (req, res) => {
     // إرسال البريد الإلكتروني
     if (decryptedOwnerEmail) {
       const cleanEmail = decryptedOwnerEmail.trim();
-      safeLog('email', { msg: 'sending', to: maskEmail(cleanEmail) });
+      console.log('إرسال بريد إلكتروني إلى:', cleanEmail);
 
       await resend.emails.send({
         from: 'onboarding@resend.dev',
@@ -4940,13 +4897,13 @@ app.post('/api/notify-owner-email', verifyJwtToken, async (req, res) => {
         subject: localizedContent.emailSubject,
         html: localizedContent.emailHtml
       });
-      safeLog('email', { msg: 'sent' });
+      console.log('Email sent successfully.');
       return res.json({ success: true, message: 'Email sent successfully' });
     } else {
       return res.status(400).json({ error: 'لم يتم العثور على بريد إلكتروني مسجل لهذا الهاتف' });
     }
   } catch (err) {
-    safeError('notify-owner-email:send', err);
+    console.error('خطأ في إرسال الإشعار البريدي:', err);
     res.status(500).json({ error: 'خطأ في إرسال الإشعار البريدي' });
   }
 });
@@ -4957,10 +4914,10 @@ app.get('/api/check-unclaimed-phones', verifyJwtToken, async (req, res) => {
     const userEmail = req.user.email;
     // Require verified email to reduce risk of claiming by email-only knowledge
     if (!req.user.email_confirmed_at && !req.user.confirmed_at) {
-      safeLog('check-unclaimed', { msg: 'reject-unverified-email', user: maskEmail(userEmail) });
+      console.log('[Check Unclaimed] Rejecting unverified email user:', userEmail);
       return res.status(403).json({ error: 'Email not verified' });
     }
-    safeLog('check-unclaimed', { msg: 'checking-for-user', user: maskEmail(userEmail) });
+    console.log(`[Check Unclaimed] Checking for user: ${userEmail}`);
     
     // جلب الهواتف التي ليس لها user_id
     const { data: phones, error } = await supabase
@@ -4973,7 +4930,7 @@ app.get('/api/check-unclaimed-phones', verifyJwtToken, async (req, res) => {
     const myPhones = [];
     
     if (phones && phones.length > 0) {
-      safeLog('check-unclaimed', { msg: 'found-phones-null-user', count: phones.length });
+      console.log(`[Check Unclaimed] Found ${phones.length} phones with null user_id`);
       for (const phone of phones) {
         let decryptedEmail = decryptField(phone.email);
         
@@ -4994,13 +4951,13 @@ app.get('/api/check-unclaimed-phones', verifyJwtToken, async (req, res) => {
         }
       }
     } else {
-      safeLog('check-unclaimed', { msg: 'no-phones-found' });
+      console.log('[Check Unclaimed] No phones found with null user_id');
     }
 
     res.json({ success: true, phones: myPhones });
 
   } catch (error) {
-    safeError('check-unclaimed-phones', error);
+    console.error('Error checking unclaimed phones:', error);
     return sendError(res, 500, 'حدث خطأ في الخادم', error);
   }
 });
@@ -5017,7 +4974,7 @@ app.post('/api/claim-phone-by-email', verifyJwtToken, async (req, res) => {
   try {
     // Require verified email to reduce risk of claiming by knowledge of email alone
     if (!user.email_confirmed_at && !user.confirmed_at) {
-      safeLog('claim-phone', { msg: 'reject-unverified-email', user: maskEmail(user.email) });
+      console.log('[Claim Phone] Rejecting claim from unverified email user:', user.email);
       return res.status(403).json({ error: 'Email not verified' });
     }
     // 1. التحقق من أن الهاتف موجود وليس له user_id
@@ -5079,22 +5036,21 @@ app.post('/api/claim-phone-by-email', verifyJwtToken, async (req, res) => {
         claimed_at: new Date().toISOString()
       });
     } catch (auditErr) {
-      safeError('claim-phone:audit-insert-failed', auditErr?.message || auditErr);
+      console.warn('Audit insert failed (table may not exist):', auditErr?.message || auditErr);
     }
 
-    safeLog('claim-phone', { msg: 'claimed', userId: user.id, user: maskEmail(user.email), phoneId: targetPhone.id });
+    console.log(`[Claim Phone] User ${user.id} (${user.email}) claimed phone ${targetPhone.id}`);
 
     res.json({ success: true, message: 'Phone claimed successfully' });
 
   } catch (error) {
-    safeError('claim-phone', error);
+    console.error('Error claiming phone:', error);
     return sendError(res, 500, 'حدث خطأ في الخادم', error);
   }
 });
 
 // Rate-limited signup proxy endpoint
-// ملاحظة: تم زيادة الحد مؤقتاً للاختبار
-app.post('/api/signup', signupLimiter, rateLimitMiddleware({ windowMs: 60 * 60 * 1000, max: 20 }), async (req, res) => {
+app.post('/api/signup', signupLimiter, rateLimitMiddleware({ windowMs: 60 * 60 * 1000, max: 6 }), async (req, res) => {
   try {
     const { email, password, username, phoneNumber, idLast6, countryCode } = req.body || {};
     if (!email || !password) return res.status(400).json({ error: 'email_and_password_required' });
@@ -5108,111 +5064,40 @@ app.post('/api/signup', signupLimiter, rateLimitMiddleware({ windowMs: 60 * 60 *
     const fullPhone = (countryCode || '') + (phoneNumber || '');
 
     // Create user via Supabase auth (service key client)
-    // ملاحظة: لا نمرر البيانات الحساسة في options.data لتجنب التخزين التلقائي غير المشفر
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
         data: {
           full_name: username || null,
+          phone: fullPhone || null,
+          id_last6: idLast6 || null,
           role: 'free_user'
-          // البيانات الحساسة (phone, id_last6) سيتم تخزينها مشفرة في جدول users فقط
         },
         emailRedirectTo: `${process.env.FRONTEND_URL || 'https://'+(process.env.HOST||'')}/login`
       }
     });
 
     if (error) {
-      safeError('signup:rpc', error);
+      console.error('Signup RPC error:', error);
       return res.status(400).json({ error: 'signup_failed', message: error.message });
     }
 
     // Insert users profile row if auth created a user id
     if (data?.user?.id) {
       try {
-        // تشفير البيانات الحساسة قبل التخزين
-        let encryptedEmail = null;
-        let encryptedPhone = null;
-        let encryptedIdLast6 = null;
-
-        // تشفير البريد الإلكتروني
-        if (email) {
-          const enc = encryptAES(email);
-          if (enc) {
-            encryptedEmail = JSON.stringify({ 
-              encryptedData: enc.encryptedData, 
-              iv: enc.iv, 
-              authTag: enc.authTag 
-            });
-          }
-        }
-
-        // تشفير رقم الهاتف
-        if (fullPhone) {
-          const enc = encryptAES(fullPhone);
-          if (enc) {
-            encryptedPhone = JSON.stringify({ 
-              encryptedData: enc.encryptedData, 
-              iv: enc.iv, 
-              authTag: enc.authTag 
-            });
-          }
-        }
-
-        // تشفير آخر 6 أرقام من الهوية
-        if (idLast6) {
-          const enc = encryptAES(idLast6);
-          if (enc) {
-            encryptedIdLast6 = JSON.stringify({ 
-              encryptedData: enc.encryptedData, 
-              iv: enc.iv, 
-              authTag: enc.authTag 
-            });
-          }
-        }
-
-        // إدراج البيانات المشفرة في جدول users
-        safeLog('signup', { msg: 'inserting-encrypted-user', id: data.user.id, hasEncryptedEmail: !!encryptedEmail, hasEncryptedPhone: !!encryptedPhone, hasEncryptedIdLast6: !!encryptedIdLast6, role: 'customer', status: 'active' });
-
-        const { error: insertError } = await supabaseAdmin.from('users').insert([{
-          id: data.user.id,
-          full_name: username || null,
-          email: encryptedEmail,
-          phone: encryptedPhone,
-          id_last6: encryptedIdLast6,
-          role: 'customer',
-          status: 'active'
-        }]);
-
-        if (insertError) {
-          safeError('signup:insert-error', { code: insertError.code, message: insertError.message, details: insertError.details, hint: insertError.hint });
-
-          // إذا كان الخطأ متعلق بسياسات الأمان، نحاول استخدام service role key
-          if (insertError.code === '42501') {
-            safeError('signup:rls-error', 'RLS permission denied while inserting user');
-            return res.status(403).json({ 
-              error: 'permission_denied', 
-              message: 'فشل في إنشاء ملف المستخدم بسبب قيود الأمان',
-              details: 'يرجى التواصل مع الدعم الفني'
-            });
-          }
-
-          throw insertError;
-        }
-
-        safeLog('signup', { msg: 'created-user', userId: data.user.id });
+        await supabase.from('users').insert([{ id: data.user.id, full_name: username || null, email, phone: fullPhone || null, id_last6: idLast6 || null, role: 'customer', status: 'active' }]);
       } catch (insertErr) {
-        safeError('signup:insert-exception', insertErr?.message || insertErr);
-        safeError('signup:insert-exception-details', insertErr);
+        console.warn('Warning: failed to insert user profile row:', insertErr?.message || insertErr);
       }
     }
 
     return res.json({ ok: true, data });
   } catch (err) {
-    safeError('signup', err);
+    console.error('/api/signup error', err);
     return res.status(500).json({ error: 'internal_error' });
   }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => safeLog('server', `Server listening on port ${PORT}`));
+app.listen(PORT, () => console.log("Server listening on port", PORT));
