@@ -59,8 +59,8 @@ const MyAds: React.FC = (): React.ReactNode => {
 
       // إذا كان الإعلان مميزًا، قد نرغب في حذفه من كلا الجدولين إذا كان موجودًا
       if (adType === 'special') {
-        // محاولة الحذف من الجدول الآخر كإجراء احترازي
-        await supabase.from('ads_payment').delete().eq('id', adId);
+        // محاولة الحذف الاحترازي مع التحقق من الملكية
+        await supabase.from('ads_payment').delete().eq('id', adId).eq('user_id', user?.id);
       }
 
       console.log('تم التأكد من حذف الإعلان بنجاح');
@@ -140,11 +140,11 @@ const MyAds: React.FC = (): React.ReactNode => {
           if (now.getTime() - expiredDate.getTime() > threeDaysMs) {
             // حذف من جدول الإعلانات العادية
             if (expiredAd.id) {
-              await supabase.from('ads_payment').delete().eq('id', expiredAd.id);
+              await supabase.from('ads_payment').delete().eq('id', expiredAd.id).eq('user_id', user.id);
             }
             // حذف من جدول الإعلانات المميزة إذا كان مميزًا
             if (expiredAd.adType === 'special' || expiredAd.is_paid) {
-              await supabase.from('ads_payment').delete().eq('id', expiredAd.id);
+              await supabase.from('ads_payment').delete().eq('id', expiredAd.id).eq('user_id', user.id);
             }
           }
         }

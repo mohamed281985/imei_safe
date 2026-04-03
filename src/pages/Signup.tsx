@@ -247,47 +247,31 @@ const Signup: React.FC = () => {
     }
 
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: username,
-            phone: fullPhoneNumber,
-            id_last6: idLast6,
-            role: 'free_user',
-          },
-          emailRedirectTo: `${window.location.origin}/login`,
-        },
+      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://imei-safe.me';
+      const resp = await fetch(`${API_BASE_URL}/api/signup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, username, phoneNumber: fullPhoneNumber, idLast6, countryCode })
       });
 
-      if (error) {
-        setSignupError(error.message.includes('User already registered') ? t('phone_registered_before') : error.message);
-      } else if (data.user) {
-        // إضافة بيانات المستخدم في جدول users بعد نجاح التسجيل
-        await supabase
-          .from('users')
-          .insert([
-            {
-              id: data.user.id, // معرف المستخدم من Supabase Auth
-              full_name: username,
-              email: email,
-              phone: fullPhoneNumber,
-              id_last6: idLast6,
-              role: 'customer',
-              status: 'active', // إضافة الحالة الافتراضية للمستخدم الجديد
-            }
-          ]);
-        toast({
-          title: t('signup_successful'),
-          description: t('verification_email_sent'),
-        });
-        navigate('/login');
-      } else {
-        setSignupError(t('signup_error'));
+      const json = await resp.json().catch(() => null);
+
+      if (resp.status === 429) {
+        setSignupError(t('too_many_requests') || 'Too many requests. Please try again later.');
+        return;
       }
+
+      if (!resp.ok) {
+        const msg = (json && (json.error || json.message)) || t('signup_error');
+        setSignupError(msg);
+        return;
+      }
+
+      // Success: server created auth entry and asked user to verify email
+      toast({ title: t('signup_successful'), description: t('verification_email_sent') });
+      navigate('/login');
     } catch (error: any) {
-      setSignupError(error.message || t('signup_error'));
+      setSignupError(error?.message || t('signup_error'));
     } finally {
       setIsSubmitting(false);
     }
