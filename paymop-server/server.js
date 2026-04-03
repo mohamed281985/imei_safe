@@ -2883,18 +2883,36 @@ const amountCents = obj.amount_cents; // number
               const { user_id, bonus_offer } = existingAd;
               if (user_id && bonus_offer > 0) {
                 safeLog('paymob-webhook', { msg: 'award-bonus', user_id, bonus_offer });
-                const { error: rpcError } = await supabase.rpc('add_to_bonus_balance', {
-                  p_user_id: user_id,
-                  p_amount_to_add: bonus_offer
-                });
-
-                if (rpcError) {
-                  safeLog('webhook', { msg: 'rpc_bonus_update_error', error: String(rpcError) });
-                } else {
-                  safeLog('paymob-webhook', { msg: 'bonus-updated', user_id });
+                // Call the RPC defined in migrations: increment_bonus(p_user_id uuid, p_amount int)
+                try {
+                  const { error: rpcError } = await supabase.rpc('increment_bonus', {
+                    p_user_id: user_id,
+                    p_amount: Number(bonus_offer)
+                  });
+                  if (rpcError) {
+                    safeLog('webhook', { msg: 'rpc_bonus_update_error', error: String(rpcError), user_id, bonus_offer });
+                  } else {
+                    // verify by fetching the updated bonus
+                    try {
+                      const { data: up, error: upErr } = await supabase
+                        .from('users_plans')
+                        .select('bonus')
+                        .eq('user_id', user_id)
+                        .single();
+                      if (upErr) {
+                        safeLog('webhook', { msg: 'fetch_updated_bonus_failed', error: String(upErr), user_id });
+                      } else {
+                        safeLog('paymob-webhook', { msg: 'bonus-updated', user_id, new_bonus: up?.bonus });
+                      }
+                    } catch (e) {
+                      safeLog('webhook', { msg: 'fetch_updated_bonus_exception', error: String(e), user_id });
+                    }
+                  }
+                } catch (e) {
+                  safeLog('webhook', { msg: 'rpc_call_exception', error: String(e), user_id, bonus_offer });
                 }
               } else {
-                  safeLog('paymob-webhook', { msg: 'no-bonus-or-user' });
+                safeLog('paymob-webhook', { msg: 'no-bonus-or-user' });
               }
               // --- ⭐ نهاية: تحديث رصيد البونص للمستخدم ---
             }
