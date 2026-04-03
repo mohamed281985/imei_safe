@@ -636,14 +636,7 @@ const TransferHistory: React.FC = () => {
           }
         }
       } else {
-        try {
-          const pdfBlob = doc.output('blob');
-          const url = URL.createObjectURL(pdfBlob);
-          window.open(url, '_blank');
-          setTimeout(() => URL.revokeObjectURL(url), 60000);
-        } catch (e) {
-          doc.save(fileName);
-        }
+        doc.save(fileName);
       }
 
     } catch (error) {
