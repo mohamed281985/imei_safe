@@ -53,7 +53,7 @@ const ForgotPassword: React.FC = () => {
         <form onSubmit={sendResetPassword} className="space-y-4 max-w-xs mx-auto">
           <input
             type="email"
-            className="w-full px-3 py-2 rounded border border-gray-400 focus:outline-none focus:border-imei-cyan"
+            className="w-full px-3 py-2 rounded border border-gray-400 focus:outline-none focus:border-imei-cyan text-black"
             placeholder={t('email')}
             value={email}
             onChange={e => setEmail(e.target.value)}

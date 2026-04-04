@@ -238,40 +238,48 @@ const Signup: React.FC = () => {
       return;
     }
 
-    // Password complexity: min 8 chars, at least one lowercase, one uppercase, one digit, and one symbol
-    const pwdValid = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/.test(password);
-    if (!pwdValid) {
-      setSignupError(t('password_requirements') || 'Password must be at least 8 characters and include uppercase, lowercase, a number and a symbol.');
-      setIsSubmitting(false);
-      return;
-    }
-
     try {
-      const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://imei-safe.me';
-      const resp = await fetch(`${API_BASE_URL}/api/signup`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, username, phoneNumber: fullPhoneNumber, idLast6, countryCode })
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: username,
+            phone: fullPhoneNumber,
+            id_last6: idLast6,
+            role: 'free_user',
+          },
+          emailRedirectTo: `${window.location.origin}/login`,
+        },
       });
 
-      const json = await resp.json().catch(() => null);
-
-      if (resp.status === 429) {
-        setSignupError(t('too_many_requests') || 'Too many requests. Please try again later.');
-        return;
+      if (error) {
+        setSignupError(error.message.includes('User already registered') ? t('phone_registered_before') : error.message);
+      } else if (data.user) {
+        // إضافة بيانات المستخدم في جدول users بعد نجاح التسجيل
+        await supabase
+          .from('users')
+          .insert([
+            {
+              id: data.user.id, // معرف المستخدم من Supabase Auth
+              full_name: username,
+              email: email,
+              phone: fullPhoneNumber,
+              id_last6: idLast6,
+              role: 'customer',
+              status: 'active', // إضافة الحالة الافتراضية للمستخدم الجديد
+            }
+          ]);
+        toast({
+          title: t('signup_successful'),
+          description: t('verification_email_sent'),
+        });
+        navigate('/login');
+      } else {
+        setSignupError(t('signup_error'));
       }
-
-      if (!resp.ok) {
-        const msg = (json && (json.error || json.message)) || t('signup_error');
-        setSignupError(msg);
-        return;
-      }
-
-      // Success: server created auth entry and asked user to verify email
-      toast({ title: t('signup_successful'), description: t('verification_email_sent') });
-      navigate('/login');
     } catch (error: any) {
-      setSignupError(error?.message || t('signup_error'));
+      setSignupError(error.message || t('signup_error'));
     } finally {
       setIsSubmitting(false);
     }
@@ -416,7 +424,7 @@ const Signup: React.FC = () => {
                     className="input-field pl-10 w-full focus:ring-2 focus:ring-orange-500 bg-imei-dark/50 backdrop-blur-sm"
                     placeholder="********"
                     required
-                    minLength={8}
+                    minLength={6}
                   />
                 </div>
               </div>
@@ -438,7 +446,7 @@ const Signup: React.FC = () => {
                     className="input-field pl-10 w-full focus:ring-2 focus:ring-orange-500 bg-imei-dark/50 backdrop-blur-sm"
                     placeholder="********"
                     required
-                    minLength={8}
+                    minLength={6}
                   />
                 </div>
               </div>
