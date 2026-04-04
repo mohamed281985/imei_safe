@@ -56,99 +56,35 @@ export default function BusinessSignup() {
       [name]: processedValue
     }));
 
-    // تعديل التحقق من البريد الإلكتروني
     if (name === 'email') {
-      // إعادة تعيين الحالات
       setEmailExists(false);
       setCheckingEmail(false);
 
-      // التحقق فقط إذا كان البريد الإلكتروني صالحاً
       if (value && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
         setCheckingEmail(true);
         try {
-          let emailExists = false;
-          
-          // 1. التحقق من جدول users
-          const { data: usersData, error: usersError } = await supabase
-            .from('users')
-            .select('email')
-            .eq('email', value);
-            
-          if (!usersError && usersData && usersData.length > 0) {
-            emailExists = true;
-          } else if (usersError) {
-            console.debug("Error checking users table:", usersError);
-            
-            // في حالة وجود خطأ في الصلاحيات، حاول استعلام بديل
-            if (usersError.code === 'PGRST116' || usersError.code === 'PGRST202') {
-              console.log("Permission error on users table, trying alternative");
-              
-              const { data: altData, error: altError } = await supabase
-                .from('users')
-                .select('id')
-                .ilike('email', `%${value}%`)
-                .limit(1);
-                
-              if (!altError && altData && altData.length > 0) {
-                emailExists = true;
-              }
-            }
-          }
-          
-          // 2. التحقق من جدول businesses إذا لم يتم العثور على البريد في users
-          if (!emailExists) {
-            const { data: businessesData, error: businessesError } = await supabase
-              .from('businesses')
-              .select('email')
-              .eq('email', value);
-              
-            if (!businessesError && businessesData && businessesData.length > 0) {
-              emailExists = true;
-            } else if (businessesError) {
-              console.debug("Error checking businesses table:", businessesError);
-              
-              // في حالة وجود خطأ في الصلاحيات، حاول استعلام بديل
-              if (businessesError.code === 'PGRST116' || businessesError.code === 'PGRST202') {
-                console.log("Permission error on businesses table, trying alternative");
-                
-                const { data: altData, error: altError } = await supabase
-                  .from('businesses')
-                  .select('id')
-                  .ilike('email', `%${value}%`)
-                  .limit(1);
-                  
-                if (!altError && altData && altData.length > 0) {
-                  emailExists = true;
-                }
-              }
-            }
-          }
-          
-          // تحديث الحالة بناءً على النتيجة النهائية
-          setEmailExists(emailExists);
-          setIsEmailRegistered(emailExists);
-          
-          if (emailExists) {
+          const response = await fetch('/api/verify-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: value })
+          });
+          const data = await response.json();
+          setEmailExists(data.emailExists);
+          setIsEmailRegistered(data.emailExists);
+
+          if (data.emailExists) {
             toast({
               title: t('alert_title'),
               description: t('email_already_registered'),
               variant: "destructive",
             });
           }
-          
-          // تحديث آخر بريد تم فحصه
-          setLastCheckedEmail(value);
-        } catch (error: any) {
-          setEmailExists(false);
-          setIsEmailRegistered(false);
-          console.debug("Email verification error:", error);
-          // تحديث آخر بريد تم فحصه حتى لو لم يتم العثور عليه
-          setLastCheckedEmail(value);
+        } catch (error) {
+          console.error('Error verifying email:', error);
         } finally {
           setCheckingEmail(false);
         }
       } else {
-        // إذا كان البريد الإلكتروني فارغًا أو غير صالح، قم بتحديث آخر بريد تم فحصه
         setLastCheckedEmail('');
         setIsEmailRegistered(false);
       }
@@ -159,7 +95,6 @@ export default function BusinessSignup() {
     e.preventDefault();
     setLoading(true);
 
-    // تحقق من كلمة المرور
     if (formData.password !== formData.confirmPassword) {
       toast({
         title: t('verification_error'),
@@ -180,79 +115,30 @@ export default function BusinessSignup() {
     }
 
     try {
-      // 1. تسجيل المستخدم في Supabase Auth
-      const fullPhoneNumber = countryCode + formData.phone;
-      const { data: { user }, error: signUpError } = await supabase.auth.signUp({
-        email: formData.email,
-        password: formData.password,
-        options: {
-          data: {
-            full_name: formData.ownerName,
-            phone: fullPhoneNumber,
-            role: 'free_business',
-            store_name: formData.storeName,
-            address: formData.address,
-            business_type: formData.businessType,
-            id_last6: formData.id_last6,
-          },
-          emailRedirectTo: `${window.location.origin}/login`
-        }
+      const response = await fetch('/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...formData,
+          countryCode,
+        })
       });
 
-      if (signUpError) throw new Error(signUpError.message);
-      if (!user) throw new Error("User registration failed, user not found.");
-
-      // تحقق من وجود سجل في جدول businesses، إذا لم يوجد أنشئه يدويًا
-      const { data: businessExists, error: businessCheckError } = await supabase
-        .from('businesses')
-        .select('id')
-        .eq('email', formData.email)
-        .single();
-
-      if (businessCheckError || !businessExists) {
-        // تحقق من وجود معرف المستخدم قبل الإدراج
-        if (!user.id) {
-          toast({
-            title: t('signup_error'),
-            description: t('user_id_not_found'),
-            variant: 'destructive'
-          });
-          setLoading(false);
-          return;
-        }
-        // إنشاء سجل جديد في جدول businesses
-        const { error: businessInsertError } = await supabase
-          .from('businesses')
-          .insert({
-            email: formData.email,
-            store_name: formData.storeName,
-            owner_name: formData.ownerName,
-            phone: fullPhoneNumber,
-            address: formData.address,
-            business_type: formData.businessType,
-            id_last6: formData.id_last6,
-            user_id: user.id
-          });
-        if (businessInsertError) {
-          toast({
-            title: t('business_data_save_error'),
-            description: businessInsertError.message,
-            variant: 'destructive'
-          });
-          console.debug('فشل حفظ بيانات العمل التجاري:', businessInsertError.message);
-        }
+      const data = await response.json();
+      if (response.ok) {
+        toast({
+          title: t('registration_success_title'),
+          description: t('registration_success_message'),
+          duration: 9000,
+        });
+      } else {
+        throw new Error(data.error || 'Registration failed');
       }
-
-      toast({
-        title: t('registration_success_title'),
-        description: t('registration_success_message'),
-        duration: 9000,
-      });
-    } catch (error: any) {
+    } catch (error) {
       toast({
         title: t('error'),
         description: error.message,
-        variant: 'destructive'
+        variant: 'destructive',
       });
     } finally {
       setLoading(false);

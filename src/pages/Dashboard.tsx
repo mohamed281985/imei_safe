@@ -97,7 +97,7 @@ const getTransformedImageUrl = (originalUrl: string | null | undefined): string 
   try {
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
     if (!supabaseUrl) {
-      console.error('Supabase URL not found in environment variables');
+      console.error('Supabase URL not found in environment variables. Please ensure VITE_SUPABASE_URL is set in your .env file.');
       return '/placeholder-phone.png';
     }
 

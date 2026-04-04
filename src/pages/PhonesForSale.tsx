@@ -294,9 +294,11 @@ const PhonesForSale: React.FC = () => {
                                   }
                                 }}
                                 onError={(e) => {
-                                  console.error('Image failed to load:', e);
                                   const target = e.target as HTMLImageElement;
-                                  target.style.display = 'none';
+                                  if (target.src !== '/placeholder-phone.png') {
+                                    console.error('Image failed to load:', target.src);
+                                    target.src = '/placeholder-phone.png'; // Set fallback image
+                                  }
                                   const placeholder = target.parentElement?.querySelector('.phone-placeholder');
                                   if (placeholder) {
                                     placeholder.classList.remove('opacity-0');
