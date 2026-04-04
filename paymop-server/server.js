@@ -225,7 +225,21 @@ if (!PRIVATE_KEY) {
 }
 
 // --- تهيئة Resend ---
-const resend = new Resend(process.env.RESEND_API_KEY);
+let resend;
+if (process.env.RESEND_API_KEY) {
+  resend = new Resend(process.env.RESEND_API_KEY);
+} else {
+  console.warn('⚠️ RESEND_API_KEY not set; email sending is disabled.');
+  // stub to prevent crashes when resend is not configured
+  resend = {
+    emails: {
+      send: async (opts) => {
+        console.log('Resend stub called, email not actually sent:', opts);
+        return null;
+      }
+    }
+  };
+}
 
 const app = express();
 app.use(express.json({ limit: '50mb' }));
@@ -261,10 +275,28 @@ app.use((req, res, next) => {
     // don't break requests if enforcement middleware fails
     console.warn('HTTPS enforcement middleware error', e);
   }
-  return next();
-});
+    return next();
+  });
 
-// Global rate limiter: use Redis if available, otherwise fallback to in-memory map
+  // Middleware to verify JWT token (moved here to ensure initialization before routes)
+  const verifyJwtToken = (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Unauthorized: Missing or invalid token' });
+    }
+
+    const token = authHeader.split(' ')[1];
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      req.user = decoded;
+      next();
+    } catch (error) {
+      console.error('JWT verification failed:', error);
+      return res.status(403).json({ error: 'Forbidden: Invalid token' });
+    }
+  };
+
+  // Global rate limiter: use Redis if available, otherwise fallback to in-memory map
 const GLOBAL_RATE_WINDOW_MS = 60 * 1000; // 1 minute
 const GLOBAL_RATE_MAX = 200;
 const localGlobalRate = new Map();
@@ -1638,20 +1670,4 @@ app.post('/api/claim-phone-by-email', verifyJwtToken, async (req, res) => {
   }
 });
 
-// Middleware to verify JWT token
-const verifyJwtToken = (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Unauthorized: Missing or invalid token' });
-  }
-
-  const token = authHeader.split(' ')[1];
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded;
-    next();
-  } catch (error) {
-    console.error('JWT verification failed:', error);
-    return res.status(403).json({ error: 'Forbidden: Invalid token' });
-  }
-};
+// verifyJwtToken middleware moved earlier to avoid initialization-before-use error
