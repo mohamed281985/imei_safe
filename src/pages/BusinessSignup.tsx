@@ -56,35 +56,99 @@ export default function BusinessSignup() {
       [name]: processedValue
     }));
 
+    // تعديل التحقق من البريد الإلكتروني
     if (name === 'email') {
+      // إعادة تعيين الحالات
       setEmailExists(false);
       setCheckingEmail(false);
 
+      // التحقق فقط إذا كان البريد الإلكتروني صالحاً
       if (value && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
         setCheckingEmail(true);
         try {
-          const response = await fetch('/api/verify-email', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: value })
-          });
-          const data = await response.json();
-          setEmailExists(data.emailExists);
-          setIsEmailRegistered(data.emailExists);
-
-          if (data.emailExists) {
+          let emailExists = false;
+          
+          // 1. التحقق من جدول users
+          const { data: usersData, error: usersError } = await supabase
+            .from('users')
+            .select('email')
+            .eq('email', value);
+            
+          if (!usersError && usersData && usersData.length > 0) {
+            emailExists = true;
+          } else if (usersError) {
+            console.error("Error checking users table:", usersError);
+            
+            // في حالة وجود خطأ في الصلاحيات، حاول استعلام بديل
+            if (usersError.code === 'PGRST116' || usersError.code === 'PGRST202') {
+              console.log("Permission error on users table, trying alternative");
+              
+              const { data: altData, error: altError } = await supabase
+                .from('users')
+                .select('id')
+                .ilike('email', `%${value}%`)
+                .limit(1);
+                
+              if (!altError && altData && altData.length > 0) {
+                emailExists = true;
+              }
+            }
+          }
+          
+          // 2. التحقق من جدول businesses إذا لم يتم العثور على البريد في users
+          if (!emailExists) {
+            const { data: businessesData, error: businessesError } = await supabase
+              .from('businesses')
+              .select('email')
+              .eq('email', value);
+              
+            if (!businessesError && businessesData && businessesData.length > 0) {
+              emailExists = true;
+            } else if (businessesError) {
+              console.error("Error checking businesses table:", businessesError);
+              
+              // في حالة وجود خطأ في الصلاحيات، حاول استعلام بديل
+              if (businessesError.code === 'PGRST116' || businessesError.code === 'PGRST202') {
+                console.log("Permission error on businesses table, trying alternative");
+                
+                const { data: altData, error: altError } = await supabase
+                  .from('businesses')
+                  .select('id')
+                  .ilike('email', `%${value}%`)
+                  .limit(1);
+                  
+                if (!altError && altData && altData.length > 0) {
+                  emailExists = true;
+                }
+              }
+            }
+          }
+          
+          // تحديث الحالة بناءً على النتيجة النهائية
+          setEmailExists(emailExists);
+          setIsEmailRegistered(emailExists);
+          
+          if (emailExists) {
             toast({
               title: t('alert_title'),
               description: t('email_already_registered'),
               variant: "destructive",
             });
           }
-        } catch (error) {
-          console.error('Error verifying email:', error);
+          
+          // تحديث آخر بريد تم فحصه
+          setLastCheckedEmail(value);
+        } catch (error: any) {
+          setEmailExists(false);
+          setIsEmailRegistered(false);
+          console.error("Email verification error:", error);
+          // تحديث آخر بريد تم فحصه حتى لو لم يتم العثور عليه
+          setLastCheckedEmail(value);
         } finally {
           setCheckingEmail(false);
         }
       } else {
+        // إذا كان البريد الإلكتروني فارغًا أو غير صالح، قم بتحديث آخر بريد تم فحصه
         setLastCheckedEmail('');
         setIsEmailRegistered(false);
       }
@@ -95,6 +159,7 @@ export default function BusinessSignup() {
     e.preventDefault();
     setLoading(true);
 
+    // تحقق من كلمة المرور
     if (formData.password !== formData.confirmPassword) {
       toast({
         title: t('verification_error'),
@@ -115,30 +180,98 @@ export default function BusinessSignup() {
     }
 
     try {
-      const response = await fetch('/api/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...formData,
-          countryCode,
-        })
+      // 1. تسجيل المستخدم في Supabase Auth
+      const fullPhoneNumber = countryCode + formData.phone;
+      const { data: { user }, error: signUpError } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        options: {
+          data: {
+            full_name: formData.ownerName,
+            phone: fullPhoneNumber,
+            role: 'free_business',
+            store_name: formData.storeName,
+            address: formData.address,
+            business_type: formData.businessType,
+            id_last6: formData.id_last6,
+          },
+          emailRedirectTo: `${window.location.origin}/login`
+        }
       });
 
-      const data = await response.json();
-      if (response.ok) {
-        toast({
-          title: t('registration_success_title'),
-          description: t('registration_success_message'),
-          duration: 9000,
+      if (signUpError) throw new Error(signUpError.message);
+      if (!user) throw new Error("User registration failed, user not found.");
+
+      // Add logs to debug the issue
+      console.log('User created:', user);
+
+      // تحقق من وجود سجل في جدول businesses، إذا لم يوجد أنشئه يدويًا
+      const { data: businessExists, error: businessCheckError } = await supabase
+        .from('businesses')
+        .select('id')
+        .eq('email', formData.email)
+        .single();
+
+      if (businessCheckError || !businessExists) {
+        console.log('No existing business found. Attempting to insert:', {
+          email: formData.email,
+          store_name: formData.storeName,
+          owner_name: formData.ownerName,
+          phone: fullPhoneNumber,
+          address: formData.address,
+          business_type: formData.businessType,
+          id_last6: formData.id_last6,
+          user_id: user.id
         });
+
+        // تحقق من وجود معرف المستخدم قبل الإدراج
+        if (!user?.id) {
+          console.error('User ID not found. Cannot insert into businesses.');
+          toast({
+            title: t('signup_error'),
+            description: t('user_id_not_found'),
+            variant: 'destructive'
+          });
+          setLoading(false);
+          return;
+        }
+        // إنشاء سجل جديد في جدول businesses
+        const { error: businessInsertError } = await supabase
+          .from('businesses')
+          .insert({
+            email: formData.email,
+            store_name: formData.storeName,
+            owner_name: formData.ownerName,
+            phone: fullPhoneNumber,
+            address: formData.address,
+            business_type: formData.businessType,
+            id_last6: formData.id_last6,
+            user_id: user.id
+          });
+        if (businessInsertError) {
+          toast({
+            title: t('business_data_save_error'),
+            description: businessInsertError.message,
+            variant: 'destructive'
+          });
+          console.error('فشل حفظ بيانات العمل التجاري:', businessInsertError.message);
+        } else {
+          console.log('Business data inserted successfully');
+        }
       } else {
-        throw new Error(data.error || 'Registration failed');
+        console.log('Business already exists:', businessExists);
       }
-    } catch (error) {
+
+      toast({
+        title: t('registration_success_title'),
+        description: t('registration_success_message'),
+        duration: 9000,
+      });
+    } catch (error: any) {
       toast({
         title: t('error'),
         description: error.message,
-        variant: 'destructive',
+        variant: 'destructive'
       });
     } finally {
       setLoading(false);
