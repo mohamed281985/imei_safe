@@ -180,44 +180,42 @@ export default function BusinessSignup() {
     }
 
     try {
-      // 1. إرسال بيانات التسجيل إلى السيرفر (backend endpoint) ليقوم هو بعمل signup وإدراج السجلات
+      // 1. إرسال بيانات التسجيل إلى endpoint الخلفي الذي يتولى إنشاء المستخدم
       const fullPhoneNumber = countryCode + formData.phone;
-      const payload = {
-        email: formData.email,
-        password: formData.password,
-        owner_name: formData.ownerName,
-        store_name: formData.storeName,
-        phone: fullPhoneNumber,
-        address: formData.address,
-        business_type: formData.businessType,
-        id_last6: formData.id_last6
-      };
-
-      const resp = await fetch('/api/register-business', {
+      const apiBase = (import.meta && (import.meta as any).env && (import.meta as any).env.VITE_API_URL) ? (import.meta as any).env.VITE_API_URL : 'http://localhost:3000';
+      const resp = await fetch(`${apiBase}/api/register-business`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: formData.email,
+          password: formData.password,
+          owner_name: formData.ownerName,
+          store_name: formData.storeName,
+          phone: fullPhoneNumber,
+          address: formData.address,
+          business_type: formData.businessType,
+          id_last6: formData.id_last6
+        })
       });
 
+      const data = await resp.json().catch(() => null);
       if (!resp.ok) {
-        const errBody = await resp.json().catch(() => ({}));
-        throw new Error(errBody.error || 'Registration failed on server');
+        const msg = data?.error || data?.message || 'Registration failed';
+        throw new Error(msg);
       }
-
-      const respJson = await resp.json();
-      console.log('Server register response:', respJson);
 
       toast({
         title: t('registration_success_title'),
         description: t('registration_success_message'),
         duration: 9000,
       });
+
+      // إعادة التوجيه لصفحة الدخول بعد نجاح التسجيل
+      setTimeout(() => window.location.href = '/login', 800);
     } catch (error: any) {
       toast({
         title: t('error'),
-        description: error.message,
+        description: error?.message || String(error),
         variant: 'destructive'
       });
     } finally {
