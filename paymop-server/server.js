@@ -228,6 +228,10 @@ if (!PRIVATE_KEY) {
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 const app = express();
+// Enable CORS for development / configured client origins
+const CLIENT_ORIGINS = process.env.CLIENT_ORIGINS ? process.env.CLIENT_ORIGINS.split(',') : ['http://localhost:8080'];
+app.use(cors({ origin: CLIENT_ORIGINS, credentials: true }));
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
@@ -427,7 +431,7 @@ app.post('/api/register-business', async (req, res) => {
     // 1) إنشاء المستخدم في Supabase (حاول استخدام admin.createUser أولاً)
     let createdUser = null;
     try {
-      if (supabase && supabase.auth && supabase.auth.admin && typeof supabase.auth.admin.createUser === 'function') {
+        if (supabase && supabase.auth && supabase.auth.admin && typeof supabase.auth.admin.createUser === 'function') {
         const { data, error } = await supabase.auth.admin.createUser({
           email,
           password,
@@ -440,7 +444,8 @@ app.post('/api/register-business', async (req, res) => {
             business_type,
             id_last6
           },
-          email_confirm: true
+          // Do NOT auto-confirm email here so the user receives verification email
+          email_confirm: false
         });
         if (error) throw error;
         createdUser = data?.user || data;
