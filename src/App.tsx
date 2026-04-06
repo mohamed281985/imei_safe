@@ -5,6 +5,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React, { useEffect, Suspense, lazy } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
 import type { PluginListenerHandle } from '@capacitor/core';
 import { supabase } from './lib/supabase';
 import { Routes, Route, useNavigate, useLocation, Link } from "react-router-dom";
@@ -158,7 +159,7 @@ const AppCore = () => {
   // =================================================================
   useEffect(() => {
     // لا تقم بتشغيل هذا المنطق إلا على الأجهزة الأصلية (iOS/Android)
-    if (typeof window === 'undefined' || !window.Capacitor || !window.Capacitor.isNativePlatform()) {
+    if (Capacitor.getPlatform && Capacitor.getPlatform() === 'web') {
       return;
     }
 
@@ -257,7 +258,13 @@ const AppCore = () => {
     // 3. وظيفة التنظيف عند إلغاء تحميل المكون
     return () => {
       console.log('Cleaning up push notification listeners.');
-      PushNotifications.removeAllListeners(); // يزيل جميع المستمعات التي تم إضافتها في هذا التأثير
+      if (!(Capacitor.getPlatform && Capacitor.getPlatform() === 'web')) {
+        try {
+          PushNotifications.removeAllListeners(); // يزيل جميع المستمعات التي تم إضافتها في هذا التأثير
+        } catch (e) {
+          console.debug('PushNotifications.removeAllListeners() failed or not available on this platform', e);
+        }
+      }
     };
   }, [user, navigate]); // ✅ يعتمد على `user` و `navigate`
 

@@ -435,7 +435,8 @@ const Dashboard: React.FC = () => {
         try {
           const { data: { session } } = await supabase.auth.getSession();
           const token = session?.access_token;
-          const resp = await fetch('/api/lost-phones', {
+          const apiBase = import.meta.env.VITE_API_URL || '';
+          const resp = await fetch(`${apiBase}/api/lost-phones`, {
             method: 'GET',
             headers: {
               'Content-Type': 'application/json',
@@ -535,6 +536,7 @@ const Dashboard: React.FC = () => {
             return (a.distance ?? Infinity) - (b.distance ?? Infinity);
           });
 
+          console.debug('setting phoneListings count:', sortedListings.length, 'sample:', sortedListings[0]);
           setPhoneListings(sortedListings);
         }
 
@@ -592,6 +594,7 @@ const Dashboard: React.FC = () => {
             // 4. إذا كانت العضوية متساوية، يتم الترتيب حسب المسافة (الأقرب أولاً)
             return (a.distance ?? Infinity) - (b.distance ?? Infinity);
           });
+          console.debug('setting accessoryListings count:', sortedAccessories.length, 'sample:', sortedAccessories[0]);
           setAccessoryListings(sortedAccessories);
         }
       } catch (err) {
