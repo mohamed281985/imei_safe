@@ -405,6 +405,123 @@ app.post('/api/encrypt', async (req, res) => {
   }
 });
 
+// Endpoint: تسجيل عمل تجاري (ينشئ مستخدم في Auth ثم يدرج سجلات في users و businesses)
+app.post('/api/register-business', async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const {
+      email,
+      password,
+      owner_name,
+      store_name,
+      phone,
+      address,
+      business_type,
+      id_last6
+    } = payload;
+
+    if (!email || !password || !owner_name || !store_name) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // 1) إنشاء المستخدم في Supabase (حاول استخدام admin.createUser أولاً)
+    let createdUser = null;
+    try {
+      if (supabase && supabase.auth && supabase.auth.admin && typeof supabase.auth.admin.createUser === 'function') {
+        const { data, error } = await supabase.auth.admin.createUser({
+          email,
+          password,
+          user_metadata: {
+            full_name: owner_name,
+            phone,
+            role: 'free_business',
+            store_name,
+            address,
+            business_type,
+            id_last6
+          },
+          email_confirm: true
+        });
+        if (error) throw error;
+        createdUser = data?.user || data;
+      } else {
+        // Fallback: use signUp (will send confirmation email depending on Supabase settings)
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              full_name: owner_name,
+              phone,
+              role: 'free_business',
+              store_name,
+              address,
+              business_type,
+              id_last6
+            }
+          }
+        });
+        if (error) throw error;
+        createdUser = data?.user;
+      }
+    } catch (err) {
+      console.error('[register-business] auth create error:', err);
+      return res.status(500).json({ error: err.message || 'Auth creation failed' });
+    }
+
+    if (!createdUser || !createdUser.id) {
+      return res.status(500).json({ error: 'User creation did not return user id' });
+    }
+
+    // 2) تشفير الحقول الحساسة قبل الإدراج
+    const encPhone = encryptObject(phone);
+    const encFullName = encryptObject(owner_name);
+    const encIdLast6 = encryptObject(id_last6);
+    const encOwnerName = encryptObject(owner_name);
+    const encAddress = encryptObject(address);
+
+    // 3) إدراج سجل في جدول users (يستخدم نفس معرف user.id)
+    const userRow = {
+      id: createdUser.id,
+      email,
+      full_name: encFullName,
+      phone: encPhone,
+      role: 'free_business'
+    };
+
+    const { error: userInsertError } = await supabase.from('users').insert(userRow);
+    if (userInsertError) {
+      console.error('[register-business] users insert error:', userInsertError);
+      // حاول حذف المستخدم الذي أنشأناه لتجنب بيانات غير متناسقة (best-effort)
+      try { await supabase.auth.admin.deleteUser?.(createdUser.id); } catch (e) {}
+      return res.status(500).json({ error: userInsertError.message || 'Failed to insert user row' });
+    }
+
+    // 4) إدراج سجل في جدول businesses
+    const businessRow = {
+      email,
+      store_name,
+      owner_name: encOwnerName,
+      phone: encPhone,
+      address: encAddress,
+      business_type,
+      id_last6: encIdLast6,
+      user_id: createdUser.id
+    };
+
+    const { error: businessInsertError } = await supabase.from('businesses').insert(businessRow);
+    if (businessInsertError) {
+      console.error('[register-business] businesses insert error:', businessInsertError);
+      return res.status(500).json({ error: businessInsertError.message || 'Failed to insert business row' });
+    }
+
+    return res.json({ success: true, user: { id: createdUser.id, email } });
+  } catch (e) {
+    console.error('/api/register-business error', e);
+    return res.status(500).json({ error: e.message || 'Server error' });
+  }
+});
+
 // --- تهيئة Supabase ---
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
