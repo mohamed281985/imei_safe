@@ -409,6 +409,98 @@ app.post('/api/encrypt', async (req, res) => {
   }
 });
 
+// Webhook: Supabase Auth -> call this when a user confirms email.
+// Configure Supabase Auth webhooks to send events to this URL.
+// For security, set SUPABASE_WEBHOOK_SECRET in .env and send it in header 'x-webhook-secret'.
+app.post('/api/supabase-auth-webhook', async (req, res) => {
+  try {
+    const secret = process.env.SUPABASE_WEBHOOK_SECRET || '';
+    const incomingSecret = req.headers['x-webhook-secret'] || req.headers['x-supabase-signature'] || '';
+    if (secret && String(incomingSecret) !== String(secret)) {
+      console.warn('Webhook secret mismatch');
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const event = req.body || {};
+    // Support two shapes: direct user payload or { event: { type, user } }
+    let user = null;
+    if (event.user) user = event.user;
+    else if (event.record) user = event.record;
+    else if (event?.payload?.user) user = event.payload.user;
+    else user = event;
+
+    if (!user || !user.id) return res.status(400).json({ error: 'No user payload' });
+
+    // Proceed only when email_confirmed_at is present
+    if (!user.email_confirmed_at) {
+      return res.json({ ok: true, message: 'email not confirmed yet' });
+    }
+
+    const userId = user.id;
+    const email = user.email || user.email_address || '';
+    const metadata = user.user_metadata || {};
+
+    // Idempotency: do nothing if application user already exists
+    const { data: existingUser, error: existingErr } = await supabase.from('users').select('id').eq('id', userId).maybeSingle();
+    if (existingErr) console.warn('existing user check error', existingErr);
+    if (existingUser) {
+      return res.json({ ok: true, message: 'already inserted' });
+    }
+
+    // Prepare encrypted fields using available metadata fallback
+    const owner_name = metadata.full_name || metadata.owner_name || '';
+    const store_name = metadata.store_name || '';
+    const phone = metadata.phone || '';
+    const address = metadata.address || '';
+    const business_type = metadata.business_type || '';
+    const id_last6 = metadata.id_last6 || '';
+
+    const encPhone = encryptObject(phone);
+    const encFullName = encryptObject(owner_name);
+    const encIdLast6 = encryptObject(id_last6);
+    const encOwnerName = encryptObject(owner_name);
+    const encAddress = encryptObject(address);
+
+    // Insert into users
+    const userRow = {
+      id: userId,
+      email,
+      full_name: encFullName,
+      phone: encPhone,
+      role: 'free_business'
+    };
+
+    const { error: userInsertError } = await supabase.from('users').insert(userRow);
+    if (userInsertError) {
+      console.error('[webhook] users insert error:', userInsertError);
+      return res.status(500).json({ error: 'Failed to insert user row' });
+    }
+
+    // Insert into businesses
+    const businessRow = {
+      email,
+      store_name,
+      owner_name: encOwnerName,
+      phone: encPhone,
+      address: encAddress,
+      business_type,
+      id_last6: encIdLast6,
+      user_id: userId
+    };
+
+    const { error: businessInsertError } = await supabase.from('businesses').insert(businessRow);
+    if (businessInsertError) {
+      console.error('[webhook] businesses insert error:', businessInsertError);
+      return res.status(500).json({ error: 'Failed to insert business row' });
+    }
+
+    return res.json({ ok: true, inserted: true });
+  } catch (e) {
+    console.error('/api/supabase-auth-webhook error', e);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Endpoint: تسجيل عمل تجاري (ينشئ مستخدم في Auth ثم يدرج سجلات في users و businesses)
 app.post('/api/register-business', async (req, res) => {
   try {
@@ -478,49 +570,12 @@ app.post('/api/register-business', async (req, res) => {
       return res.status(500).json({ error: 'User creation did not return user id' });
     }
 
-    // 2) تشفير الحقول الحساسة قبل الإدراج
-    const encPhone = encryptObject(phone);
-    const encFullName = encryptObject(owner_name);
-    const encIdLast6 = encryptObject(id_last6);
-    const encOwnerName = encryptObject(owner_name);
-    const encAddress = encryptObject(address);
+    // IMPORTANT: Do NOT insert into `users` or `businesses` here.
+    // We only create the Auth user and wait for email confirmation.
+    // Insertion into application tables will be handled by a webhook
+    // or DB trigger when `email_confirmed_at` becomes non-null.
 
-    // 3) إدراج سجل في جدول users (يستخدم نفس معرف user.id)
-    const userRow = {
-      id: createdUser.id,
-      email,
-      full_name: encFullName,
-      phone: encPhone,
-      role: 'free_business'
-    };
-
-    const { error: userInsertError } = await supabase.from('users').insert(userRow);
-    if (userInsertError) {
-      console.error('[register-business] users insert error:', userInsertError);
-      // حاول حذف المستخدم الذي أنشأناه لتجنب بيانات غير متناسقة (best-effort)
-      try { await supabase.auth.admin.deleteUser?.(createdUser.id); } catch (e) {}
-      return res.status(500).json({ error: userInsertError.message || 'Failed to insert user row' });
-    }
-
-    // 4) إدراج سجل في جدول businesses
-    const businessRow = {
-      email,
-      store_name,
-      owner_name: encOwnerName,
-      phone: encPhone,
-      address: encAddress,
-      business_type,
-      id_last6: encIdLast6,
-      user_id: createdUser.id
-    };
-
-    const { error: businessInsertError } = await supabase.from('businesses').insert(businessRow);
-    if (businessInsertError) {
-      console.error('[register-business] businesses insert error:', businessInsertError);
-      return res.status(500).json({ error: businessInsertError.message || 'Failed to insert business row' });
-    }
-
-    return res.json({ success: true, user: { id: createdUser.id, email } });
+    return res.json({ success: true, status: 'awaiting_email_confirmation', user: { id: createdUser.id, email } });
   } catch (e) {
     console.error('/api/register-business error', e);
     return res.status(500).json({ error: e.message || 'Server error' });
