@@ -180,87 +180,34 @@ export default function BusinessSignup() {
     }
 
     try {
-      // 1. تسجيل المستخدم في Supabase Auth
+      // 1. إرسال بيانات التسجيل إلى السيرفر (backend endpoint) ليقوم هو بعمل signup وإدراج السجلات
       const fullPhoneNumber = countryCode + formData.phone;
-      const { data: { user }, error: signUpError } = await supabase.auth.signUp({
+      const payload = {
         email: formData.email,
         password: formData.password,
-        options: {
-          data: {
-            full_name: formData.ownerName,
-            phone: fullPhoneNumber,
-            role: 'free_business',
-            store_name: formData.storeName,
-            address: formData.address,
-            business_type: formData.businessType,
-            id_last6: formData.id_last6,
-          },
-          emailRedirectTo: `${window.location.origin}/login`
-        }
+        owner_name: formData.ownerName,
+        store_name: formData.storeName,
+        phone: fullPhoneNumber,
+        address: formData.address,
+        business_type: formData.businessType,
+        id_last6: formData.id_last6
+      };
+
+      const resp = await fetch('/api/register-business', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
       });
 
-      if (signUpError) throw new Error(signUpError.message);
-      if (!user) throw new Error("User registration failed, user not found.");
-
-      // Add logs to debug the issue
-      console.log('User created:', user);
-
-      // تحقق من وجود سجل في جدول businesses، إذا لم يوجد أنشئه يدويًا
-      const { data: businessExists, error: businessCheckError } = await supabase
-        .from('businesses')
-        .select('id')
-        .eq('email', formData.email)
-        .single();
-
-      if (businessCheckError || !businessExists) {
-        console.log('No existing business found. Attempting to insert:', {
-          email: formData.email,
-          store_name: formData.storeName,
-          owner_name: formData.ownerName,
-          phone: fullPhoneNumber,
-          address: formData.address,
-          business_type: formData.businessType,
-          id_last6: formData.id_last6,
-          user_id: user.id
-        });
-
-        // تحقق من وجود معرف المستخدم قبل الإدراج
-        if (!user?.id) {
-          console.error('User ID not found. Cannot insert into businesses.');
-          toast({
-            title: t('signup_error'),
-            description: t('user_id_not_found'),
-            variant: 'destructive'
-          });
-          setLoading(false);
-          return;
-        }
-        // إنشاء سجل جديد في جدول businesses
-        const { error: businessInsertError } = await supabase
-          .from('businesses')
-          .insert({
-            email: formData.email,
-            store_name: formData.storeName,
-            owner_name: formData.ownerName,
-            phone: fullPhoneNumber,
-            address: formData.address,
-            business_type: formData.businessType,
-            id_last6: formData.id_last6,
-            user_id: user.id
-          });
-        if (businessInsertError) {
-          toast({
-            title: t('business_data_save_error'),
-            description: businessInsertError.message,
-            variant: 'destructive'
-          });
-          console.error('فشل حفظ بيانات العمل التجاري:', businessInsertError.message);
-        } else {
-          console.log('Business data inserted successfully');
-        }
-      } else {
-        console.log('Business already exists:', businessExists);
+      if (!resp.ok) {
+        const errBody = await resp.json().catch(() => ({}));
+        throw new Error(errBody.error || 'Registration failed on server');
       }
+
+      const respJson = await resp.json();
+      console.log('Server register response:', respJson);
 
       toast({
         title: t('registration_success_title'),
