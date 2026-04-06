@@ -1,8 +1,12 @@
 // src/lib/fcm-capacitor.ts
 import { PushNotifications } from '@capacitor/push-notifications';
+import { Capacitor } from '@capacitor/core';
 import { supabase } from './supabase';
 
 export function registerFCMToken() {
+  // لا تفعل شيئًا على الويب
+  if (Capacitor.getPlatform && Capacitor.getPlatform() === 'web') return;
+
   // طلب صلاحيات الإشعارات
   PushNotifications.requestPermissions().then(result => {
     if (result.receive === 'granted') {

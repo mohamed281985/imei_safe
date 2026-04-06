@@ -10,7 +10,7 @@ import enTranslations from './translations/en'
 import arTranslations from './translations/ar'
 import frTranslations from './translations/fr'
 import hiTranslations from './translations/hi'
-import { BrowserRouter as Router } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { AdModalProvider } from './contexts/AdModalContext';
 import { clearExpiredSecureItems } from '@/utils/secureStorage';
 
@@ -49,10 +49,20 @@ try {
   console.warn('Failed to schedule secureStorage cleanup', e);
 }
 
+// Create a router and enable the v7_relativeSplatPath future flag to opt-in
+const router = createBrowserRouter([
+  {
+    path: '*',
+    element: (
+      <AdModalProvider>
+        <App />
+      </AdModalProvider>
+    ),
+  },
+], {
+  future: { v7_relativeSplatPath: true, v7_startTransition: true },
+});
+
 createRoot(document.getElementById("root")!).render(
-  <Router>
-    <AdModalProvider>
-      <App />
-    </AdModalProvider>
-  </Router>
+  <RouterProvider router={router} />
 );
