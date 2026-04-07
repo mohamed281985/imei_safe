@@ -501,90 +501,133 @@ app.post('/api/supabase-auth-webhook', async (req, res) => {
   }
 });
 
-// Endpoint: تسجيل عمل تجاري (ينشئ مستخدم في Auth ثم يدرج سجلات في users و businesses)
-app.post('/api/register-business', async (req, res) => {
+// Internal endpoint: create application `users` row after auth signup
+// Frontend calls this after `supabase.auth.signUp` to persist encrypted app user data.
+app.post('/api/create-app-user', async (req, res) => {
   try {
-    const payload = req.body || {};
-    const {
-      email,
-      password,
-      owner_name,
-      store_name,
-      phone,
-      address,
-      business_type,
-      id_last6
-    } = payload;
+    const { id, email, metadata } = req.body || {};
 
-    if (!email || !password || !owner_name || !store_name) {
-      return res.status(400).json({ error: 'Missing required fields' });
+    // Require a valid UUID `id` coming from Supabase Auth (frontend should pass the auth user id)
+    if (!id) return res.status(400).json({ error: 'missing id (provide Supabase auth user id)' });
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (typeof id !== 'string' || !uuidRegex.test(id)) {
+      return res.status(400).json({ error: 'invalid id: must be a UUID from Supabase auth' });
     }
 
-    // 1) إنشاء المستخدم في Supabase (حاول استخدام admin.createUser أولاً)
-    let createdUser = null;
-    try {
-        if (supabase && supabase.auth && supabase.auth.admin && typeof supabase.auth.admin.createUser === 'function') {
-        const { data, error } = await supabase.auth.admin.createUser({
-          email,
-          password,
-          user_metadata: {
-            full_name: owner_name,
-            phone,
-            role: 'free_business',
-            store_name,
-            address,
-            business_type,
-            id_last6
-          },
-          // Do NOT auto-confirm email here so the user receives verification email
-          email_confirm: false
-        });
-        if (error) throw error;
-        createdUser = data?.user || data;
-      } else {
-        // Fallback: use signUp (will send confirmation email depending on Supabase settings)
-        const { data, error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: {
-              full_name: owner_name,
-              phone,
-              role: 'free_business',
-              store_name,
-              address,
-              business_type,
-              id_last6
-            }
-          }
-        });
-        if (error) throw error;
-        createdUser = data?.user;
+    // Idempotency: don't re-insert if exists
+    const { data: existingUser, error: existingErr } = await supabase.from('users').select('id').eq('id', userId).maybeSingle();
+    if (existingErr) console.warn('/api/create-app-user existing check error', existingErr);
+    if (existingUser) return res.json({ ok: true, message: 'user already exists' });
+
+    const owner_name = metadata?.full_name || metadata?.owner_name || '';
+    const store_name = metadata?.store_name || '';
+    const phone = metadata?.phone || '';
+    const address = metadata?.address || '';
+    const business_type = metadata?.business_type || '';
+    const id_last6 = metadata?.id_last6 || '';
+
+    const encPhone = encryptObject(phone);
+    const encFullName = encryptObject(owner_name);
+    const encIdLast6 = encryptObject(id_last6);
+
+    const userRow = {
+      id: userId,
+      email: email || '',
+      full_name: encFullName,
+      phone: encPhone,
+      role: 'free_business'
+    };
+
+    const { error: userInsertError } = await supabase.from('users').insert(userRow);
+    if (userInsertError) {
+      console.error('/api/create-app-user users insert error', userInsertError);
+      // If foreign key constraint to auth.users exists, surface a clear message
+      if (userInsertError.code === '23503') {
+        return res.status(400).json({ error: 'Invalid id: must match an existing Supabase auth user id (foreign key constraint)' });
       }
-    } catch (err) {
-      console.error('[register-business] auth create error:', err);
-      return res.status(500).json({ error: err.message || 'Auth creation failed' });
+      return res.status(500).json({ error: 'Failed to insert user row' });
     }
 
-    if (!createdUser || !createdUser.id) {
-      return res.status(500).json({ error: 'User creation did not return user id' });
-    }
-
-    // IMPORTANT: Do NOT insert into `users` or `businesses` here.
-    // We only create the Auth user and wait for email confirmation.
-    // Insertion into application tables will be handled by a webhook
-    // or DB trigger when `email_confirmed_at` becomes non-null.
-
-    return res.json({ success: true, status: 'awaiting_email_confirmation', user: { id: createdUser.id, email } });
+    // Save a placeholder business row? we only create full business on email confirmation (webhook)
+    return res.json({ ok: true, inserted: true });
   } catch (e) {
-    console.error('/api/register-business error', e);
-    return res.status(500).json({ error: e.message || 'Server error' });
+    console.error('/api/create-app-user error', e);
+    return res.status(500).json({ error: 'Server error' });
   }
 });
 
+// Temporary test endpoint: encrypt payload and save to local file for testing
+// This does NOT touch the database and is intended for local functional tests
+app.post('/api/test-insert', async (req, res) => {
+  try {
+    const { id, email, metadata } = req.body || {};
+    if (!id) return res.status(400).json({ error: 'missing id' });
+
+    const owner_name = metadata?.full_name || metadata?.owner_name || '';
+    const store_name = metadata?.store_name || '';
+    const phone = metadata?.phone || '';
+    const address = metadata?.address || '';
+    const business_type = metadata?.business_type || '';
+    const id_last6 = metadata?.id_last6 || '';
+
+    const encPhone = encryptObject(phone);
+    const encFullName = encryptObject(owner_name);
+    const encIdLast6 = encryptObject(id_last6);
+    const encAddress = encryptObject(address);
+
+    const userRow = {
+      id,
+      email: email || '',
+      full_name: encFullName,
+      phone: encPhone,
+      role: 'free_business'
+    };
+
+    const businessRow = {
+      email: email || '',
+      store_name,
+      owner_name: encFullName,
+      phone: encPhone,
+      address: encAddress,
+      business_type,
+      id_last6: encIdLast6,
+      user_id: id
+    };
+
+    const outPath = path.join(__dirname, 'test_inserts.json');
+    let arr = [];
+    try {
+      if (fs.existsSync(outPath)) {
+        const cur = fs.readFileSync(outPath, 'utf8');
+        arr = cur ? JSON.parse(cur) : [];
+      }
+    } catch (e) {
+      console.warn('[test-insert] could not read existing file', e);
+      arr = [];
+    }
+
+    arr.push({ createdAt: new Date().toISOString(), userRow, businessRow });
+    fs.writeFileSync(outPath, JSON.stringify(arr, null, 2), 'utf8');
+
+    return res.json({ ok: true, savedTo: 'paymop-server/test_inserts.json', userRow, businessRow });
+  } catch (e) {
+    console.error('/api/test-insert error', e);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// The old `POST /api/register-business` route was removed.
+// Registration now uses the auth flow + DB trigger/webhook:
+// - Frontend calls the Auth signup (or the server creates the Auth user without confirming email).
+// - When `auth.users.email_confirmed_at` becomes non-null, a DB Trigger or
+//   the `/api/supabase-auth-webhook` endpoint will insert encrypted rows
+//   into `public.users` and `public.businesses`.
+// This prevents saving application data before email confirmation.
+
 // --- تهيئة Supabase ---
 const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
+// Prefer the explicit service-role key if provided; fall back to legacy name
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // Endpoint: /api/lost-phones
@@ -5144,6 +5187,134 @@ app.post('/api/claim-phone-by-email', verifyJwtToken, async (req, res) => {
     return sendError(res, 500, 'حدث خطأ في الخادم', error);
   }
 });
+
+// Polling worker: periodically query Supabase Admin users and process newly-confirmed users
+const ENABLE_POLLING = String(process.env.ENABLE_POLLING || 'false').toLowerCase() === 'true';
+const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS) || 60 * 1000; // default 60s
+const POLL_BATCH_LIMIT = Number(process.env.POLL_BATCH_LIMIT) || 50;
+
+// Poller backoff: if we see repeated 403s, stop polling to avoid noisy logs.
+let poller403Count = 0;
+const POLLER_403_THRESHOLD = 5; // after 5 consecutive 403s, disable poller in-memory
+
+async function pollConfirmedUsersOnce() {
+  if (!SUPABASE_URL || !SUPABASE_KEY) {
+    console.warn('[poller] SUPABASE_URL or SUPABASE_SERVICE_KEY missing, skipping poll');
+    return;
+  }
+
+  try {
+    const url = `${SUPABASE_URL.replace(/\/+$/, '')}/admin/v1/users?limit=${POLL_BATCH_LIMIT}`;
+    const resp = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'apikey': SUPABASE_KEY,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '<no-body>');
+      console.warn('[poller] admin users fetch failed', resp.status, text);
+      if (resp.status === 403) {
+        poller403Count += 1;
+        if (poller403Count >= POLLER_403_THRESHOLD) {
+          console.error('[poller] too many 403 responses, disabling poller in-memory to prevent noise');
+          // prevent further polling in this process
+          return;
+        }
+      } else {
+        // reset counter on non-403
+        poller403Count = 0;
+      }
+      return;
+    }
+
+    const users = await resp.json();
+    if (!Array.isArray(users) || users.length === 0) return;
+
+    for (const user of users) {
+      try {
+        if (!user || !user.id) continue;
+        if (!user.email_confirmed_at) continue; // only process confirmed users
+
+        // Idempotency: skip if we've already created an application user
+        const { data: existingUser, error: existingErr } = await supabase.from('users').select('id').eq('id', user.id).maybeSingle();
+        if (existingErr) {
+          console.warn('[poller] existing user check error', existingErr);
+          continue;
+        }
+        if (existingUser) continue;
+
+        const email = user.email || user.email_address || '';
+        const metadata = user.user_metadata || {};
+
+        const owner_name = metadata.full_name || metadata.owner_name || '';
+        const store_name = metadata.store_name || '';
+        const phone = metadata.phone || '';
+        const address = metadata.address || '';
+        const business_type = metadata.business_type || '';
+        const id_last6 = metadata.id_last6 || '';
+
+        const encPhone = encryptObject(phone);
+        const encFullName = encryptObject(owner_name);
+        const encIdLast6 = encryptObject(id_last6);
+        const encOwnerName = encryptObject(owner_name);
+        const encAddress = encryptObject(address);
+
+        const userRow = {
+          id: user.id,
+          email,
+          full_name: encFullName,
+          phone: encPhone,
+          role: 'free_business'
+        };
+
+        const { error: userInsertError } = await supabase.from('users').insert(userRow);
+        if (userInsertError) {
+          console.error('[poller] users insert error:', userInsertError);
+          continue;
+        }
+
+        const businessRow = {
+          email,
+          store_name,
+          owner_name: encOwnerName,
+          phone: encPhone,
+          address: encAddress,
+          business_type,
+          id_last6: encIdLast6,
+          user_id: user.id
+        };
+
+        const { error: businessInsertError } = await supabase.from('businesses').insert(businessRow);
+        if (businessInsertError) {
+          console.error('[poller] businesses insert error:', businessInsertError);
+          // don't rollback user insert; log and continue
+        } else {
+          console.log('[poller] processed confirmed user', user.id, email);
+        }
+
+      } catch (inner) {
+        console.error('[poller] error processing user', inner);
+      }
+    }
+
+  } catch (e) {
+    console.error('[poller] unexpected error', e);
+  }
+}
+
+// Start the poller if enabled
+if (ENABLE_POLLING) {
+  console.log('[poller] ENABLE_POLLING=true -> starting Supabase confirmed-user poller, interval(ms)=', POLL_INTERVAL_MS);
+  // run immediately then interval
+  pollConfirmedUsersOnce().catch(e => console.error('[poller] initial run failed', e));
+  setInterval(() => pollConfirmedUsersOnce().catch(e => console.error('[poller] run failed', e)), POLL_INTERVAL_MS);
+} else {
+  console.log('[poller] ENABLE_POLLING not enabled. To enable set ENABLE_POLLING=true in .env');
+}
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log("Server listening on port", PORT));
