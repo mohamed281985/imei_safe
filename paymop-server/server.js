@@ -488,11 +488,16 @@ app.post('/api/supabase-auth-webhook', async (req, res) => {
       user_id: userId
     };
 
-    const { error: businessInsertError } = await supabase.from('businesses').insert(businessRow);
+    // Debug logging: show the businessRow being inserted
+    if (process.env.NODE_ENV !== 'production') console.log('[webhook] businessRow to insert:', JSON.stringify(businessRow));
+    const { data: businessData, error: businessInsertError } = await supabase.from('businesses').insert(businessRow).select();
     if (businessInsertError) {
       console.error('[webhook] businesses insert error:', businessInsertError);
-      return res.status(500).json({ error: 'Failed to insert business row' });
+      // include returned data (if any) and the attempted row for easier debugging
+      console.error('[webhook] attempted businessRow:', JSON.stringify(businessRow));
+      return res.status(500).json({ error: 'Failed to insert business row', details: businessInsertError });
     }
+    if (process.env.NODE_ENV !== 'production') console.log('[webhook] businesses insert success:', businessData);
 
     return res.json({ ok: true, inserted: true });
   } catch (e) {
@@ -515,6 +520,7 @@ app.post('/api/create-app-user', async (req, res) => {
     }
 
     // Idempotency: don't re-insert if exists
+    const userId = id;
     const { data: existingUser, error: existingErr } = await supabase.from('users').select('id').eq('id', userId).maybeSingle();
     if (existingErr) console.warn('/api/create-app-user existing check error', existingErr);
     if (existingUser) return res.json({ ok: true, message: 'user already exists' });
@@ -529,6 +535,7 @@ app.post('/api/create-app-user', async (req, res) => {
     const encPhone = encryptObject(phone);
     const encFullName = encryptObject(owner_name);
     const encIdLast6 = encryptObject(id_last6);
+    const encAddress = encryptObject(address);
 
     const userRow = {
       id: userId,
@@ -541,14 +548,47 @@ app.post('/api/create-app-user', async (req, res) => {
     const { error: userInsertError } = await supabase.from('users').insert(userRow);
     if (userInsertError) {
       console.error('/api/create-app-user users insert error', userInsertError);
-      // If foreign key constraint to auth.users exists, surface a clear message
       if (userInsertError.code === '23503') {
         return res.status(400).json({ error: 'Invalid id: must match an existing Supabase auth user id (foreign key constraint)' });
       }
       return res.status(500).json({ error: 'Failed to insert user row' });
     }
 
-    // Save a placeholder business row? we only create full business on email confirmation (webhook)
+    // Idempotency: don't re-insert business if exists for this user
+    try {
+      const { data: existingBusiness, error: ebErr } = await supabase.from('businesses').select('id').eq('user_id', userId).maybeSingle();
+      if (ebErr) console.warn('/api/create-app-user existing business check error', ebErr);
+      if (!existingBusiness) {
+        const businessRow = {
+          email: email || '',
+          store_name: store_name,
+          owner_name: encFullName,
+          phone: encPhone,
+          address: encAddress,
+          business_type: business_type,
+          id_last6: encIdLast6,
+          user_id: userId
+        };
+
+        if (process.env.NODE_ENV !== 'production') console.log('/api/create-app-user inserting businessRow', JSON.stringify(businessRow));
+        const { data: businessData, error: businessInsertError } = await supabase.from('businesses').insert(businessRow).select();
+        if (businessInsertError) {
+          console.error('/api/create-app-user businesses insert error', businessInsertError);
+          console.error('/api/create-app-user attempted businessRow:', JSON.stringify(businessRow));
+          // If FK constraint or other DB error, surface informative message
+          if (businessInsertError.code === '23503') {
+            return res.status(400).json({ error: 'Invalid user_id: referenced application user does not exist' });
+          }
+          return res.status(500).json({ error: 'Failed to insert business row', details: businessInsertError });
+        }
+        if (process.env.NODE_ENV !== 'production') console.log('/api/create-app-user business insert success', businessData);
+      }
+    } catch (e) {
+      console.error('/api/create-app-user business insert catch error', e);
+      // do not fail the whole request if business insert had unexpected issues
+      return res.status(500).json({ error: 'Failed to insert business row', details: String(e) });
+    }
+
     return res.json({ ok: true, inserted: true });
   } catch (e) {
     console.error('/api/create-app-user error', e);

@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -27,6 +27,16 @@ export default function BusinessSignup() {
     id_last6: '',
     password: '',
     confirmPassword: ''
+  });
+  // metadata state synced from formData (ensures complete metadata sent)
+  const [metadata, setMetadata] = useState({
+    full_name: '',
+    phone: '',
+    role: 'free_business',
+    store_name: '',
+    address: '',
+    business_type: '',
+    id_last6: ''
   });
   // إضافة حالة رمز الدولة
   const [countryCode, setCountryCode] = useState('+20');
@@ -155,6 +165,20 @@ export default function BusinessSignup() {
     }
   };
 
+  // keep metadata in sync with formData and countryCode so signup payload is complete
+  useEffect(() => {
+    const fullPhoneNumber = countryCode + formData.phone;
+    setMetadata({
+      full_name: formData.ownerName,
+      phone: fullPhoneNumber,
+      role: 'free_business',
+      store_name: formData.storeName,
+      address: formData.address,
+      business_type: formData.businessType,
+      id_last6: formData.id_last6
+    });
+  }, [formData, countryCode]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -182,20 +206,14 @@ export default function BusinessSignup() {
     try {
       // Use Supabase client-side signup so Supabase sends verification email.
       const fullPhoneNumber = countryCode + formData.phone;
+      // ensure metadata phone is up-to-date
+      const signupMetadata = { ...metadata, phone: fullPhoneNumber };
       const { data, error } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
         options: {
           emailRedirectTo: `${window.location.origin}/login`,
-          data: {
-            full_name: formData.ownerName,
-            phone: fullPhoneNumber,
-            role: 'free_business',
-            store_name: formData.storeName,
-            address: formData.address,
-            business_type: formData.businessType,
-            id_last6: formData.id_last6
-          }
+          data: signupMetadata
         }
       });
 
@@ -213,14 +231,7 @@ export default function BusinessSignup() {
         const payload = {
           id: data?.user?.id,
           email: formData.email,
-          metadata: {
-            full_name: formData.ownerName,
-            phone: fullPhoneNumber,
-            store_name: formData.storeName,
-            address: formData.address,
-            business_type: formData.businessType,
-            id_last6: formData.id_last6
-          }
+          metadata: signupMetadata
         };
         fetch('/api/create-app-user', {
           method: 'POST',
