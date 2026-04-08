@@ -921,7 +921,7 @@ app.post('/api/check-email', checkEmailLimiter, async (req, res) => {
     const email = (req.body && req.body.email) ? String(req.body.email).trim().toLowerCase() : '';
     if (!email || typeof email !== 'string' || !email.includes('@')) {
       if (process.env.NODE_ENV !== 'production') console.warn('[check-email] invalid email input:', req.body && req.body.email);
-      return res.json(false);
+      return res.json({ exists: false });
     }
 
     // Query the `users` table for existence. Using service role key on the server.
@@ -934,16 +934,16 @@ app.post('/api/check-email', checkEmailLimiter, async (req, res) => {
 
     if (error) {
       if (process.env.NODE_ENV !== 'production') console.error('[check-email] supabase error:', error);
-      // For security and simplicity return false on error (client only expects boolean)
-      return res.json(false);
+      // For security and simplicity return exists=false on error
+      return res.json({ exists: false });
     }
 
     // If data is null => not found, otherwise found
     const exists = !!data;
-    return res.json(exists);
+    return res.json({ exists });
   } catch (err) {
     if (process.env.NODE_ENV !== 'production') console.error('[check-email] unexpected error:', err);
-    return res.json(false);
+    return res.json({ exists: false });
   }
 });
 

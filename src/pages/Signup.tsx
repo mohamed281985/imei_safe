@@ -89,8 +89,25 @@ const Signup: React.FC = () => {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ email: value.trim().toLowerCase() })
             });
-            const data = await resp.json();
-            const exists = data && data.exists === true;
+
+            // Safely parse response: some failures may return empty body or a plain boolean
+            let exists = false;
+            try {
+              const text = await resp.text();
+              if (text) {
+                let parsed = null as any;
+                try { parsed = JSON.parse(text); } catch (e) { parsed = null; }
+                if (typeof parsed === 'boolean') exists = parsed;
+                else if (parsed && typeof parsed.exists === 'boolean') exists = parsed.exists;
+                else exists = String(text).toLowerCase().includes('true');
+              } else {
+                exists = false;
+              }
+            } catch (parseErr) {
+              if (process.env.NODE_ENV !== 'production') console.warn('check-email parse error', parseErr);
+              exists = false;
+            }
+
             setEmailExists(exists);
             setIsEmailRegistered(exists);
             if (exists) {
