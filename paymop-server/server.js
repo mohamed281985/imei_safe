@@ -232,8 +232,45 @@ const app = express();
 const CLIENT_ORIGINS = process.env.CLIENT_ORIGINS ? process.env.CLIENT_ORIGINS.split(',') : ['http://localhost:8080'];
 app.use(cors({ origin: CLIENT_ORIGINS, credentials: true }));
 
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+// Capture raw body for debugging and protect against malformed JSON
+app.use(express.json({
+  limit: '50mb',
+  verify: (req, res, buf, encoding) => {
+    try {
+      req.rawBody = buf.toString(encoding || 'utf8');
+    } catch (e) {
+      req.rawBody = '';
+    }
+  }
+}));
+
+app.use(express.urlencoded({
+  limit: '50mb',
+  extended: true,
+  verify: (req, res, buf, encoding) => {
+    try {
+      req.rawBody = buf.toString(encoding || 'utf8');
+    } catch (e) {
+      req.rawBody = '';
+    }
+  }
+}));
+
+// Middleware to handle JSON parse errors and log raw body for debugging
+app.use((err, req, res, next) => {
+  if (!err) return next();
+  const isBodyParserError = err instanceof SyntaxError || err.type === 'entity.parse.failed' || err.status === 400;
+  if (isBodyParserError) {
+    try {
+      console.error('[body-parser] JSON parse error:', err && err.message);
+      console.error('[body-parser] rawBody:', req && req.rawBody ? req.rawBody : '<empty>');
+    } catch (logErr) {
+      console.error('[body-parser] failed to log raw body', logErr && logErr.message);
+    }
+    if (!res.headersSent) return res.status(400).json({ error: 'Invalid JSON payload' });
+  }
+  return next(err);
+});
 
 // If behind a proxy (Render, Heroku, etc.) trust proxy headers so req.secure and x-forwarded-proto work
 app.set('trust proxy', true);
@@ -596,6 +633,47 @@ app.post('/api/create-app-user', async (req, res) => {
   }
 });
 
+// Endpoint: set or update business images using server-side service_role key
+// This endpoint bypasses RLS (runs on server with service role) and should be called
+// from the client after successful storage uploads. Accepts { user_id, store_image_url, license_image_url }.
+app.post('/api/set-business-images', async (req, res) => {
+  try {
+    const { user_id, store_image_url, license_image_url } = req.body || {};
+    if (!user_id) return res.status(400).json({ error: 'missing user_id' });
+
+    // Try update first
+    const { data: updateData, error: updateError } = await supabase
+      .from('businesses')
+      .update({ store_image_url, license_image_url })
+      .eq('user_id', user_id)
+      .select();
+
+    if (updateError) {
+      console.error('/api/set-business-images update error', updateError);
+      return res.status(500).json({ error: 'Failed to update business', details: updateError });
+    }
+
+    if (!updateData || updateData.length === 0) {
+      // No existing business row, insert a new one
+      const { data: insertData, error: insertError } = await supabase
+        .from('businesses')
+        .insert([{ user_id, store_image_url, license_image_url }])
+        .select();
+
+      if (insertError) {
+        console.error('/api/set-business-images insert error', insertError);
+        return res.status(500).json({ error: 'Failed to insert business', details: insertError });
+      }
+      return res.json({ ok: true, action: 'insert', data: insertData });
+    }
+
+    return res.json({ ok: true, action: 'update', data: updateData });
+  } catch (e) {
+    console.error('/api/set-business-images error', e);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // Temporary test endpoint: encrypt payload and save to local file for testing
 // This does NOT touch the database and is intended for local functional tests
 app.post('/api/test-insert', async (req, res) => {
@@ -667,8 +745,31 @@ app.post('/api/test-insert', async (req, res) => {
 // --- تهيئة Supabase ---
 const SUPABASE_URL = process.env.SUPABASE_URL;
 // Prefer the explicit service-role key if provided; fall back to legacy name
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+// Debug/logging helpers for Supabase usage
+try {
+  console.log('[supabase] SUPABASE_URL:', SUPABASE_URL ? SUPABASE_URL : 'MISSING');
+  console.log('[supabase] SUPABASE_KEY present:', !!SUPABASE_KEY);
+
+  if (supabase && typeof supabase.from === 'function') {
+    const _origFrom = supabase.from.bind(supabase);
+    supabase.from = function (table) {
+      if (process.env.NODE_ENV !== 'production') console.log(`[supabase] .from('${table}') called`);
+      return _origFrom(table);
+    };
+  }
+
+  if (supabase && supabase.auth && typeof supabase.auth.getUser === 'function') {
+    const _origGetUser = supabase.auth.getUser.bind(supabase.auth);
+    supabase.auth.getUser = async function (token) {
+      if (process.env.NODE_ENV !== 'production') console.log('[supabase.auth] getUser called, token length:', token ? String(token).length : 0);
+      return _origGetUser(token);
+    };
+  }
+} catch (e) {
+  console.warn('[supabase] debug wrapper failed', e && e.message);
+}
 
 // Endpoint: /api/lost-phones
 // يعيد قائمة الهواتف المفقودة مع فك تشفير حقل imei و phone_type فقط
