@@ -49,6 +49,16 @@ export default function BusinessSignup() {
   const [lastCheckedEmail, setLastCheckedEmail] = useState<string>('');
   const [isEmailRegistered, setIsEmailRegistered] = useState<boolean>(false);
 
+  // password checklist state
+  const [pwdFocused, setPwdFocused] = useState<boolean>(false);
+  const [pwdChecks, setPwdChecks] = useState({
+    minLength: false,
+    hasUpper: false,
+    hasLower: false,
+    hasNumber: false,
+    hasSpecial: false,
+  });
+
   const handleInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     let processedValue = value;
@@ -76,83 +86,25 @@ export default function BusinessSignup() {
       if (value && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
         setCheckingEmail(true);
         try {
-          let emailExists = false;
-          
-          // 1. التحقق من جدول users
-          const { data: usersData, error: usersError } = await supabase
-            .from('users')
-            .select('email')
-            .eq('email', value);
-            
-          if (!usersError && usersData && usersData.length > 0) {
-            emailExists = true;
-          } else if (usersError) {
-            console.error("Error checking users table:", usersError);
-            
-            // في حالة وجود خطأ في الصلاحيات، حاول استعلام بديل
-            if (usersError.code === 'PGRST116' || usersError.code === 'PGRST202') {
-              console.log("Permission error on users table, trying alternative");
-              
-              const { data: altData, error: altError } = await supabase
-                .from('users')
-                .select('id')
-                .ilike('email', `%${value}%`)
-                .limit(1);
-                
-              if (!altError && altData && altData.length > 0) {
-                emailExists = true;
-              }
-            }
+          const resp = await fetch('/api/check-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: value.trim().toLowerCase() })
+          });
+          const data = await resp.json();
+          const emailExistsFlag = data && data.exists === true;
+          setEmailExists(emailExistsFlag);
+          setIsEmailRegistered(emailExistsFlag);
+
+          if (emailExistsFlag) {
+            toast({ title: t('alert_title'), description: t('email_already_registered'), variant: 'destructive' });
           }
-          
-          // 2. التحقق من جدول businesses إذا لم يتم العثور على البريد في users
-          if (!emailExists) {
-            const { data: businessesData, error: businessesError } = await supabase
-              .from('businesses')
-              .select('email')
-              .eq('email', value);
-              
-            if (!businessesError && businessesData && businessesData.length > 0) {
-              emailExists = true;
-            } else if (businessesError) {
-              console.error("Error checking businesses table:", businessesError);
-              
-              // في حالة وجود خطأ في الصلاحيات، حاول استعلام بديل
-              if (businessesError.code === 'PGRST116' || businessesError.code === 'PGRST202') {
-                console.log("Permission error on businesses table, trying alternative");
-                
-                const { data: altData, error: altError } = await supabase
-                  .from('businesses')
-                  .select('id')
-                  .ilike('email', `%${value}%`)
-                  .limit(1);
-                  
-                if (!altError && altData && altData.length > 0) {
-                  emailExists = true;
-                }
-              }
-            }
-          }
-          
-          // تحديث الحالة بناءً على النتيجة النهائية
-          setEmailExists(emailExists);
-          setIsEmailRegistered(emailExists);
-          
-          if (emailExists) {
-            toast({
-              title: t('alert_title'),
-              description: t('email_already_registered'),
-              variant: "destructive",
-            });
-          }
-          
-          // تحديث آخر بريد تم فحصه
+
           setLastCheckedEmail(value);
         } catch (error: any) {
+          console.error('Email verification error (backend):', error);
           setEmailExists(false);
           setIsEmailRegistered(false);
-          console.error("Email verification error:", error);
-          // تحديث آخر بريد تم فحصه حتى لو لم يتم العثور عليه
           setLastCheckedEmail(value);
         } finally {
           setCheckingEmail(false);
@@ -164,6 +116,18 @@ export default function BusinessSignup() {
       }
     }
   };
+
+  // update password checks live
+  useEffect(() => {
+    const pw = formData.password || '';
+    setPwdChecks({
+      minLength: pw.length >= 8,
+      hasUpper: /[A-Z]/.test(pw),
+      hasLower: /[a-z]/.test(pw),
+      hasNumber: /\d/.test(pw),
+      hasSpecial: /[\W_]/.test(pw),
+    });
+  }, [formData.password]);
 
   // keep metadata in sync with formData and countryCode so signup payload is complete
   useEffect(() => {
@@ -183,29 +147,50 @@ export default function BusinessSignup() {
     e.preventDefault();
     setLoading(true);
 
-    // تحقق من كلمة المرور
-    if (formData.password !== formData.confirmPassword) {
-      toast({
-        title: t('verification_error'),
-        description: t('passwords_dont_match_message'),
-        variant: 'destructive',
-      });
+    // تحقق من الصحة الأساسية للحقول قبل الإرسال
+    const pw = formData.password || '';
+    if (pw !== formData.confirmPassword) {
+      toast({ title: t('verification_error'), description: t('passwords_dont_match_message'), variant: 'destructive' });
       setLoading(false);
       return;
     }
-    if (formData.password.length < 6) {
-      toast({
-        title: t('weak_password'),
-        description: t('password_too_short_message'),
-        variant: 'destructive',
-      });
+
+    // قوة كلمة المرور: 8+ أحرف، حرف كبير، حرف صغير، رقم، رمز خاص
+    const strongPwd = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/;
+    if (!strongPwd.test(pw)) {
+      toast({ title: t('weak_password'), description: t('password_strength_requirements') || 'Password must be 8+ chars with upper, lower, number and special char', variant: 'destructive' });
+      setLoading(false);
+      return;
+    }
+
+    // تحقق من اسم المتجر واسم المالك والعنوان
+    if (!formData.storeName || formData.storeName.trim().length < 2) {
+      toast({ title: t('error'), description: t('store_name_too_short') || 'Store name is too short', variant: 'destructive' });
+      setLoading(false);
+      return;
+    }
+    if (!formData.ownerName || formData.ownerName.trim().length < 2) {
+      toast({ title: t('error'), description: t('owner_name_too_short') || 'Owner name is too short', variant: 'destructive' });
+      setLoading(false);
+      return;
+    }
+    if (!formData.address || formData.address.trim().length < 5) {
+      toast({ title: t('error'), description: t('address_too_short') || 'Address is too short', variant: 'destructive' });
+      setLoading(false);
+      return;
+    }
+
+    // تحقق من رقم الهاتف (أرقام فقط، بين 7 و15 رقم بدون رمز الدولة)
+    const fullPhoneNumber = countryCode + formData.phone;
+    const digitsOnly = fullPhoneNumber.replace(/\D/g, '');
+    if (digitsOnly.length < 7 || digitsOnly.length > 15) {
+      toast({ title: t('error'), description: t('invalid_phone_number') || 'Phone number appears invalid', variant: 'destructive' });
       setLoading(false);
       return;
     }
 
     try {
       // Use Supabase client-side signup so Supabase sends verification email.
-      const fullPhoneNumber = countryCode + formData.phone;
       // ensure metadata phone is up-to-date
       const signupMetadata = { ...metadata, phone: fullPhoneNumber };
       const { data, error } = await supabase.auth.signUp({
@@ -409,9 +394,32 @@ export default function BusinessSignup() {
                 placeholder={t('password_placeholder')}
                 value={formData.password}
                 onChange={handleInputChange}
+                onFocus={() => setPwdFocused(true)}
+                onBlur={() => setPwdFocused(false)}
                 required
                 className="input-field w-full pl-10"
               />
+              {pwdFocused && (
+                <div className="mt-2 text-sm text-gray-700 bg-white/80 p-2 rounded shadow-sm w-full">
+                  <ul className="space-y-1">
+                    <li className={pwdChecks.minLength ? 'text-green-600' : 'text-gray-600'}>
+                      {pwdChecks.minLength ? '✓' : '○'} {t('pwd_min_chars')}
+                    </li>
+                    <li className={pwdChecks.hasUpper ? 'text-green-600' : 'text-gray-600'}>
+                      {pwdChecks.hasUpper ? '✓' : '○'} {t('pwd_upper')}
+                    </li>
+                    <li className={pwdChecks.hasLower ? 'text-green-600' : 'text-gray-600'}>
+                      {pwdChecks.hasLower ? '✓' : '○'} {t('pwd_lower')}
+                    </li>
+                    <li className={pwdChecks.hasNumber ? 'text-green-600' : 'text-gray-600'}>
+                      {pwdChecks.hasNumber ? '✓' : '○'} {t('pwd_number')}
+                    </li>
+                    <li className={pwdChecks.hasSpecial ? 'text-green-600' : 'text-gray-600'}>
+                      {pwdChecks.hasSpecial ? '✓' : '○'} {t('pwd_special')}
+                    </li>
+                  </ul>
+                </div>
+              )}
             </div>
           </div>
           <div>

@@ -74,145 +74,39 @@ const Signup: React.FC = () => {
       [name]: processedValue
     }));
 
-    // تعديل التحقق من البريد الإلكتروني
+    // email existence check (server-side)
     if (name === 'email') {
-      // إعادة تعيين الحالات
       setEmailExists(false);
       setCheckingEmail(false);
       setIsEmailRegistered(false);
-      
-      // إظهار رسالة جارٍ التحقق فقط إذا كان البريد الإلكتروني صالحًا
+
       if (value && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
         setCheckingEmail(true);
-        
-        // تأخير التحقق قليلاً لتحسين تجربة المستخدم
         setTimeout(async () => {
           try {
-            // التحقق من وجود البريد الإلكتروني في جدول users و businesses
-            try {
-              let emailExists = false;
-              
-              // 1. محاولة استخدام دالة RPC للتحقق من كلا الجدولين
-              try {
-                const { data: rpcResult, error: rpcError } = await supabase
-                  .rpc('check_email_in_both_tables', { email_to_check: value });
-                
-                if (!rpcError && rpcResult !== undefined) {
-                  // الدالة RPC نجحت، استخدم النتيجة
-                  emailExists = rpcResult;
-                  if (emailExists) {
-                    setEmailExists(true);
-                    setIsEmailRegistered(true);
-                    toast({
-                      title: t('alert_title'),
-                      description: t('email_registered_before'),
-                      variant: "destructive",
-                    });
-                  } else {
-                    setEmailExists(false);
-                    setIsEmailRegistered(false);
-                  }
-                  return;
-                }
-              } catch (rpcError: any) {
-                console.log("RPC function not available, will use direct queries");
-              }
-              
-              // 2. التحقق من جدول users
-              try {
-                const { data: usersData, error: usersError } = await supabase
-                  .from('users')
-                  .select('email')
-                  .eq('email', value)
-                  .limit(1);
-                  
-                if (!usersError && usersData && usersData.length > 0) {
-                  emailExists = true;
-                } else if (usersError) {
-                  console.error("Error checking users table:", usersError);
-                  
-                  // في حالة وجود خطأ في الصلاحيات، حاول استعلام بديل
-                  if (usersError.code === 'PGRST116' || usersError.code === 'PGRST202') {
-                    console.log("Permission error on users table, trying alternative");
-                    
-                    const { data: altData, error: altError } = await supabase
-                      .from('users')
-                      .select('id')
-                      .ilike('email', `%${value}%`)
-                      .limit(1);
-                      
-                    if (!altError && altData && altData.length > 0) {
-                      emailExists = true;
-                    }
-                  }
-                }
-              } catch (usersError: any) {
-                console.error("Unexpected error checking users table:", usersError);
-              }
-              
-              // 3. التحقق من جدول businesses إذا لم يتم العثور على البريد في users
-              if (!emailExists) {
-                try {
-                  const { data: businessesData, error: businessesError } = await supabase
-                    .from('businesses')
-                    .select('email')
-                    .eq('email', value)
-                    .limit(1);
-                    
-                  if (!businessesError && businessesData && businessesData.length > 0) {
-                    emailExists = true;
-                  } else if (businessesError) {
-                    console.error("Error checking businesses table:", businessesError);
-                    
-                    // في حالة وجود خطأ في الصلاحيات، حاول استعلام بديل
-                    if (businessesError.code === 'PGRST116' || businessesError.code === 'PGRST202') {
-                      console.log("Permission error on businesses table, trying alternative");
-                      
-                      const { data: altData, error: altError } = await supabase
-                        .from('businesses')
-                        .select('id')
-                        .ilike('email', `%${value}%`)
-                        .limit(1);
-                        
-                      if (!altError && altData && altData.length > 0) {
-                        emailExists = true;
-                      }
-                    }
-                  }
-                } catch (businessesError: any) {
-                  console.error("Unexpected error checking businesses table:", businessesError);
-                }
-              }
-              
-              // تحديث الحالة بناءً على النتيجة النهائية
-              setEmailExists(emailExists);
-              setIsEmailRegistered(emailExists);
-              
-              if (emailExists) {
-                toast({
-                  title: t('alert_title'),
-                  description: t('email_registered_before'),
-                  variant: "destructive",
-                });
-              }
-            } catch (error: any) {
-              console.error("Unexpected error checking email:", error);
-              setEmailExists(false);
-              setIsEmailRegistered(false);
+            const resp = await fetch('/api/check-email', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: value.trim().toLowerCase() })
+            });
+            const data = await resp.json();
+            const exists = data && data.exists === true;
+            setEmailExists(exists);
+            setIsEmailRegistered(exists);
+            if (exists) {
+              toast({ title: t('alert_title'), description: t('email_registered_before'), variant: 'destructive' });
             }
-            
             setLastCheckedEmail(value);
-          } catch (error: any) {
-            console.error("Email verification error:", error);
+          } catch (err) {
+            console.error('Email check error:', err);
             setEmailExists(false);
             setIsEmailRegistered(false);
             setLastCheckedEmail(value);
           } finally {
             setCheckingEmail(false);
           }
-        }, 500); // تأخير نصف ثانية
+        }, 500);
       } else {
-        // إذا كان البريد الإلكتروني فارغًا أو غير صالح
         setLastCheckedEmail('');
         setIsEmailRegistered(false);
       }
@@ -256,25 +150,35 @@ const Signup: React.FC = () => {
       if (error) {
         setSignupError(error.message.includes('User already registered') ? t('phone_registered_before') : error.message);
       } else if (data.user) {
-        // إضافة بيانات المستخدم في جدول users بعد نجاح التسجيل
-        await supabase
-          .from('users')
-          .insert([
-            {
-              id: data.user.id, // معرف المستخدم من Supabase Auth
+        // Create application-level user record on the server (server will encrypt/store)
+        try {
+          const payload = {
+            id: data.user.id,
+            email,
+            metadata: {
               full_name: username,
-              email: email,
               phone: fullPhoneNumber,
               id_last6: idLast6,
               role: 'customer',
-              status: 'active', // إضافة الحالة الافتراضية للمستخدم الجديد
+              status: 'active'
             }
-          ]);
-        toast({
-          title: t('signup_successful'),
-          description: t('verification_email_sent'),
-        });
-        navigate('/login');
+          };
+          fetch('/api/create-app-user', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          }).catch(e => console.warn('create-app-user failed', e));
+
+          toast({
+            title: t('signup_successful'),
+            description: t('verification_email_sent'),
+          });
+          navigate('/login');
+        } catch (e) {
+          console.warn('create-app-user error', e);
+          toast({ title: t('signup_successful'), description: t('verification_email_sent') });
+          navigate('/login');
+        }
       } else {
         setSignupError(t('signup_error'));
       }
