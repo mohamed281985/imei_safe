@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
@@ -22,12 +22,25 @@ export default function BusinessProfileComplete() {
   const [previews, setPreviews] = useState<{ storeImage: string | null; licenseImage: string | null }>({ storeImage: null, licenseImage: null });
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
+  // cleanup object URLs when previews change or component unmounts
+  useEffect(() => {
+    return () => {
+      if (previews.storeImage) URL.revokeObjectURL(previews.storeImage);
+      if (previews.licenseImage) URL.revokeObjectURL(previews.licenseImage);
+    };
+  }, [previews.storeImage, previews.licenseImage]);
   const navigate = useNavigate();
   const { completeProfile, logout } = useAuth();
 
   const handleImage = useCallback(async (file: File, type: 'store' | 'license') => {
     if (file.size > 10 * 1024 * 1024) { // 10MB limit for original file
       toast({ title: t('error'), description: t('file_too_large_10mb'), variant: 'destructive' });
+      return;
+    }
+
+    // Validate MIME type is an image
+    if (!file.type || !file.type.startsWith('image/')) {
+      toast({ title: t('error'), description: t('invalid_file_type'), variant: 'destructive' });
       return;
     }
 
@@ -59,17 +72,33 @@ export default function BusinessProfileComplete() {
 
   const uploadBusinessAsset = async (userId: string, file: File, assetName: string): Promise<string> => {
     const filePath = `${userId}/${assetName}_${Date.now()}.webp`;
-      const uploadResp = await supabase.storage
-        .from('business-assets')
-        .upload(filePath, file, { upsert: true });
-      console.log('[BusinessProfile] upload response for', assetName, uploadResp);
-      if (uploadResp.error) throw new Error(`Failed to upload ${assetName}: ${uploadResp.error.message}`);
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('business-assets')
+      .upload(filePath, file, { upsert: true });
+    if (uploadError) throw new Error(`Failed to upload ${assetName}: ${uploadError.message}`);
 
-      const getUrlResp = await supabase.storage.from('business-assets').getPublicUrl(filePath);
-      console.log('[BusinessProfile] getPublicUrl response for', assetName, getUrlResp);
-      const publicUrl = getUrlResp?.data?.publicUrl;
-      if (!publicUrl) throw new Error(`Could not get URL for ${assetName}`);
-      return publicUrl;
+    // Try to get a public URL first
+    try {
+      const { data: { publicUrl } } = supabase.storage.from('business-assets').getPublicUrl(filePath);
+      if (publicUrl) return publicUrl;
+    } catch (err) {
+      console.warn('getPublicUrl error or returned no url', err);
+    }
+
+    // If no public URL (private bucket), attempt to create a signed URL
+    try {
+      const expiresIn = 60 * 60 * 24 * 7; // 7 days
+      const { data: signedData, error: signedError } = await supabase.storage
+        .from('business-assets')
+        .createSignedUrl(filePath, expiresIn);
+      if (signedError) throw signedError;
+      if (signedData && (((signedData as any).signedUrl) || ((signedData as any).signed_url))) {
+        return (signedData as any).signedUrl || (signedData as any).signed_url;
+      }
+      throw new Error('Could not obtain a signed URL');
+    } catch (err: any) {
+      throw new Error(`Could not get URL for ${assetName}: ${err?.message || err}`);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -85,37 +114,81 @@ export default function BusinessProfileComplete() {
     }
     setLoading(true);
     try {
+      // 1. جلب بيانات المستخدم الحالي
       const { data: { user }, error: getUserError } = await supabase.auth.getUser();
       if (getUserError || !user) throw new Error(t('must_be_logged_in'));
       const userId = user.id;
+
+      // 2. رفع الصور والحصول على الروابط
+      console.log('[BusinessProfile] Uploading images...');
       const [storeImageUrl, licenseImageUrl] = await Promise.all([
         uploadBusinessAsset(userId, storeImage, 'store_image'),
         uploadBusinessAsset(userId, licenseImage, 'license_image'),
       ]);
-        const { data: updateData, error: profileUpdateError } = await supabase
+      console.log('[BusinessProfile] Images uploaded successfully');
+
+      // 3. التحقق مما إذا كان سجل النشاط التجاري موجوداً
+      console.log('[BusinessProfile] Checking for existing business record...');
+      const { data: existingBusiness, error: checkError } = await supabase
+        .from('businesses')
+        .select('id, user_id')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (checkError) {
+        console.error('[BusinessProfile] Error checking business record:', checkError);
+        throw new Error(t('error_checking_business_record'));
+      }
+
+      let resultError;
+      if (existingBusiness) {
+        // الحالة أ: السجل موجود -> نقوم بالتحديث
+        console.log('[BusinessProfile] Updating existing business record, ID:', existingBusiness.id);
+        const { data: updatedRows, error: updateError } = await supabase
           .from('businesses')
-          .update({ store_image_url: storeImageUrl, license_image_url: licenseImageUrl })
+          .update({ 
+            store_image_url: storeImageUrl, 
+            license_image_url: licenseImageUrl 
+          })
           .eq('user_id', userId)
           .select();
-        console.log('[BusinessProfile] update response', { updateData, profileUpdateError });
 
-        // Call server-side endpoint that uses service_role key to bypass RLS and set image URLs
-        try {
-          const resp = await fetch('/api/set-business-images', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user_id: userId, store_image_url: storeImageUrl, license_image_url: licenseImageUrl })
-          });
-          const json = await resp.json().catch(() => ({}));
-          console.log('[BusinessProfile] /api/set-business-images response', resp.status, json);
-          if (!resp.ok) {
-            throw new Error(json?.error || json?.details?.message || 'Failed to set business images on server');
-          }
-        } catch (e: any) {
-          console.error('[BusinessProfile] set-business-images error', e);
-          throw new Error(`${t('data_save_failed')}: ${e && e.message ? e.message : String(e)}`);
+        console.log('[BusinessProfile] Update result:', { updatedRows, updateError });
+        if (!updatedRows || updatedRows.length === 0) {
+          console.warn('[BusinessProfile] Update affected 0 rows despite record existing');
         }
-      // تحديث حالة اكتمال الملف التجاري
+        resultError = updateError;
+      } else {
+        // الحالة ب: السجل غير موجود -> نقوم بإنشاء سجل جديد
+        console.log('[BusinessProfile] No existing record found. Creating new business record...');
+        const metadata = user.user_metadata || {};
+        const { data: insertedRows, error: insertError } = await supabase
+          .from('businesses')
+          .insert({ 
+            user_id: userId, 
+            store_image_url: storeImageUrl, 
+            license_image_url: licenseImageUrl,
+            store_name: metadata.store_name || '',
+            email: user.email || '',
+            phone: metadata.phone || '',
+            owner_name: metadata.full_name || metadata.owner_name || '',
+            address: metadata.address || '',
+            business_type: metadata.business_type || '',
+            id_last6: metadata.id_last6 || ''
+          })
+          .select();
+
+        console.log('[BusinessProfile] Insert result:', { insertedRows, insertError });
+        resultError = insertError;
+      }
+
+      // 4. التحقق من وجود أخطاء بعد التحديث أو الإدراج
+      if (resultError) {
+        console.error('[BusinessProfile] Database operation error:', resultError);
+        throw new Error(`${t('data_save_failed')}: ${resultError.message}`);
+      }
+
+      // 5. إتمام العملية
       completeProfile();
       toast({
         title: t('business_profile_completed_successfully'),
@@ -124,10 +197,12 @@ export default function BusinessProfileComplete() {
       setTimeout(() => {
         navigate('/dashboard');
       }, 2000);
+
     } catch (error: any) {
+      console.error('[BusinessProfile] handleSubmit error:', error);
       toast({
         title: t('error'),
-        description: error.message,
+        description: error.message || t('unknown_error'),
         variant: 'destructive'
       });
     } finally {
@@ -148,7 +223,13 @@ export default function BusinessProfileComplete() {
       if (image.webPath) {
         const response = await fetch(image.webPath);
         const blob = await response.blob();
-        const file = new File([blob], `${type}_${Date.now()}.webp`, { type: 'image/webp' });
+        if (!blob.type || !blob.type.startsWith('image/')) {
+          console.error('Camera capture did not return an image blob, type=', blob.type);
+          toast({ title: t('error'), description: t('invalid_file_type'), variant: 'destructive' });
+          return;
+        }
+        const ext = blob.type.split('/')[1] || 'webp';
+        const file = new File([blob], `${type}_${Date.now()}.${ext}`, { type: blob.type });
         await handleImage(file, type);
       }
     } catch (error: any) {

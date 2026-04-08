@@ -13,6 +13,8 @@ import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
 import { validateImageFile } from './utils/imageValidator.js';
+import { fileTypeFromBuffer } from 'file-type';
+import sharp from 'sharp';
 
 // =================================================================
 // 1. الإعدادات الأولية وتحميل متغيرات البيئة (يجب أن تكون في البداية)
@@ -262,10 +264,12 @@ app.use((err, req, res, next) => {
   const isBodyParserError = err instanceof SyntaxError || err.type === 'entity.parse.failed' || err.status === 400;
   if (isBodyParserError) {
     try {
-      console.error('[body-parser] JSON parse error:', err && err.message);
-      console.error('[body-parser] rawBody:', req && req.rawBody ? req.rawBody : '<empty>');
+      if (process.env.NODE_ENV !== 'production') {
+        console.error('[body-parser] JSON parse error:', err && err.message);
+        console.error('[body-parser] rawBody:', req && req.rawBody ? req.rawBody : '<empty>');
+      }
     } catch (logErr) {
-      console.error('[body-parser] failed to log raw body', logErr && logErr.message);
+      if (process.env.NODE_ENV !== 'production') console.error('[body-parser] failed to log raw body', logErr && logErr.message);
     }
     if (!res.headersSent) return res.status(400).json({ error: 'Invalid JSON payload' });
   }
@@ -324,7 +328,7 @@ const globalRateMiddleware = (req, res, next) => {
         }
         next();
       } catch (e) {
-        console.error('Redis rate limit error:', e);
+        if (process.env.NODE_ENV !== 'production') console.error('Redis rate limit error:', e);
         next();
       }
     })();
@@ -350,6 +354,24 @@ const globalRateMiddleware = (req, res, next) => {
   }
 };
 app.use(globalRateMiddleware);
+
+// Route-specific rate limiters to protect sensitive endpoints from abuse
+const checkEmailLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 6, // limit each IP to 6 requests per windowMs
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => res.status(429).json({ error: 'Too many requests, please try again later.' })
+});
+ 
+const createAppUserLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 5, // limit each IP to 5 create-app-user requests per hour
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => res.status(429).json({ error: 'Too many account creation attempts, please try later.' })
+});
+ 
 
 // Middleware: if incoming body is encrypted (encryptedData + iv + authTag), try to decrypt and replace req.body
 app.use((req, res, next) => {
@@ -380,10 +402,10 @@ let redisClient = null;
 if (REDIS_URL) {
   try {
     redisClient = new Redis(REDIS_URL);
-    redisClient.on('error', (err) => console.error('Redis error:', err));
+    redisClient.on('error', (err) => { if (process.env.NODE_ENV !== 'production') console.error('Redis error:', err); });
     console.log('Connected to Redis for shared state');
-  } catch (e) {
-    console.error('Failed to initialize Redis client:', e);
+    } catch (e) {
+    if (process.env.NODE_ENV !== 'production') console.error('Failed to initialize Redis client:', e);
     redisClient = null;
   }
 }
@@ -391,9 +413,9 @@ if (REDIS_URL) {
 // Helper to log internal errors and return a generic message to clients
 function sendError(res, status = 500, userMessage = 'حدث خطأ في الخادم', err = null, extra = {}) {
   try {
-    if (err) console.error(err);
+    if (err && process.env.NODE_ENV !== 'production') console.error(err);
   } catch (logErr) {
-    console.error('Failed to log error:', logErr);
+    if (process.env.NODE_ENV !== 'production') console.error('Failed to log error:', logErr);
   }
   if (res.headersSent) return; // avoid double responses
   return res.status(status).json({ ...extra, error: userMessage });
@@ -441,8 +463,8 @@ app.post('/api/encrypt', async (req, res) => {
     if (!encrypted) return res.status(500).json({ error: 'Encryption failed' });
     return res.json(encrypted);
   } catch (e) {
-    console.error('/api/encrypt error', e);
-    return res.status(500).json({ error: 'Encryption error' });
+    if (process.env.NODE_ENV !== 'production') console.error('/api/encrypt error', e);
+    return sendError(res, 500, 'Encryption error', e);
   }
 });
 
@@ -509,8 +531,8 @@ app.post('/api/supabase-auth-webhook', async (req, res) => {
 
     const { error: userInsertError } = await supabase.from('users').insert(userRow);
     if (userInsertError) {
-      console.error('[webhook] users insert error:', userInsertError);
-      return res.status(500).json({ error: 'Failed to insert user row' });
+      if (process.env.NODE_ENV !== 'production') console.error('[webhook] users insert error:', userInsertError);
+      return sendError(res, 500, 'Failed to insert user row', userInsertError);
     }
 
     // Insert into businesses
@@ -529,23 +551,108 @@ app.post('/api/supabase-auth-webhook', async (req, res) => {
     if (process.env.NODE_ENV !== 'production') console.log('[webhook] businessRow to insert:', JSON.stringify(businessRow));
     const { data: businessData, error: businessInsertError } = await supabase.from('businesses').insert(businessRow).select();
     if (businessInsertError) {
-      console.error('[webhook] businesses insert error:', businessInsertError);
-      // include returned data (if any) and the attempted row for easier debugging
-      console.error('[webhook] attempted businessRow:', JSON.stringify(businessRow));
-      return res.status(500).json({ error: 'Failed to insert business row', details: businessInsertError });
+      if (process.env.NODE_ENV !== 'production') {
+        console.error('[webhook] businesses insert error:', businessInsertError);
+        console.error('[webhook] attempted businessRow:', JSON.stringify(businessRow));
+      }
+      return sendError(res, 500, 'Failed to insert business row', businessInsertError);
     }
     if (process.env.NODE_ENV !== 'production') console.log('[webhook] businesses insert success:', businessData);
 
     return res.json({ ok: true, inserted: true });
   } catch (e) {
-    console.error('/api/supabase-auth-webhook error', e);
-    return res.status(500).json({ error: 'Server error' });
+    if (process.env.NODE_ENV !== 'production') console.error('/api/supabase-auth-webhook error', e);
+    return sendError(res, 500, 'Server error', e);
   }
 });
 
+  // Endpoint: /api/upload-image
+  // Accepts JSON { bucket, filename, base64 } where `base64` may be a data URL
+  // Validates file-type using `file-type`, rejects non-images, re-encodes with `sharp` to webp, and uploads via Supabase service role.
+  app.post('/api/upload-image', async (req, res) => {
+    try {
+      const { bucket = 'public', filename } = req.body || {};
+      let base64 = req.body && req.body.base64;
+      if (!base64 || typeof base64 !== 'string') return res.status(400).json({ error: 'missing base64 payload' });
+
+      // If a data URL is provided, extract the payload
+      const dataUrlMatch = base64.match(/^data:(.+);base64,(.+)$/);
+      if (dataUrlMatch) {
+        base64 = dataUrlMatch[2];
+      }
+
+      const buffer = Buffer.from(base64, 'base64');
+
+      // Optional size limit (5 MB)
+      const MAX_BYTES = Number(process.env.UPLOAD_MAX_BYTES) || 5 * 1024 * 1024;
+      if (buffer.length > MAX_BYTES) return res.status(400).json({ error: 'file_too_large' });
+
+      // Use file-type for robust detection
+      const ft = await fileTypeFromBuffer(buffer);
+      if (!ft || !ft.mime || !ft.mime.startsWith('image/')) {
+        return res.status(400).json({ error: 'invalid_image_type' });
+      }
+
+      // Re-encode with sharp to a safe format (webp) and constrain dimensions
+      let outBuffer;
+      try {
+        outBuffer = await sharp(buffer)
+          .rotate() // respect EXIF orientation
+          .resize({ width: 2048, withoutEnlargement: true })
+          .webp({ quality: 80 })
+          .toBuffer();
+      } catch (e) {
+        if (process.env.NODE_ENV !== 'production') console.error('sharp re-encode error', e);
+        return sendError(res, 500, 'image_processing_failed', e);
+      }
+
+      const outExt = 'webp';
+      const safeNameBase = (filename && String(filename).replace(/[^a-zA-Z0-9-_\.]/g, '-')) || `img-${Date.now()}`;
+      const finalFilename = safeNameBase.replace(/\.[^/.]+$/, '') + '.' + outExt;
+      const storagePath = finalFilename;
+
+      // Upload using Supabase service role
+      try {
+        const { data: uploadData, error: uploadErr } = await supabase.storage.from(bucket).upload(storagePath, outBuffer, {
+          contentType: 'image/webp',
+          upsert: true
+        });
+        if (uploadErr) {
+          if (process.env.NODE_ENV !== 'production') console.error('supabase upload error', uploadErr);
+          return sendError(res, 500, 'upload_failed', uploadErr);
+        }
+      } catch (e) {
+        if (process.env.NODE_ENV !== 'production') console.error('supabase.upload exception', e);
+        return sendError(res, 500, 'upload_exception', e);
+      }
+
+      // Try to get a public URL first; fall back to signed URL
+      try {
+        const pub = await supabase.storage.from(bucket).getPublicUrl(storagePath);
+        // getPublicUrl may return different shapes depending on SDK version
+        const publicUrl = (pub && pub.data && (pub.data.publicUrl || pub.data.publicURL)) || pub?.publicURL || pub?.publicUrl || null;
+        if (publicUrl) return res.json({ ok: true, url: publicUrl, filename: storagePath });
+
+        // create signed url (1 hour)
+        const ttl = Number(process.env.SIGNED_URL_TTL) || 60 * 60;
+        const signedRes = await supabase.storage.from(bucket).createSignedUrl(storagePath, ttl);
+        const signedUrl = (signedRes && signedRes.data && (signedRes.data.signedUrl || signedRes.data.signed_url)) || signedRes?.signedUrl || signedRes?.signed_url || null;
+        if (signedUrl) return res.json({ ok: true, url: signedUrl, filename: storagePath });
+
+        return sendError(res, 500, 'failed_to_generate_url');
+      } catch (e) {
+        if (process.env.NODE_ENV !== 'production') console.error('error generating public/signed url', e);
+        return sendError(res, 500, 'url_generation_failed', e);
+      }
+    } catch (e) {
+      if (process.env.NODE_ENV !== 'production') console.error('/api/upload-image error', e);
+      return sendError(res, 500, 'Server error', e);
+    }
+  });
+
 // Internal endpoint: create application `users` row after auth signup
 // Frontend calls this after `supabase.auth.signUp` to persist encrypted app user data.
-app.post('/api/create-app-user', async (req, res) => {
+app.post('/api/create-app-user', createAppUserLimiter, async (req, res) => {
   try {
     const { id, email, metadata } = req.body || {};
 
@@ -584,11 +691,11 @@ app.post('/api/create-app-user', async (req, res) => {
 
     const { error: userInsertError } = await supabase.from('users').insert(userRow);
     if (userInsertError) {
-      console.error('/api/create-app-user users insert error', userInsertError);
+      if (process.env.NODE_ENV !== 'production') console.error('/api/create-app-user users insert error', userInsertError);
       if (userInsertError.code === '23503') {
         return res.status(400).json({ error: 'Invalid id: must match an existing Supabase auth user id (foreign key constraint)' });
       }
-      return res.status(500).json({ error: 'Failed to insert user row' });
+      return sendError(res, 500, 'Failed to insert user row', userInsertError);
     }
 
     // Idempotency: don't re-insert business if exists for this user
@@ -610,67 +717,28 @@ app.post('/api/create-app-user', async (req, res) => {
         if (process.env.NODE_ENV !== 'production') console.log('/api/create-app-user inserting businessRow', JSON.stringify(businessRow));
         const { data: businessData, error: businessInsertError } = await supabase.from('businesses').insert(businessRow).select();
         if (businessInsertError) {
-          console.error('/api/create-app-user businesses insert error', businessInsertError);
-          console.error('/api/create-app-user attempted businessRow:', JSON.stringify(businessRow));
+          if (process.env.NODE_ENV !== 'production') {
+            console.error('/api/create-app-user businesses insert error', businessInsertError);
+            console.error('/api/create-app-user attempted businessRow:', JSON.stringify(businessRow));
+          }
           // If FK constraint or other DB error, surface informative message
           if (businessInsertError.code === '23503') {
             return res.status(400).json({ error: 'Invalid user_id: referenced application user does not exist' });
           }
-          return res.status(500).json({ error: 'Failed to insert business row', details: businessInsertError });
+          return sendError(res, 500, 'Failed to insert business row', businessInsertError);
         }
         if (process.env.NODE_ENV !== 'production') console.log('/api/create-app-user business insert success', businessData);
       }
     } catch (e) {
-      console.error('/api/create-app-user business insert catch error', e);
+      if (process.env.NODE_ENV !== 'production') console.error('/api/create-app-user business insert catch error', e);
       // do not fail the whole request if business insert had unexpected issues
-      return res.status(500).json({ error: 'Failed to insert business row', details: String(e) });
+      return sendError(res, 500, 'Failed to insert business row', e);
     }
 
     return res.json({ ok: true, inserted: true });
   } catch (e) {
-    console.error('/api/create-app-user error', e);
-    return res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Endpoint: set or update business images using server-side service_role key
-// This endpoint bypasses RLS (runs on server with service role) and should be called
-// from the client after successful storage uploads. Accepts { user_id, store_image_url, license_image_url }.
-app.post('/api/set-business-images', async (req, res) => {
-  try {
-    const { user_id, store_image_url, license_image_url } = req.body || {};
-    if (!user_id) return res.status(400).json({ error: 'missing user_id' });
-
-    // Try update first
-    const { data: updateData, error: updateError } = await supabase
-      .from('businesses')
-      .update({ store_image_url, license_image_url })
-      .eq('user_id', user_id)
-      .select();
-
-    if (updateError) {
-      console.error('/api/set-business-images update error', updateError);
-      return res.status(500).json({ error: 'Failed to update business', details: updateError });
-    }
-
-    if (!updateData || updateData.length === 0) {
-      // No existing business row, insert a new one
-      const { data: insertData, error: insertError } = await supabase
-        .from('businesses')
-        .insert([{ user_id, store_image_url, license_image_url }])
-        .select();
-
-      if (insertError) {
-        console.error('/api/set-business-images insert error', insertError);
-        return res.status(500).json({ error: 'Failed to insert business', details: insertError });
-      }
-      return res.json({ ok: true, action: 'insert', data: insertData });
-    }
-
-    return res.json({ ok: true, action: 'update', data: updateData });
-  } catch (e) {
-    console.error('/api/set-business-images error', e);
-    return res.status(500).json({ error: 'Server error' });
+    if (process.env.NODE_ENV !== 'production') console.error('/api/create-app-user error', e);
+    return sendError(res, 500, 'Server error', e);
   }
 });
 
@@ -841,8 +909,41 @@ app.get('/api/lost-phones', async (req, res) => {
 
     return res.json(result);
   } catch (err) {
-    console.error('Error in /api/lost-phones:', err);
+    if (process.env.NODE_ENV !== 'production') console.error('Error in /api/lost-phones:', err);
     return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Endpoint: /api/check-email
+// Accepts JSON body { email: string } and returns `true` if a user with that email exists, otherwise `false`.
+app.post('/api/check-email', checkEmailLimiter, async (req, res) => {
+  try {
+    const email = (req.body && req.body.email) ? String(req.body.email).trim().toLowerCase() : '';
+    if (!email || typeof email !== 'string' || !email.includes('@')) {
+      if (process.env.NODE_ENV !== 'production') console.warn('[check-email] invalid email input:', req.body && req.body.email);
+      return res.json(false);
+    }
+
+    // Query the `users` table for existence. Using service role key on the server.
+    const { data, error } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', email)
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      if (process.env.NODE_ENV !== 'production') console.error('[check-email] supabase error:', error);
+      // For security and simplicity return false on error (client only expects boolean)
+      return res.json(false);
+    }
+
+    // If data is null => not found, otherwise found
+    const exists = !!data;
+    return res.json(exists);
+  } catch (err) {
+    if (process.env.NODE_ENV !== 'production') console.error('[check-email] unexpected error:', err);
+    return res.json(false);
   }
 });
 
@@ -5458,4 +5559,66 @@ if (ENABLE_POLLING) {
 }
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("Server listening on port", PORT));
+
+// Start server and attach robust error handlers to avoid unhandled 'error' events
+const server = app.listen(PORT, () => console.log('Server listening on port', PORT));
+
+server.on('error', (err) => {
+  try {
+    if (err && err.code === 'EADDRINUSE') {
+      console.error(`Port ${PORT} is already in use. Another process may be running.`);
+      console.error('If you expect to run only one instance, stop the other process or change PORT.');
+      // do not exit abruptly here; surface the error and keep process alive for debugging
+    } else {
+      console.error('Server error event:', err && err.stack ? err.stack : err);
+    }
+  } catch (e) {
+    console.error('Error while handling server error event', e);
+  }
+});
+
+// Global handlers to log uncaught exceptions and unhandled rejections. Do not force-exit
+process.on('uncaughtException', (err) => {
+  try {
+    console.error('Uncaught exception (logged, process will NOT exit):', err && err.stack ? err.stack : err);
+    // attempt graceful shutdown of server sockets so existing connections close
+    try { server && server.close(); } catch (closeErr) { console.error('Error closing server after uncaughtException', closeErr); }
+  } catch (e) {
+    console.error('Error in uncaughtException handler', e);
+  }
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  try {
+    console.error('Unhandled rejection (logged, process will NOT exit). Promise:', promise, 'reason:', reason);
+    try { server && server.close(); } catch (closeErr) { console.error('Error closing server after unhandledRejection', closeErr); }
+  } catch (e) {
+    console.error('Error in unhandledRejection handler', e);
+  }
+});
+
+// Graceful shutdown on SIGINT/SIGTERM
+['SIGINT', 'SIGTERM'].forEach(sig => {
+  process.on(sig, () => {
+    console.log(`Received ${sig}, shutting down server gracefully...`);
+    try {
+      server && server.close(() => {
+        console.log('Server closed');
+        process.exit(0);
+      });
+      // Force exit if not closed within timeout
+      setTimeout(() => {
+        console.warn('Force exiting after timeout');
+        process.exit(1);
+      }, 5000).unref();
+    } catch (e) {
+      console.error('Error during shutdown', e);
+      process.exit(1);
+    }
+  });
+});
+
+// periodic heartbeat log to help detect silent exits
+setInterval(() => {
+  process.stdout.write('.');
+}, 60 * 1000).unref();
