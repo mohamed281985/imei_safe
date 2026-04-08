@@ -150,54 +150,35 @@ const Signup: React.FC = () => {
     }
 
     try {
-      const { data, error } = await supabase.auth.signUp({
+      // Register via server so service-role is used and webhook will insert encrypted rows after email confirmation
+      const payload = {
         email,
         password,
-        options: {
-          data: {
-            full_name: username,
-            phone: fullPhoneNumber,
-            id_last6: idLast6,
-            role: 'free_user',
-          },
-          emailRedirectTo: `${window.location.origin}/login`,
-        },
+        metadata: {
+          full_name: username,
+          phone: fullPhoneNumber,
+          id_last6: idLast6,
+          role: 'customer'
+        }
+      };
+
+      const resp = await fetch('/api/register-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
       });
 
-      if (error) {
-        setSignupError(error.message.includes('User already registered') ? t('phone_registered_before') : error.message);
-      } else if (data.user) {
-        // Create application-level user record on the server (server will encrypt/store)
-        try {
-          const payload = {
-            id: data.user.id,
-            email,
-            metadata: {
-              full_name: username,
-              phone: fullPhoneNumber,
-              id_last6: idLast6,
-              role: 'customer',
-              status: 'active'
-            }
-          };
-          fetch('/api/create-app-user', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          }).catch(e => console.warn('create-app-user failed', e));
+      let bodyText = '';
+      try { bodyText = await resp.text(); } catch (e) { bodyText = ''; }
+      let bodyJson: any = null;
+      try { bodyJson = bodyText ? JSON.parse(bodyText) : null; } catch (e) { bodyJson = null; }
 
-          toast({
-            title: t('signup_successful'),
-            description: t('verification_email_sent'),
-          });
-          navigate('/login');
-        } catch (e) {
-          console.warn('create-app-user error', e);
-          toast({ title: t('signup_successful'), description: t('verification_email_sent') });
-          navigate('/login');
-        }
+      if (!resp.ok) {
+        const errMsg = (bodyJson && bodyJson.error) ? bodyJson.error : (bodyText || t('signup_error'));
+        setSignupError(String(errMsg));
       } else {
-        setSignupError(t('signup_error'));
+        toast({ title: t('signup_successful'), description: t('verification_email_sent') });
+        navigate('/login');
       }
     } catch (error: any) {
       setSignupError(error.message || t('signup_error'));
