@@ -524,8 +524,10 @@ app.post('/api/supabase-auth-webhook', async (req, res) => {
     const userRow = {
       id: userId,
       email,
-      full_name: encFullName,
-      phone: encPhone,
+      // store encrypted blobs as JSON strings so text columns can hold them
+      full_name: encFullName ? JSON.stringify(encFullName) : null,
+      phone: encPhone ? JSON.stringify(encPhone) : null,
+      id_last6: encIdLast6 ? JSON.stringify(encIdLast6) : null,
       role: 'free_business'
     };
 
@@ -539,11 +541,11 @@ app.post('/api/supabase-auth-webhook', async (req, res) => {
     const businessRow = {
       email,
       store_name,
-      owner_name: encOwnerName,
-      phone: encPhone,
-      address: encAddress,
+      owner_name: encOwnerName ? JSON.stringify(encOwnerName) : null,
+      phone: encPhone ? JSON.stringify(encPhone) : null,
+      address: encAddress ? JSON.stringify(encAddress) : null,
       business_type,
-      id_last6: encIdLast6,
+      id_last6: encIdLast6 ? JSON.stringify(encIdLast6) : null,
       user_id: userId
     };
 
@@ -669,6 +671,40 @@ app.post('/api/create-app-user', createAppUserLimiter, async (req, res) => {
     if (existingErr) console.warn('/api/create-app-user existing check error', existingErr);
     if (existingUser) return res.json({ ok: true, message: 'user already exists' });
 
+    // Ensure the Supabase Auth user exists before inserting application row.
+    // Sometimes the auth user creation may not have fully propagated; perform a short retry loop
+    const checkAuthUserExists = async (uid) => {
+      try {
+        if (!SUPABASE_URL || !SUPABASE_KEY) return false;
+        const adminUrl = `${SUPABASE_URL.replace(/\/+$/,'')}/admin/v1/users/${uid}`;
+        const r = await fetch(adminUrl, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${SUPABASE_KEY}`,
+            'apikey': SUPABASE_KEY,
+            'Content-Type': 'application/json'
+          }
+        });
+        return r.ok;
+      } catch (e) {
+        if (process.env.NODE_ENV !== 'production') console.warn('checkAuthUserExists error', e);
+        return false;
+      }
+    };
+
+    let authExists = await checkAuthUserExists(userId);
+    const maxAuthChecks = 5;
+    for (let attempt = 1; attempt <= maxAuthChecks && !authExists; attempt++) {
+      // small backoff
+      await new Promise(r => setTimeout(r, attempt * 200));
+      authExists = await checkAuthUserExists(userId);
+    }
+
+    if (!authExists) {
+      // If auth user not found, return informative error so client can retry later
+      return res.status(400).json({ error: 'Invalid id: Supabase auth user not found yet. Please confirm signup and retry.' });
+    }
+
     const owner_name = metadata?.full_name || metadata?.owner_name || '';
     const store_name = metadata?.store_name || '';
     const phone = metadata?.phone || '';
@@ -684,8 +720,8 @@ app.post('/api/create-app-user', createAppUserLimiter, async (req, res) => {
     const userRow = {
       id: userId,
       email: email || '',
-      full_name: encFullName,
-      phone: encPhone,
+      full_name: encFullName ? JSON.stringify(encFullName) : null,
+      phone: encPhone ? JSON.stringify(encPhone) : null,
       role: 'free_business'
     };
 
@@ -706,11 +742,11 @@ app.post('/api/create-app-user', createAppUserLimiter, async (req, res) => {
         const businessRow = {
           email: email || '',
           store_name: store_name,
-          owner_name: encFullName,
-          phone: encPhone,
-          address: encAddress,
+          owner_name: encFullName ? JSON.stringify(encFullName) : null,
+          phone: encPhone ? JSON.stringify(encPhone) : null,
+          address: encAddress ? JSON.stringify(encAddress) : null,
           business_type: business_type,
-          id_last6: encIdLast6,
+          id_last6: encIdLast6 ? JSON.stringify(encIdLast6) : null,
           user_id: userId
         };
 
@@ -799,6 +835,168 @@ app.post('/api/test-insert', async (req, res) => {
   } catch (e) {
     console.error('/api/test-insert error', e);
     return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Temporary testing endpoint: create a Supabase Auth user (admin) and then create the
+// corresponding application user via the existing `/api/create-app-user` flow.
+// This endpoint is only intended for local/dev testing and requires the server
+// to have a valid service role key in `SUPABASE_KEY`.
+app.post('/api/_test_create_auth', async (req, res) => {
+  try {
+    if (!SUPABASE_URL || !SUPABASE_KEY) return res.status(500).json({ error: 'Server not configured for admin operations' });
+
+    const { email, password, metadata } = req.body || {};
+    if (!email || !password) return res.status(400).json({ error: 'email and password are required' });
+
+    const adminCreateUrl = `${SUPABASE_URL.replace(/\/+$/, '')}/auth/v1/admin/users`;
+    const createResp = await fetch(adminCreateUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'apikey': SUPABASE_KEY
+      },
+      body: JSON.stringify({ email, password, email_confirm: true })
+    });
+
+    const createText = await createResp.text();
+    let createJson = null;
+    try { createJson = JSON.parse(createText); } catch (e) { createJson = null; }
+
+    if (!createResp.ok) {
+      return res.status(createResp.status).json({ error: 'admin_create_failed', detail: createJson || createText });
+    }
+
+    const userId = createJson && createJson.id ? createJson.id : null;
+    if (!userId) return res.status(500).json({ error: 'admin_create_missing_id', detail: createJson || createText });
+
+    // Prepare encrypted fields for insertion
+    const owner_name = metadata?.full_name || metadata?.owner_name || '';
+    const store_name = metadata?.store_name || '';
+    const phone = metadata?.phone || '';
+    const address = metadata?.address || '';
+    const business_type = metadata?.business_type || '';
+    const id_last6 = metadata?.id_last6 || '';
+
+    const encPhone = encryptObject(phone);
+    const encFullName = encryptObject(owner_name);
+    const encIdLast6 = encryptObject(id_last6);
+    const encAddress = encryptObject(address);
+
+    const userRow = {
+      id: userId,
+      email: email || '',
+      full_name: encFullName ? JSON.stringify(encFullName) : null,
+      phone: encPhone ? JSON.stringify(encPhone) : null,
+      role: 'free_business'
+    };
+
+    const businessRow = {
+      email: email || '',
+      store_name,
+      owner_name: encFullName ? JSON.stringify(encFullName) : null,
+      phone: encPhone ? JSON.stringify(encPhone) : null,
+      address: encAddress ? JSON.stringify(encAddress) : null,
+      business_type,
+      id_last6: encIdLast6 ? JSON.stringify(encIdLast6) : null,
+      user_id: userId
+    };
+
+    // Try inserting with retries on FK propagation errors (23503)
+    const maxInserts = 6;
+    let insertedUser = null;
+    let insertedBusiness = null;
+    for (let attempt = 1; attempt <= maxInserts; attempt++) {
+      try {
+        const { error: userInsertError } = await supabase.from('users').insert(userRow);
+        if (userInsertError) {
+          if (process.env.NODE_ENV !== 'production') console.warn('[test_create_auth] users insert error (attempt', attempt, ')', userInsertError);
+          // If FK or other transient issue, retry after backoff
+          if (userInsertError.code === '23503' || /foreign key/i.test(String(userInsertError.message || ''))) {
+            await new Promise(r => setTimeout(r, attempt * 250));
+            continue;
+          }
+          // Non-retryable
+          return res.status(500).json({ error: 'users_insert_failed', detail: userInsertError });
+        }
+        insertedUser = true;
+        break;
+      } catch (e) {
+        if (process.env.NODE_ENV !== 'production') console.warn('[test_create_auth] users insert exception', e);
+        await new Promise(r => setTimeout(r, attempt * 250));
+      }
+    }
+
+    if (!insertedUser) return res.status(500).json({ error: 'users_insert_failed_after_retries' });
+
+    for (let attempt = 1; attempt <= maxInserts; attempt++) {
+      try {
+        const { data: businessData, error: businessInsertError } = await supabase.from('businesses').insert(businessRow).select();
+        if (businessInsertError) {
+          if (process.env.NODE_ENV !== 'production') console.warn('[test_create_auth] businesses insert error (attempt', attempt, ')', businessInsertError);
+          if (businessInsertError.code === '23503' || /foreign key/i.test(String(businessInsertError.message || ''))) {
+            await new Promise(r => setTimeout(r, attempt * 250));
+            continue;
+          }
+          return res.status(500).json({ error: 'businesses_insert_failed', detail: businessInsertError });
+        }
+        insertedBusiness = businessData;
+        break;
+      } catch (e) {
+        if (process.env.NODE_ENV !== 'production') console.warn('[test_create_auth] businesses insert exception', e);
+        await new Promise(r => setTimeout(r, attempt * 250));
+      }
+    }
+
+    if (!insertedBusiness) return res.status(500).json({ error: 'businesses_insert_failed_after_retries' });
+
+    return res.json({ ok: true, admin: createJson, userInserted: true, businessInserted: insertedBusiness });
+  } catch (e) {
+    if (process.env.NODE_ENV !== 'production') console.error('/api/_test_create_auth error', e);
+    return sendError(res, 500, 'Server error', e);
+  }
+});
+
+// Endpoint: register user via server (creates Supabase Auth user using service role)
+// This creates the auth user but does NOT insert application rows; the
+// `/api/supabase-auth-webhook` will handle creating encrypted `users`/`businesses`
+// after the user confirms their email.
+app.post('/api/register-user', createAppUserLimiter, async (req, res) => {
+  try {
+    if (!SUPABASE_URL || !SUPABASE_KEY) return res.status(500).json({ error: 'Server not configured for admin operations' });
+
+    const { email, password, metadata } = req.body || {};
+    if (!email || !password) return res.status(400).json({ error: 'email and password are required' });
+
+    const adminCreateUrl = `${SUPABASE_URL.replace(/\/+$/, '')}/auth/v1/admin/users`;
+    // Do not auto-confirm the email: let Supabase send confirmation email
+    const createResp = await fetch(adminCreateUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'apikey': SUPABASE_KEY
+      },
+      body: JSON.stringify({ email, password, user_metadata: metadata || {} })
+    });
+
+    const createText = await createResp.text();
+    let createJson = null;
+    try { createJson = JSON.parse(createText); } catch (e) { createJson = null; }
+
+    if (!createResp.ok) {
+      return res.status(createResp.status).json({ error: 'admin_create_failed', detail: createJson || createText });
+    }
+
+    const userId = createJson && createJson.id ? createJson.id : null;
+    if (!userId) return res.status(500).json({ error: 'admin_create_missing_id', detail: createJson || createText });
+
+    // Return the created user id (frontend should instruct user to check email)
+    return res.json({ ok: true, id: userId, admin: createJson });
+  } catch (e) {
+    if (process.env.NODE_ENV !== 'production') console.error('/api/register-user error', e);
+    return sendError(res, 500, 'Server error', e);
   }
 });
 
