@@ -59,13 +59,17 @@ export default function BusinessProfileComplete() {
 
   const uploadBusinessAsset = async (userId: string, file: File, assetName: string): Promise<string> => {
     const filePath = `${userId}/${assetName}_${Date.now()}.webp`;
-    const { error: uploadError } = await supabase.storage
-      .from('business-assets')
-      .upload(filePath, file, { upsert: true });
-    if (uploadError) throw new Error(`Failed to upload ${assetName}: ${uploadError.message}`);
-    const { data: { publicUrl } } = supabase.storage.from('business-assets').getPublicUrl(filePath);
-    if (!publicUrl) throw new Error(`Could not get URL for ${assetName}`);
-    return publicUrl;
+      const uploadResp = await supabase.storage
+        .from('business-assets')
+        .upload(filePath, file, { upsert: true });
+      console.log('[BusinessProfile] upload response for', assetName, uploadResp);
+      if (uploadResp.error) throw new Error(`Failed to upload ${assetName}: ${uploadResp.error.message}`);
+
+      const getUrlResp = await supabase.storage.from('business-assets').getPublicUrl(filePath);
+      console.log('[BusinessProfile] getPublicUrl response for', assetName, getUrlResp);
+      const publicUrl = getUrlResp?.data?.publicUrl;
+      if (!publicUrl) throw new Error(`Could not get URL for ${assetName}`);
+      return publicUrl;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -88,11 +92,29 @@ export default function BusinessProfileComplete() {
         uploadBusinessAsset(userId, storeImage, 'store_image'),
         uploadBusinessAsset(userId, licenseImage, 'license_image'),
       ]);
-      const { error: profileUpdateError } = await supabase
-        .from('businesses')
-        .update({ store_image_url: storeImageUrl, license_image_url: licenseImageUrl })
-        .eq('user_id', userId);
-      if (profileUpdateError) throw new Error(`${t('data_save_failed')}: ${profileUpdateError.message}`);
+        const { data: updateData, error: profileUpdateError } = await supabase
+          .from('businesses')
+          .update({ store_image_url: storeImageUrl, license_image_url: licenseImageUrl })
+          .eq('user_id', userId)
+          .select();
+        console.log('[BusinessProfile] update response', { updateData, profileUpdateError });
+
+        // Call server-side endpoint that uses service_role key to bypass RLS and set image URLs
+        try {
+          const resp = await fetch('/api/set-business-images', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user_id: userId, store_image_url: storeImageUrl, license_image_url: licenseImageUrl })
+          });
+          const json = await resp.json().catch(() => ({}));
+          console.log('[BusinessProfile] /api/set-business-images response', resp.status, json);
+          if (!resp.ok) {
+            throw new Error(json?.error || json?.details?.message || 'Failed to set business images on server');
+          }
+        } catch (e: any) {
+          console.error('[BusinessProfile] set-business-images error', e);
+          throw new Error(`${t('data_save_failed')}: ${e && e.message ? e.message : String(e)}`);
+        }
       // تحديث حالة اكتمال الملف التجاري
       completeProfile();
       toast({
