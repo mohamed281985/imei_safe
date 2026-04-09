@@ -734,7 +734,7 @@ app.post('/api/create-app-user', createAppUserLimiter, async (req, res) => {
       email: email || '',
       full_name: encFullName ? JSON.stringify(encFullName) : null,
       phone: encPhone ? JSON.stringify(encPhone) : null,
-      role: isBusiness ? 'free_business' : 'user'
+      role: isBusiness ? 'free_business' : 'free_user'
     };
 
     const { error: userInsertError } = await supabase.from('users').insert(userRow);
