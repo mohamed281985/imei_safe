@@ -364,9 +364,14 @@ const checkEmailLimiter = rateLimit({
   handler: (req, res) => res.status(429).json({ error: 'Too many requests, please try again later.' })
 });
  
+// Rate limiter for creating app users. Make configurable via env for testing.
+const CREATE_APP_USER_WINDOW_MS = Number(process.env.CREATE_APP_USER_WINDOW_MS) || (60 * 60 * 1000); // default 1 hour
+// Increase default limit in non-production environments to make local integration testing easier.
+const DEFAULT_CREATE_APP_USER_MAX = process.env.NODE_ENV !== 'production' ? 1000 : 20;
+const CREATE_APP_USER_MAX = Number(process.env.CREATE_APP_USER_MAX) || DEFAULT_CREATE_APP_USER_MAX; // attempts per window
 const createAppUserLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 5, // limit each IP to 5 create-app-user requests per hour
+  windowMs: CREATE_APP_USER_WINDOW_MS,
+  max: CREATE_APP_USER_MAX,
   standardHeaders: true,
   legacyHeaders: false,
   handler: (req, res) => res.status(429).json({ error: 'Too many account creation attempts, please try later.' })
@@ -657,6 +662,7 @@ app.post('/api/supabase-auth-webhook', async (req, res) => {
 app.post('/api/create-app-user', createAppUserLimiter, async (req, res) => {
   try {
     const { id, email, metadata } = req.body || {};
+    if (process.env.NODE_ENV !== 'production') console.log('/api/create-app-user called with body:', JSON.stringify(req.body));
 
     // Require a valid UUID `id` coming from Supabase Auth (frontend should pass the auth user id)
     if (!id) return res.status(400).json({ error: 'missing id (provide Supabase auth user id)' });
@@ -676,7 +682,7 @@ app.post('/api/create-app-user', createAppUserLimiter, async (req, res) => {
     const checkAuthUserExists = async (uid) => {
       try {
         if (!SUPABASE_URL || !SUPABASE_KEY) return false;
-        const adminUrl = `${SUPABASE_URL.replace(/\/+$/,'')}/admin/v1/users/${uid}`;
+        const adminUrl = `${SUPABASE_URL.replace(/\/+$/,'')}/auth/v1/admin/users/${uid}`;
         const r = await fetch(adminUrl, {
           method: 'GET',
           headers: {
@@ -698,10 +704,12 @@ app.post('/api/create-app-user', createAppUserLimiter, async (req, res) => {
       // small backoff
       await new Promise(r => setTimeout(r, attempt * 200));
       authExists = await checkAuthUserExists(userId);
+      if (process.env.NODE_ENV !== 'production') console.log(`/api/create-app-user auth check attempt ${attempt} => ${authExists}`);
     }
 
     if (!authExists) {
       // If auth user not found, return informative error so client can retry later
+      if (process.env.NODE_ENV !== 'production') console.warn('/api/create-app-user: auth user not found for id', userId);
       return res.status(400).json({ error: 'Invalid id: Supabase auth user not found yet. Please confirm signup and retry.' });
     }
 
@@ -711,6 +719,10 @@ app.post('/api/create-app-user', createAppUserLimiter, async (req, res) => {
     const address = metadata?.address || '';
     const business_type = metadata?.business_type || '';
     const id_last6 = metadata?.id_last6 || '';
+
+    // Determine whether this should create a business row.
+    // Treat as business if explicit flag `is_business` is true or `store_name` is provided.
+    const isBusiness = !!(metadata && (metadata.is_business === true || (typeof store_name === 'string' && store_name.trim() !== '')));
 
     const encPhone = encryptObject(phone);
     const encFullName = encryptObject(owner_name);
@@ -722,7 +734,7 @@ app.post('/api/create-app-user', createAppUserLimiter, async (req, res) => {
       email: email || '',
       full_name: encFullName ? JSON.stringify(encFullName) : null,
       phone: encPhone ? JSON.stringify(encPhone) : null,
-      role: 'free_business'
+      role: isBusiness ? 'free_business' : 'user'
     };
 
     const { error: userInsertError } = await supabase.from('users').insert(userRow);
@@ -738,7 +750,7 @@ app.post('/api/create-app-user', createAppUserLimiter, async (req, res) => {
     try {
       const { data: existingBusiness, error: ebErr } = await supabase.from('businesses').select('id').eq('user_id', userId).maybeSingle();
       if (ebErr) console.warn('/api/create-app-user existing business check error', ebErr);
-      if (!existingBusiness) {
+      if (!existingBusiness && isBusiness) {
         const businessRow = {
           email: email || '',
           store_name: store_name,

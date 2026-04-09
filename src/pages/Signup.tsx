@@ -150,38 +150,43 @@ const Signup: React.FC = () => {
     }
 
     try {
-      // Register via server so service-role is used and webhook will insert encrypted rows after email confirmation
-      const payload = {
-        email,
-        password,
-        metadata: {
-          full_name: username,
-          phone: fullPhoneNumber,
-          id_last6: idLast6,
-          role: 'customer'
-        }
+      // Use client-side signUp so Supabase sends the verification email (same as BusinessSignup)
+      const metadata = {
+        full_name: username,
+        phone: fullPhoneNumber,
+        id_last6: idLast6,
+        role: 'customer'
       };
 
-      const resp = await fetch('/api/register-user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/login`,
+          data: metadata
+        }
+      } as any);
 
-      let bodyText = '';
-      try { bodyText = await resp.text(); } catch (e) { bodyText = ''; }
-      let bodyJson: any = null;
-      try { bodyJson = bodyText ? JSON.parse(bodyText) : null; } catch (e) { bodyJson = null; }
-
-      if (!resp.ok) {
-        const errMsg = (bodyJson && bodyJson.error) ? bodyJson.error : (bodyText || t('signup_error'));
-        setSignupError(String(errMsg));
+      if (error) {
+        setSignupError(error.message || t('signup_error'));
       } else {
         toast({ title: t('signup_successful'), description: t('verification_email_sent') });
+
+        // If Supabase returned a user id immediately, ask backend to create encrypted application rows.
+        // Otherwise rely on the Supabase webhook to insert app rows after email confirmation.
+        try {
+          const returnedId = data?.user?.id;
+          if (returnedId) {
+            const payload = { id: returnedId, email, metadata };
+            fetch('/api/create-app-user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+              .catch(() => {});
+          }
+        } catch (e) { /* ignore */ }
+
         navigate('/login');
       }
     } catch (error: any) {
-      setSignupError(error.message || t('signup_error'));
+      setSignupError(error?.message || t('signup_error'));
     } finally {
       setIsSubmitting(false);
     }
