@@ -728,12 +728,17 @@ app.post('/api/create-app-user', createAppUserLimiter, async (req, res) => {
     const encFullName = encryptObject(owner_name);
     const encIdLast6 = encryptObject(id_last6);
     const encAddress = encryptObject(address);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('/api/create-app-user encIdLast6 raw:', encIdLast6);
+      console.log('/api/create-app-user encIdLast6 json:', encIdLast6 ? JSON.stringify(encIdLast6) : null);
+    }
 
     const userRow = {
       id: userId,
       email: email || '',
       full_name: encFullName ? JSON.stringify(encFullName) : null,
       phone: encPhone ? JSON.stringify(encPhone) : null,
+      id_last6: encIdLast6 ? JSON.stringify(encIdLast6) : null,
       role: isBusiness ? 'free_business' : 'free_user'
     };
 
@@ -814,6 +819,7 @@ app.post('/api/test-insert', async (req, res) => {
       email: email || '',
       full_name: encFullName,
       phone: encPhone,
+      id_last6: encIdLast6,
       role: 'free_business'
     };
 
@@ -901,6 +907,7 @@ app.post('/api/_test_create_auth', async (req, res) => {
       email: email || '',
       full_name: encFullName ? JSON.stringify(encFullName) : null,
       phone: encPhone ? JSON.stringify(encPhone) : null,
+      id_last6: encIdLast6 ? JSON.stringify(encIdLast6) : null,
       role: 'free_business'
     };
 
@@ -5720,6 +5727,7 @@ async function pollConfirmedUsersOnce() {
           email,
           full_name: encFullName,
           phone: encPhone,
+          id_last6: encIdLast6,
           role: 'free_business'
         };
 
@@ -5736,7 +5744,7 @@ async function pollConfirmedUsersOnce() {
           phone: encPhone,
           address: encAddress,
           business_type,
-          id_last6: encIdLast6,
+          id_last6: encIdLast6 ? JSON.stringify(encIdLast6) : null,
           user_id: user.id
         };
 
