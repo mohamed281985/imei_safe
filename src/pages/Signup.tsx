@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
 // Contexts
@@ -56,6 +56,14 @@ const Signup: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [signupError, setSignupError] = useState<string | null>(null);
+  const [pwdFocused, setPwdFocused] = useState<boolean>(false);
+  const [pwdChecks, setPwdChecks] = useState({
+    minLength: false,
+    hasUpper: false,
+    hasLower: false,
+    hasNumber: false,
+    hasSpecial: false,
+  });
   
   const handleInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -74,59 +82,13 @@ const Signup: React.FC = () => {
       [name]: processedValue
     }));
 
-    // email existence check (server-side)
+    // Avoid client-side email enumeration: do not query server on each keystroke.
     if (name === 'email') {
       setEmailExists(false);
       setCheckingEmail(false);
       setIsEmailRegistered(false);
-
-      if (value && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
-        setCheckingEmail(true);
-        setTimeout(async () => {
-          try {
-            const resp = await fetch('/api/check-email', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ email: value.trim().toLowerCase() })
-            });
-
-            // Safely parse response: some failures may return empty body or a plain boolean
-            let exists = false;
-            try {
-              const text = await resp.text();
-              if (text) {
-                let parsed = null as any;
-                try { parsed = JSON.parse(text); } catch (e) { parsed = null; }
-                if (typeof parsed === 'boolean') exists = parsed;
-                else if (parsed && typeof parsed.exists === 'boolean') exists = parsed.exists;
-                else exists = String(text).toLowerCase().includes('true');
-              } else {
-                exists = false;
-              }
-            } catch (parseErr) {
-              if (process.env.NODE_ENV !== 'production') console.warn('check-email parse error', parseErr);
-              exists = false;
-            }
-
-            setEmailExists(exists);
-            setIsEmailRegistered(exists);
-            if (exists) {
-              toast({ title: t('alert_title'), description: t('email_registered_before'), variant: 'destructive' });
-            }
-            setLastCheckedEmail(value);
-          } catch (err) {
-            console.error('Email check error:', err);
-            setEmailExists(false);
-            setIsEmailRegistered(false);
-            setLastCheckedEmail(value);
-          } finally {
-            setCheckingEmail(false);
-          }
-        }, 500);
-      } else {
-        setLastCheckedEmail('');
-        setIsEmailRegistered(false);
-      }
+      setLastCheckedEmail('');
+      // simple format validation stays; server will validate on submit
     }
   };
   
@@ -150,6 +112,18 @@ const Signup: React.FC = () => {
     }
 
     try {
+      const isPasswordStrong = (p: string) => {
+        if (!p) return false;
+        // at least 8 chars, one lowercase, one uppercase, one digit, one special char
+        return /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/.test(p);
+      };
+
+      if (!isPasswordStrong(password)) {
+        const msg = t ? (t('password_requirements') || 'Password must be at least 8 characters and include uppercase, lowercase, number and special character.') : 'Password must be at least 8 characters and include uppercase, lowercase, number and special character.';
+        setSignupError(msg);
+        setIsSubmitting(false);
+        return;
+      }
       // Use client-side signUp so Supabase sends the verification email (same as BusinessSignup)
       const metadata = {
         full_name: username,
@@ -192,9 +166,20 @@ const Signup: React.FC = () => {
     }
   };
 
+    useEffect(() => {
+      const pw = formData.password || '';
+      setPwdChecks({
+        minLength: pw.length >= 8,
+        hasUpper: /[A-Z]/.test(pw),
+        hasLower: /[a-z]/.test(pw),
+        hasNumber: /\d/.test(pw),
+        hasSpecial: /[\W_]/.test(pw),
+      });
+    }, [formData.password]);
+
   return (
-    <PageContainer>
-      <Card className="w-full shadow-lg border-t-4 border-t-orange-500 bg-white/80 backdrop-blur-sm mt-8">
+      <PageContainer>
+        <Card className="w-full shadow-lg border-t-4 border-t-orange-500 bg-transparent mt-8">
         <CardHeader className="pb-0">
           <CardTitle className="text-2xl font-bold text-orange-600 text-center">
             <Logo size="lg" className="mb-6" />
@@ -217,7 +202,7 @@ const Signup: React.FC = () => {
                 </h1>
               </div>
               <div>
-                <label htmlFor="email" className="block text-white text-sm font-medium mb-1">
+                <label htmlFor="email" className="block text-black text-sm font-medium mb-1">
                   {t('email')}
                 </label>
                 <div className="relative">
@@ -234,16 +219,12 @@ const Signup: React.FC = () => {
                     placeholder="user@example.com"
                     required
                   />
-                  {checkingEmail ? (
-                    <div className="text-sm text-orange-500 mt-1">{t('checking_verification')}</div>
-                  ) : emailExists ? (
-                    <div className="text-sm text-red-500 mt-1">{t('email_registered_before')}</div>
-                  ) : null}
+                  {/* no live email existence indicator to prevent user enumeration */}
                 </div>
               </div>
               
               <div>
-                <label htmlFor="username" className="block text-white text-sm font-medium mb-1">
+                <label htmlFor="username" className="block text-black text-sm font-medium mb-1">
                   {t('username')}
                 </label>
                 <div className="relative">
@@ -264,7 +245,7 @@ const Signup: React.FC = () => {
               </div>
               
               <div>
-                <label htmlFor="idLast6" className="block text-white text-sm font-medium mb-1">
+                <label htmlFor="idLast6" className="block text-black text-sm font-medium mb-1">
                   {t('id_last_6_from_card')}
                 </label>
                 <div className="relative">
@@ -287,7 +268,7 @@ const Signup: React.FC = () => {
               
 
               <div>
-                <label htmlFor="phoneNumber" className="block text-white text-sm font-medium mb-1">
+                <label htmlFor="phoneNumber" className="block text-black text-sm font-medium mb-1">
                   {t('phone_number')}
                 </label>
                 <div className="flex gap-2 items-center">
@@ -315,7 +296,7 @@ const Signup: React.FC = () => {
               </div>
               
               <div>
-                <label htmlFor="password" className="block text-white text-sm font-medium mb-1">
+                <label htmlFor="password" className="block text-black text-sm font-medium mb-1">
                   {t('password')}
                 </label>
                 <div className="relative">
@@ -328,16 +309,39 @@ const Signup: React.FC = () => {
                     name="password"
                     value={formData.password}
                     onChange={handleInputChange}
+                    onFocus={() => setPwdFocused(true)}
+                    onBlur={() => setPwdFocused(false)}
                     className="input-field pl-10 w-full focus:ring-2 focus:ring-orange-500 bg-imei-dark/50 backdrop-blur-sm"
                     placeholder="********"
                     required
-                    minLength={6}
+                    minLength={8}
                   />
+                  {pwdFocused && (
+                    <div className="mt-2 text-sm text-black bg-white p-2 rounded shadow-sm w-full">
+                      <ul className="space-y-1">
+                        <li className={pwdChecks.minLength ? 'text-green-600' : 'text-gray-700'}>
+                          {pwdChecks.minLength ? '✓' : '○'} {t('pwd_min_chars') || 'At least 8 characters'}
+                        </li>
+                        <li className={pwdChecks.hasUpper ? 'text-green-600' : 'text-gray-700'}>
+                          {pwdChecks.hasUpper ? '✓' : '○'} {t('pwd_upper') || 'Uppercase letter'}
+                        </li>
+                        <li className={pwdChecks.hasLower ? 'text-green-600' : 'text-gray-700'}>
+                          {pwdChecks.hasLower ? '✓' : '○'} {t('pwd_lower') || 'Lowercase letter'}
+                        </li>
+                        <li className={pwdChecks.hasNumber ? 'text-green-600' : 'text-gray-700'}>
+                          {pwdChecks.hasNumber ? '✓' : '○'} {t('pwd_number') || 'Number'}
+                        </li>
+                        <li className={pwdChecks.hasSpecial ? 'text-green-600' : 'text-gray-700'}>
+                          {pwdChecks.hasSpecial ? '✓' : '○'} {t('pwd_special') || 'Special character'}
+                        </li>
+                      </ul>
+                    </div>
+                  )}
                 </div>
               </div>
               
               <div>
-                <label htmlFor="confirmPassword" className="block text-white text-sm font-medium mb-1">
+                <label htmlFor="confirmPassword" className="block text-black text-sm font-medium mb-1">
                   {t('confirm_password')}
                 </label>
                 <div className="relative">
@@ -353,7 +357,7 @@ const Signup: React.FC = () => {
                     className="input-field pl-10 w-full focus:ring-2 focus:ring-orange-500 bg-imei-dark/50 backdrop-blur-sm"
                     placeholder="********"
                     required
-                    minLength={6}
+                    minLength={8}
                   />
                 </div>
               </div>

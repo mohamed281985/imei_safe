@@ -988,6 +988,36 @@ app.post('/api/register-user', createAppUserLimiter, async (req, res) => {
     const { email, password, metadata } = req.body || {};
     if (!email || !password) return res.status(400).json({ error: 'email and password are required' });
 
+    // Optional CAPTCHA verification: if RECAPTCHA_SECRET is set, require `captchaToken` in the request body
+    const RECAPTCHA_SECRET = process.env.RECAPTCHA_SECRET || null;
+    if (RECAPTCHA_SECRET) {
+      const captchaToken = req.body && (req.body.captchaToken || req.headers['x-captcha-token']);
+      if (!captchaToken) {
+        // Do not reveal reason to client beyond a generic error
+        return res.status(400).json({ error: 'captcha_required' });
+      }
+      try {
+        const verifyRes = await fetch('https://www.google.com/recaptcha/api/siteverify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: `secret=${encodeURIComponent(RECAPTCHA_SECRET)}&response=${encodeURIComponent(captchaToken)}&remoteip=${encodeURIComponent(req.ip)}`
+        });
+        const verifyJson = await verifyRes.json();
+        if (!verifyJson || !verifyJson.success) {
+          if (process.env.NODE_ENV !== 'production') console.warn('/api/register-user captcha verification failed', verifyJson);
+          return res.status(400).json({ error: 'captcha_failed' });
+        }
+        // Optional: enforce a minimum score for v3; treat missing score as pass
+        if (typeof verifyJson.score === 'number' && verifyJson.score < 0.3) {
+          if (process.env.NODE_ENV !== 'production') console.warn('/api/register-user captcha score too low', verifyJson);
+          return res.status(400).json({ error: 'captcha_failed' });
+        }
+      } catch (e) {
+        if (process.env.NODE_ENV !== 'production') console.warn('/api/register-user captcha verify error', e);
+        return res.status(400).json({ error: 'captcha_verification_failed' });
+      }
+    }
+
     const adminCreateUrl = `${SUPABASE_URL.replace(/\/+$/, '')}/auth/v1/admin/users`;
     // Do not auto-confirm the email: let Supabase send confirmation email
     const createResp = await fetch(adminCreateUrl, {
@@ -1005,14 +1035,20 @@ app.post('/api/register-user', createAppUserLimiter, async (req, res) => {
     try { createJson = JSON.parse(createText); } catch (e) { createJson = null; }
 
     if (!createResp.ok) {
-      return res.status(createResp.status).json({ error: 'admin_create_failed', detail: createJson || createText });
+      // Log details server-side for operators but do NOT reveal whether the email exists.
+      if (process.env.NODE_ENV !== 'production') console.warn('/api/register-user admin create failed', createResp.status, createJson || createText);
+      // Return a generic success-like message to avoid user enumeration.
+      return res.status(200).json({ ok: true, message: 'If this email is not already registered, a confirmation email has been sent.' });
     }
 
     const userId = createJson && createJson.id ? createJson.id : null;
-    if (!userId) return res.status(500).json({ error: 'admin_create_missing_id', detail: createJson || createText });
+    if (!userId) {
+      if (process.env.NODE_ENV !== 'production') console.warn('/api/register-user admin_create_missing_id', createJson || createText);
+      return res.status(200).json({ ok: true, message: 'If this email is not already registered, a confirmation email has been sent.' });
+    }
 
-    // Return the created user id (frontend should instruct user to check email)
-    return res.json({ ok: true, id: userId, admin: createJson });
+    // For security, avoid returning internal identifiers to the client which could aid enumeration.
+    return res.status(200).json({ ok: true, message: 'Registration initiated. Please check your email for confirmation.' });
   } catch (e) {
     if (process.env.NODE_ENV !== 'production') console.error('/api/register-user error', e);
     return sendError(res, 500, 'Server error', e);
