@@ -4110,7 +4110,7 @@ const checkRegisterLimit = async (userId) => {
       throw paymentError;
     }
 
-    let userType = 'free_users';
+    let userType = 'free_user';
     // try to infer a sensible default from the users.role when possible
     try {
       const { data: userRec, error: userErr } = await supabase
@@ -4122,7 +4122,7 @@ const checkRegisterLimit = async (userId) => {
         userType = 'free_business';
       }
     } catch (e) {
-      console.warn('checkRegisterLimit: failed to read user role, using default free_users', e);
+      console.warn('checkRegisterLimit: failed to read user role, using default free_user', e);
     }
 
     // If a latest payment exists, prefer its type (keeps upgrade logic intact)
