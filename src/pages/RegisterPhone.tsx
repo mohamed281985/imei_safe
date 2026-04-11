@@ -608,15 +608,18 @@ const RegisterPhone: React.FC = () => {
   }, [updateImage, showToast]);
 
   const validateForm = useCallback(async (): Promise<boolean> => {
+    const needsIdLast6 = formData.registerType === 'other';
+
     const validations = [
       {
-        condition: !formData.ownerName || !formData.phoneNumber || !formData.imei || !formData.phoneType || !formData.password || !formData.confirmPassword || !formData.id_last6,
+        // If registering for another person, require id_last6; when registering for self,
+        // id_last6 may be supplied from decrypted backend data and the field is disabled,
+        // so do not force it here.
+        condition: !formData.ownerName || !formData.phoneNumber || !formData.imei || !formData.phoneType || !formData.password || !formData.confirmPassword || (needsIdLast6 && !formData.id_last6),
         message: 'fill_all_fields'
       },
-      {
-        condition: formData.id_last6.length !== 6,
-        message: 'id_last6_invalid'
-      },
+      // Validate id_last6 length only when it's required (registering for other)
+      ...(needsIdLast6 ? [{ condition: formData.id_last6.length !== 6, message: 'id_last6_invalid' }] : []),
       {
         condition: formData.password.length < 8,
         message: 'password_too_short'
