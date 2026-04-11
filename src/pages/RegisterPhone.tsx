@@ -299,48 +299,47 @@ const RegisterPhone: React.FC = () => {
       setIsLoading(true);
       try {
         if (formData.registerType === 'mine') {
-          // استدعاء API للتحقق وجلب البيانات من السيرفر
-          // ملاحظة أمنية: استخدام JWT Token للمصادقة بدلاً من مفتاح API
+          // استدعاء API الجديد للحصول على البيانات المفكوكة من الخادم
           const { data: { session } } = await supabase.auth.getSession();
           const token = session?.access_token;
 
-          const response = await fetch('https://imei-safe.me/api/get-user-data-for-registration', {
-            method: 'POST',
+          const response = await fetch('https://imei-safe.me/api/decrypted-user', {
+            method: 'GET',
             headers: {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({ userId: user.id, role: user.role })
+            }
           });
 
           if (!response.ok) {
-            throw new Error('Failed to fetch user data');
+            // لا نفشل بشكل صعب؛ نترك الحقول الفارغة كتحوّط
+            throw new Error('Failed to fetch decrypted user data');
           }
 
           const result = await response.json();
 
-          if (result.success && result.data) {
-            const data = result.data;
+          // result: { user: {...} | null, business: {...} | null }
+          const userData = result?.user || null;
+          const businessData = result?.business || null;
 
-            if (user.role === 'business') {
-              setFormData(prev => ({
-                ...prev,
-                ownerName: data.ownerName || '',
-                phoneNumber: data.phoneNumber || '',
-                email: user.email || '',
-                id_last6: data.idLast6 || ''
-              }));
-              toast({ title: t('store_data_filled'), description: t('store_data_filled_description') });
-            } else {
-              setFormData(prev => ({
-                ...prev,
-                ownerName: data.ownerName || '',
-                phoneNumber: data.phoneNumber || '',
-                email: data.email || '',
-                id_last6: data.idLast6 || ''
-              }));
-              toast({ title: t('user_data_filled'), description: t('user_data_filled_description') });
-            }
+          if (user.role === 'business' && businessData) {
+            setFormData(prev => ({
+              ...prev,
+              ownerName: businessData.owner_name || prev.ownerName || '',
+              phoneNumber: businessData.phone || prev.phoneNumber || '',
+              email: user?.email || prev.email || '',
+              id_last6: businessData.id_last6 || prev.id_last6 || ''
+            }));
+            toast({ title: t('store_data_filled'), description: t('store_data_filled_description') });
+          } else if (userData) {
+            setFormData(prev => ({
+              ...prev,
+              ownerName: userData.full_name || prev.ownerName || '',
+              phoneNumber: userData.phone || prev.phoneNumber || '',
+              email: user?.email || userData.email || prev.email || '',
+              id_last6: userData.id_last6 || prev.id_last6 || ''
+            }));
+            toast({ title: t('user_data_filled'), description: t('user_data_filled_description') });
           }
         } else {
           // If registerType is 'other', clear the fields for manual entry
@@ -734,12 +733,13 @@ const RegisterPhone: React.FC = () => {
         phoneData.id_last6 = cleanIdLast6(formData.id_last6);
         phoneData.email = formData.email;
       } else {
-        // عند التسجيل لنفسي، استخدم بيانات المستخدم المسجل دخوله لضمان الدقة
+        // عند التسجيل لنفسي، أفضل استخدام القيم المفكوكة الموجودة في formData
+        // إذا لم تكن متوفرة، نعود للاعتماد على بيانات currentUser كنسخة احتياطية
         const currentUser = user as any;
-        phoneData.owner_name = currentUser?.user_metadata?.full_name || formData.ownerName;
-        phoneData.phone_number = currentUser?.phone || formData.phoneNumber;
-        phoneData.id_last6 = currentUser?.user_metadata?.id_last6 || formData.id_last6;
-        phoneData.email = user?.email || formData.email;
+        phoneData.owner_name = formData.ownerName || currentUser?.user_metadata?.full_name || '';
+        phoneData.phone_number = (formData.phoneNumber && cleanPhoneNumber(`${countryCode}${formData.phoneNumber}`)) || currentUser?.phone || '';
+        phoneData.id_last6 = formData.id_last6 || currentUser?.user_metadata?.id_last6 || '';
+        phoneData.email = formData.email || user?.email || '';
       }
 
       // استخدام API لتسجيل الهاتف

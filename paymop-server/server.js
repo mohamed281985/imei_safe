@@ -1200,6 +1200,72 @@ app.post('/api/check-email', checkEmailLimiter, async (req, res) => {
   }
 });
 
+// Endpoint: /api/decrypted-user
+// Returns decrypted user and business fields for the authenticated user so the frontend
+// can pre-fill registration/profile forms. Requires Authorization: Bearer <access_token>.
+// In development, a DEV_BYPASS_TOKEN may be used via header `x-api-key` and query `?user_id=`.
+app.get('/api/decrypted-user', async (req, res) => {
+  try {
+    let userId = null;
+
+    const authHeader = req.headers['authorization'];
+    if (authHeader && String(authHeader).startsWith('Bearer ')) {
+      const token = String(authHeader).slice(7);
+      const { data: authData, error: authErr } = await supabase.auth.getUser(token);
+      if (authErr || !authData || !authData.user) return res.status(401).json({ error: 'Unauthorized' });
+      userId = authData.user.id;
+    } else if (DEV_BYPASS_TOKEN && req.headers['x-api-key'] === DEV_BYPASS_TOKEN) {
+      // Development bypass for local testing only
+      userId = req.query.user_id;
+      if (!userId) return res.status(400).json({ error: 'missing user_id (dev bypass)' });
+    } else {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    // Fetch application rows using service role client
+    const { data: userRow, error: userErr } = await supabase.from('users').select('*').eq('id', userId).maybeSingle();
+    if (userErr) {
+      if (process.env.NODE_ENV !== 'production') console.error('/api/decrypted-user users fetch error', userErr);
+    }
+
+    const { data: businessRow, error: businessErr } = await supabase.from('businesses').select('*').eq('user_id', userId).maybeSingle();
+    if (businessErr) {
+      if (process.env.NODE_ENV !== 'production') console.error('/api/decrypted-user businesses fetch error', businessErr);
+    }
+
+    const out = { user: null, business: null };
+
+    if (userRow) {
+      out.user = {
+        id: userRow.id,
+        email: userRow.email || null,
+        full_name: decryptField(userRow.full_name),
+        phone: decryptField(userRow.phone),
+        id_last6: decryptField(userRow.id_last6),
+        role: userRow.role || null
+      };
+    }
+
+    if (businessRow) {
+      out.business = {
+        id: businessRow.id,
+        email: businessRow.email || null,
+        store_name: businessRow.store_name || null,
+        owner_name: decryptField(businessRow.owner_name),
+        phone: decryptField(businessRow.phone),
+        address: decryptField(businessRow.address),
+        business_type: businessRow.business_type || null,
+        id_last6: decryptField(businessRow.id_last6)
+      };
+    }
+
+    return res.json(out);
+  } catch (e) {
+    if (process.env.NODE_ENV !== 'production') console.error('/api/decrypted-user error', e);
+    return sendError(res, 500, 'Server error', e);
+  }
+});
+
 // =================================================================
 // 3. إعدادات Express و Middleware
 // =================================================================
