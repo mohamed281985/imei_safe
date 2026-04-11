@@ -4501,6 +4501,46 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
     });
   }
 
+  // Normalize and encrypt owner name (accept ownerName or owner_name)
+  if (typeof phoneData.ownerName !== 'undefined') {
+    // prefer explicit camelCase input but normalize to snake_case
+    phoneData.owner_name = phoneData.ownerName;
+    delete phoneData.ownerName;
+  }
+
+  if (typeof phoneData.owner_name !== 'undefined' && phoneData.owner_name !== null && phoneData.owner_name !== '') {
+    let rawOwner = phoneData.owner_name;
+    try {
+      // If it's a JSON string containing encrypted fields, keep it as-is (stringify canonical form)
+      if (typeof rawOwner === 'string') {
+        try {
+          const parsed = JSON.parse(rawOwner);
+          if (parsed && parsed.encryptedData && parsed.iv && parsed.authTag) {
+            phoneData.owner_name = JSON.stringify({ encryptedData: parsed.encryptedData, iv: parsed.iv, authTag: parsed.authTag });
+          } else {
+            const encOwner = encryptAES(String(rawOwner));
+            if (!encOwner) return res.status(400).json({ error: 'فشل تشفير اسم المالك' });
+            phoneData.owner_name = JSON.stringify({ encryptedData: encOwner.encryptedData, iv: encOwner.iv, authTag: encOwner.authTag });
+          }
+        } catch (e) {
+          const encOwner = encryptAES(String(rawOwner));
+          if (!encOwner) return res.status(400).json({ error: 'فشل تشفير اسم المالك' });
+          phoneData.owner_name = JSON.stringify({ encryptedData: encOwner.encryptedData, iv: encOwner.iv, authTag: encOwner.authTag });
+        }
+      } else if (typeof rawOwner === 'object' && rawOwner.encryptedData && rawOwner.iv && rawOwner.authTag) {
+        phoneData.owner_name = JSON.stringify({ encryptedData: rawOwner.encryptedData, iv: rawOwner.iv, authTag: rawOwner.authTag });
+      } else {
+        const encOwner = encryptAES(String(rawOwner));
+        if (!encOwner) return res.status(400).json({ error: 'فشل تشفير اسم المالك' });
+        phoneData.owner_name = JSON.stringify({ encryptedData: encOwner.encryptedData, iv: encOwner.iv, authTag: encOwner.authTag });
+      }
+    } catch (e) {
+      const encOwner = encryptAES(String(rawOwner));
+      if (!encOwner) return res.status(400).json({ error: 'فشل تشفير اسم المالك' });
+      phoneData.owner_name = JSON.stringify({ encryptedData: encOwner.encryptedData, iv: encOwner.iv, authTag: encOwner.authTag });
+    }
+  }
+
   try {
     // ⭐ التحقق من حد التسجيل (Rate Limiting)
     const limitCheck = await checkRegisterLimit(req.user.id);
