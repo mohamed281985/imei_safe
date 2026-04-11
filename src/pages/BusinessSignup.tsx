@@ -76,44 +76,13 @@ export default function BusinessSignup() {
       [name]: processedValue
     }));
 
-    // تعديل التحقق من البريد الإلكتروني
+    // Avoid client-side email enumeration: do not query server on each keystroke.
     if (name === 'email') {
-      // إعادة تعيين الحالات
       setEmailExists(false);
       setCheckingEmail(false);
-
-      // التحقق فقط إذا كان البريد الإلكتروني صالحاً
-      if (value && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
-        setCheckingEmail(true);
-        try {
-          const resp = await fetch('/api/check-email', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: value.trim().toLowerCase() })
-          });
-          const data = await resp.json();
-          const emailExistsFlag = data && data.exists === true;
-          setEmailExists(emailExistsFlag);
-          setIsEmailRegistered(emailExistsFlag);
-
-          if (emailExistsFlag) {
-            toast({ title: t('alert_title'), description: t('email_already_registered'), variant: 'destructive' });
-          }
-
-          setLastCheckedEmail(value);
-        } catch (error: any) {
-          console.error('Email verification error (backend):', error);
-          setEmailExists(false);
-          setIsEmailRegistered(false);
-          setLastCheckedEmail(value);
-        } finally {
-          setCheckingEmail(false);
-        }
-      } else {
-        // إذا كان البريد الإلكتروني فارغًا أو غير صالح، قم بتحديث آخر بريد تم فحصه
-        setLastCheckedEmail('');
-        setIsEmailRegistered(false);
-      }
+      setIsEmailRegistered(false);
+      setLastCheckedEmail('');
+      // server will validate on submit
     }
   };
 
@@ -259,11 +228,7 @@ export default function BusinessSignup() {
                 required
                 className={`input-field w-full pl-10 ${emailExists ? 'border-red-500' : ''}`}
               />
-              {checkingEmail ? (
-                <div className="text-sm text-orange-500 mt-1">{t('checking_email')}</div>
-              ) : emailExists ? (
-                <div className="text-sm text-red-500 mt-1">{t('email_already_registered')}</div>
-              ) : null}
+              {/* no live email existence indicator to prevent user enumeration */}
             </div>
           </div>
           <div>
