@@ -59,8 +59,7 @@ const Signup: React.FC = () => {
   const [pwdFocused, setPwdFocused] = useState<boolean>(false);
   const [pwdChecks, setPwdChecks] = useState({
     minLength: false,
-    hasUpper: false,
-    hasLower: false,
+    hasLetter: false,
     hasNumber: false,
     hasSpecial: false,
   });
@@ -114,21 +113,25 @@ const Signup: React.FC = () => {
     try {
       const isPasswordStrong = (p: string) => {
         if (!p) return false;
-        // at least 8 chars, one lowercase, one uppercase, one digit, one special char
-        return /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/.test(p);
+        // at least 8 chars, at least one letter (Unicode), one digit, and one special/non-alphanumeric
+        try {
+          return /^(?=.*\p{L})(?=.*\d)(?=.*[^\p{L}\d]).{8,}$/u.test(p);
+        } catch (e) {
+          // fallback for environments without Unicode property support
+          return /^(?=.*[A-Za-z])(?=.*\d)(?=.*[\W_]).{8,}$/.test(p);
+        }
       };
 
       if (!isPasswordStrong(password)) {
-        const msg = t ? (t('password_requirements') || 'Password must be at least 8 characters and include uppercase, lowercase, number and special character.') : 'Password must be at least 8 characters and include uppercase, lowercase, number and special character.';
+        const msg = t ? (t('password_requirements') || 'Password must be at least 8 characters and include letters, number and special character.') : 'Password must be at least 8 characters and include letters, number and special character.';
         setSignupError(msg);
         setIsSubmitting(false);
         return;
       }
       // Use client-side signUp so Supabase sends the verification email (same as BusinessSignup)
+      // Do NOT include sensitive fields (phone, id_last6) in the Auth metadata.
       const metadata = {
         full_name: username,
-        phone: fullPhoneNumber,
-        id_last6: idLast6,
         role: 'customer'
       };
 
@@ -146,14 +149,26 @@ const Signup: React.FC = () => {
       } else {
         toast({ title: t('signup_successful'), description: t('verification_email_sent') });
 
-        // If Supabase returned a user id immediately, ask backend to create encrypted application rows.
-        // Otherwise rely on the Supabase webhook to insert app rows after email confirmation.
+        // If Supabase returned a user id immediately, send sensitive data ONLY to our backend
+        // so it can encrypt and store them safely. Do not store phone/id_last6 in Supabase Auth metadata.
         try {
           const returnedId = data?.user?.id;
           if (returnedId) {
-            const payload = { id: returnedId, email, metadata };
-            fetch('/api/create-app-user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-              .catch(() => {});
+            const payload = {
+              id: returnedId,
+              email,
+              metadata: {
+                full_name: username,
+                phone: fullPhoneNumber,
+                id_last6: idLast6,
+                role: 'customer'
+              }
+            };
+            try {
+              await fetch('/api/create-app-user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            } catch (e) {
+              if (process.env.NODE_ENV !== 'production') console.warn('create-app-user call failed', e);
+            }
           }
         } catch (e) { /* ignore */ }
 
@@ -168,13 +183,21 @@ const Signup: React.FC = () => {
 
     useEffect(() => {
       const pw = formData.password || '';
-      setPwdChecks({
-        minLength: pw.length >= 8,
-        hasUpper: /[A-Z]/.test(pw),
-        hasLower: /[a-z]/.test(pw),
-        hasNumber: /\d/.test(pw),
-        hasSpecial: /[\W_]/.test(pw),
-      });
+      try {
+        setPwdChecks({
+          minLength: pw.length >= 8,
+          hasLetter: /\p{L}/u.test(pw),
+          hasNumber: /\d/.test(pw),
+          hasSpecial: /[^\p{L}\d]/u.test(pw),
+        });
+      } catch (e) {
+        setPwdChecks({
+          minLength: pw.length >= 8,
+          hasLetter: /[A-Za-z]/.test(pw),
+          hasNumber: /\d/.test(pw),
+          hasSpecial: /[\W_]/.test(pw),
+        });
+      }
     }, [formData.password]);
 
   return (
@@ -322,11 +345,8 @@ const Signup: React.FC = () => {
                         <li className={pwdChecks.minLength ? 'text-green-600' : 'text-gray-700'}>
                           {pwdChecks.minLength ? '✓' : '○'} {t('pwd_min_chars') || 'At least 8 characters'}
                         </li>
-                        <li className={pwdChecks.hasUpper ? 'text-green-600' : 'text-gray-700'}>
-                          {pwdChecks.hasUpper ? '✓' : '○'} {t('pwd_upper') || 'Uppercase letter'}
-                        </li>
-                        <li className={pwdChecks.hasLower ? 'text-green-600' : 'text-gray-700'}>
-                          {pwdChecks.hasLower ? '✓' : '○'} {t('pwd_lower') || 'Lowercase letter'}
+                        <li className={pwdChecks.hasLetter ? 'text-green-600' : 'text-gray-700'}>
+                          {pwdChecks.hasLetter ? '✓' : '○'} {t('pwd_letter') || 'At least one letter'}
                         </li>
                         <li className={pwdChecks.hasNumber ? 'text-green-600' : 'text-gray-700'}>
                           {pwdChecks.hasNumber ? '✓' : '○'} {t('pwd_number') || 'Number'}

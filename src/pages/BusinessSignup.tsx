@@ -31,12 +31,11 @@ export default function BusinessSignup() {
   // metadata state synced from formData (ensures complete metadata sent)
   const [metadata, setMetadata] = useState({
     full_name: '',
-    phone: '',
     role: 'free_business',
     store_name: '',
     address: '',
     business_type: '',
-    id_last6: ''
+    // sensitive fields (phone, id_last6) are not kept here to avoid sending them to Auth metadata
   });
   // إضافة حالة رمز الدولة
   const [countryCode, setCountryCode] = useState('+20');
@@ -53,8 +52,7 @@ export default function BusinessSignup() {
   const [pwdFocused, setPwdFocused] = useState<boolean>(false);
   const [pwdChecks, setPwdChecks] = useState({
     minLength: false,
-    hasUpper: false,
-    hasLower: false,
+    hasLetter: false,
     hasNumber: false,
     hasSpecial: false,
   });
@@ -89,26 +87,33 @@ export default function BusinessSignup() {
   // update password checks live
   useEffect(() => {
     const pw = formData.password || '';
-    setPwdChecks({
-      minLength: pw.length >= 8,
-      hasUpper: /[A-Z]/.test(pw),
-      hasLower: /[a-z]/.test(pw),
-      hasNumber: /\d/.test(pw),
-      hasSpecial: /[\W_]/.test(pw),
-    });
+    try {
+      setPwdChecks({
+        minLength: pw.length >= 8,
+        hasLetter: /\p{L}/u.test(pw),
+        hasNumber: /\d/.test(pw),
+        hasSpecial: /[^\p{L}\d]/u.test(pw),
+      });
+    } catch (e) {
+      setPwdChecks({
+        minLength: pw.length >= 8,
+        hasLetter: /[A-Za-z]/.test(pw),
+        hasNumber: /\d/.test(pw),
+        hasSpecial: /[\W_]/.test(pw),
+      });
+    }
   }, [formData.password]);
 
   // keep metadata in sync with formData and countryCode so signup payload is complete
   useEffect(() => {
     const fullPhoneNumber = countryCode + formData.phone;
+    // Do NOT store sensitive fields (phone, id_last6) in the Auth metadata state.
     setMetadata({
       full_name: formData.ownerName,
-      phone: fullPhoneNumber,
       role: 'free_business',
       store_name: formData.storeName,
       address: formData.address,
       business_type: formData.businessType,
-      id_last6: formData.id_last6
     });
   }, [formData, countryCode]);
 
@@ -124,10 +129,15 @@ export default function BusinessSignup() {
       return;
     }
 
-    // قوة كلمة المرور: 8+ أحرف، حرف كبير، حرف صغير، رقم، رمز خاص
-    const strongPwd = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/;
-    if (!strongPwd.test(pw)) {
-      toast({ title: t('weak_password'), description: t('password_strength_requirements') || 'Password must be 8+ chars with upper, lower, number and special char', variant: 'destructive' });
+    // قوة كلمة المرور: 8+ أحرف، على الأقل حرف (أي لغة)، رقم، ورمز خاص
+    let strongPwdOk = false;
+    try {
+      strongPwdOk = /^(?=.*\p{L})(?=.*\d)(?=.*[^\p{L}\d]).{8,}$/u.test(pw);
+    } catch (e) {
+      strongPwdOk = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[\W_]).{8,}$/.test(pw);
+    }
+    if (!strongPwdOk) {
+      toast({ title: t('weak_password'), description: t('password_strength_requirements') || 'Password must be 8+ chars with letters, number and special char', variant: 'destructive' });
       setLoading(false);
       return;
     }
@@ -160,8 +170,8 @@ export default function BusinessSignup() {
 
     try {
       // Use Supabase client-side signup so Supabase sends verification email.
-      // ensure metadata phone is up-to-date
-      const signupMetadata = { ...metadata, phone: fullPhoneNumber };
+      // ensure signup metadata does NOT include sensitive fields
+      const signupMetadata = { ...metadata };
       const { data, error } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
@@ -180,18 +190,29 @@ export default function BusinessSignup() {
         duration: 9000,
       });
 
-      // Create application-level `users` row on the server (encrypted)
+      // Create application-level `users` row on the server (encrypted) and include sensitive fields only here
       try {
-        const payload = {
-          id: data?.user?.id,
-          email: formData.email,
-          metadata: signupMetadata
-        };
-        fetch('/api/create-app-user', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        }).catch((e) => console.warn('create-app-user failed', e));
+        const returnedId = data?.user?.id;
+        if (returnedId) {
+          const payload = {
+            id: returnedId,
+            email: formData.email,
+            metadata: {
+              full_name: metadata.full_name,
+              phone: fullPhoneNumber,
+              id_last6: formData.id_last6,
+              role: metadata.role,
+              store_name: metadata.store_name,
+              address: metadata.address,
+              business_type: metadata.business_type
+            }
+          };
+          await fetch('/api/create-app-user', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+        }
       } catch (e) {
         console.warn('create-app-user error', e);
       }
@@ -370,11 +391,8 @@ export default function BusinessSignup() {
                     <li className={pwdChecks.minLength ? 'text-green-600' : 'text-gray-600'}>
                       {pwdChecks.minLength ? '✓' : '○'} {t('pwd_min_chars')}
                     </li>
-                    <li className={pwdChecks.hasUpper ? 'text-green-600' : 'text-gray-600'}>
-                      {pwdChecks.hasUpper ? '✓' : '○'} {t('pwd_upper')}
-                    </li>
-                    <li className={pwdChecks.hasLower ? 'text-green-600' : 'text-gray-600'}>
-                      {pwdChecks.hasLower ? '✓' : '○'} {t('pwd_lower')}
+                    <li className={pwdChecks.hasLetter ? 'text-green-600' : 'text-gray-600'}>
+                      {pwdChecks.hasLetter ? '✓' : '○'} {t('pwd_letter')}
                     </li>
                     <li className={pwdChecks.hasNumber ? 'text-green-600' : 'text-gray-600'}>
                       {pwdChecks.hasNumber ? '✓' : '○'} {t('pwd_number')}
