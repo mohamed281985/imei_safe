@@ -4154,12 +4154,21 @@ const checkRegisterLimit = async (userId) => {
     if (usageError) {
       // إذا لم يوجد سجل، قم بإنشاء سجل جديد
       if (usageError.code === 'PGRST116') {
+        // Determine role for users_plans from users.role (free_user or free_business)
+        let roleToInsert = 'free_user';
+        try {
+          const { data: urec, error: uerr } = await supabase.from('users').select('role').eq('id', userId).maybeSingle();
+          if (!uerr && urec && urec.role === 'business') roleToInsert = 'free_business';
+        } catch (e) {
+          console.warn('checkRegisterLimit: failed to read user role for users_plans insert, defaulting to free_user', e);
+        }
+
         const { data: insertData, error: insertError } = await supabase
           .from('users_plans')
           .insert({
             id: userId,
             user_id: userId,
-            role: userType,
+            role: roleToInsert,
             used_register_phone: 0
           })
           .select()
