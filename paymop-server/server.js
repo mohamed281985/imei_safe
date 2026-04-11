@@ -4110,10 +4110,26 @@ const checkRegisterLimit = async (userId) => {
       throw paymentError;
     }
 
-    let userType = 'free_business';
+    let userType = 'free_users';
+    // try to infer a sensible default from the users.role when possible
+    try {
+      const { data: userRec, error: userErr } = await supabase
+        .from('users')
+        .select('role')
+        .eq('id', userId)
+        .maybeSingle();
+      if (!userErr && userRec && userRec.role === 'business') {
+        userType = 'free_business';
+      }
+    } catch (e) {
+      console.warn('checkRegisterLimit: failed to read user role, using default free_users', e);
+    }
+
+    // If a latest payment exists, prefer its type (keeps upgrade logic intact)
     if (latestPayment && latestPayment.type) {
       userType = latestPayment.type;
     }
+
     console.log('نوع المستخدم بعد التحقق:', userType);
 
     // 2. جلب تفاصيل الخطة بناءً على type
