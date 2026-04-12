@@ -277,7 +277,9 @@ app.use((err, req, res, next) => {
 });
 
 // If behind a proxy (Render, Heroku, etc.) trust proxy headers so req.secure and x-forwarded-proto work
-app.set('trust proxy', true);
+// Make this configurable to avoid permissive trust settings in local/dev environments
+const TRUST_PROXY = process.env.TRUST_PROXY === 'true';
+app.set('trust proxy', TRUST_PROXY);
 
 // Security headers with explicit HSTS in production
 if (process.env.NODE_ENV === 'production') {
