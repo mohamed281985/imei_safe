@@ -4118,7 +4118,7 @@ const checkRegisterLimit = async (userId) => {
         .select('role')
         .eq('id', userId)
         .maybeSingle();
-      if (!userErr && userRec && userRec.role === 'business') {
+      if (!userErr && userRec && typeof userRec.role === 'string' && userRec.role.toLowerCase().includes('business')) {
         userType = 'free_business';
       }
     } catch (e) {
@@ -4158,7 +4158,7 @@ const checkRegisterLimit = async (userId) => {
         let roleToInsert = 'free_user';
         try {
           const { data: urec, error: uerr } = await supabase.from('users').select('role').eq('id', userId).maybeSingle();
-          if (!uerr && urec && urec.role === 'business') roleToInsert = 'free_business';
+          if (!uerr && urec && typeof urec.role === 'string' && urec.role.toLowerCase().includes('business')) roleToInsert = 'free_business';
         } catch (e) {
           console.warn('checkRegisterLimit: failed to read user role for users_plans insert, defaulting to free_user', e);
         }
@@ -5467,9 +5467,20 @@ app.post('/api/check-limit', verifyJwtToken, async (req, res) => {
       throw paymentError;
     }
 
-    let userType = 'free_business';
+    // Default to free_user, but prefer latest payment if present.
+    let userType = 'free_user';
     if (latestPayment && latestPayment.type) {
       userType = latestPayment.type;
+    } else {
+      // No payment found -> infer from users.role: consider business if role contains 'business', otherwise user is free_user
+      try {
+        const { data: userRec, error: userErr } = await supabase.from('users').select('role').eq('id', userId).maybeSingle();
+        if (!userErr && userRec && typeof userRec.role === 'string' && userRec.role.toLowerCase().includes('business')) {
+          userType = 'free_business';
+        }
+      } catch (e) {
+        console.warn('check-limit: failed to read user role, defaulting to free_user', e);
+      }
     }
 
     // 2. جلب تفاصيل الخطة بناءً على type
