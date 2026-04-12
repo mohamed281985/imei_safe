@@ -5467,7 +5467,22 @@ app.post('/api/check-limit', verifyJwtToken, async (req, res) => {
       throw paymentError;
     }
 
-    let userType = 'free_business';
+    let userType = 'free_user';
+    // Try to infer from users.role: if the user is a business, default to free_business
+    try {
+      const { data: userRec, error: userErr } = await supabase
+        .from('users')
+        .select('role')
+        .eq('id', userId)
+        .maybeSingle();
+      if (!userErr && userRec && userRec.role === 'business') {
+        userType = 'free_business';
+      }
+    } catch (e) {
+      console.warn('check-limit: failed to read user role, defaulting to free_user', e);
+    }
+
+    // If a latest payment exists, prefer its type (keeps upgrade logic intact)
     if (latestPayment && latestPayment.type) {
       userType = latestPayment.type;
     }
