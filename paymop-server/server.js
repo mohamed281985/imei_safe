@@ -4163,6 +4163,14 @@ const checkRegisterLimit = async (userId) => {
           console.warn('checkRegisterLimit: failed to read user role for users_plans insert, defaulting to free_user', e);
         }
 
+        console.log('checkRegisterLimit: inserting users_plans for user', userId, 'resolved roleToInsert=', roleToInsert);
+        try {
+          const { data: urecCheck, error: urecErr } = await supabase.from('users').select('role').eq('id', userId).maybeSingle();
+          console.log('checkRegisterLimit: users table lookup for users_plans insert', { userId, urec: urecCheck, urecErr: urecErr ? String(urecErr) : null });
+        } catch (e) {
+          console.warn('checkRegisterLimit: users lookup failed before insert', e);
+        }
+
         const { data: insertData, error: insertError } = await supabase
           .from('users_plans')
           .insert({
