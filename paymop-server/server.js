@@ -277,9 +277,7 @@ app.use((err, req, res, next) => {
 });
 
 // If behind a proxy (Render, Heroku, etc.) trust proxy headers so req.secure and x-forwarded-proto work
-// Make this configurable to avoid permissive trust settings in local/dev environments
-const TRUST_PROXY = process.env.TRUST_PROXY === 'true';
-app.set('trust proxy', TRUST_PROXY);
+app.set('trust proxy', true);
 
 // Security headers with explicit HSTS in production
 if (process.env.NODE_ENV === 'production') {
@@ -5469,22 +5467,7 @@ app.post('/api/check-limit', verifyJwtToken, async (req, res) => {
       throw paymentError;
     }
 
-    let userType = 'free_user';
-    // Try to infer from users.role: if the user is a business, default to free_business
-    try {
-      const { data: userRec, error: userErr } = await supabase
-        .from('users')
-        .select('role')
-        .eq('id', userId)
-        .maybeSingle();
-      if (!userErr && userRec && userRec.role === 'business') {
-        userType = 'free_business';
-      }
-    } catch (e) {
-      console.warn('check-limit: failed to read user role, defaulting to free_user', e);
-    }
-
-    // If a latest payment exists, prefer its type (keeps upgrade logic intact)
+    let userType = 'free_business';
     if (latestPayment && latestPayment.type) {
       userType = latestPayment.type;
     }
