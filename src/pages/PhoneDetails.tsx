@@ -136,9 +136,14 @@ const PhoneDetails: React.FC = () => {
 
     try {
       // 1. جلب رقم هاتف المستخدم الحالي (الواجد)
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
       const response = await fetch('https://imei-safe.me/api/get-finder-phone', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
         body: JSON.stringify({ userId: currentUserId })
       });
       const { finderPhone, error } = await response.json();
@@ -150,8 +155,6 @@ const PhoneDetails: React.FC = () => {
       console.log('Finder phone retrieved:', finderPhone);
 
       // 2. تحديث جدول phone_reports بوضع رقم هاتف الواجد في عمود finder_phone باستخدام IMEI
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
       const updateResponse = await fetch('https://imei-safe.me/api/update-finder-phone-by-imei', {
         method: 'POST',
         headers: {

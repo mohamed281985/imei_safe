@@ -319,16 +319,16 @@ const AppCore = () => {
             <Route path="/business-profile-complete" element={<AuthGuard><BusinessProfileComplete /></AuthGuard>} />
             <Route path="/reset" element={<GuestGuard><Reset /></GuestGuard>} />
             <Route path="/reset-register" element={<AuthGuard><ResetRegister /></AuthGuard>} />
-            <Route path="/BusinessTransferbuy" element={<BusinessTransferBuy />} />
+            <Route path="/BusinessTransferbuy" element={<AuthGuard><BusinessTransferBuy /></AuthGuard>} />
             <Route path="/challenge-game" element={<AuthGuard><ChallengeGamePage /></AuthGuard>} />
-            <Route path="/BusinessTransfersell" element={<BusinessTransferSell />} />
+            <Route path="/BusinessTransfersell" element={<AuthGuard><BusinessTransferSell /></AuthGuard>} />
             <Route path="/phone-found/:imei" element={<PhoneFound />} />
             <Route path="/phone-found" element={<PhoneFound />} />
             <Route path="/phones-for-sale" element={<AuthGuard><PhonesForSale /></AuthGuard>} /> {/* Add the new route */}
             <Route path="/seller-dashboard" element={<AuthGuard><SellerDashboard /></AuthGuard>} />
             <Route path="/add-phone" element={<AuthGuard><AddPhoneForm /></AuthGuard>} />
             <Route path="/add-accessories" element={<AuthGuard><AddAccessoriesForm /></AuthGuard>} />
-            <Route path="/edit-phone/:id" element={<EditPhoneListing />} />
+            <Route path="/edit-phone/:id" element={<AuthGuard><EditPhoneListing /></AuthGuard>} />
             <Route path="/accessories-for-sale" element={<AuthGuard><AccessoriesForSalePage /></AuthGuard>} />
             <Route path="/edit-accessory/:id" element={<AuthGuard><EditAccessoryListing /></AuthGuard>} />
             <Route path="/product/:id" element={<AuthGuard><React.Suspense fallback={null}><ProductDetails /></React.Suspense></AuthGuard>} />

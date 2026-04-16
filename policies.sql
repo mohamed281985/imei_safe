@@ -8,22 +8,43 @@ UPDATE storage.buckets
 SET public = true
 WHERE name = 'phone-images';
 
--- سياسة للسماح بالوصول العام لقراءة الصور
+-- إزالة سياسة القراءة العامة القديمة إن وجدت ثم إعادة إنشائها
+DROP POLICY IF EXISTS "Public Access" ON storage.objects;
 CREATE POLICY "Public Access" ON storage.objects
 FOR SELECT
 USING (bucket_id = 'phone-images');
 
--- سياسة للسماح برفع الصور
-CREATE POLICY "Allow Uploads" ON storage.objects
+-- إزالة السياسات المفتوحة السابقة إن وجدت
+DROP POLICY IF EXISTS "Allow Uploads" ON storage.objects;
+DROP POLICY IF EXISTS "Allow Updates" ON storage.objects;
+DROP POLICY IF EXISTS "Allow Deletions" ON storage.objects;
+
+-- سياسة أكثر أمانًا: يتطلب مستخدم مصادق
+CREATE POLICY "Allow Auth Uploads" ON storage.objects
 FOR INSERT
-WITH CHECK (bucket_id = 'phone-images');
+TO authenticated
+WITH CHECK (
+  bucket_id = 'phone-images'
+  AND auth.role() = 'authenticated'
+);
 
--- سياسة للسماح بتحديث الصور
-CREATE POLICY "Allow Updates" ON storage.objects
+-- تحديث/حذف الملف مسموح فقط لصاحب الملف المصادق
+CREATE POLICY "Allow Owner Updates" ON storage.objects
 FOR UPDATE
-USING (bucket_id = 'phone-images');
+TO authenticated
+USING (
+  bucket_id = 'phone-images'
+  AND owner = auth.uid()
+)
+WITH CHECK (
+  bucket_id = 'phone-images'
+  AND owner = auth.uid()
+);
 
--- سياسة للسماح بحذف الصور
-CREATE POLICY "Allow Deletions" ON storage.objects
+CREATE POLICY "Allow Owner Deletions" ON storage.objects
 FOR DELETE
-USING (bucket_id = 'phone-images');
+TO authenticated
+USING (
+  bucket_id = 'phone-images'
+  AND owner = auth.uid()
+);
