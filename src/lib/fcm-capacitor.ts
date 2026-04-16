@@ -17,7 +17,6 @@ export function registerFCMToken() {
   // الاستماع لحدث التسجيل واستلام التوكن
   PushNotifications.addListener('registration', async (token) => {
     const fcmToken = token.value;
-    localStorage.setItem('fcmToken', fcmToken);
     console.log('FCM Token (Capacitor):', fcmToken);
     
     // حفظ التوكن في قاعدة بيانات Supabase للمستخدم الحالي

@@ -10,6 +10,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import Redis from 'ioredis';
 import crypto from 'crypto';
+import bcrypt from 'bcrypt';
 import { createClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
 import { validateImageFile } from './utils/imageValidator.js';
@@ -28,6 +29,10 @@ dotenv.config({ path: envPath });
 
 // Development bypass token (only used when explicitly set in .env)
 const DEV_BYPASS_TOKEN = process.env.DEV_BYPASS_TOKEN || null;
+const IS_DEVELOPMENT = process.env.NODE_ENV === 'development';
+if (!IS_DEVELOPMENT && DEV_BYPASS_TOKEN) {
+  throw new Error('DEV_BYPASS_TOKEN must not be set outside development');
+}
 
 // =================================================================
 // دوال التشفير ثنائي الاتجاه (AES Encryption)
@@ -51,6 +56,10 @@ console.log('✅ تم تحميل ENCRYPTION_KEY من متغيرات البيئة
 
 // متجه التشفير (IV) - يجب أن يكون عشوائياً لكل عملية تشفير
 const generateIV = () => crypto.randomBytes(12); // 96-bit nonce recommended for GCM
+
+const BCRYPT_ROUNDS = Number(process.env.BCRYPT_ROUNDS || 12);
+
+const hashPasswordForStorage = async (plainPassword) => bcrypt.hash(String(plainPassword), BCRYPT_ROUNDS);
 
 /**
  * تشفير النص باستخدام AES-256-GCM (يوفر مصادقة البيانات)
@@ -799,6 +808,9 @@ app.post('/api/create-app-user', createAppUserLimiter, async (req, res) => {
 // This does NOT touch the database and is intended for local functional tests
 app.post('/api/test-insert', async (req, res) => {
   try {
+    if (!IS_DEVELOPMENT) {
+      return res.status(404).json({ error: 'Not found' });
+    }
     const { id, email, metadata } = req.body || {};
     if (!id) return res.status(400).json({ error: 'missing id' });
 
@@ -862,6 +874,9 @@ app.post('/api/test-insert', async (req, res) => {
 // to have a valid service role key in `SUPABASE_KEY`.
 app.post('/api/_test_create_auth', async (req, res) => {
   try {
+    if (!IS_DEVELOPMENT) {
+      return res.status(404).json({ error: 'Not found' });
+    }
     if (!SUPABASE_URL || !SUPABASE_KEY) return res.status(500).json({ error: 'Server not configured for admin operations' });
 
     const { email, password, metadata } = req.body || {};
@@ -1100,7 +1115,7 @@ app.get('/api/lost-phones', async (req, res) => {
     const apiKey = req.headers['x-api-key'];
     const authHeader = req.headers['authorization'];
 
-    if (!authHeader && DEV_BYPASS_TOKEN && apiKey !== DEV_BYPASS_TOKEN) {
+    if (!authHeader && (!IS_DEVELOPMENT || !DEV_BYPASS_TOKEN || apiKey !== DEV_BYPASS_TOKEN)) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
@@ -1214,7 +1229,7 @@ app.get('/api/decrypted-user', async (req, res) => {
       const { data: authData, error: authErr } = await supabase.auth.getUser(token);
       if (authErr || !authData || !authData.user) return res.status(401).json({ error: 'Unauthorized' });
       userId = authData.user.id;
-    } else if (DEV_BYPASS_TOKEN && req.headers['x-api-key'] === DEV_BYPASS_TOKEN) {
+    } else if (IS_DEVELOPMENT && DEV_BYPASS_TOKEN && req.headers['x-api-key'] === DEV_BYPASS_TOKEN) {
       // Development bypass for local testing only
       userId = req.query.user_id;
       if (!userId) return res.status(400).json({ error: 'missing user_id (dev bypass)' });
@@ -1751,7 +1766,7 @@ const registerOrder = async (token, { amount, merchantOrderId }) => {
 // =================================================================
 
 // --- نقاط نهاية الإشعارات ---
-app.post('/api/send-fcm-v1', async (req, res) => {
+app.post('/api/send-fcm-v1', verifyJwtToken, async (req, res) => {
   try {
     const { token, title, body, data } = req.body;
     const result = await sendFCMNotificationV1({ token, title, body, data });
@@ -1763,7 +1778,7 @@ app.post('/api/send-fcm-v1', async (req, res) => {
 });
 
 // نقطة نهاية لإرسال إشعارات باستخدام IMEI
-app.post('/api/send-notification-by-imei', async (req, res) => {
+app.post('/api/send-notification-by-imei', verifyJwtToken, async (req, res) => {
   try {
     const { imei, title, body, data } = req.body;
 
@@ -1974,9 +1989,10 @@ app.post('/api/search-imei', async (req, res) => {
 });
 
 // نقطة نهاية لإرسال إشعارات من هاتف لآخر
-app.post('/api/send-notification', async (req, res) => {
+app.post('/api/send-notification', verifyJwtToken, async (req, res) => {
   try {
-    const { senderId, receiverToken, title, body, data } = req.body;
+    const { receiverToken, title, body, data } = req.body;
+    const senderId = req.user?.id || null;
 
     // التحقق من وجود البيانات المطلوبة
     if (!receiverToken || !title || !body) {
@@ -2030,9 +2046,11 @@ app.post('/api/send-notification', async (req, res) => {
 // --- نقاط نهاية Paymob ---
 
 // نقطة نهاية لحفظ بلاغ فقدان الهاتف مع تشفير البيانات
-app.post('/api/report-lost-phone', async (req, res) => {
+app.post('/api/report-lost-phone', verifyJwtToken, async (req, res) => {
   try {
-    const data = req.body;
+    const data = { ...(req.body || {}) };
+    data.user_id = req.user?.id || null;
+    data.email = req.user?.email || data.email || '';
 
 
     // تحقق من روابط الصور (الفاتورة والمحضر) أنها روابط https صالحة أو فارغة (null/undefined)
@@ -2086,9 +2104,9 @@ app.post('/api/report-lost-phone', async (req, res) => {
         }
       }
     }
-    // تشفير كلمة المرور قبل الحفظ
+    // تشفير كلمة المرور قبل الحفظ (bcrypt)
     if (data.password) {
-      data.password = crypto.createHash('sha256').update(data.password).digest('hex');
+      data.password = await hashPasswordForStorage(data.password);
     }
 
     // تشفير الحقول الحساسة
@@ -2181,10 +2199,17 @@ if (!PAYMOB_API_KEY || !INTEGRATION_ID || !IFRAME_ID || !HMAC_SECRET) {
   process.exit(1); // إيقاف السيرفر إذا كانت المتغيرات ناقصة
 }
 
+const recentlyNotifiedByImei = new Map();
+
 // إرسال بريد إلكتروني للمالك عند العثور على الهاتف
-app.post('/api/update-finder-phone-by-imei', async (req, res) => {
+app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) => {
   console.log('POST request received at /api/update-finder-phone-by-imei');
   const { imei, ownerName, finderPhone } = req.body;
+  const requesterId = req.user?.id;
+
+  if (!requesterId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
 
   if (!imei || !finderPhone) {
     return res.status(400).json({ error: 'IMEI and finderPhone are required' });
@@ -2192,12 +2217,9 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
   
   console.log(`Processing IMEI: ${imei}, Finder phone: ${finderPhone}, Owner name: ${ownerName || 'Not provided'}`);
 
-  // مجموعة لتتبع الإشعارات المرسلة مؤخرًا لمنع التكرار
-  const recentlyNotified = new Set();
-
   // --- ⭐ التحقق من فترة التهدئة (Cooldown) ---
   // إذا تم إرسال إشعار لهذا الـ IMEI مؤخرًا، تجاهل الطلب الحالي.
-  if (recentlyNotified.has(imei)) {
+  if (recentlyNotifiedByImei.has(imei)) {
     console.log(`[Cooldown] Blocked duplicate notification request for IMEI: ${imei}`);
     // أرسل ردًا ناجحًا لتجنب ظهور خطأ في الواجهة الأمامية
     return res.json({ ok: true, message: 'Notification already sent recently.' });
@@ -2235,6 +2257,11 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
       return res.status(404).json({ error: 'لم يتم العثور على الهاتف في البلاغات', imei });
     }
 
+    // تفويض صارم: لا يسمح بتعديل finder_phone إلا لنفس finder_user_id إن كان محدداً.
+    if (foundReport.finder_user_id && foundReport.finder_user_id !== requesterId) {
+      return res.status(403).json({ error: 'Forbidden: you are not allowed to update this report' });
+    }
+
     const decryptedOwnerName = (() => {
       if (!foundReport.owner_name) return undefined;
       try {
@@ -2270,7 +2297,7 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
     }
     const { error: updateError } = await supabase
       .from('phone_reports')
-      .update({ finder_phone: encryptedFinderPhone })
+      .update({ finder_phone: encryptedFinderPhone, finder_user_id: requesterId })
       .eq('id', foundReport.id);
 
     if (updateError) {
@@ -2424,9 +2451,9 @@ app.post('/api/update-finder-phone-by-imei', async (req, res) => {
 
     // --- ⭐ بدء فترة التهدئة بعد الإرسال الناجح ---
     // أضف الـ IMEI إلى المجموعة وقم بإزالته بعد 30 ثانية.
-    recentlyNotified.add(imei);
+    recentlyNotifiedByImei.set(imei, Date.now());
     setTimeout(() => {
-      recentlyNotified.delete(imei);
+      recentlyNotifiedByImei.delete(imei);
     }, 30000); // 30 ثانية
 
     res.json({ success: true, message: 'Notifications sent.' });
@@ -3297,15 +3324,21 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
 });
 
 // Endpoint to fetch stored iframe_url / payment_token by payment_id
-app.get('/paymob/payment-link', async (req, res) => {
+app.get('/paymob/payment-link', verifyJwtToken, async (req, res) => {
   try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
     const paymentId = req.query.payment_id;
     const merchantOrderId = req.query.merchant_order_id;
     console.log('/paymob/payment-link called with', { paymentId, merchantOrderId });
 
     if (!paymentId && !merchantOrderId) return res.status(400).json({ error: 'payment_id or merchant_order_id required' });
 
-    let query = supabase.from('ads_payment').select('id, iframe_url, paymob_order_id, payment_token');
+    let query = supabase
+      .from('ads_payment')
+      .select('id, iframe_url, paymob_order_id, payment_token, user_id')
+      .eq('user_id', userId);
     if (paymentId) query = query.eq('id', paymentId);
     else if (merchantOrderId) query = query.eq('merchant_order_id', merchantOrderId);
 
@@ -3736,7 +3769,7 @@ app.get("/api/offer-details", async (req, res) => {
 });
 
 // Middleware للتحقق من JWT Token
-const verifyJwtToken = async (req, res, next) => {
+async function verifyJwtToken(req, res, next) {
   try {
     const authHeader = req.headers['authorization'];
     if (!authHeader) {
@@ -3745,8 +3778,8 @@ const verifyJwtToken = async (req, res, next) => {
 
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
 
-    // Local dev bypass: if DEV_BYPASS_TOKEN is set and matches, inject a fake user
-    if (DEV_BYPASS_TOKEN && token === DEV_BYPASS_TOKEN) {
+    // Local dev bypass only in development environment
+    if (IS_DEVELOPMENT && DEV_BYPASS_TOKEN && token === DEV_BYPASS_TOKEN) {
       req.user = { id: 'dev-user-id', email: 'dev@local.test', role: 'admin' };
       return next();
     }
@@ -3765,10 +3798,15 @@ const verifyJwtToken = async (req, res, next) => {
     console.error('Error verifying JWT token:', error);
     return res.status(401).json({ error: 'Unauthorized: Invalid token' });
   }
-};
+}
 
 app.get('/api/get-contact-info', verifyJwtToken, async (req, res) => {
   try {
+    const requesterId = req.user?.id;
+    if (!requesterId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
     const phoneId = String(req.query.phoneId || '').trim();
     if (!phoneId) {
       return res.status(400).json({ error: 'phoneId is required' });
@@ -3776,7 +3814,7 @@ app.get('/api/get-contact-info', verifyJwtToken, async (req, res) => {
 
     const { data: allReports, error: reportError } = await supabase
       .from('phone_reports')
-      .select('id, imei, email, owner_name, finder_phone')
+      .select('id, imei, email, owner_name, finder_phone, user_id, finder_user_id')
       .order('id', { ascending: true });
 
     if (reportError || !allReports || allReports.length === 0) {
@@ -3799,6 +3837,13 @@ app.get('/api/get-contact-info', verifyJwtToken, async (req, res) => {
 
     if (!foundReport) {
       return res.status(404).json({ error: 'لم يتم العثور على الهاتف في البلاغات' });
+    }
+
+    // تفويض: يسمح فقط لمالك البلاغ أو الواجد المرتبط بالبلاغ.
+    const isOwner = !!foundReport.user_id && foundReport.user_id === requesterId;
+    const isAssignedFinder = !!foundReport.finder_user_id && foundReport.finder_user_id === requesterId;
+    if (!isOwner && !isAssignedFinder) {
+      return res.status(403).json({ error: 'Forbidden: not authorized to access this contact info' });
     }
 
     const decryptedPhone = (() => {
@@ -3855,6 +3900,11 @@ app.get('/api/get-contact-info', verifyJwtToken, async (req, res) => {
 
 app.post('/api/get-owner-email-by-imei', verifyJwtToken, async (req, res) => {
   try {
+    const requesterId = req.user?.id;
+    if (!requesterId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
     const { imei } = req.body;
 
     if (!imei) {
@@ -3863,7 +3913,7 @@ app.post('/api/get-owner-email-by-imei', verifyJwtToken, async (req, res) => {
 
     const { data: allReports, error: reportError } = await supabase
       .from('phone_reports')
-      .select('id, imei, email, owner_name')
+      .select('id, imei, email, owner_name, user_id, finder_user_id')
       .order('id', { ascending: true });
 
     if (reportError || !allReports || allReports.length === 0) {
@@ -3888,9 +3938,30 @@ app.post('/api/get-owner-email-by-imei', verifyJwtToken, async (req, res) => {
       return res.status(404).json({ error: 'لم يتم العثور على البريد الإلكتروني لهذا الهاتف' });
     }
 
+    // تفويض: فقط المالك أو الواجد المعين لنفس البلاغ.
+    const isOwner = !!foundReport.user_id && foundReport.user_id === requesterId;
+    const isAssignedFinder = !!foundReport.finder_user_id && foundReport.finder_user_id === requesterId;
+    if (!isOwner && !isAssignedFinder) {
+      return res.status(403).json({ error: 'Forbidden: not authorized to access owner email' });
+    }
+
+    let decryptedEmail = null;
+    try {
+      decryptedEmail = decryptField(foundReport.email) || foundReport.email;
+    } catch (e) {
+      decryptedEmail = foundReport.email;
+    }
+
+    let decryptedOwnerName = null;
+    try {
+      decryptedOwnerName = foundReport.owner_name ? (decryptField(foundReport.owner_name) || foundReport.owner_name) : null;
+    } catch (e) {
+      decryptedOwnerName = foundReport.owner_name || null;
+    }
+
     return res.json({
-      email: foundReport.email,
-      owner_name: foundReport.owner_name || null
+      email: decryptedEmail,
+      owner_name: decryptedOwnerName
     });
   } catch (err) {
     console.error('خطأ في جلب بريد المالك:', err);
@@ -4024,11 +4095,10 @@ app.post('/api/verify-and-resolve-report', verifyJwtToken, async (req, res) => {
     if (report.user_id !== userId) return res.status(403).json({ success: false, error: 'Not authorized' });
     if (report.status !== 'active') return res.status(400).json({ success: false, error: 'Report not active' });
 
-    // تحقق من كلمة المرور عن طريق هاش SHA256
-    const hashed = crypto.createHash('sha256').update(String(password)).digest('hex');
-    console.log('Computed hashed password (sha256):', hashed);
-    console.log('Stored password (raw):', String(report.password).slice(0, 8) + '...');
-    if (!report.password || String(report.password).toLowerCase() !== String(hashed).toLowerCase()) {
+    const passwordMatched = report.password
+      ? await bcrypt.compare(String(password), String(report.password))
+      : false;
+    if (!passwordMatched) {
       console.warn('Password mismatch for report:', reportId);
       return res.status(401).json({ success: false, error: 'Invalid password' });
     }
@@ -4087,8 +4157,8 @@ app.post('/api/reset-phone-password', verifyJwtToken, async (req, res) => {
       return res.status(404).json({ error: 'Phone not found for this user' });
     }
 
-    // 3. تحديث كلمة المرور (تشفيرها أولاً)
-    const hashedPassword = crypto.createHash('sha256').update(newPassword).digest('hex');
+    // 3. تحديث كلمة المرور (bcrypt)
+    const hashedPassword = await hashPasswordForStorage(newPassword);
 
     const { error: updateError } = await supabase
       .from('registered_phones')
@@ -4496,9 +4566,9 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
     });
   }
 
-  // تشفير كلمة المرور قبل التخزين في قاعدة البيانات
+  // تشفير كلمة المرور قبل التخزين في قاعدة البيانات (bcrypt)
   if (phoneData.password) {
-    phoneData.password = crypto.createHash('sha256').update(phoneData.password).digest('hex');
+    phoneData.password = await hashPasswordForStorage(phoneData.password);
   }
   
   // تشفير رقم IMEI باستخدام AES
@@ -5242,8 +5312,10 @@ app.post('/api/verify-seller-password', verifyJwtToken, async (req, res) => {
     // تأكد أن المطلوب هو نفس صاحب الهاتف
     if (found.user_id !== req.user.id) return res.status(403).json({ ok: false, error: 'Not owner' });
 
-    const hashed = crypto.createHash('sha256').update(password).digest('hex');
-    if (found.password !== hashed) {
+    const passwordMatched = found.password
+      ? await bcrypt.compare(String(password), String(found.password))
+      : false;
+    if (!passwordMatched) {
       recordAuthFailure(userKey);
       return res.json({ ok: false });
     }
@@ -5271,9 +5343,11 @@ app.post('/api/transfer-ownership', verifyJwtToken, async (req, res) => {
 
     const registeredPhone = phones ? phones.find(p => decryptField(p.imei) === imei) : null;
     if (!registeredPhone) return res.status(404).json({ error: 'Phone not found' });
+    if (!registeredPhone.user_id || registeredPhone.user_id !== req.user?.id) {
+      return res.status(403).json({ error: 'Forbidden: only current owner can transfer this phone' });
+    }
 
-    // تحقق من كلمة المرور للبائع
-    const hashedSeller = crypto.createHash('sha256').update(sellerPassword).digest('hex');
+    // تحقق من كلمة المرور للبائع مع ترقية تلقائية للهاش القديم
     // Rate limit check (per seller/user)
     const userKey = req.user && req.user.id ? `uid:${req.user.id}` : `ip:${req.ip}`;
     const blocked = checkAuthBlocked(userKey);
@@ -5282,7 +5356,10 @@ app.post('/api/transfer-ownership', verifyJwtToken, async (req, res) => {
       return res.status(429).json({ error: 'Rate limit exceeded', retryAfter });
     }
 
-    if (registeredPhone.password !== hashedSeller) {
+    const sellerPasswordMatched = registeredPhone.password
+      ? await bcrypt.compare(String(sellerPassword), String(registeredPhone.password))
+      : false;
+    if (!sellerPasswordMatched) {
       recordAuthFailure(userKey);
       return res.status(401).json({ error: 'Incorrect seller password' });
     }
@@ -5330,9 +5407,9 @@ app.post('/api/transfer-ownership', verifyJwtToken, async (req, res) => {
     }
     if (typeof newOwner.phone_type !== 'undefined') updateData.phone_type = newOwner.phone_type;
 
-    // كلمة مرور المشتري (تخزين كهاش sha256)
+    // كلمة مرور المشتري (bcrypt)
     if (typeof newOwner.password !== 'undefined' && newOwner.password) {
-      updateData.password = crypto.createHash('sha256').update(newOwner.password).digest('hex');
+      updateData.password = await hashPasswordForStorage(newOwner.password);
     }
 
     // Determine owner `user_id` for the new buyer.
@@ -5421,6 +5498,23 @@ app.post('/api/transfer-ownership', verifyJwtToken, async (req, res) => {
 app.post('/api/transfer-records', verifyJwtToken, async (req, res) => {
   try {
     const { imei } = req.body || {};
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    if (!imei) return res.status(400).json({ error: 'imei is required' });
+
+    // Authorize: requester must currently own the requested IMEI.
+    const { data: ownPhones, error: ownPhonesErr } = await supabase
+      .from('registered_phones')
+      .select('imei')
+      .eq('user_id', userId)
+      .limit(1000);
+    if (ownPhonesErr) throw ownPhonesErr;
+
+    const imeiOwned = (ownPhones || []).some((p) => {
+      const decImei = decryptField(p.imei) || p.imei;
+      return normalizeDigitsOnly(decImei) === normalizeDigitsOnly(imei);
+    });
+    if (!imeiOwned) return res.status(403).json({ error: 'Not authorized' });
 
     const { data: records, error } = await supabase
       .from('transfer_records')
@@ -5430,12 +5524,10 @@ app.post('/api/transfer-records', verifyJwtToken, async (req, res) => {
 
     if (error) throw error;
 
-    const filtered = imei
-      ? (records || []).filter(r => {
-          const decImei = decryptField(r.imei) || r.imei;
-          return decImei === imei;
-        })
-      : (records || []);
+    const filtered = (records || []).filter(r => {
+      const decImei = decryptField(r.imei) || r.imei;
+      return normalizeDigitsOnly(decImei) === normalizeDigitsOnly(imei);
+    });
 
     const decrypted = filtered.map(r => ({
       ...r,
@@ -5459,6 +5551,8 @@ app.post('/api/transfer-records', verifyJwtToken, async (req, res) => {
 app.post('/api/update-phone-status', verifyJwtToken, async (req, res) => {
   try {
     const { ids, status } = req.body;
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     if (!ids || !Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids required' });
     if (!status) return res.status(400).json({ error: 'status required' });
 
@@ -5466,6 +5560,7 @@ app.post('/api/update-phone-status', verifyJwtToken, async (req, res) => {
       .from('registered_phones')
       .update({ status })
       .in('id', ids)
+      .eq('user_id', userId)
       .select();
 
     if (error) throw error;
@@ -5507,7 +5602,7 @@ app.post('/api/reset-registered-phone-password', verifyJwtToken, async (req, res
       return res.status(403).json({ error: 'Not authorized to reset password for this phone' });
     }
 
-    const hashed = crypto.createHash('sha256').update(newPassword).digest('hex');
+    const hashed = await hashPasswordForStorage(newPassword);
     const { data: updated, error: updateErr } = await supabase
       .from('registered_phones')
       .update({ password: hashed })

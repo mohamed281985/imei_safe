@@ -34,8 +34,7 @@ export default function DeepLinkHandler() {
         if (type === 'signup') {
           navigate('/business-profile-complete');
         } else if (type === 'recovery' && token) {
-          localStorage.setItem('resetToken', token);
-          navigate('/reset');
+          navigate(`/reset?token=${encodeURIComponent(token)}`);
         } else {
           navigate('/');
         }
