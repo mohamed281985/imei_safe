@@ -2063,6 +2063,8 @@ app.post('/api/report-lost-phone', verifyJwtToken, async (req, res) => {
     const data = { ...(req.body || {}) };
     data.user_id = req.user?.id || null;
     data.email = req.user?.email || data.email || '';
+    const PLACEHOLDER_REGISTERED = 'مسجل بالنظام';
+    let registeredPhoneForReport = null;
 
 
     // تحقق من روابط الصور (الفاتورة والمحضر) أنها روابط https صالحة أو فارغة (null/undefined)
@@ -2093,6 +2095,7 @@ app.post('/api/report-lost-phone', verifyJwtToken, async (req, res) => {
       }) : null;
 
       if (registeredPhone) {
+        registeredPhoneForReport = registeredPhone;
         // تحديد معرف المرسل: إذا جاء عبر التوكن استخدم req.user، وإلا احترم الحقل المرسَل (إن وُجد)
         const requesterId = (req && req.user && req.user.id) ? req.user.id : (data.user_id || null);
 
@@ -2114,6 +2117,24 @@ app.post('/api/report-lost-phone', verifyJwtToken, async (req, res) => {
             return res.status(403).json({ success: false, error: 'فقط صاحب الهاتف يمكنه تقديم البلاغ' });
           }
         }
+      }
+    }
+
+    // إذا كانت الواجهة أرسلت placeholders (مسجل بالنظام)، استبدلها بالقيم الفعلية من registered_phones
+    // ثم قم بتشفيرها وحفظها في phone_reports.
+    if (registeredPhoneForReport) {
+      try {
+        const ownerNameReal = decryptField(registeredPhoneForReport.owner_name) || registeredPhoneForReport.owner_name;
+        const phoneReal = decryptField(registeredPhoneForReport.phone_number) || registeredPhoneForReport.phone_number;
+        const idLast6Real = decryptField(registeredPhoneForReport.id_last6) || registeredPhoneForReport.id_last6;
+        const phoneTypeReal = registeredPhoneForReport.phone_type || null;
+
+        if ((!data.ownerName || data.ownerName === PLACEHOLDER_REGISTERED) && ownerNameReal) data.ownerName = ownerNameReal;
+        if ((!data.phoneNumber || data.phoneNumber === PLACEHOLDER_REGISTERED) && phoneReal) data.phoneNumber = phoneReal;
+        if ((!data.idLast6 || data.idLast6 === PLACEHOLDER_REGISTERED) && idLast6Real) data.idLast6 = idLast6Real;
+        if ((!data.phone_type || data.phone_type === PLACEHOLDER_REGISTERED) && phoneTypeReal) data.phone_type = phoneTypeReal;
+      } catch (e) {
+        console.warn('report-lost-phone: failed to hydrate placeholders from registered_phones', e);
       }
     }
     // تشفير كلمة المرور قبل الحفظ (bcrypt)
