@@ -65,19 +65,11 @@ const BiometricButton: React.FC = () => {
 
   const handleBiometric = async () => {
     try {
-      console.log('تشغيل handleBiometric...');
       const Fingerprint = (window as any).Fingerprint || ((window as any).cordova && (window as any).cordova.plugins && (window as any).cordova.plugins.fingerprint);
       if (!Fingerprint) {
-        console.log('Fingerprint plugin not available');
         toast({ title: t('error'), description: t('fingerprint_plugin_not_available'), variant: 'destructive' });
         return;
       }
-      // طباعة محتوى window.Capacitor و window.cordova و window.SecureStorage
-      console.log('window.Capacitor:', (window as any).Capacitor);
-      console.log('window.Capacitor.Plugins:', (window as any).Capacitor?.Plugins);
-      console.log('window.cordova:', (window as any).cordova);
-      console.log('window.SecureStorage:', (window as any).SecureStorage);
-      console.log('استدعاء Fingerprint.show...');
       Fingerprint.show({
         clientId: "MyApp",
         clientSecret: "password", // Only for Android
@@ -99,10 +91,8 @@ const BiometricButton: React.FC = () => {
             );
             await ss.get(
               async (token: string) => {
-                console.log('تم جلب التوكن من SecureStorage:', token);
                 if (token) {
-                  const loginSuccess = await loginWithBiometricToken?.(token);
-                  console.log('نتيجة loginWithBiometricToken:', loginSuccess);
+                  await loginWithBiometricToken?.(token);
                   // The loginWithBiometricToken function already shows toasts on success/failure
                   // No need to show another one here.
                 } else {
@@ -121,7 +111,7 @@ const BiometricButton: React.FC = () => {
           }
         })();
       }, function(errorResult) {
-        console.log('Fingerprint error callback:', errorResult);
+        console.debug('Fingerprint authentication failed');
         toast({ title: t('error'), description: t('authentication_failed'), variant: 'destructive' });
       });
     } catch (err) {

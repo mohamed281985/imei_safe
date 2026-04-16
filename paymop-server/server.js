@@ -4553,6 +4553,7 @@ const checkAuthBlocked = (key) => {
 app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
   const phoneData = req.body;
   const userId = req.user.id;
+  const rawImei = typeof phoneData.imei === 'string' ? phoneData.imei : '';
 
   // التحقق من وجود المستخدم من JWT Token
   if (!userId) {
@@ -4687,7 +4688,7 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
     }
 
     // أولاً: التحقق من عدم وجود بلاغ نشط لهذا الـ IMEI
-    if (phoneData.imei) {
+    if (rawImei) {
       // جلب جميع السجلات للتحقق منها
       const { data: allReports, error: reportsFetchError } = await supabase
         .from('phone_reports')
@@ -4700,7 +4701,7 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
         // فك تشفير جميع أرقام IMEI والمقارنة
         const matchingReport = allReports.find(report => {
           const decryptedImei = decryptField(report.imei);
-          return decryptedImei === phoneData.imei;
+          return normalizeDigitsOnly(decryptedImei) === normalizeDigitsOnly(rawImei);
         });
         
         if (matchingReport) {
