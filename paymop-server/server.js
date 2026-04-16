@@ -1768,6 +1768,9 @@ const registerOrder = async (token, { amount, merchantOrderId }) => {
 // --- نقاط نهاية الإشعارات ---
 app.post('/api/send-fcm-v1', verifyJwtToken, async (req, res) => {
   try {
+    if (!req.user?.id) {
+      return res.status(401).json({ success: false, error: 'Unauthorized: Invalid token' });
+    }
     const { token, title, body, data } = req.body;
     const result = await sendFCMNotificationV1({ token, title, body, data });
     res.json({ success: true, result });
@@ -1780,6 +1783,9 @@ app.post('/api/send-fcm-v1', verifyJwtToken, async (req, res) => {
 // نقطة نهاية لإرسال إشعارات باستخدام IMEI
 app.post('/api/send-notification-by-imei', verifyJwtToken, async (req, res) => {
   try {
+    if (!req.user?.id) {
+      return res.status(401).json({ success: false, error: 'Unauthorized: Invalid token' });
+    }
     const { imei, title, body, data } = req.body;
 
     // التحقق من وجود البيانات المطلوبة
@@ -1991,6 +1997,9 @@ app.post('/api/search-imei', async (req, res) => {
 // نقطة نهاية لإرسال إشعارات من هاتف لآخر
 app.post('/api/send-notification', verifyJwtToken, async (req, res) => {
   try {
+    if (!req.user?.id) {
+      return res.status(401).json({ success: false, error: 'Unauthorized: Invalid token' });
+    }
     const { receiverToken, title, body, data } = req.body;
     const senderId = req.user?.id || null;
 
@@ -2048,6 +2057,9 @@ app.post('/api/send-notification', verifyJwtToken, async (req, res) => {
 // نقطة نهاية لحفظ بلاغ فقدان الهاتف مع تشفير البيانات
 app.post('/api/report-lost-phone', verifyJwtToken, async (req, res) => {
   try {
+    if (!req.user?.id) {
+      return res.status(401).json({ success: false, error: 'Unauthorized: Invalid token' });
+    }
     const data = { ...(req.body || {}) };
     data.user_id = req.user?.id || null;
     data.email = req.user?.email || data.email || '';
