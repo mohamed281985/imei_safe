@@ -2475,11 +2475,10 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
   }
 });
 
-app.post('/api/get-finder-phone', async (req, res) => {
-  const { userId } = req.body;
-
+app.post('/api/get-finder-phone', verifyJwtToken, async (req, res) => {
+  const userId = req.user?.id;
   if (!userId) {
-    return res.status(400).json({ error: 'userId is required' });
+    return res.status(401).json({ error: 'Unauthorized: Invalid token' });
   }
 
   let finderPhoneNumber = null;
