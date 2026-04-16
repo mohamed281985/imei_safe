@@ -1597,6 +1597,25 @@ const normalizeDigitsOnly = (s) => {
   }
 };
 
+const normalizeTextForCompare = (s) => {
+  if (s === null || s === undefined) return '';
+  try {
+    return String(s)
+      .replace(/&quot;/gi, '"')
+      .replace(/&apos;/gi, "'")
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/^[\u0022\u201C\u201D\u00AB\u00BB'`\s]+|[\u0022\u201C\u201D\u00AB\u00BB'`\s]+$/g, '')
+      .replace(/\u00A0/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+  } catch (e) {
+    return '';
+  }
+};
+
 // دالة مساعدة للبحث عن FCM token باستخدام IMEI
 async function getFCMTokenByImei(imei) {
   const { data, error } = await supabase
@@ -4643,6 +4662,72 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
   } catch (error) {
     console.error('Error registering phone:', error);
     return sendError(res, 500, 'حدث خطأ في الخادم', error);
+  }
+});
+
+app.post('/api/validate-other-registration-data', verifyJwtToken, async (req, res) => {
+  const { ownerName, phoneNumber, id_last6 } = req.body || {};
+
+  const normalizedIncomingName = normalizeTextForCompare(ownerName);
+  const normalizedIncomingPhone = normalizeDigitsOnly(phoneNumber);
+  const normalizedIncomingIdLast6 = normalizeDigitsOnly(id_last6);
+
+  if (!normalizedIncomingName || !normalizedIncomingPhone || !normalizedIncomingIdLast6) {
+    return res.status(400).json({
+      valid: false,
+      error: 'missing_required_fields'
+    });
+  }
+
+  if (normalizedIncomingIdLast6.length !== 6) {
+    return res.status(400).json({
+      valid: false,
+      error: 'invalid_id_last6'
+    });
+  }
+
+  try {
+    const { data: usersRows, error: usersError } = await supabase
+      .from('users')
+      .select('id, full_name, phone, id_last6');
+
+    if (usersError) {
+      console.error('/api/validate-other-registration-data users fetch error:', usersError);
+      return res.status(500).json({ valid: false, error: 'database_error' });
+    }
+
+    const rows = usersRows || [];
+    const match = rows.find((row) => {
+      const dbName = normalizeTextForCompare(decryptField(row.full_name) || row.full_name || '');
+      const dbPhone = normalizeDigitsOnly(decryptField(row.phone) || row.phone || '');
+      const dbIdLast6 = normalizeDigitsOnly(decryptField(row.id_last6) || row.id_last6 || '');
+
+      const phoneMatches =
+        dbPhone === normalizedIncomingPhone ||
+        dbPhone.endsWith(normalizedIncomingPhone) ||
+        normalizedIncomingPhone.endsWith(dbPhone);
+
+      return (
+        dbName === normalizedIncomingName &&
+        phoneMatches &&
+        dbIdLast6 === normalizedIncomingIdLast6
+      );
+    });
+
+    if (!match) {
+      return res.status(200).json({
+        valid: false,
+        error: 'data_mismatch'
+      });
+    }
+
+    return res.status(200).json({
+      valid: true,
+      userId: match.id
+    });
+  } catch (error) {
+    console.error('/api/validate-other-registration-data error:', error);
+    return res.status(500).json({ valid: false, error: 'server_error' });
   }
 });
 

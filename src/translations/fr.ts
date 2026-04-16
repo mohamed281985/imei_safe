@@ -966,6 +966,7 @@ export default {
   "invalid_imei_length": "L'IMEI doit comporter 15 chiffres",
   "upload_required_images": "Veuillez téléverser les images requises",
   "error_saving_data": "Erreur lors de l'enregistrement des données",
+  "other_registration_data_invalid": "Les données sont incorrectes",
   "error_submitting_form": "Erreur lors de l'envoi du formulaire",
 
   // Report Page - New Translations
