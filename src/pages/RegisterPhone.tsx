@@ -1,8 +1,9 @@
 // Helper to mask last 6 digits (show only last 2)
 const maskIdLast6 = (id: string): string => {
-  if (!id) return '';
-  if (id.length <= 2) return '*'.repeat(id.length);
-  return '*'.repeat(id.length - 2) + id.slice(-2);
+  const digits = cleanDigits(id);
+  if (!digits) return '';
+  if (digits.length <= 2) return '*'.repeat(digits.length);
+  return '*'.repeat(digits.length - 2) + digits.slice(-2);
 };
 import React, { useState, useCallback, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -65,25 +66,80 @@ type ImageType = keyof Pick<FormData, 'phoneImage' | 'receiptImage'>;
 
 const IMEI_LENGTH = 15;
 
+// Helpers: decode HTML entities and strip surrounding quotes/punctuation
+const decodeHtmlEntities = (s: string) => {
+  if (!s) return '';
+  return s.replace(/&quot;/gi, '"')
+          .replace(/&apos;/gi, "'")
+          .replace(/&amp;/gi, '&')
+          .replace(/&lt;/gi, '<')
+          .replace(/&gt;/gi, '>');
+};
+
+const stripSurroundingQuotes = (s: string) => {
+  if (!s) return '';
+  return s.replace(/^[\u0022\u201C\u201D\u00AB\u00BB'`\s]+|[\u0022\u201C\u201D\u00AB\u00BB'`\s]+$/g, '').trim();
+};
+
+const cleanDisplay = (s: string) => stripSurroundingQuotes(decodeHtmlEntities(String(s || ''))).replace(/\u00A0/g, ' ').trim();
+
+function cleanText(s: unknown): string {
+  return cleanDisplay(String(s ?? ''));
+}
+
+function cleanPhoneNumber(phone: string): string {
+  return cleanDisplay(String(phone || '')).replace(/\D/g, '');
+}
+
+function cleanDigits(s: unknown): string {
+  return cleanText(s).replace(/\D/g, '');
+}
+
+function cleanEmailValue(s: unknown): string {
+  return cleanText(s).replace(/\s+/g, '');
+}
+
 // دوال مساعدة لتنسيق عرض البيانات
 const maskName = (name: string): string => {
   if (!name) return '';
-  const names = name.split(' ');
+  const cleanedName = cleanDisplay(name);
+  const names = cleanedName.split(/\s+/);
   return names.map(part => {
-    if (part.length <= 1) return part;
-    return part[0] + '*'.repeat(part.length - 1);
+    if (!part) return part;
+    const core = part.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
+    if (!core) return part;
+    const graphemes = Array.from(core);
+    const firstIdx = graphemes.findIndex(g => /\p{L}|\p{N}/u.test(g));
+    if (firstIdx === -1) return core;
+    const lettersCount = graphemes.reduce((n, g) => n + (/\p{L}|\p{N}/u.test(g) ? 1 : 0), 0);
+    if (lettersCount <= 1) return core;
+    let shown = '';
+    for (let i = 0; i < graphemes.length; i++) {
+      const g = graphemes[i];
+      if (i === firstIdx) {
+        shown += g;
+      } else if (/\p{L}|\p{N}/u.test(g)) {
+        shown += '*';
+      } else {
+        shown += g;
+      }
+    }
+    return shown.replace(/[\u0022\u201C\u201D\u00AB\u00BB'`]/g, '');
   }).join(' ');
 };
 
 const maskPhoneNumber = (phone: string): string => {
-  if (!phone) return '';
-  return '*'.repeat(phone.length - 2) + phone.slice(-2);
+  const digits = cleanPhoneNumber(phone);
+  if (!digits) return '';
+  if (digits.length <= 2) return '*'.repeat(digits.length);
+  return '*'.repeat(digits.length - 2) + digits.slice(-2);
 };
 
 // Helper to mask email for privacy
 const maskEmail = (email: string): string => {
-  if (!email) return '';
-  const [name, domain] = email.split('@');
+  const cleaned = cleanEmailValue(email);
+  if (!cleaned) return '';
+  const [name, domain] = cleaned.split('@');
   if (!domain) return email;
   const maskedName = name.length > 2 ? name[0] + '*'.repeat(name.length - 2) + name.slice(-1) : name;
   return maskedName + '@' + domain;
@@ -154,12 +210,6 @@ const validateImageFile = (file: File): Promise<boolean> => {
 function cleanImei(imei: string): string {
   // إزالة أي مسافات أو أحرف غير رقمية
   return imei.trim().replace(/\D/g, '');
-}
-
-// دالة مساعدة لتنظيف رقم الهاتف
-function cleanPhoneNumber(phone: string): string {
-  // إزالة أي مسافات أو أحرف غير رقمية
-  return phone.trim().replace(/\D/g, '');
 }
 
 // دالة مساعدة لتنظيف آخر 6 أرقام من البطاقة
@@ -325,19 +375,19 @@ const RegisterPhone: React.FC = () => {
           if (user.role === 'business' && businessData) {
             setFormData(prev => ({
               ...prev,
-              ownerName: businessData.owner_name || prev.ownerName || '',
-              phoneNumber: businessData.phone || prev.phoneNumber || '',
-              email: user?.email || prev.email || '',
-              id_last6: businessData.id_last6 || prev.id_last6 || ''
+              ownerName: cleanText(businessData.owner_name || prev.ownerName || ''),
+              phoneNumber: cleanPhoneNumber(businessData.phone || prev.phoneNumber || ''),
+              email: cleanEmailValue(user?.email || prev.email || ''),
+              id_last6: cleanDigits(businessData.id_last6 || prev.id_last6 || '')
             }));
             toast({ title: t('store_data_filled'), description: t('store_data_filled_description') });
           } else if (userData) {
             setFormData(prev => ({
               ...prev,
-              ownerName: userData.full_name || prev.ownerName || '',
-              phoneNumber: userData.phone || prev.phoneNumber || '',
-              email: user?.email || userData.email || prev.email || '',
-              id_last6: userData.id_last6 || prev.id_last6 || ''
+              ownerName: cleanText(userData.full_name || prev.ownerName || ''),
+              phoneNumber: cleanPhoneNumber(userData.phone || prev.phoneNumber || ''),
+              email: cleanEmailValue(user?.email || userData.email || prev.email || ''),
+              id_last6: cleanDigits(userData.id_last6 || prev.id_last6 || '')
             }));
             toast({ title: t('user_data_filled'), description: t('user_data_filled_description') });
           }
@@ -496,9 +546,9 @@ const RegisterPhone: React.FC = () => {
             } else {
               setFormData(prev => ({
                 ...prev,
-                ownerName: user?.role === 'business' ? prev.ownerName : (phoneDetails.owner_name || ''),
-                phoneNumber: user?.role === 'business' ? prev.phoneNumber : (phoneDetails.phone_number || ''),
-                phoneType: phoneDetails.phone_type || '',
+                ownerName: user?.role === 'business' ? prev.ownerName : cleanText(phoneDetails.owner_name || ''),
+                phoneNumber: user?.role === 'business' ? prev.phoneNumber : cleanPhoneNumber(phoneDetails.phone_number || ''),
+                phoneType: cleanText(phoneDetails.phone_type || ''),
                 phoneImage: null,
               }));
               setPreviews(prev => ({
@@ -790,6 +840,36 @@ const RegisterPhone: React.FC = () => {
     }
   }, [formData, previews, showToast, navigate, user, countryCode]);
 
+  const validateOtherUserData = useCallback(async (): Promise<boolean> => {
+    if (formData.registerType !== 'other') return true;
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) return false;
+
+      const response = await fetch('https://imei-safe.me/api/validate-other-registration-data', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          ownerName: cleanText(formData.ownerName),
+          phoneNumber: cleanPhoneNumber(`${countryCode}${formData.phoneNumber}`),
+          id_last6: cleanDigits(formData.id_last6)
+        })
+      });
+
+      if (!response.ok) return false;
+      const result = await response.json();
+      return !!result?.valid;
+    } catch (error) {
+      console.error('Error validating other user data:', error);
+      return false;
+    }
+  }, [formData.registerType, formData.ownerName, formData.phoneNumber, formData.id_last6, countryCode]);
+
   useEffect(() => {
     if (hasReachedRegisterLimit) {
       setShowUpgradeModal(true);
@@ -820,6 +900,16 @@ const RegisterPhone: React.FC = () => {
 
       const isValid = await validateForm();
       if (isValid) {
+        if (formData.registerType === 'other') {
+          const isOtherDataValid = await validateOtherUserData();
+          if (!isOtherDataValid) {
+            toast({ title: t('error'), description: t('other_registration_data_invalid'), variant: 'destructive' });
+            setIsLoading(false);
+            setIsSubmitting(false);
+            return;
+          }
+        }
+
         await savePhoneData();
         // تحديث العداد بعد التسجيل الناجح
         await updateRegisterUsage(user.id);
@@ -831,7 +921,7 @@ const RegisterPhone: React.FC = () => {
       setIsLoading(false);
       setIsSubmitting(false);
     }
-  }, [isSubmitting, validateForm, savePhoneData, showToast, user, checkRegisterLimit, updateRegisterUsage, toast]);
+  }, [isSubmitting, validateForm, savePhoneData, showToast, user, checkRegisterLimit, updateRegisterUsage, toast, formData.registerType, validateOtherUserData, t]);
 
   useEffect(() => {
     return () => {
@@ -1019,7 +1109,7 @@ const RegisterPhone: React.FC = () => {
                   type="text"
                   id="ownerName"
                   name="ownerName"
-                  value={formData.ownerName}
+                  value={formData.registerType === 'mine' ? maskName(formData.ownerName) : formData.ownerName}
                   onChange={handleChange}
                   className="input-field w-full text-gray-800"
                   style={{ direction: 'ltr', textAlign: 'left' }}
@@ -1042,7 +1132,7 @@ const RegisterPhone: React.FC = () => {
                     type="tel"
                     id="phoneNumber"
                     name="phoneNumber"
-                    value={formData.phoneNumber}
+                    value={formData.registerType === 'mine' ? maskPhoneNumber(formData.phoneNumber) : formData.phoneNumber}
                     onChange={handleChange}
                     className="input-field w-full text-gray-800"
                     disabled={formData.registerType === 'mine' || isLoading}
@@ -1061,7 +1151,7 @@ const RegisterPhone: React.FC = () => {
                   type="email"
                   id="email"
                   name="email"
-                  value={formData.email}
+                  value={formData.registerType === 'mine' ? maskEmail(formData.email) : formData.email}
                   onChange={e => setFormData(prev => ({ ...prev, email: e.target.value }))}
                   className="input-field w-full text-gray-800"
                   style={{ direction: 'ltr', textAlign: 'left' }}
@@ -1079,7 +1169,7 @@ const RegisterPhone: React.FC = () => {
                   type="text"
                   id="id_last6"
                   name="id_last6"
-                  value={formData.id_last6}
+                  value={formData.registerType === 'mine' ? maskIdLast6(formData.id_last6) : formData.id_last6}
                   onChange={handleChange}
                   className="input-field w-full text-gray-800"
                   maxLength={6}

@@ -961,6 +961,7 @@ export default {
   "invalid_imei_length": "رقم IMEI يجب أن يكون 15 رقم",
   "upload_required_images": "يرجى رفع الصور المطلوبة",
   "error_saving_data": "خطأ في حفظ البيانات",
+  "other_registration_data_invalid": "البيانات خطا",
   "error_submitting_form": "خطأ في إرسال النموذج",
   // Report Page - New Translations
   "data_found": "تم العثور على البيانات",

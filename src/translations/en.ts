@@ -957,6 +957,7 @@ export default {
   "invalid_imei_length": "IMEI must be 15 digits",
   "upload_required_images": "Please upload required images",
   "error_saving_data": "Error saving data",
+  "other_registration_data_invalid": "Data is incorrect",
   "error_submitting_form": "Error submitting form",
   // Report Page - New Translations
   "data_found": "Data Found",

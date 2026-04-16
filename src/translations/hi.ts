@@ -965,6 +965,7 @@ export default {
   "invalid_imei_length": "IMEI 15 अंकों का होना चाहिए",
   "upload_required_images": "कृपया आवश्यक छवियां अपलोड करें",
   "error_saving_data": "डेटा सहेजने में त्रुटि",
+  "other_registration_data_invalid": "डेटा गलत है",
   "error_submitting_form": "फ़ॉर्म भेजने में त्रुटि",
 
   // Report Page - New Translations
