@@ -89,8 +89,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsFirstLogin(false); // ⭐ إعادة تعيين الحالة عند الخروج
     setLastActivity(Date.now());
 
-    // ملاحظة: لا نستدعي supabase.auth.signOut() للحفاظ على صلاحية refresh_token.
-    // هذا هو ما يسمح للمستخدم بتسجيل الدخول مرة أخرى بالبصمة.
+    // إبطال الجلسة من Supabase لتقليل مخاطر إعادة استخدام التوكن.
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.error('Supabase signOut failed:', err);
+    }
+
+    // تنظيف أي توكن بصمة محفوظ محليًا.
+    try {
+      if ((window as any).SecureStorage) {
+        const ss = new (window as any).SecureStorage(() => {}, () => {}, 'my_app_storage');
+        ss.remove(() => {}, () => {}, 'biometricAuthToken');
+      }
+    } catch (e) {
+      console.warn('Could not clear biometricAuthToken on logout.', e);
+    }
   }, []); // الاعتماديات فارغة لأن دوال الحالة (setters) مستقرة
 
   // Function to update last activity time

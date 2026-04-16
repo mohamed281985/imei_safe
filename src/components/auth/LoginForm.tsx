@@ -26,6 +26,9 @@ export function LoginForm({
   const location = useLocation();
   const params = new URLSearchParams(location.search);
   const redirect = params.get('redirect');
+  const safeRedirect = redirect && redirect.startsWith('/') && !redirect.startsWith('//') && !redirect.includes('://')
+    ? redirect
+    : null;
   
   const [email, setEmail] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -63,8 +66,8 @@ export function LoginForm({
           });
           navigate('/business-profile-complete', { replace: true });
         } else {
-          if (redirect) {
-            navigate(redirect, { replace: true });
+          if (safeRedirect) {
+            navigate(safeRedirect, { replace: true });
           } else {
             navigate('/dashboard', { replace: true });
           }

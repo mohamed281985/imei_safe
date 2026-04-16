@@ -26,15 +26,16 @@ export default function Reset() {
     }
     // Read reset token from URL query parameter to avoid persistent storage (localStorage)
     const params = new URLSearchParams(location.search);
-    const token = params.get('token') || params.get('resetToken');
-    if (!token) {
+    const accessToken = params.get('access_token') || params.get('token') || params.get('resetToken');
+    const refreshToken = params.get('refresh_token');
+    if (!accessToken || !refreshToken) {
       setError(t('token_not_found'));
       setLoading(false);
       return;
     }
     try {
-      // الطريقة الصحيحة مع supabase-js v2:
-      await supabase.auth.setSession({ access_token: token, refresh_token: token });
+      // يتطلب توكنين صحيحين من رابط الاستعادة (access + refresh)
+      await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
       const { error } = await supabase.auth.updateUser({ password });
       if (error) {
         setError(t('failed') + ': ' + error.message);
