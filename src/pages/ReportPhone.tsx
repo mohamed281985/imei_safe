@@ -894,19 +894,10 @@ const ReportPhone: React.FC = () => {
         return;
       }
 
-      // جلب FCM Token من localStorage
-      let fcmToken = localStorage.getItem('fcmToken') || '';
-
-      // محاولة الحصول على التوكن إذا لم يكن موجوداً
-      if (!fcmToken) {
-        try {
-          const fcmModule = await import('@/lib/fcm-capacitor');
-          await fcmModule.registerFCMToken();
-          fcmToken = localStorage.getItem('fcmToken') || '';
-        } catch (e) {
-          // تجاهل خطأ تسجيل FCM token
-        }
-      }
+      // لا نعتمد على localStorage لتوكن FCM.
+      // يتم تحديث fcm_token عبر registerFCMToken في قاعدة البيانات من جهة العميل،
+      // والسيرفر يستخدم القيمة المخزنة للمستخدم/البلاغ.
+      let fcmToken = '';
 
       // تشفير كلمة المرور قبل الإرسال
       // تجهيز البيانات للإرسال

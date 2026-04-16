@@ -21,11 +21,18 @@ export class NotificationService {
     data: Record<string, any> = {}
   ): Promise<{ success: boolean; result?: any; error?: string }> {
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+      if (!accessToken) {
+        return { success: false, error: 'غير مصرح: يجب تسجيل الدخول' };
+      }
+
       const apiBase = process.env.REACT_APP_API_URL || 'https://imei-safe.me';
       const response = await fetch(`${apiBase}/api/send-notification`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
           senderId,

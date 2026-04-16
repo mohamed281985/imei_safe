@@ -1,54 +1,42 @@
-// دالة محسنة لإرسال إشعار FCM عبر REST API
-export async function sendFCMNotification({ to, title, body, data }: {
+import { supabase } from './supabase';
+
+interface SendFcmPayload {
   to: string;
   title: string;
   body: string;
-  data?: any;
-}) {
-  const serverKey = import.meta.env.VITE_FCM_SERVER_KEY || process.env.VITE_FCM_SERVER_KEY;
-  if (!serverKey) throw new Error('FCM server key is missing');
+  data?: Record<string, any>;
+}
 
-  const payload = {
-    to,
-    notification: {
-      title,
-      body,
-      priority: 'high',
-      sound: 'default',
-    },
-    data: data || {},
-    android: {
-      priority: 'high',
-      notification: {
-        sound: 'default',
-        default_vibrate_timings: true,
-        default_light_settings: true,
-      },
-    },
-    apns: {
-      payload: {
-        aps: {
-          sound: 'default',
-          badge: 1,
-          contentAvailable: true,
-        },
-      },
-    },
-    ttl: 86400000, // 24 ساعة
-  };
+/**
+ * إرسال FCM يتم عبر السيرفر فقط.
+ * لا يتم تمرير أي مفاتيح حساسة من الواجهة.
+ */
+export async function sendFCMNotification({ to, title, body, data }: SendFcmPayload) {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData?.session?.access_token;
+  if (!accessToken) {
+    throw new Error('Unauthorized: missing access token');
+  }
 
-  const res = await fetch('https://fcm.googleapis.com/fcm/send', {
+  const apiBase = import.meta.env.VITE_API_BASE_URL || 'https://imei-safe.me';
+  const res = await fetch(`${apiBase}/api/send-fcm-v1`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `key=${serverKey}`,
+      Authorization: `Bearer ${accessToken}`,
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({
+      token: to,
+      title,
+      body,
+      data: data || {},
+    }),
   });
 
   if (!res.ok) {
-    const error = await res.text();
-    throw new Error(`FCM Error: ${error}`);
+    const errorText = await res.text();
+    throw new Error(`FCM proxy error: ${errorText}`);
   }
-  return await res.json();
+
+  return res.json();
 }

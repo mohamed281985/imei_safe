@@ -12,15 +12,21 @@ const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
+const WHATSAPP_WEBHOOK_VERIFY_TOKEN = process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN;
+const WHATSAPP_WEBHOOK_SECRET = process.env.WHATSAPP_WEBHOOK_SECRET;
+
+if (!WHATSAPP_WEBHOOK_VERIFY_TOKEN || !WHATSAPP_WEBHOOK_SECRET) {
+  throw new Error('Missing WHATSAPP_WEBHOOK_VERIFY_TOKEN or WHATSAPP_WEBHOOK_SECRET');
+}
+
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 // Endpoint للتحقق من Webhook (Verify Token)
 app.get('/webhook', (req, res) => {
-  const VERIFY_TOKEN = 'mali2861985';
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
-  if (mode && token && mode === 'subscribe' && token === VERIFY_TOKEN) {
+  if (mode && token && mode === 'subscribe' && token === WHATSAPP_WEBHOOK_VERIFY_TOKEN) {
     console.log('WEBHOOK_VERIFIED');
     res.status(200).send(challenge);
   } else {
@@ -30,9 +36,8 @@ app.get('/webhook', (req, res) => {
 
 // Webhook لاستقبال الرسائل من واتساب
 app.post('/webhook', async (req, res) => {
-  // تحقق من كلمة سر أو رمز سري في الطلب (مثلاً mali2861985)
-  const secret = 'mali2861985';
-  if (req.body.secret !== secret) {
+  // تحقق من السر عبر متغير البيئة
+  if (req.body.secret !== WHATSAPP_WEBHOOK_SECRET) {
     return res.status(403).json({ error: 'Forbidden: Invalid secret' });
   }
 
