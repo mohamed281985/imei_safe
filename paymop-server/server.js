@@ -16,6 +16,13 @@ import { Resend } from 'resend';
 import { validateImageFile } from './utils/imageValidator.js';
 import { fileTypeFromBuffer } from 'file-type';
 import sharp from 'sharp';
+import cookieParser from 'cookie-parser';
+import session from 'express-session';
+import csrf from 'csurf';
+import { verifyResourceOwnership } from './middleware/ownership.js';
+import { csrfProtection, csrfErrorHandler } from './middleware/csrf.js';
+import { logAudit } from './utils/auditLogger.js';
+import { SECURITY_CONFIG } from './config/security.js';
 
 // =================================================================
 // 1. الإعدادات الأولية وتحميل متغيرات البيئة (يجب أن تكون في البداية)
@@ -239,9 +246,24 @@ if (!PRIVATE_KEY) {
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 const app = express();
-// Enable CORS for development / configured client origins
-const CLIENT_ORIGINS = process.env.CLIENT_ORIGINS ? process.env.CLIENT_ORIGINS.split(',') : ['http://localhost:8080'];
-app.use(cors({ origin: CLIENT_ORIGINS, credentials: true }));
+
+// ✅ SECURITY: Parse cookies and setup session
+app.use(cookieParser());
+app.use(session(SECURITY_CONFIG.SESSION));
+
+// ✅ SECURITY: Enable CORS with whitelisted origins
+const CLIENT_ORIGINS = SECURITY_CONFIG.ALLOWED_ORIGINS;
+app.use(cors({ 
+  origin: (origin, callback) => {
+    if (!origin || CLIENT_ORIGINS.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('CORS not allowed'));
+    }
+  },
+  credentials: true,
+  optionsSuccessStatus: 200
+}));
 
 // Capture raw body for debugging and protect against malformed JSON
 app.use(express.json({
@@ -318,14 +340,13 @@ app.use((req, res, next) => {
   return next();
 });
 
-// Global rate limiter: use Redis if available, otherwise fallback to in-memory map
-const GLOBAL_RATE_WINDOW_MS = 60 * 1000; // 1 minute
-const GLOBAL_RATE_MAX = 200;
+// ✅ SECURITY: Global rate limiter (TIGHTENED)
+const GLOBAL_RATE_WINDOW_MS = SECURITY_CONFIG.RATE_LIMITS.GLOBAL.windowMs;
+const GLOBAL_RATE_MAX = SECURITY_CONFIG.RATE_LIMITS.GLOBAL.max; // تشديد من 200 إلى 100
 const localGlobalRate = new Map();
 
 const globalRateMiddleware = (req, res, next) => {
   if (redisClient) {
-    // async handler using Redis
     (async () => {
       try {
         const key = `globalrl:${req.ip}`;
@@ -364,26 +385,35 @@ const globalRateMiddleware = (req, res, next) => {
 };
 app.use(globalRateMiddleware);
 
-// Route-specific rate limiters to protect sensitive endpoints from abuse
+// ✅ SECURITY: Route-specific rate limiters (TIGHTENED)
 const checkEmailLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 6, // limit each IP to 6 requests per windowMs
+  windowMs: SECURITY_CONFIG.RATE_LIMITS.LOGIN.windowMs,
+  max: 6,
   standardHeaders: true,
   legacyHeaders: false,
   handler: (req, res) => res.status(429).json({ error: 'Too many requests, please try again later.' })
 });
  
-// Rate limiter for creating app users. Make configurable via env for testing.
-const CREATE_APP_USER_WINDOW_MS = Number(process.env.CREATE_APP_USER_WINDOW_MS) || (60 * 60 * 1000); // default 1 hour
-// Increase default limit in non-production environments to make local integration testing easier.
-const DEFAULT_CREATE_APP_USER_MAX = process.env.NODE_ENV !== 'production' ? 1000 : 20;
-const CREATE_APP_USER_MAX = Number(process.env.CREATE_APP_USER_MAX) || DEFAULT_CREATE_APP_USER_MAX; // attempts per window
+// ✅ SECURITY: Rate limiter for creating app users (TIGHTENED)
+const CREATE_APP_USER_WINDOW_MS = SECURITY_CONFIG.RATE_LIMITS.CREATE_APP_USER.windowMs; // 24 ساعة
+const DEFAULT_CREATE_APP_USER_MAX = process.env.NODE_ENV !== 'production' ? 50 : SECURITY_CONFIG.RATE_LIMITS.CREATE_APP_USER.max; // تشديد من 20 إلى 5
+const CREATE_APP_USER_MAX = Number(process.env.CREATE_APP_USER_MAX) || DEFAULT_CREATE_APP_USER_MAX;
 const createAppUserLimiter = rateLimit({
   windowMs: CREATE_APP_USER_WINDOW_MS,
   max: CREATE_APP_USER_MAX,
   standardHeaders: true,
   legacyHeaders: false,
   handler: (req, res) => res.status(429).json({ error: 'Too many account creation attempts, please try later.' })
+});
+
+// ✅ SECURITY: Login rate limiter (NEW)
+const loginLimiter = rateLimit({
+  windowMs: SECURITY_CONFIG.RATE_LIMITS.LOGIN.windowMs, // 15 دقيقة
+  max: SECURITY_CONFIG.RATE_LIMITS.LOGIN.max, // 5 محاولات
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => res.status(429).json({ error: 'Too many login attempts, please try later.' }),
+  skip: (req) => req.user // لا تحد للمستخدمين المسجلين
 });
  
 
@@ -434,6 +464,12 @@ function sendError(res, status = 500, userMessage = 'حدث خطأ في الخا
   if (res.headersSent) return; // avoid double responses
   return res.status(status).json({ ...extra, error: userMessage });
 }
+
+// ✅ SECURITY: Add CSRF protection middleware (before routes)
+app.use(csrfProtection);
+
+// ✅ SECURITY: CSRF error handler
+app.use(csrfErrorHandler);
 
 // ⭐ Endpoint لجلب mainimage_url من جدول ads_offar
 app.get('/api/offers/mainimage', async (req, res) => {
@@ -1343,22 +1379,20 @@ const rateLimitMiddleware = ({ windowMs = 15 * 60 * 1000, max = 5 } = {}) => (re
   }
 };
 
-// -----------------------------
-// Global and endpoint-specific rate limiters using express-rate-limit
-// -----------------------------
-// Global limiter: prevents brute-force across the whole app (default: 200 requests per minute)
+// ✅ SECURITY: Global and endpoint-specific rate limiters
+// Global limiter: prevents brute-force across the whole app (TIGHTENED: 100 from 200)
 const globalLimiter = rateLimit({
-  windowMs: Number(process.env.GLOBAL_RATE_WINDOW_MS) || 60 * 1000,
-  max: Number(process.env.GLOBAL_RATE_MAX) || 200,
+  windowMs: SECURITY_CONFIG.RATE_LIMITS.GLOBAL.windowMs,
+  max: SECURITY_CONFIG.RATE_LIMITS.GLOBAL.max, // تشديد من 200 إلى 100
   standardHeaders: true,
   legacyHeaders: false,
   handler: (req, res) => res.status(429).json({ error: 'Too many requests, please try again later.' })
 });
 
-// Payment endpoints limiter: more strict
+// ✅ SECURITY: Payment endpoints limiter (TIGHTENED)
 const paymentLimiter = rateLimit({
-  windowMs: Number(process.env.PAYMENT_RATE_WINDOW_MS) || 15 * 60 * 1000,
-  max: Number(process.env.PAYMENT_RATE_MAX) || 10,
+  windowMs: SECURITY_CONFIG.RATE_LIMITS.PAYMENT.windowMs,
+  max: SECURITY_CONFIG.RATE_LIMITS.PAYMENT.max, // تشديد من 10 إلى 5
   standardHeaders: true,
   legacyHeaders: false,
   handler: (req, res) => res.status(429).json({ error: 'Too many payment attempts, please wait and try again.' })
@@ -2206,6 +2240,22 @@ app.post('/api/report-lost-phone', verifyJwtToken, async (req, res) => {
       console.error('Error saving report:', error);
       return sendError(res, 500, 'حدث خطأ في الخادم', error, { success: false });
     }
+
+    // 📝 Audit Log: Record lost phone report
+    const reportedImei = req.body.imei || 'unknown';
+    await logAudit({
+      userId: req.user.id,
+      action: 'report_lost_phone',
+      resourceType: 'phone_report',
+      resourceId: inserted?.[0]?.id,
+      details: { 
+        imei_last_4: reportedImei.slice(-4),
+        status: 'active'
+      },
+      ip: req.ip,
+      userAgent: req.headers['user-agent']
+    });
+
     res.json({ success: true, data: inserted });
   } catch (err) {
     console.error('Error in /api/report-lost-phone:', err);
@@ -2488,6 +2538,19 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
     setTimeout(() => {
       recentlyNotifiedByImei.delete(imei);
     }, 30000); // 30 ثانية
+
+    // 📝 Audit Log: Record finder phone update
+    await logAudit({
+      userId: requesterId,
+      action: 'update_finder_phone_by_imei',
+      resourceType: 'phone_report',
+      resourceId: foundReport.id,
+      oldValues: { finder_phone: foundReport.finder_phone || null },
+      newValues: { finder_phone: 'redacted', finder_user_id: requesterId },
+      details: { imei_last_4: imei.slice(-4) },
+      ip: req.ip,
+      userAgent: req.headers['user-agent']
+    });
 
     res.json({ success: true, message: 'Notifications sent.' });
   } catch (err) {
@@ -4006,6 +4069,11 @@ app.get('/api/user-phones', verifyJwtToken, async (req, res) => {
   try {
     const userId = req.user.id;
 
+    // ✅ Ownership verification: يمكن فقط للمستخدم رؤية هواتفه الخاصة
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized: No user ID' });
+    }
+
     // 1. جلب الهواتف التي يملكها المستخدم الحالي فقط
     const { data: phones, error } = await supabase
       .from('registered_phones')
@@ -4053,7 +4121,12 @@ app.post('/api/resolve-report', verifyJwtToken, async (req, res) => {
   const { imei, imei_encrypted } = req.body;
   const userId = req.user.id;
 
-  if (!imei) return res.status(400).json({ error: 'IMEI is required' });
+  if (!userId) {
+    return res.status(401).json({ error: 'Unauthorized: No user ID' });
+  }
+
+  // ✅ Ownership verification: فقط مالك البلاغ يمكنه حله (التحقق أدناه)
+  if (!imei && !imei_encrypted) return res.status(400).json({ error: 'IMEI is required' });
 
   try {
     // جلب البلاغات النشطة للمستخدم
@@ -4092,6 +4165,19 @@ app.post('/api/resolve-report', verifyJwtToken, async (req, res) => {
       .eq('id', targetReport.id);
 
     if (updateError) throw updateError;
+
+    // 📝 Audit Log: Record report resolution
+    await logAudit({
+      userId: userId,
+      action: 'resolve_report',
+      resourceType: 'phone_report',
+      resourceId: targetReport.id,
+      oldValues: { status: 'active' },
+      newValues: { status: 'resolved' },
+      details: { imei_last_4: targetImei.slice(-4) },
+      ip: req.ip,
+      userAgent: req.headers['user-agent']
+    });
 
     res.json({ success: true, message: 'Report resolved successfully' });
   } catch (error) {
@@ -4147,6 +4233,18 @@ app.post('/api/verify-and-resolve-report', verifyJwtToken, async (req, res) => {
     }
     console.log('Report update result:', updateData);
 
+    // 📝 Audit Log: Record report verification and resolution
+    await logAudit({
+      userId: userId,
+      action: 'verify_and_resolve_report',
+      resourceType: 'phone_report',
+      resourceId: reportId,
+      oldValues: { status: 'active' },
+      newValues: { status: 'resolved' },
+      ip: req.ip,
+      userAgent: req.headers['user-agent']
+    });
+
     res.json({ success: true, message: 'Report verified and resolved' });
   } catch (error) {
     console.error('Error in /api/verify-and-resolve-report:', error);
@@ -4158,6 +4256,11 @@ app.post('/api/verify-and-resolve-report', verifyJwtToken, async (req, res) => {
 app.post('/api/reset-phone-password', verifyJwtToken, async (req, res) => {
   const { imei, newPassword } = req.body;
   const userId = req.user.id;
+
+  // ✅ Ownership verification: فقط مالك الهاتف يمكنه إعادة تعيين كلمة المرور
+  if (!userId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
 
   if (!imei || !newPassword) {
     return res.status(400).json({ error: 'IMEI and new password are required' });
@@ -4201,6 +4304,18 @@ app.post('/api/reset-phone-password', verifyJwtToken, async (req, res) => {
 
     // success: clear any recorded failures for this user
     clearAuthFailures(userKey);
+
+    // 📝 Audit Log: Record password reset
+    await logAudit({
+      userId: userId,
+      action: 'reset_phone_password',
+      resourceType: 'registered_phone',
+      resourceId: targetPhone.id,
+      details: { imei_last_4: imei.slice(-4) },
+      ip: req.ip,
+      userAgent: req.headers['user-agent']
+    });
+
     res.json({ success: true, message: 'Password updated successfully' });
 
   } catch (error) {
@@ -4357,6 +4472,13 @@ const updateRegisterUsage = async (userId) => {
 // نقطة نهاية للتحقق من وجود IMEI
 app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
   const { imei, userId } = req.body;
+  const requesterId = req.user?.id;
+
+  // ✅ Ownership verification: يمكن فقط للمستخدم التحقق من IMEIs الخاصة به
+  if (!requesterId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
   try {
     // أولاً: التحقق من جدول البلاغات (phone_reports) قبل أي شيء
     // جلب جميع السجلات للتحقق منها
@@ -4576,7 +4698,7 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
   const userId = req.user.id;
   const rawImei = typeof phoneData.imei === 'string' ? phoneData.imei : '';
 
-  // التحقق من وجود المستخدم من JWT Token
+  // ✅ Ownership verification: فقط المستخدم نفسه يمكنه تسجيل هاتفه الخاص
   if (!userId) {
     return res.status(401).json({ error: 'Unauthorized: Invalid user' });
   }
@@ -4751,6 +4873,22 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
       .select();
 
     if (error) throw error;
+
+    // 📝 Audit Log: Record phone registration
+    const registeredImei = rawImei || 'unknown';
+    await logAudit({
+      userId: userId,
+      action: 'register_phone',
+      resourceType: 'registered_phone',
+      resourceId: data?.id,
+      details: { 
+        imei_last_4: registeredImei.slice(-4),
+        phone_type: phoneData.phone_type,
+        status: 'pending'
+      },
+      ip: req.ip,
+      userAgent: req.headers['user-agent']
+    });
 
     // ⭐ تسجيل محاولة التسجيل الناجحة
     registrationAttempts.set(userId, [
@@ -5268,6 +5406,12 @@ app.post('/api/report-details-decrypted', verifyJwtToken, async (req, res) => {
 app.post('/api/reveal-imei', verifyJwtToken, async (req, res) => {
   try {
     const { imei_encrypted, imei_plain } = req.body;
+    const userId = req.user?.id;
+
+    // ✅ Ownership verification: يمكن فقط للمستخدم فك تشفير IMEI الخاص به
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
 
     console.log('[reveal-imei] payload keys:', Object.keys(req.body));
 
@@ -5322,6 +5466,13 @@ app.post('/api/reveal-imei', verifyJwtToken, async (req, res) => {
 app.post('/api/verify-seller-password', verifyJwtToken, async (req, res) => {
   try {
     const { imei, password } = req.body;
+    const userId = req.user?.id;
+
+    // ✅ Ownership verification: يمكن فقط لمالك الهاتف التحقق من كلمة المرور
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
     if (!imei || !password) return res.status(400).json({ error: 'imei and password required' });
 
     // Rate limit check (per requesting user)
@@ -5354,6 +5505,18 @@ app.post('/api/verify-seller-password', verifyJwtToken, async (req, res) => {
     }
     // success -> clear failures
     clearAuthFailures(userKey);
+
+    // 📝 Audit Log: Record password verification
+    await logAudit({
+      userId: req.user?.id,
+      action: 'verify_seller_password',
+      resourceType: 'phone',
+      resourceId: foundPhone.id,
+      details: { imei_last_4: imei.slice(-4), verified: true },
+      ip: req.ip,
+      userAgent: req.headers['user-agent']
+    });
+
     return res.json({ ok: true });
   } catch (err) {
     console.error('verify-seller-password error:', err);
@@ -5365,6 +5528,13 @@ app.post('/api/verify-seller-password', verifyJwtToken, async (req, res) => {
 app.post('/api/transfer-ownership', verifyJwtToken, async (req, res) => {
   try {
     const { imei, sellerPassword, newOwner, new_receipt_image_url } = req.body;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized: No user ID' });
+    }
+
+    // ✅ Ownership verification: فقط مالك الهاتف الحالي يمكنه نقل الملكية
     if (!imei || !sellerPassword || !newOwner) return res.status(400).json({ error: 'imei, sellerPassword and newOwner required' });
 
     // البحث عن السجل
@@ -5520,6 +5690,20 @@ app.post('/api/transfer-ownership', verifyJwtToken, async (req, res) => {
     if (transferErr) {
       console.error('transfer-ownership: failed to insert transfer record', transferErr);
     }
+
+    // 📝 Audit Log: Record ownership transfer
+    await logAudit({
+      userId: userId,
+      action: 'transfer_ownership',
+      resourceType: 'phone',
+      resourceId: registeredPhone.id,
+      oldValues: { owner: previousOwnerName || 'Unknown', user_id: userId },
+      newValues: { owner: newOwner.owner_name || 'Unknown', user_id: newOwner.email },
+      details: { imei_last_4: imei.slice(-4), transferId: transferInserted?.[0]?.id },
+      ip: req.ip,
+      userAgent: req.headers['user-agent']
+    });
+
     return res.json({ success: true, data: updated, previousOwnerIdLast6, transferRecordId: transferInserted?.[0]?.id || null });
   } catch (err) {
     console.error('transfer-ownership error:', err);
@@ -5535,6 +5719,7 @@ app.post('/api/transfer-records', verifyJwtToken, async (req, res) => {
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     if (!imei) return res.status(400).json({ error: 'imei is required' });
 
+    // ✅ Ownership verification: يمكن فقط للمستخدم الذي يملك الهاتف رؤية سجلات النقل
     // Authorize: requester must currently own the requested IMEI.
     const { data: ownPhones, error: ownPhonesErr } = await supabase
       .from('registered_phones')
@@ -5645,6 +5830,18 @@ app.post('/api/reset-registered-phone-password', verifyJwtToken, async (req, res
 
     // on success clear failures
     clearAuthFailures(userKey);
+
+    // 📝 Audit Log: Record registered phone password reset
+    await logAudit({
+      userId: req.user?.id,
+      action: 'reset_registered_phone_password',
+      resourceType: 'registered_phone',
+      resourceId: found.id,
+      details: { imei_last_4: decryptField(found.imei).slice(-4) },
+      ip: req.ip,
+      userAgent: req.headers['user-agent']
+    });
+
     return res.json({ success: true, data: updated });
   } catch (err) {
     console.error('reset-registered-phone-password error:', err);
@@ -6006,6 +6203,11 @@ app.post('/api/claim-phone-by-email', verifyJwtToken, async (req, res) => {
   const { imei } = req.body;
   const user = req.user;
 
+  // ✅ Ownership verification: فقط المستخدم نفسه يمكنه المطالبة بهاتفه
+  if (!user || !user.id) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
   if (!imei) {
     return res.status(400).json({ error: 'IMEI is required' });
   }
@@ -6037,6 +6239,19 @@ app.post('/api/claim-phone-by-email', verifyJwtToken, async (req, res) => {
       .eq('id', targetPhone.id);
 
     if (updateError) throw updateError;
+
+    // 📝 Audit Log: Record phone claim
+    await logAudit({
+      userId: user.id,
+      action: 'claim_phone_by_email',
+      resourceType: 'registered_phone',
+      resourceId: targetPhone.id,
+      oldValues: { user_id: null },
+      newValues: { user_id: user.id },
+      details: { imei_last_4: imei.slice(-4) },
+      ip: req.ip,
+      userAgent: req.headers['user-agent']
+    });
 
     res.json({ success: true, message: 'Phone claimed successfully' });
 
