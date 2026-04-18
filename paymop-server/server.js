@@ -18,7 +18,6 @@ import { fileTypeFromBuffer } from 'file-type';
 import sharp from 'sharp';
 import cookieParser from 'cookie-parser';
 import session from 'express-session';
-import csrf from 'csurf';
 import { verifyResourceOwnership } from './middleware/ownership.js';
 import { csrfProtection, csrfErrorHandler } from './middleware/csrf.js';
 import { logAudit } from './utils/auditLogger.js';
@@ -4875,14 +4874,13 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
     if (error) throw error;
 
     // 📝 Audit Log: Record phone registration
-    const registeredImei = rawImei || 'unknown';
     await logAudit({
       userId: userId,
       action: 'register_phone',
       resourceType: 'registered_phone',
       resourceId: data?.id,
       details: { 
-        imei_last_4: registeredImei.slice(-4),
+        imei_last_4: rawImei.slice(-4),
         phone_type: phoneData.phone_type,
         status: 'pending'
       },
