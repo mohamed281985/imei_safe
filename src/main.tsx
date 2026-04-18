@@ -12,6 +12,7 @@ import frTranslations from './translations/fr'
 import hiTranslations from './translations/hi'
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { AdModalProvider } from './contexts/AdModalContext';
+import { CsrfProvider } from './contexts/CsrfContext';
 import { clearExpiredSecureItems } from '@/utils/secureStorage';
 
 // Initialize i18next
@@ -54,9 +55,11 @@ const router = createBrowserRouter([
   {
     path: '*',
     element: (
-      <AdModalProvider>
-        <App />
-      </AdModalProvider>
+      <CsrfProvider>
+        <AdModalProvider>
+          <App />
+        </AdModalProvider>
+      </CsrfProvider>
     ),
   },
 ], {
