@@ -128,14 +128,23 @@ const setupCsrfInterceptor = (axiosInstance: AxiosInstance) => {
  * إنشاء axios instance مع CSRF interceptor
  */
 const createAxiosInstance = (): AxiosInstance => {
-  // Priority: env var > production URL > localhost
-  // في بيئة التطوير: استخدم http://localhost:3000 مباشرة
-  // في بيئة الإنتاج: استخدم https://imei-safe.me أو VITE_API_URL
-  const baseURL = import.meta.env.VITE_API_URL 
-    ? import.meta.env.VITE_API_URL as string
-    : import.meta.env.PROD 
-      ? 'https://imei-safe.me' 
-      : 'http://localhost:3000';
+  // Priority: VITE_API_URL env var > detect from hostname > localhost
+  let baseURL: string;
+  
+  if (import.meta.env.VITE_API_URL) {
+    baseURL = import.meta.env.VITE_API_URL as string;
+  } else if (typeof window !== 'undefined') {
+    // Detect from current location
+    const { hostname, protocol } = window.location;
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      baseURL = 'http://localhost:3000'; // Local dev
+    } else {
+      // Production: use current domain as API base
+      baseURL = `${protocol}//${hostname}`;
+    }
+  } else {
+    baseURL = import.meta.env.PROD ? 'https://imei-safe.me' : 'http://localhost:3000';
+  }
   
   const instance = axios.create({
     baseURL,
