@@ -6548,7 +6548,7 @@ if (ENABLE_POLLING) {
 const PORT = process.env.PORT || 3000;
 
 // Start server and attach robust error handlers to avoid unhandled 'error' events
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log('✅ Server listening on port', PORT);
   
   // ✅ SECURITY REMINDER
