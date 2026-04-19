@@ -4931,19 +4931,24 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
     if (error) throw error;
 
     // 📝 Audit Log: Record phone registration
-    await logAudit({
-      userId: userId,
-      action: 'register_phone',
-      resourceType: 'registered_phone',
-      resourceId: data?.id,
-      details: { 
-        imei_last_4: rawImei.slice(-4),
-        phone_type: phoneData.phone_type,
-        status: 'pending'
-      },
-      ip: req.ip,
-      userAgent: req.headers['user-agent']
-    });
+    try {
+      await logAudit({
+        userId: userId,
+        action: 'register_phone',
+        resourceType: 'registered_phone',
+        resourceId: data?.id,
+        details: { 
+          imei_last_4: rawImei.slice(-4),
+          phone_type: phoneData.phone_type,
+          status: 'pending'
+        },
+        ip: req.ip,
+        userAgent: req.headers['user-agent']
+      });
+    } catch (auditError) {
+      console.error('خطأ غير حرج في تسجيل Audit:', auditError);
+      // لا نوقف العملية بسبب فشل Audit Log
+    }
 
     // ⭐ تسجيل محاولة التسجيل الناجحة
     registrationAttempts.set(userId, [
