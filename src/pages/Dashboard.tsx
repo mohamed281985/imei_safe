@@ -24,6 +24,7 @@ import BottomNavbar from '@/pages/BottomNavbar';
 import { useAds } from '@/contexts/AdContext'; // تأكد من استيراد useToast
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
+import axiosInstance from '@/services/axiosInterceptor';
 
 const OwnershipConfirmationModal = React.lazy(() => import('../components/OwnershipConfirmationModal'));
 const AdPopupModal = React.lazy(() => import('../components/AdPopupModal'));
@@ -264,7 +265,8 @@ const Dashboard: React.FC = () => {
         if (!token) return;
 
         // استخدام API لجلب الهواتف مع فك التشفير
-        const response = await fetch('https://imei-safe.me/api/user-phones', {
+        const apiBase = import.meta.env.PROD ? 'https://imei-safe.me' : '/api';
+        const response = await fetch(`${apiBase}/user-phones`, {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -321,17 +323,17 @@ const Dashboard: React.FC = () => {
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
 
-        const response = await fetch('https://imei-safe.me/api/check-unclaimed-phones', {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
+        const response = await axiosInstance.get('/api/check-unclaimed-phones',
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
           }
-        });
+        );
 
         console.debug('Check unclaimed phones response status');
-        if (response.ok) {
-          const result = await response.json();
+        if (response.status === 200) {
+          const result = response.data;
           if (result.success && result.phones && result.phones.length > 0) {
             setUnclaimedPhones(result.phones);
             setShowClaimModal(true);
@@ -355,7 +357,8 @@ const Dashboard: React.FC = () => {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
 
-      const response = await fetch('https://imei-safe.me/api/claim-phone-by-email', {
+      const apiBase = import.meta.env.PROD ? 'https://imei-safe.me' : '/api';
+      const response = await fetch(`${apiBase}/claim-phone-by-email`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

@@ -3,7 +3,7 @@
 
 import { useState, useCallback } from 'react';
 import { AxiosError } from 'axios';
-import { createAxiosInstance } from '@/services/axiosInterceptor';
+import axiosInstance from '@/services/axiosInterceptor';
 
 interface UseApiCallOptions {
   onSuccess?: (data: any) => void;
@@ -30,8 +30,6 @@ export const useApiCall = <T = any>(
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
-
-  const axiosInstance = createAxiosInstance();
 
   const execute = useCallback(
     async (url: string, method: string = 'get', payload: any = null): Promise<T | null> => {

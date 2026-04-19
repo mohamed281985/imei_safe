@@ -10,6 +10,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useToast } from '@/hooks/use-toast';
 import AdsOfferSlider from '@/components/AdsOfferSlider';
+import axiosInstance from '@/services/axiosInterceptor';
 import imageCompression from 'browser-image-compression';
 import { Button } from '@/components/ui/button';
 import { Camera, Upload, CreditCard, User, FileText, CheckCircle, AlertTriangle } from 'lucide-react';
@@ -238,20 +239,16 @@ const RegisterPhone: React.FC = () => {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
 
-      const response = await fetch('https://imei-safe.me/api/check-limit', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ type: 'register_phone' })
-      });
+      const response = await axiosInstance.post('/api/check-limit', 
+        { type: 'register_phone' },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
 
-      if (!response.ok) {
-        throw new Error('Failed to check limit');
-      }
-
-      const result = await response.json();
+      const result = response.data;
 
       if (!result.allowed) {
         toast({
@@ -290,14 +287,14 @@ const RegisterPhone: React.FC = () => {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
 
-      await fetch('https://imei-safe.me/api/increment-usage', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ type: 'register_phone' })
-      });
+      await axiosInstance.post('/api/increment-usage',
+        { type: 'register_phone' },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
     } catch (error) {
       console.error('خطأ في تحديث استخدام التسجيل:', error);
     }
@@ -353,20 +350,19 @@ const RegisterPhone: React.FC = () => {
           const { data: { session } } = await supabase.auth.getSession();
           const token = session?.access_token;
 
-          const response = await fetch('https://imei-safe.me/api/decrypted-user', {
-            method: 'GET',
+          // تحقق من وجود token قبل الاستدعاء
+          if (!token) {
+            console.warn('No authentication token available');
+            return;
+          }
+
+          const response = await axiosInstance.get('/api/decrypted-user', {
             headers: {
-              'Content-Type': 'application/json',
               'Authorization': `Bearer ${token}`
             }
           });
 
-          if (!response.ok) {
-            // لا نفشل بشكل صعب؛ نترك الحقول الفارغة كتحوّط
-            throw new Error('Failed to fetch decrypted user data');
-          }
-
-          const result = await response.json();
+          const result = response.data;
 
           // result: { user: {...} | null, business: {...} | null }
           const userData = result?.user || null;
@@ -403,7 +399,8 @@ const RegisterPhone: React.FC = () => {
         }
       } catch (error) {
         console.error('Error fetching user data:', error);
-        toast({ title: 'خطأ', description: 'فشل تحميل بيانات المستخدم.', variant: 'destructive' });
+        // لا نعرض رسالة خطأ إذا لم تكن هناك بيانات للملء
+        // toast({ title: 'خطأ', description: 'فشل تحميل بيانات المستخدم.', variant: 'destructive' });
       } finally {
         setIsLoading(false);
       }
@@ -417,25 +414,21 @@ const RegisterPhone: React.FC = () => {
     try {
       // ملاحظة: تم تشفير رقم IMEI بالفعل قبل استدعاء هذه الدالة باستخدام AES
       // ملاحظة أمنية: استخدام JWT Token للمصادقة بدلاً من مفتاح API
-      // استخدام API للتحقق من IMEI
+      // استخدام axios للتحقق من IMEI (مع CSRF protection)
 
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
 
-      const response = await fetch('https://imei-safe.me/api/check-imei', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ imei: imei, userId: user?.id })
-      });
+      const response = await axiosInstance.post('/api/check-imei',
+        { imei: imei, userId: user?.id },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
 
-      if (!response.ok) {
-        throw new Error(t('error_checking_imei'));
-      }
-
-      return await response.json();
+      return response.data;
     } catch (err) {
       console.error('Error in checkImeiExists:', err);
       if (err instanceof Error && err.message === t('error_checking_imei')) {
@@ -801,28 +794,14 @@ const RegisterPhone: React.FC = () => {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
 
-      const response = await fetch('https://imei-safe.me/api/register-phone', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(phoneData)
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('خطأ في حفظ البيانات:', errorData);
-        if (response.status === 429) {
-          setHasReachedRegisterLimit(true);
-          setShowUpgradeModal(true);
-          throw new Error(errorData.error || t('register_limit_exceeded'));
+      const response = await axiosInstance.post('/api/register-phone',
+        phoneData,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
         }
-        if (errorData.code === '23514') {
-          showToast('error', 'invalid_review_status');
-        }
-        throw new Error(errorData.error || 'Error registering phone');
-      }
+      );
 
       Object.values(previews).forEach(url => url && URL.revokeObjectURL(url));
 
@@ -834,7 +813,15 @@ const RegisterPhone: React.FC = () => {
 
     } catch (error) {
       console.error('خطأ في حفظ بيانات الهاتف:', error);
-      showToast('error', 'error_saving_data');
+      if ((error as any)?.response?.status === 429) {
+        setHasReachedRegisterLimit(true);
+        setShowUpgradeModal(true);
+        showToast('error', 'register_limit_exceeded');
+      } else if ((error as any)?.response?.data?.code === '23514') {
+        showToast('error', 'invalid_review_status');
+      } else {
+        showToast('error', 'error_saving_data');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -848,20 +835,20 @@ const RegisterPhone: React.FC = () => {
       const token = session?.access_token;
       if (!token) return false;
 
-      const response = await fetch('https://imei-safe.me/api/validate-other-registration-data', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
+      const response = await axiosInstance.post('/api/validate-other-registration-data',
+        {
           ownerName: cleanText(formData.ownerName),
           phoneNumber: cleanPhoneNumber(`${countryCode}${formData.phoneNumber}`),
           id_last6: cleanDigits(formData.id_last6)
-        })
-      });
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
 
-      if (!response.ok) return false;
+      return response.status === 200;
       const result = await response.json();
       return !!result?.valid;
     } catch (error) {

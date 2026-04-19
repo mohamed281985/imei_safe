@@ -27,8 +27,9 @@ export class NotificationService {
         return { success: false, error: 'غير مصرح: يجب تسجيل الدخول' };
       }
 
-      const apiBase = process.env.REACT_APP_API_URL || 'https://imei-safe.me';
-      const response = await fetch(`${apiBase}/api/send-notification`, {
+      const apiBase = typeof window !== 'undefined' ? window.location.origin : 'https://imei-safe.me';
+      const endpoint = import.meta.env.PROD ? `${apiBase}/api/send-notification` : '/api/send-notification';
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

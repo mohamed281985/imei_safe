@@ -276,8 +276,7 @@ export async function makeSecureApiCall<T = any>(
   try {
     // استيراد axios instance
     const axiosModule = await import('../src/services/axiosInterceptor');
-    const createAxiosInstance = axiosModule.default || axiosModule.createAxiosInstance;
-    const axiosInstance: any = createAxiosInstance();
+    const axiosInstance = axiosModule.default;
     
     let response: any;
     switch (method.toLowerCase()) {

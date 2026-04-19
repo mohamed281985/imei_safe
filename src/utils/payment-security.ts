@@ -1,5 +1,5 @@
 export const encryptPaymentData = async (data: any) => {
-  const API_BASE = (import.meta.env.VITE_API_BASE as string) || '';
+  const API_BASE = import.meta.env.VITE_API_BASE || (import.meta.env.PROD ? 'https://imei-safe.me' : '') || '';
   const url = `${API_BASE}/api/encrypt`;
   try {
     const response = await fetch(url, {
