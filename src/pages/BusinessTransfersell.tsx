@@ -494,22 +494,29 @@ const BusinessTransfer: React.FC = () => {
               resolvedPhone = userMetaPhone;
             }
 
-            // إذا بقي الرقم فارغاً، حاول الاستعلام من جدول profiles إذا كان موجوداً
+            // إذا بقي الرقم فارغاً، حاول جلبه من server endpoint (مفك التشفير)
             if ((!resolvedPhone || String(resolvedPhone).trim() === '') && user?.id) {
               try {
-                const { data: profile, error: profileError } = await supabase.from('profiles').select('phone,phone_number').eq('id', user.id).maybeSingle();
-                if (profileError) {
-                  // تجاهل خطأ عدم وجود العلاقة (الجدول) لكن سجل الأخطاء الأخرى
-                  if (profileError.code !== '42P01') console.error('profiles query error:', profileError);
-                } else if (profile) {
-                  resolvedPhone = profile.phone || profile.phone_number || resolvedPhone;
+                const { data: { session } } = await supabase.auth.getSession();
+                const token = session?.access_token;
+                if (token) {
+                  const response = await axiosInstance.get('/api/decrypted-user', {
+                    headers: {
+                      'Authorization': `Bearer ${token}`
+                    }
+                  });
+                  if (response.data?.business?.phone) {
+                    resolvedPhone = response.data.business.phone || resolvedPhone;
+                  } else if (response.data?.user?.phone) {
+                    resolvedPhone = response.data.user.phone || resolvedPhone;
+                  }
                 }
               } catch (e) {
-                console.error('Unexpected error querying profiles:', e);
+                console.error('Error fetching decrypted phone number:', e);
               }
             }
 
-            // كخيار أخير حاول جدول businesses عبر server endpoint (مفك التشفير)
+            // لا داعي لمحاولة جدول businesses الآن لأننا استخدمنا server endpoint
             if ((!resolvedPhone || String(resolvedPhone).trim() === '') && user?.id) {
               try {
                 const response = await axiosInstance.get('/api/decrypted-user');
@@ -729,7 +736,7 @@ const BusinessTransfer: React.FC = () => {
       }
 
       // 3) رفع صورة الفاتورة الجديدة (إذا وجدت)
-      let newReceiptImageUrl: string | null = null;
+      let newReceiptImagePath: string | null = null;
       if (receiptImage) {
         const response = await fetch(receiptImage);
         const blob = await response.blob();
@@ -738,8 +745,8 @@ const BusinessTransfer: React.FC = () => {
         const filePath = `receipts/${fileName}`;
         const { error: uploadError } = await supabase.storage.from('transfer-assets').upload(filePath, imageFile, { upsert: true });
         if (uploadError) throw uploadError;
-        const { data: { publicUrl } } = supabase.storage.from('transfer-assets').getPublicUrl(filePath);
-        newReceiptImageUrl = publicUrl;
+        // تخزين المسار فقط (path)، بدون URL كامل
+        newReceiptImagePath = filePath;
       }
 
       // 4) Delegate the transfer and update to server-side endpoint to handle sensitive writes

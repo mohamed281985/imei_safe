@@ -948,7 +948,7 @@ const OwnershipTransfer: React.FC = () => {
       }
 
       // 2. رفع صورة الفاتورة الجديدة (إذا وجدت) - يجب أن يتم هذا قبل استدعاء الدالة
-      let newReceiptImageUrl: string | null = null;
+      let newReceiptImagePath: string | null = null;
       if (receiptImage) {
         const response = await fetch(receiptImage);
         const blob = await response.blob();
@@ -957,8 +957,8 @@ const OwnershipTransfer: React.FC = () => {
         const filePath = `receipts/${fileName}`;
         const { error: uploadError } = await supabase.storage.from('transfer-assets').upload(filePath, imageFile, { upsert: true });
         if (uploadError) throw uploadError;
-        const { data: { publicUrl } } = supabase.storage.from('transfer-assets').getPublicUrl(filePath);
-        newReceiptImageUrl = publicUrl;
+        // تخزين المسار فقط (path)، بدون URL كامل
+        newReceiptImagePath = filePath;
       }
 
       // 3. طلب نقل الملكية للسيرفر ليعالج التحديثات الحساسة (التشفير، السجلات، إلخ)

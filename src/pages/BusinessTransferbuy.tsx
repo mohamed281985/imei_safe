@@ -689,15 +689,15 @@ const BusinessTransferBuy: React.FC = () => {
       }
 
       // 2. رفع صورة الفاتورة الجديدة (إذا وجدت) - يجب أن يتم هذا قبل استدعاء الدالة
-      let newReceiptImageUrl: string | null = null;
+      let newReceiptImagePath: string | null = null;
       if (receiptFile) {
         const ext = (receiptFile.type && receiptFile.type.split('/')[1]) ? receiptFile.type.split('/')[1].split('+')[0] : 'jpg';
         const fileName = `receipt_${imei}_${Date.now()}.${ext}`;
         const filePath = `receipts/${fileName}`;
         const { error: uploadError } = await supabase.storage.from('transfer-assets').upload(filePath, receiptFile as File, { upsert: true, contentType: receiptFile.type });
         if (uploadError) throw uploadError;
-        const { data: { publicUrl } } = supabase.storage.from('transfer-assets').getPublicUrl(filePath);
-        newReceiptImageUrl = publicUrl;
+        // تخزين المسار فقط (path)، بدون URL كامل
+        newReceiptImagePath = filePath;
       } else if (receiptImage) {
         // fallback for legacy dataUrl usage
         try {
@@ -708,8 +708,8 @@ const BusinessTransferBuy: React.FC = () => {
           const filePath = `receipts/${fileName}`;
           const { error: uploadError } = await supabase.storage.from('transfer-assets').upload(filePath, imageFile, { upsert: true });
           if (uploadError) throw uploadError;
-          const { data: { publicUrl } } = supabase.storage.from('transfer-assets').getPublicUrl(filePath);
-          newReceiptImageUrl = publicUrl;
+          // تخزين المسار فقط (path)، بدون URL كامل
+          newReceiptImagePath = filePath;
         } catch (err) {
           console.debug('Failed to upload fallback receipt image:', err);
         }
