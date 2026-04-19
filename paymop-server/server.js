@@ -40,28 +40,6 @@ if (!IS_DEVELOPMENT && DEV_BYPASS_TOKEN) {
   throw new Error('DEV_BYPASS_TOKEN must not be set outside development');
 }
 
-// ✅ SECURITY CHECK #1: SESSION_SECRET Validation
-const SESSION_SECRET = process.env.SESSION_SECRET;
-if (!SESSION_SECRET || SESSION_SECRET === 'change-this-in-production' || SESSION_SECRET.length < 16) {
-  console.error('🔴 خطر أمني: SESSION_SECRET ضعيفة أو غير موجودة!');
-  console.error('   يجب أن تكون قيمة قوية وعشوائية (32+ حرف على الأقل)');
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('SESSION_SECRET must be strong and set in production');
-  } else {
-    console.warn('   (في التطوير فقط: يمكن المتابعة)');
-  }
-} else {
-  console.log('✅ SESSION_SECRET تم التحقق منها');
-}
-
-// ✅ SECURITY CHECK #2: RLS Notification
-console.log('📋 ملاحظة أمنية: تأكد من تفعيل RLS في Supabase على:');
-console.log('   - users table');
-console.log('   - businesses table');
-console.log('   - registered_phones table');
-console.log('   - payments table');
-console.log('   - phone_reports table');
-
 // =================================================================
 // دوال التشفير ثنائي الاتجاه (AES Encryption)
 // =================================================================
@@ -497,59 +475,6 @@ function sendError(res, status = 500, userMessage = 'حدث خطأ في الخا
   if (res.headersSent) return; // avoid double responses
   return res.status(status).json({ ...extra, error: userMessage });
 }
-
-// ✅ SECURITY: Input Validation Functions
-const validators = {
-  isValidIMEI: (imei) => typeof imei === 'string' && /^\d{15}$/.test(imei.trim()),
-  isValidEmail: (email) => typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim().toLowerCase()),
-  isValidPhone: (phone) => typeof phone === 'string' && /^\d{7,15}$/.test(phone.replace(/\D/g, '')),
-  isValidUUID: (uuid) => typeof uuid === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uuid),
-  isValidIdLast6: (id) => typeof id === 'string' && /^\d{6}$/.test(id.trim()),
-  isValidPhoneType: (type) => ['iPhone', 'Samsung', 'Xiaomi', 'Huawei', 'Google Pixel', 'Other'].includes(type),
-};
-
-// ✅ SECURITY: Input Sanitization Functions
-const sanitizers = {
-  cleanString: (str, maxLen = 500) => {
-    if (typeof str !== 'string') return '';
-    return str.trim().replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').slice(0, maxLen);
-  },
-  cleanEmail: (email) => {
-    if (typeof email !== 'string') return '';
-    return email.trim().toLowerCase().slice(0, 255);
-  },
-  cleanPhone: (phone) => {
-    if (typeof phone !== 'string') return '';
-    return phone.replace(/[^\d+\s-]/g, '').replace(/[\s-]/g, '');
-  },
-  cleanIMEI: (imei) => {
-    if (typeof imei !== 'string') return '';
-    return imei.replace(/\D/g, '').slice(0, 15);
-  },
-  cleanName: (name) => {
-    if (typeof name !== 'string') return '';
-    return name.trim().replace(/[^a-zA-Z\u0600-\u06FF\s\-']/g, '').slice(0, 255);
-  },
-  cleanHTML: (html) => {
-    if (typeof html !== 'string') return '';
-    return html
-      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-      .replace(/\s*on\w+\s*=\s*["'][^"']*["']/gi, '')
-      .replace(/javascript:/gi, '');
-  },
-};
-
-// ✅ SECURITY: Webhook Signature Verification
-const verifyWebhookSignature = (payload, signature, secret) => {
-  if (!signature || !secret) return false;
-  try {
-    const payloadStr = typeof payload === 'string' ? payload : JSON.stringify(payload);
-    const expected = crypto.createHmac('sha256', secret).update(payloadStr).digest('hex');
-    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
-  } catch (e) {
-    return false;
-  }
-};
 
 // ✅ SECURITY: Add CSRF protection middleware (before routes)
 app.use(csrfProtection);
@@ -4829,29 +4754,6 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
   const userId = req.user.id;
   const rawImei = typeof phoneData.imei === 'string' ? phoneData.imei : '';
 
-  // ✅ SECURITY: Input Validation
-  if (!rawImei || !validators.isValidIMEI(rawImei)) {
-    return res.status(400).json({ error: 'IMEI غير صحيح - يجب أن يكون 15 رقم' });
-  }
-  if (phoneData.phone_number && !validators.isValidPhone(phoneData.phone_number)) {
-    return res.status(400).json({ error: 'رقم الهاتف غير صحيح' });
-  }
-  if (phoneData.email && !validators.isValidEmail(phoneData.email)) {
-    return res.status(400).json({ error: 'البريد الإلكتروني غير صحيح' });
-  }
-  if (phoneData.id_last6 && !validators.isValidIdLast6(phoneData.id_last6)) {
-    return res.status(400).json({ error: 'آخر 6 أرقام من الهوية يجب أن تكون 6 أرقام' });
-  }
-  if (phoneData.phone_type && !validators.isValidPhoneType(phoneData.phone_type)) {
-    return res.status(400).json({ error: 'نوع الهاتف غير صحيح' });
-  }
-
-  // ✅ SECURITY: Input Sanitization
-  phoneData.imei = sanitizers.cleanIMEI(phoneData.imei);
-  phoneData.phone_number = phoneData.phone_number ? sanitizers.cleanPhone(phoneData.phone_number) : null;
-  phoneData.email = phoneData.email ? sanitizers.cleanEmail(phoneData.email) : null;
-  phoneData.owner_name = phoneData.owner_name ? sanitizers.cleanName(phoneData.owner_name) : null;
-
   // ✅ Ownership verification: فقط المستخدم نفسه يمكنه تسجيل هاتفه الخاص
   if (!userId) {
     return res.status(401).json({ error: 'Unauthorized: Invalid user' });
@@ -6548,22 +6450,7 @@ if (ENABLE_POLLING) {
 const PORT = process.env.PORT || 3000;
 
 // Start server and attach robust error handlers to avoid unhandled 'error' events
-const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log('✅ Server listening on port', PORT);
-  
-  // ✅ SECURITY REMINDER
-  console.log('\n🔐 =================================');
-  console.log('   أمان التطبيق - تذكيرات مهمة');
-  console.log('=================================');
-  console.log('✅ ENCRYPTION_KEY: تم التحقق منها');
-  console.log('✅ SESSION_SECRET: تم التحقق من قوتها');
-  console.log('✅ CSRF Protection: مفعل');
-  console.log('✅ Rate Limiting: مفعل');
-  console.log('✅ Input Validation: مفعل');
-  console.log('✅ Input Sanitization: مفعل');
-  console.log('⚠️  تذكير: تأكد من تفعيل RLS في Supabase على جميع الجداول الحساسة');
-  console.log('=================================\n');
-});
+const server = app.listen(PORT, () => console.log('Server listening on port', PORT));
 
 server.on('error', (err) => {
   try {
