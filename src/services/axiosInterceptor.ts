@@ -133,17 +133,24 @@ const createAxiosInstance = (): AxiosInstance => {
   
   if (import.meta.env.VITE_API_URL) {
     baseURL = import.meta.env.VITE_API_URL as string;
+    console.log('✅ Using VITE_API_URL:', baseURL);
   } else if (typeof window !== 'undefined') {
     // Detect from current location
     const { hostname, protocol } = window.location;
+    console.log('📍 Window location - protocol:', protocol, 'hostname:', hostname);
+    
     if (hostname === 'localhost' || hostname === '127.0.0.1') {
       baseURL = 'http://localhost:3000'; // Local dev
+      console.log('🏠 Local dev detected, using:', baseURL);
     } else {
       // Production: use current domain as API base
       baseURL = `${protocol}//${hostname}`;
+      console.log('🌐 Production detected, using:', baseURL);
     }
   } else {
+    // SSR or non-browser environment
     baseURL = import.meta.env.PROD ? 'https://imei-safe.me' : 'http://localhost:3000';
+    console.log('⚙️ Using fallback URL:', baseURL);
   }
   
   const instance = axios.create({

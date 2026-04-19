@@ -3,7 +3,24 @@
 
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+// Dynamic API URL detection
+const getApiBaseUrl = (): string => {
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL as string;
+  }
+  
+  if (typeof window !== 'undefined') {
+    const { hostname, protocol } = window.location;
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return 'http://localhost:3000'; // Local dev
+    }
+    return `${protocol}//${hostname}`; // Production
+  }
+  
+  return import.meta.env.PROD ? 'https://imei-safe.me' : 'http://localhost:3000';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 interface CsrfTokenResponse {
   csrfToken: string;
