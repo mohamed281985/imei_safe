@@ -185,10 +185,11 @@ const AddPhoneForm: React.FC = () => {
           if (data) {
             setFormData(prev => ({
               ...prev,
-            store_name: data?.full_name || '', // استخدام اسم المستخدم كاسم للمتجر
-            city: '', // Set city to empty string as it's not available for regular users.
-            contact_methods: { ...prev.contact_methods, phone: data?.phone || '' }
-          }));
+              store_name: data?.full_name || '',
+              city: '',
+              contact_methods: { ...prev.contact_methods, phone: data?.phone || '' }
+            }));
+          }
         } catch (err) {
           console.error('Error fetching user data:', err);
         }

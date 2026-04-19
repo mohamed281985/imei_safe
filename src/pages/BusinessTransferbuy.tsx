@@ -944,10 +944,10 @@ const BusinessTransferBuy: React.FC = () => {
           }
 
           // Use masked fields only after ownership confirmed
-          setBuyerName(data.maskedName || '');
-          setBuyerPhone(data.maskedPhone || '');
+          setBuyerName(data.name || '');
+          setBuyerPhone(data.phone || '');
           // Do not store or expose raw email; keep masked email if needed
-          setBuyerEmail(data.maskedEmail || '');
+          setBuyerEmail(data.email || '');
         }
       } catch (error) {
         console.debug('Error fetching buyer info from server:', error);
@@ -1201,8 +1201,7 @@ const BusinessTransferBuy: React.FC = () => {
                       type="text"
                       value={buyerName}
                       onChange={e => setBuyerName(e.target.value)}
-                      className="input-field w-full bg-white text-black"
-                      dir="ltr"
+                      className="input-field w-full"
                       required
                       disabled={isLoading || user?.role === 'business'}
                     />
@@ -1213,11 +1212,37 @@ const BusinessTransferBuy: React.FC = () => {
                       type="text"
                       value={buyerPhone}
                       onChange={e => setBuyerPhone(e.target.value.replace(/\D/g, ''))}
-                      className="input-field w-full bg-white text-gray-800"
-                      dir="ltr"
+                      className="input-field w-full"
                       maxLength={15}
                       required
                       disabled={isLoading || user?.role === 'business' }
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-black mb-1">{t('buyer_email') || 'إيميل المشتري'}</label>
+                    <input
+                      type="email"
+                      value={buyerEmail}
+                      onChange={e => setBuyerEmail(e.target.value)}
+                      className="input-field w-full"
+                      required
+                      disabled={isLoading || user?.role === 'business'}
+                      placeholder="example@email.com"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-black mb-1">آخر 6 أرقام من البطاقة الشخصية</label>
+                    <input
+                      type="text"
+                      value={buyerIdLast6}
+                      onChange={e => setBuyerIdLast6(e.target.value.replace(/\D/g, ''))}
+                      className="input-field w-full"
+                      maxLength={6}
+                      pattern="[0-9]*"
+                      inputMode="numeric"
+                      placeholder="******"
+                      required
+                      disabled={isLoading || user?.role === 'business'}
                     />
                   </div>
                 </div>

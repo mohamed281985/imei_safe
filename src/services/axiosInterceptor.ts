@@ -3,6 +3,7 @@
 
 import axios, { AxiosInstance, AxiosError, AxiosResponse } from 'axios';
 import { csrfService } from '@/services/csrfService';
+import { supabase } from '@/lib/supabase';
 
 // تخزين حالة إعادة المحاولة لتجنب حلقة لا نهائية
 let isRefreshing = false;
@@ -28,15 +29,28 @@ const processQueue = (error: AxiosError | null, token: string | null = null) => 
 };
 
 /**
- * إعداد axios interceptor للتعامل مع CSRF token
+ * إعداد axios interceptor للتعامل مع CSRF token والمصادقة
  * @param axiosInstance - instance من axios
  */
 const setupCsrfInterceptor = (axiosInstance: AxiosInstance) => {
   /**
-   * Interceptor للطلب: إضافة CSRF token
+   * Interceptor للطلب: إضافة CSRF token و Authorization header
    */
   axiosInstance.interceptors.request.use(
     async (config) => {
+      // إضافة Authorization header من Supabase session
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          if (!config.headers) {
+            config.headers = {} as any;
+          }
+          (config.headers as any)['Authorization'] = `Bearer ${session.access_token}`;
+        }
+      } catch (err) {
+        console.error('❌ خطأ في جلب access token:', err);
+      }
+
       // الطرق التي تحتاج CSRF token
       const methodsNeedingCsrf = ['post', 'put', 'patch', 'delete'];
 

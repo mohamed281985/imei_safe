@@ -848,9 +848,7 @@ const RegisterPhone: React.FC = () => {
         }
       );
 
-      return response.status === 200;
-      const result = await response.json();
-      return !!result?.valid;
+      return response.status === 200 && !!response.data?.valid;
     } catch (error) {
       console.error('Error validating other user data:', error);
       return false;

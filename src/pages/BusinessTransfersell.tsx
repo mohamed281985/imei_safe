@@ -953,8 +953,17 @@ const BusinessTransfer: React.FC = () => {
                     />
                   </div>
                   {isPhoneReported && imei.length === 15 && (
-                    <div className="mt-2 text-red-500 text-sm">
-                      {t('phone_reported')}
+                    <div
+                      className="my-4 p-4 rounded-lg text-center flex flex-col items-center space-y-3 shadow-lg border"
+                      style={{
+                        background: 'linear-gradient(90deg, #ffebee 0%, #ffcdd2 100%)',
+                        borderColor: '#f44336'
+                      }}
+                    >
+                      <AlertTriangle className="w-12 h-12 text-red-600" />
+                      <p className="text-red-700 font-semibold text-lg">
+                        هذا الهاتف مبلغ عنه كمفقود ولا يمكن نقل ملكيته.
+                      </p>
                     </div>
                   )}
                   {(imeiNotice || (currentRegisteredPhone && (currentRegisteredPhone.isOtherUser || (currentRegisteredPhone.isTransferred && currentRegisteredPhone.phoneDetails?.user_id !== user?.id)))) && imei.length === 15 && (
