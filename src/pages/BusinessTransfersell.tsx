@@ -26,20 +26,26 @@ import { decryptPhoneNumber } from '../lib/imeiCrypto';
 const isBusinessRole = (role?: string) => ['business', 'free_business', 'gold_business', 'silver_business'].includes(role || '');
 
 // دالة مساعدة لفك تشفير رقم الهاتف
-const decryptPhoneIfEncrypted = (phone: string | undefined | null): string => {
+const decryptPhoneIfEncrypted = (phone: any): string => {
   if (!phone) return '';
   try {
-    // تحقق مما إذا كان الرقم يبدو مشفراً (base64 أو طويل جداً)
-    if (typeof phone === 'string' && 
-        (phone.includes('encryptedData') || 
-         (/^[A-Za-z0-9+/=]+$/.test(phone) && phone.length > 20))) {
-      const decrypted = decryptPhoneNumber(phone);
-      // تحقق من أن النتيجة تبدو وكأنها رقم هاتف حقيقي (أرقام فقط و 7-15 رقم)
-      return /^[0-9+\-()]{7,20}$/.test(decrypted) ? decrypted : phone;
+    // تحويل البيانات إلى نص إذا كانت كائناً للتعامل مع التشفير
+    let phoneStr = typeof phone === 'object' ? JSON.stringify(phone) : String(phone);
+
+    // تحقق مما إذا كان النص يبدو مشفراً
+    if (phoneStr.includes('encryptedData') || 
+        (/^[A-Za-z0-9+/=]+$/.test(phoneStr) && phoneStr.length > 20)) {
+      
+      const decrypted = decryptPhoneNumber(phoneStr);
+      
+      // إذا نجح فك التشفير وأعطى نتيجة مختلفة عن النص الأصلي، فارجعها
+      if (decrypted && decrypted !== phoneStr && !decrypted.includes('encryptedData')) {
+        return decrypted;
+      }
     }
-    return phone;
+    return phoneStr;
   } catch (e) {
-    return phone || '';
+    return typeof phone === 'string' ? phone : (typeof phone === 'object' ? JSON.stringify(phone) : '');
   }
 };
 
@@ -503,21 +509,22 @@ const BusinessTransfer: React.FC = () => {
               }
             }
 
-            // كخيار أخير حاول جدول businesses إذا كان موجوداً
+            // كخيار أخير حاول جدول businesses عبر server endpoint (مفك التشفير)
             if ((!resolvedPhone || String(resolvedPhone).trim() === '') && user?.id) {
               try {
-                const { data: biz, error: bizError } = await supabase.from('businesses').select('phone').eq('user_id', user.id).maybeSingle();
-                if (bizError) {
-                  if (bizError.code !== '42P01') console.error('businesses query error:', bizError);
-                } else if (biz) {
-                  resolvedPhone = biz.phone || resolvedPhone;
+                const response = await axiosInstance.get('/api/decrypted-user');
+                if (response.data?.business?.phone) {
+                  resolvedPhone = response.data.business.phone || resolvedPhone;
+                } else if (response.data?.user?.phone) {
+                  resolvedPhone = response.data.user.phone || resolvedPhone;
                 }
               } catch (e) {
-                console.error('Unexpected error querying businesses:', e);
+                console.error('Unexpected error fetching decrypted user data:', e);
               }
             }
 
-            setSellerPhone(decryptPhoneIfEncrypted(resolvedPhone) || '');
+            // Phone from server is already decrypted
+            setSellerPhone(resolvedPhone || '');
             setSellerIdLast6(pick(details, ['owner_id_last6', 'ownerIdLast6', 'maskedIdLast6', 'id_last6']) || '');
             setPhoneType(pick(details, ['phone_type', 'phoneType', 'model']) || '');
             setPhoneImage(pick(details, ['phone_image_url', 'phoneImageUrl', 'phone_image']) || '');
@@ -827,27 +834,40 @@ const BusinessTransfer: React.FC = () => {
       if (user && isBusinessRole(user.role)) {
         setIsLoading(true);
         try {
-          const { data, error } = await supabase
-            .from('businesses')
-            .select('store_name, phone, email')
-            .eq('user_id', user.id)
-            .maybeSingle();
+          // Use server endpoint that properly decrypts all fields
+          const response = await axiosInstance.get('/api/decrypted-user');
+          const decryptedData = response.data;
+          
+          if (!decryptedData || (!decryptedData.user && !decryptedData.business)) {
+            throw new Error('No data returned from decrypted-user endpoint');
+          }
 
-          if (error) throw error;
+          // Use business data if available, otherwise fall back to user data
+          const businessData = decryptedData.business;
+          const userData = decryptedData.user;
 
-          console.log('نتيجة استعلام businesses:', data);
+          if (businessData) {
+            console.log('نتيجة استعلام businesses (مفك التشفير):', businessData);
 
-          // تعبئة اسم ورقم هاتف البائع والمشتري تلقائياً للمستخدم التجاري
-          const nameFromBusiness = data?.store_name?.trim();
-          const phoneFromBusiness = data?.phone?.trim();
-          const emailFromBusiness = data?.email?.trim();
+            // تعبئة اسم ورقم هاتف البائع والمشتري تلقائياً للمستخدم التجاري
+            const nameFromBusiness = businessData.store_name?.trim() || businessData.owner_name?.trim();
+            const phoneFromBusiness = businessData.phone?.trim();
+            const emailFromBusiness = businessData.email?.trim();
 
-          const sellerNameValue = nameFromBusiness || user?.username || user?.email || 'اسم غير متوفر';
-          setSellerName(sellerNameValue);
-          console.log('تعبئة اسم البائع:', sellerNameValue);
-          setSellerPhone(phoneFromBusiness || (user as any)?.phone || '');
+            const sellerNameValue = nameFromBusiness || user?.username || user?.email || 'اسم غير متوفر';
+            setSellerName(sellerNameValue);
+            console.log('تعبئة اسم البائع:', sellerNameValue);
+            // Phone is already decrypted from server
+            setSellerPhone(phoneFromBusiness || (user as any)?.phone || '');
+          } else if (userData) {
+            // Fallback to user data if no business data
+            const sellerNameValue = userData.full_name?.trim() || user?.username || user?.email || 'اسم غير متوفر';
+            setSellerName(sellerNameValue);
+            // Phone is already decrypted from server
+            setSellerPhone(userData.phone?.trim() || '');
+          }
         } catch (error) {
-          console.error('Error fetching business data:', error);
+          console.error('Error fetching decrypted user data:', error);
           toast({ title: 'خطأ', description: 'فشل تحميل بيانات المتجر.', variant: 'destructive' });
         } finally {
           setIsLoading(false);

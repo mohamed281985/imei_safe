@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import axiosInstance from '@/services/axiosInterceptor';
 import { useAuth } from '@/contexts/AuthContext';
 import { Upload, X, Loader2, Star, Zap, MapPin, Clock, Eye, Gift, CalendarDays } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -151,15 +152,10 @@ const AddAccessoriesForm: React.FC = () => {
       const isBusiness = user.role && ['business', 'free_business', 'gold_business', 'silver_business'].includes(user.role);
 
       if (isBusiness) {
-        // منطق المستخدم التجاري
+        // منطق المستخدم التجاري - استخدام server endpoint لفك التشفير
         try {
-          const { data, error } = await supabase
-            .from('businesses')
-            .select('store_name, phone, address')
-            .eq('user_id', user.id)
-            .single();
-
-          if (error) throw error;
+          const response = await axiosInstance.get('/api/decrypted-user');
+          const data = response.data?.business;
 
           if (data) {
             setFormData(prev => ({ ...prev, store_name: data.store_name || '', city: data.address || '', contact_methods: { ...prev.contact_methods, phone: data.phone || '' } }));
@@ -170,15 +166,12 @@ const AddAccessoriesForm: React.FC = () => {
       } else {
         // منطق المستخدم العادي
         try {
-          const { data, error } = await supabase
-            .from('users')
-            .select('full_name, phone')
-            .eq('id', user.id)
-            .single();
+          const response = await axiosInstance.get('/api/decrypted-user');
+          const data = response.data?.user;
 
-          if (error) throw error;
-
-          setFormData(prev => ({ ...prev, store_name: data?.full_name || '', city: '', contact_methods: { ...prev.contact_methods, phone: data?.phone || '' } }));
+          if (data) {
+            setFormData(prev => ({ ...prev, store_name: data?.full_name || '', city: '', contact_methods: { ...prev.contact_methods, phone: data?.phone || '' } }));
+          }
         } catch (err) {
           console.debug('Error fetching user data:', err);
         }

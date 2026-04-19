@@ -7,6 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAds } from '../contexts/AdContext';
 import { supabase } from '@/lib/supabase';
+import axiosInstance from '@/services/axiosInterceptor';
 import { generateRandomFilename, sanitizeFilename } from '@/lib/storageUtils';
 
 // UI Components
@@ -515,15 +516,12 @@ const SpecialAd = () => {
       // ملء رقم الهاتف تلقائيًا عند إنشاء إعلان جديد
       if (!phoneNumber) {
         try {
-          const { data: business } = await supabase
-            .from('businesses')
-            .select('phone')
-            .eq('user_id', user.id)
-            .single();
-
-          const businessPhone = business?.phone || '';
-          setPhoneNumber(businessPhone);
-          toast({ title: 'ملاحظة', description: 'تم ملء رقم الهاتف تلقائيًا', variant: 'default' });
+          const response = await axiosInstance.get('/api/decrypted-user');
+          const businessPhone = response.data?.business?.phone || response.data?.user?.phone || '';
+          if (businessPhone) {
+            setPhoneNumber(businessPhone);
+            toast({ title: 'ملاحظة', description: 'تم ملء رقم الهاتف تلقائيًا', variant: 'default' });
+          }
         } catch (error) {
           console.error('Error loading business phone:', error);
         }
@@ -550,14 +548,11 @@ const SpecialAd = () => {
     if (isUpdateMode && !phoneNumber) {
       toast({ title: 'ملاحظة', description: 'سيتم ملء رقم الهاتف تلقائيًا', variant: 'default' });
       try {
-        const { data: business } = await supabase
-          .from('businesses')
-          .select('phone')
-          .eq('user_id', user.id)
-          .single();
-
-        const businessPhone = business?.phone || '';
-        setPhoneNumber(businessPhone);
+        const response = await axiosInstance.get('/api/decrypted-user');
+        const businessPhone = response.data?.business?.phone || response.data?.user?.phone || '';
+        if (businessPhone) {
+          setPhoneNumber(businessPhone);
+        }
       } catch (error) {
         console.error('Error loading business phone:', error);
       }

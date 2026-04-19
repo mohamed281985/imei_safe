@@ -95,20 +95,26 @@ const maskIdNumber = (idNumber: string): string => {
 };
 
 // دالة مساعدة لفك تشفير رقم الهاتف
-const decryptPhoneIfEncrypted = (phone: string | undefined | null): string => {
+const decryptPhoneIfEncrypted = (phone: any): string => {
   if (!phone) return '';
   try {
-    // تحقق مما إذا كان الرقم يبدو مشفراً (base64 أو طويل جداً)
-    if (typeof phone === 'string' && 
-        (phone.includes('encryptedData') || 
-         (/^[A-Za-z0-9+/=]+$/.test(phone) && phone.length > 20))) {
-      const decrypted = decryptPhoneNumber(phone);
-      // تحقق من أن النتيجة تبدو وكأنها رقم هاتف حقيقي (أرقام فقط و 7-15 رقم)
-      return /^[0-9+\-()]{7,20}$/.test(decrypted) ? decrypted : phone;
+    // تحويل البيانات إلى نص إذا كانت كائناً للتعامل مع التشفير
+    let phoneStr = typeof phone === 'object' ? JSON.stringify(phone) : String(phone);
+
+    // تحقق مما إذا كان النص يبدو مشفراً (يحتوي على علامات التشفير المعروفة)
+    if (phoneStr.includes('encryptedData') || 
+        (/^[A-Za-z0-9+/=]+$/.test(phoneStr) && phoneStr.length > 20)) {
+      
+      const decrypted = decryptPhoneNumber(phoneStr);
+      
+      // إذا نجح فك التشفير وأعطى نتيجة مختلفة عن النص الأصلي، فارجعها
+      if (decrypted && decrypted !== phoneStr && !decrypted.includes('encryptedData')) {
+        return decrypted;
+      }
     }
-    return phone;
+    return phoneStr;
   } catch (e) {
-    return phone || '';
+    return typeof phone === 'string' ? phone : (typeof phone === 'object' ? JSON.stringify(phone) : '');
   }
 };
 
@@ -976,8 +982,11 @@ const BusinessTransferBuy: React.FC = () => {
         if (fallbackName) setBuyerName(fallbackName);
       }
       if (!buyerPhone || String(buyerPhone).trim() === '') {
-        const fallbackPhone = meta.phone || meta.phone_number || (user as any).phone || '';
-        if (fallbackPhone) setBuyerPhone(String(fallbackPhone).replace(/\D/g, ''));
+        const rawPhone = meta.phone || meta.phone_number || (user as any).phone || '';
+        if (rawPhone) {
+          const decrypted = decryptPhoneIfEncrypted(rawPhone);
+          setBuyerPhone(decrypted.replace(/\D/g, ''));
+        }
       }
       if (!buyerEmail || String(buyerEmail).trim() === '') {
         const fallbackEmail = meta.email || user.email || '';
