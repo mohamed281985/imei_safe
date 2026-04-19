@@ -746,10 +746,6 @@ const RegisterPhone: React.FC = () => {
 
       const now = new Date().toISOString();
 
-      // ملاحظة أمنية: إرسال البيانات كنص عادي عبر HTTPS آمن
-      // التشفير سيتم في الخلفية (Backend)
-      // كلمة المرور تُرسل كنص عادي ويقوم السيرفر بعمل SHA-256
-
       // تحديد user_id حسب نوع التسجيل
       let userIdToSave = user?.id || null;
       if (formData.registerType === 'other') {
@@ -758,7 +754,7 @@ const RegisterPhone: React.FC = () => {
       const phoneData = {
         imei: cleanImei(formData.imei),
         phone_type: formData.phoneType,
-        password: formData.password, // إرسال كلمة المرور كنص عادي
+        password: formData.password,
         phone_image_url: phoneImageUrl,
         receipt_image_url: receiptImageUrl,
         registration_date: now,
@@ -773,23 +769,17 @@ const RegisterPhone: React.FC = () => {
       };
 
       if (formData.registerType === 'other') {
-        // عند التسجيل للغير، استخدم البيانات المدخلة في النموذج
         phoneData.owner_name = formData.ownerName;
         phoneData.phone_number = cleanPhoneNumber(`${countryCode}${formData.phoneNumber}`);
         phoneData.id_last6 = cleanIdLast6(formData.id_last6);
         phoneData.email = formData.email;
       } else {
-        // عند التسجيل لنفسي، أفضل استخدام القيم المفكوكة الموجودة في formData
-        // إذا لم تكن متوفرة، نعود للاعتماد على بيانات currentUser كنسخة احتياطية
         const currentUser = user as any;
         phoneData.owner_name = formData.ownerName || currentUser?.user_metadata?.full_name || '';
         phoneData.phone_number = (formData.phoneNumber && cleanPhoneNumber(`${countryCode}${formData.phoneNumber}`)) || currentUser?.phone || '';
         phoneData.id_last6 = formData.id_last6 || currentUser?.user_metadata?.id_last6 || '';
         phoneData.email = formData.email || user?.email || '';
       }
-
-      // استخدام API لتسجيل الهاتف
-      // ملاحظة أمنية: استخدام JWT Token للمصادقة بدلاً من مفتاح API
 
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
@@ -799,18 +789,26 @@ const RegisterPhone: React.FC = () => {
         {
           headers: {
             'Authorization': `Bearer ${token}`
-          }
+          },
+          validateStatus: () => true // قبول أي استجابة (لا نعتبر 4xx/5xx كأخطاء)
         }
       );
 
-      Object.values(previews).forEach(url => url && URL.revokeObjectURL(url));
-
-      showToast('success', 'شكراً على تسجيل الهاتف. سيتم مراجعة البيانات خلال 3 أيام عمل');
-
-      setTimeout(() => {
-        navigate('/dashboard');
-      }, 3000);
-
+      // التحقق من نجاح الاستجابة
+      if (response.status >= 200 && response.status < 300) {
+        // نجاح
+        Object.values(previews).forEach(url => url && URL.revokeObjectURL(url));
+        showToast('success', 'شكراً على تسجيل الهاتف. سيتم مراجعة البيانات خلال 3 أيام عمل');
+        setTimeout(() => {
+          navigate('/dashboard');
+        }, 3000);
+      } else {
+        // فشل
+        const errorData = response.data;
+        const errorMsg = errorData?.error || errorData?.message || 'فشل حفظ البيانات';
+        console.error('Register phone error response:', { status: response.status, data: errorData });
+        showToast('error', errorMsg);
+      }
     } catch (error) {
       console.error('خطأ في حفظ بيانات الهاتف:', error);
       if ((error as any)?.response?.status === 429) {
@@ -820,7 +818,8 @@ const RegisterPhone: React.FC = () => {
       } else if ((error as any)?.response?.data?.code === '23514') {
         showToast('error', 'invalid_review_status');
       } else {
-        showToast('error', 'error_saving_data');
+        const errorMsg = (error as any)?.message || 'حدث خطأ في حفظ البيانات';
+        showToast('error', errorMsg);
       }
     } finally {
       setIsLoading(false);

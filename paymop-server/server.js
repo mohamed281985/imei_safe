@@ -4952,7 +4952,12 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
     ].filter(attempt => Date.now() - attempt.timestamp < ATTEMPT_COOLDOWN));
 
     // ⭐ تحديث العداد بعد التسجيل الناجح
-    await updateRegisterUsage(userId);
+    try {
+      await updateRegisterUsage(userId);
+    } catch (updateError) {
+      console.error('خطأ غير حرج في تحديث الاستخدام:', updateError);
+      // لا نوقف الاستجابة الناجحة بسبب خطأ في تحديث الاستخدام
+    }
 
     res.json({ success: true, data });
   } catch (error) {
