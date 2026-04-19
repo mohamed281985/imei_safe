@@ -5140,11 +5140,13 @@ app.get('/api/my-buyer-info', verifyJwtToken, async (req, res) => {
     }
 
     if (business) {
+      const decPhone = decryptField(business.phone);
       return res.json({
         success: true,
         data: {
           maskedName: maskName(business.store_name || ''),
           maskedPhone: maskPhoneNumber(business.phone || ''),
+          maskedPhone: maskPhoneNumber(decPhone || ''),
           maskedEmail: maskEmail(business.email || ''),
           isBusiness: true,
           ownerId: userId
@@ -5165,11 +5167,14 @@ app.get('/api/my-buyer-info', verifyJwtToken, async (req, res) => {
     }
 
     if (userData) {
+      const decPhone = decryptField(userData.phone);
       return res.json({
         success: true,
         data: {
           maskedName: maskName(userData.full_name || ''),
           maskedPhone: maskPhoneNumber(userData.phone || ''),
+          maskedName: maskName(decryptField(userData.full_name) || userData.full_name || ''),
+          maskedPhone: maskPhoneNumber(decPhone || ''),
           maskedEmail: maskEmail(userData.email || ''),
           isBusiness: false,
           ownerId: userId

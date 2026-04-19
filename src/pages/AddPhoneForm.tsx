@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import axiosInstance from '@/services/axiosInterceptor';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Upload, X, Loader2, Star, Zap, MapPin, Clock, Eye, Gift, CalendarDays } from 'lucide-react';
@@ -159,15 +160,10 @@ const AddPhoneForm: React.FC = () => {
       const isBusiness = user.role && ['business', 'free_business', 'gold_business', 'silver_business'].includes(user.role);
 
       if (isBusiness) {
-        // منطق المستخدم التجاري (يبقى كما هو)
+        // منطق المستخدم التجاري - استخدام server endpoint لفك التشفير
         try {
-          const { data, error } = await supabase
-            .from('businesses')
-            .select('store_name, phone, address')
-            .eq('user_id', user.id)
-            .single();
-
-          if (error) throw error;
+          const response = await axiosInstance.get('/api/decrypted-user');
+          const data = response.data?.business;
 
           if (data) {
             setFormData(prev => ({
@@ -183,16 +179,12 @@ const AddPhoneForm: React.FC = () => {
       } else {
         // منطق المستخدم العادي الجديد
         try {
-          const { data, error } = await supabase
-            .from('users') // The typo was likely here, calling .from() twice.
-            .select('full_name, phone') // Removed 'address' as it does not exist in the 'users' table.
-            .eq('id', user.id)
-            .single();
+          const response = await axiosInstance.get('/api/decrypted-user');
+          const data = response.data?.user;
 
-          if (error) throw error;
-
-          setFormData(prev => ({
-            ...prev,
+          if (data) {
+            setFormData(prev => ({
+              ...prev,
             store_name: data?.full_name || '', // استخدام اسم المستخدم كاسم للمتجر
             city: '', // Set city to empty string as it's not available for regular users.
             contact_methods: { ...prev.contact_methods, phone: data?.phone || '' }
