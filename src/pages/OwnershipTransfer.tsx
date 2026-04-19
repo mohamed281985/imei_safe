@@ -978,7 +978,7 @@ const OwnershipTransfer: React.FC = () => {
             password: newPassword,
             user_id: null // let server lookup buyer by email; do NOT send current seller id
           },
-          new_receipt_image_url: newReceiptImageUrl || null
+          new_receipt_image_url: newReceiptImagePath || null
         };
 
         const resp = await fetch(`${API_BASE_URL}/api/transfer-ownership`, {

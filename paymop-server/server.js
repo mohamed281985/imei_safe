@@ -316,7 +316,8 @@ app.use((err, req, res, next) => {
 });
 
 // If behind a proxy (Render, Heroku, etc.) trust proxy headers so req.secure and x-forwarded-proto work
-app.set('trust proxy', true);
+// Use 1 instead of true for single proxy (Render/Heroku) to avoid rate-limit bypass warnings
+app.set('trust proxy', 1);
 
 // Security headers with explicit HSTS in production
 if (process.env.NODE_ENV === 'production') {

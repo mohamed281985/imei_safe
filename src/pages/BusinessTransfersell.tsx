@@ -410,19 +410,23 @@ const BusinessTransfer: React.FC = () => {
     const fetchData = async () => {
       setIsLoading(true);
       try {
+        console.log('🔍 جاري البحث عن بلاغات للـ IMEI:', debouncedImei);
         const { count: reportCount, error: reportError } = await supabase
           .from('phone_reports')
           .select('*', { count: 'exact', head: true })
           .eq('imei', debouncedImei)
           .eq('status', 'active');
 
+        console.log('📊 النتائج:', { reportCount, reportError, debouncedImei });
         if (reportError) throw reportError;
         const isReported = (reportCount ?? 0) > 0;
+        console.log('✅ setIsPhoneReported:', isReported);
         setIsPhoneReported(isReported);
         if (isReported) {
+          console.log('🔴 هاتف مبلغ عنه:', debouncedImei, '| reportCount:', reportCount);
           toast({ title: t('warning'), description: t('phone_is_reported_as_lost'), variant: 'destructive' });
           setIsLoading(false);
-          return;
+          return; // التوقف إذا كان هناك بلاغ - IMPORTANT: return here
         }
 
         let jwtToken = '';
@@ -449,6 +453,16 @@ const BusinessTransfer: React.FC = () => {
         const registeredPhone = resp.data;
         // احفظ استجابة السيرفر لتستخدم في العرض (مثلاً إظهار أن الهاتف مسجل لمستخدم آخر)
         setCurrentRegisteredPhone(registeredPhone || null);
+        
+        // التحقق من البلاغات من استجابة السيرفر
+        if (registeredPhone?.hasActiveReport || registeredPhone?.isStolen) {
+          console.log('🔴 هاتف مبلغ عنه من السيرفر:', { hasActiveReport: registeredPhone?.hasActiveReport, isStolen: registeredPhone?.isStolen });
+          setIsPhoneReported(true);
+          toast({ title: t('warning'), description: t('phone_is_reported_as_lost'), variant: 'destructive' });
+          setIsLoading(false);
+          return;
+        }
+        
         if (!registeredPhone) throw new Error('Failed to fetch phone info');
 
         const pick = (obj: any, keys: string[]) => {
@@ -766,7 +780,7 @@ const BusinessTransfer: React.FC = () => {
           // اتركه null حتى يحدده الخادم من التوكن أو يبقى غير مرتبط إذا لم يكن للمشتري حساب.
           user_id: null
         },
-        new_receipt_image_url: newReceiptImageUrl || currentRegisteredPhone?.receipt_image_url,
+        new_receipt_image_url: newReceiptImagePath || currentRegisteredPhone?.receipt_image_url,
         phone_image: phoneImage || null
       };
 
