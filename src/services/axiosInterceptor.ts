@@ -128,11 +128,14 @@ const setupCsrfInterceptor = (axiosInstance: AxiosInstance) => {
  * إنشاء axios instance مع CSRF interceptor
  */
 const createAxiosInstance = (): AxiosInstance => {
+  // Priority: env var > production URL > localhost
   // في بيئة التطوير: استخدم http://localhost:3000 مباشرة
-  // في بيئة الإنتاج: استخدم https://imei-safe.me
-  const baseURL = import.meta.env.PROD 
-    ? 'https://imei-safe.me' 
-    : 'http://localhost:3000';
+  // في بيئة الإنتاج: استخدم https://imei-safe.me أو VITE_API_URL
+  const baseURL = import.meta.env.VITE_API_URL 
+    ? import.meta.env.VITE_API_URL as string
+    : import.meta.env.PROD 
+      ? 'https://imei-safe.me' 
+      : 'http://localhost:3000';
   
   const instance = axios.create({
     baseURL,
