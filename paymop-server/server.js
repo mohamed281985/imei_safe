@@ -94,10 +94,15 @@ const encryptAES = (text) => {
  */
 const decryptAES = (encryptedData, iv, authTag) => {
   if (!encryptedData || !iv || !authTag) return null;
-  const decipher = crypto.createDecipheriv('aes-256-gcm', Buffer.from(ENCRYPTION_KEY, 'hex'), Buffer.from(iv, 'hex'));
-  decipher.setAuthTag(Buffer.from(authTag, 'hex'));
-  const decrypted = Buffer.concat([decipher.update(Buffer.from(encryptedData, 'hex')), decipher.final()]);
-  return decrypted.toString('utf8');
+  try {
+    const decipher = crypto.createDecipheriv('aes-256-gcm', Buffer.from(ENCRYPTION_KEY, 'hex'), Buffer.from(iv, 'hex'));
+    decipher.setAuthTag(Buffer.from(authTag, 'hex'));
+    const decrypted = Buffer.concat([decipher.update(Buffer.from(encryptedData, 'hex')), decipher.final()]);
+    return decrypted.toString('utf8');
+  } catch (e) {
+    console.error('[decryptAES] Decryption failed:', e.message);
+    return null;
+  }
 };
 
 /**
@@ -196,6 +201,10 @@ const decryptField = (encryptedField) => {
     // إذا كانت السلسلة تحتوي أرقام فقط فاعتبرها قيمة صالحة
     if (/^\d+$/.test(s)) return s;
 
+    // في الحالات الأخرى، أعِد السلسلة كما هي إذا كانت تبدو عادية
+    // (ليست JSON مشفّر)
+    if (!s.includes('encryptedData') && !s.includes('authTag')) return s;
+    
     // في حال فشل التعرف على أي نموذج صالح، لا نُرجع النص المشفر الخام
     return null;
   }
@@ -390,6 +399,7 @@ const checkEmailLimiter = rateLimit({
   max: 6,
   standardHeaders: true,
   legacyHeaders: false,
+  trustProxy: 1,
   handler: (req, res) => res.status(429).json({ error: 'Too many requests, please try again later.' })
 });
  
@@ -402,6 +412,7 @@ const createAppUserLimiter = rateLimit({
   max: CREATE_APP_USER_MAX,
   standardHeaders: true,
   legacyHeaders: false,
+  trustProxy: 1,
   handler: (req, res) => res.status(429).json({ error: 'Too many account creation attempts, please try later.' })
 });
 
@@ -411,6 +422,7 @@ const loginLimiter = rateLimit({
   max: SECURITY_CONFIG.RATE_LIMITS.LOGIN.max, // 5 محاولات
   standardHeaders: true,
   legacyHeaders: false,
+  trustProxy: 1,
   handler: (req, res) => res.status(429).json({ error: 'Too many login attempts, please try later.' }),
   skip: (req) => req.user // لا تحد للمستخدمين المسجلين
 });
@@ -469,6 +481,18 @@ app.use(csrfProtection);
 
 // ✅ SECURITY: CSRF error handler
 app.use(csrfErrorHandler);
+
+// ✅ SECURITY: CSRF token endpoint - لجلب CSRF token للفرونتند
+app.get('/api/csrf-token', (req, res) => {
+  try {
+    // csurf يضع token في req.csrfToken()
+    const token = req.csrfToken();
+    res.json({ csrfToken: token });
+  } catch (err) {
+    console.error('❌ خطأ في إنشاء CSRF token:', err);
+    res.status(500).json({ error: 'Failed to generate CSRF token' });
+  }
+});
 
 // ⭐ Endpoint لجلب mainimage_url من جدول ads_offar
 app.get('/api/offers/mainimage', async (req, res) => {
@@ -1385,6 +1409,7 @@ const globalLimiter = rateLimit({
   max: SECURITY_CONFIG.RATE_LIMITS.GLOBAL.max, // تشديد من 200 إلى 100
   standardHeaders: true,
   legacyHeaders: false,
+  trustProxy: 1, // Trust only one proxy (Render/Heroku)
   handler: (req, res) => res.status(429).json({ error: 'Too many requests, please try again later.' })
 });
 
@@ -1394,6 +1419,7 @@ const paymentLimiter = rateLimit({
   max: SECURITY_CONFIG.RATE_LIMITS.PAYMENT.max, // تشديد من 10 إلى 5
   standardHeaders: true,
   legacyHeaders: false,
+  trustProxy: 1, // Trust only one proxy (Render/Heroku)
   handler: (req, res) => res.status(429).json({ error: 'Too many payment attempts, please wait and try again.' })
 });
 
@@ -4575,15 +4601,46 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
       // التحقق مما إذا كان مسجلاً لمستخدم آخر
       if (userId && matchingPhone.user_id === userId) {
         // الهاتف مسجل للمستخدم الحالي، نسمح له بتحديث البيانات
-        // فك تشفير البيانات قبل إرجاعها
+        // فك تشفير البيانات قبل إرجاعها - تأكد من أننا نفك التشفير بشكل صحيح
+        let decryptedPhoneNumber = null;
+        try {
+          decryptedPhoneNumber = decryptField(matchingPhone.phone_number);
+          if (!decryptedPhoneNumber) {
+            console.warn('[check-imei] decryptField returned null/empty for phone_number, using original');
+            decryptedPhoneNumber = matchingPhone.phone_number;
+          }
+        } catch (e) {
+          console.error('[check-imei] Error decrypting phone_number:', e);
+          decryptedPhoneNumber = matchingPhone.phone_number;
+        }
+        
+        let decryptedIdLast6 = null;
+        try {
+          decryptedIdLast6 = decryptField(matchingPhone.id_last6);
+          if (!decryptedIdLast6) {
+            console.warn('[check-imei] decryptField returned null/empty for id_last6, using original');
+            decryptedIdLast6 = matchingPhone.id_last6;
+          }
+        } catch (e) {
+          console.error('[check-imei] Error decrypting id_last6:', e);
+          decryptedIdLast6 = matchingPhone.id_last6;
+        }
+        
         const decryptedOwnerName = decryptField(matchingPhone.owner_name) || matchingPhone.owner_name || '';
         const decryptedPhone = {
           ...matchingPhone,
           imei: decryptField(matchingPhone.imei),
-          phone_number: decryptField(matchingPhone.phone_number),
-          id_last6: decryptField(matchingPhone.id_last6),
+          phone_number: decryptedPhoneNumber || '',
+          id_last6: decryptedIdLast6 || '',
           owner_name: decryptedOwnerName
         };
+        if (process.env.NODE_ENV !== 'production') {
+          console.log('[check-imei] Returning decrypted phoneDetails for current user:', {
+            phone_number: decryptedPhoneNumber,
+            id_last6: decryptedIdLast6,
+            owner_name: decryptedOwnerName
+          });
+        }
         return res.json({ exists: true, phoneDetails: decryptedPhone, isOtherUser: false });
       } else {
         // مسجل لمستخدم آخر، تحقق مما إذا كان هناك بلاغ فعال

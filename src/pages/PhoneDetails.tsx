@@ -390,7 +390,23 @@ const PhoneDetails: React.FC = () => {
         <div className="card-container mb-6">
           <h3 className="text-imei-cyan font-medium mb-2">IMEI</h3>
           <div className="bg-imei-dark p-3 rounded-md">
-            <p className="text-white font-mono text-center text-xl">{phone.imei}</p>
+            <p className="text-white font-mono text-center text-xl">
+              {(() => {
+                try {
+                  if (!phone.imei) return 'N/A';
+                  
+                  // محاولة فك التشفير
+                  if (typeof phone.imei === 'string' && (phone.imei.includes('encryptedData') || /^[A-Za-z0-9+/=]+$/.test(phone.imei))) {
+                    const { decryptIMEI } = require('@/lib/imeiCrypto');
+                    const decrypted = decryptIMEI(phone.imei);
+                    return /^\d{14,16}$/.test(decrypted) ? decrypted : phone.imei;
+                  }
+                  return phone.imei;
+                } catch (e) {
+                  return phone.imei || 'N/A';
+                }
+              })()}
+            </p>
           </div>
         </div>
 

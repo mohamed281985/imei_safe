@@ -19,9 +19,29 @@ import Logo from '@/components/Logo';
 import { useScrollToTop } from '@/hooks/useScrollToTop';
 import CountryCodeSelector from '../components/CountryCodeSelector';
 import imageCompression from 'browser-image-compression';
+import axiosInstance from '@/services/axiosInterceptor';
+import { decryptPhoneNumber } from '../lib/imeiCrypto';
 
 // دالة مساعدة للتحقق من أدوار المستخدم التجاري
 const isBusinessRole = (role?: string) => ['business', 'free_business', 'gold_business', 'silver_business'].includes(role || '');
+
+// دالة مساعدة لفك تشفير رقم الهاتف
+const decryptPhoneIfEncrypted = (phone: string | undefined | null): string => {
+  if (!phone) return '';
+  try {
+    // تحقق مما إذا كان الرقم يبدو مشفراً (base64 أو طويل جداً)
+    if (typeof phone === 'string' && 
+        (phone.includes('encryptedData') || 
+         (/^[A-Za-z0-9+/=]+$/.test(phone) && phone.length > 20))) {
+      const decrypted = decryptPhoneNumber(phone);
+      // تحقق من أن النتيجة تبدو وكأنها رقم هاتف حقيقي (أرقام فقط و 7-15 رقم)
+      return /^[0-9+\-()]{7,20}$/.test(decrypted) ? decrypted : phone;
+    }
+    return phone;
+  } catch (e) {
+    return phone || '';
+  }
+};
 
 // interface TransferRecord { // لم تعد هذه الواجهة مستخدمة بشكل مباشر هنا لإنشاء سجل جديد
 //   id: string;
@@ -53,6 +73,7 @@ const ImageUploader: React.FC<{
   disabled?: boolean;
 }> = ({ label, image, setImage, onCameraClick, disabled }) => {
   const { t } = useLanguage();
+  const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showOptions, setShowOptions] = useState(false);
   const optionsRef = useRef<HTMLDivElement>(null);
@@ -195,7 +216,11 @@ const ImageUploader: React.FC<{
 
 const BusinessTransfer: React.FC = () => {
   useScrollToTop();
-  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://imei-safe.me';
+  const { toast } = useToast();
+  const { t } = useLanguage();
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? 'https://imei-safe.me' : '/api');
   // دالة تلتقط صورة الفاتورة وتعمل على الهاتف (Capacitor) أو المتصفح
   const handleReceiptCamera = async () => {
     // تحقق من وجود منصة Capacitor أو جهاز جوال
@@ -219,14 +244,10 @@ const BusinessTransfer: React.FC = () => {
       openCamera('receipt');
     }
   };
-  const { t } = useLanguage();
-  const { toast } = useToast();
-  const navigate = useNavigate();
   const videoRef = useRef<HTMLVideoElement>(null);
   const receiptFileInputRef = useRef<HTMLInputElement>(null);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [currentSelfieType, setCurrentSelfieType] = useState<'seller' | 'sellerId' | 'receipt' | null>(null);
-  const { user } = useAuth(); // استخدام hook useAuth
   const [showRegisterDialog, setShowRegisterDialog] = useState(false); // حالة جديدة للنافذة المنبثقة
   const [isFormLocked, setIsFormLocked] = useState(false);
 
@@ -401,23 +422,25 @@ const BusinessTransfer: React.FC = () => {
         let jwtToken = '';
         try { const { data: { session } } = await supabase.auth.getSession(); jwtToken = session?.access_token || ''; } catch(e) { jwtToken = ''; }
 
-        const resp = await fetch(`${API_BASE_URL}/api/check-imei`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...(jwtToken ? { 'Authorization': `Bearer ${jwtToken}` } : {}) },
-          body: JSON.stringify({ imei: debouncedImei, userId: user?.id || null })
-        });
+        const resp = await axiosInstance.post('/api/check-imei',
+          { imei: debouncedImei, userId: user?.id || null },
+          {
+            headers: jwtToken ? { 'Authorization': `Bearer ${jwtToken}` } : {},
+            validateStatus: () => true
+          }
+        );
 
-        if (!resp.ok) {
+        if (resp.status !== 200) {
           if (resp.status === 404) {
             setShowRegisterDialog(true);
             setIsLoading(false);
             return;
           }
-          const txt = await resp.text().catch(() => null);
-          throw new Error(txt || `Server responded ${resp.status}`);
+          const errorMsg = resp.data?.error || resp.data?.message || `Server responded ${resp.status}`;
+          throw new Error(errorMsg);
         }
 
-        const registeredPhone = await resp.json().catch(() => null);
+        const registeredPhone = resp.data;
         // احفظ استجابة السيرفر لتستخدم في العرض (مثلاً إظهار أن الهاتف مسجل لمستخدم آخر)
         setCurrentRegisteredPhone(registeredPhone || null);
         if (!registeredPhone) throw new Error('Failed to fetch phone info');
@@ -494,7 +517,7 @@ const BusinessTransfer: React.FC = () => {
               }
             }
 
-            setSellerPhone(resolvedPhone || '');
+            setSellerPhone(decryptPhoneIfEncrypted(resolvedPhone) || '');
             setSellerIdLast6(pick(details, ['owner_id_last6', 'ownerIdLast6', 'maskedIdLast6', 'id_last6']) || '');
             setPhoneType(pick(details, ['phone_type', 'phoneType', 'model']) || '');
             setPhoneImage(pick(details, ['phone_image_url', 'phoneImageUrl', 'phone_image']) || '');
@@ -513,7 +536,7 @@ const BusinessTransfer: React.FC = () => {
 
           setImeiNotice('');
           setSellerName(pick(details, ['owner_name', 'ownerName', 'maskedOwnerName', 'owner', 'name']));
-          setSellerPhone(pick(details, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber', 'phone', 'owner_phone_number']));
+          setSellerPhone(decryptPhoneIfEncrypted(pick(details, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber', 'phone', 'owner_phone_number'])));
           setSellerIdLast6(pick(details, ['owner_id_last6', 'ownerIdLast6', 'maskedIdLast6', 'id_last6']));
           setPhoneType(pick(details, ['phone_type', 'phoneType', 'model']));
           setPhoneImage(pick(details, ['phone_image_url', 'phoneImageUrl', 'phone_image']));
@@ -521,7 +544,7 @@ const BusinessTransfer: React.FC = () => {
         } else if (registeredPhone && registeredPhone.exists) {
           setImeiNotice('');
           setSellerName(pick(registeredPhone, ['owner_name', 'ownerName', 'maskedOwnerName']));
-          setSellerPhone(pick(registeredPhone, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber']));
+          setSellerPhone(decryptPhoneIfEncrypted(pick(registeredPhone, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber'])));
           setSellerIdLast6(pick(registeredPhone, ['owner_id_last6', 'maskedIdLast6']));
           setPhoneType(pick(registeredPhone, ['phone_type', 'phoneType']));
           setPhoneImage(pick(registeredPhone, ['phone_image_url', 'phoneImageUrl']));
@@ -568,20 +591,22 @@ const BusinessTransfer: React.FC = () => {
       let jwtTokenForSubmit = '';
       try { const { data: { session } } = await supabase.auth.getSession(); jwtTokenForSubmit = session?.access_token || ''; } catch(e) { jwtTokenForSubmit = ''; }
 
-      const resp = await fetch(`${API_BASE_URL}/api/check-imei`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(jwtTokenForSubmit ? { 'Authorization': `Bearer ${jwtTokenForSubmit}` } : {}) },
-        body: JSON.stringify({ imei })
-      });
+      const resp = await axiosInstance.post('/api/check-imei',
+        { imei },
+        {
+          headers: jwtTokenForSubmit ? { 'Authorization': `Bearer ${jwtTokenForSubmit}` } : {},
+          validateStatus: () => true
+        }
+      );
 
-      if (!resp.ok) {
-        const errText = await resp.text();
-        toast({ title: 'خطأ', description: errText || 'لم يتم العثور على الهاتف في قاعدة البيانات للتسجيل الأولي', variant: 'destructive', className: 'bg-red-50 text-red-800 font-bold rtl border-2 border-red-500' });
+      if (resp.status !== 200) {
+        const errMsg = resp.data?.error || resp.data?.message || 'لم يتم العثور على الهاتف في قاعدة البيانات للتسجيل الأولي';
+        toast({ title: 'خطأ', description: errMsg, variant: 'destructive', className: 'bg-red-50 text-red-800 font-bold rtl border-2 border-red-500' });
         setIsLoading(false);
         return;
       }
 
-      const phone = await resp.json();
+      const phone = resp.data;
 
       // Some server responses use `exists` while older code expected `isRegistered`.
       const isRegistered = !!(phone?.isRegistered || phone?.exists);
@@ -669,21 +694,23 @@ const BusinessTransfer: React.FC = () => {
       if (!(user && user.role === 'business')) {
         let jwtTokenVerify = '';
         try { const { data: { session } } = await supabase.auth.getSession(); jwtTokenVerify = session?.access_token || ''; } catch(e) { jwtTokenVerify = ''; }
-        const verifyResp = await fetch(`${API_BASE_URL}/api/verify-seller-password`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...(jwtTokenVerify ? { 'Authorization': `Bearer ${jwtTokenVerify}` } : {}) },
-          body: JSON.stringify({ imei, password: sellerPassword, sellerIdLast6 })
-        });
+        const verifyResp = await axiosInstance.post('/api/verify-seller-password',
+          { imei, password: sellerPassword, sellerIdLast6 },
+          {
+            headers: jwtTokenVerify ? { 'Authorization': `Bearer ${jwtTokenVerify}` } : {},
+            validateStatus: () => true
+          }
+        );
 
-        if (!verifyResp.ok) {
-          const errText = await verifyResp.text();
-          toast({ title: 'تعذر التحقق', description: errText || 'تعذر التحقق من بيانات البائع', variant: 'destructive', className: 'bg-red-50 text-red-800 font-bold rtl border-2 border-red-500' });
+        if (verifyResp.status !== 200) {
+          const errMsg = verifyResp.data?.error || verifyResp.data?.message || 'تعذر التحقق من بيانات البائع';
+          toast({ title: 'تعذر التحقق', description: errMsg, variant: 'destructive', className: 'bg-red-50 text-red-800 font-bold rtl border-2 border-red-500' });
           setIsLoading(false);
           return;
         }
 
         // read JSON and ensure server validated the password
-        const verifyJson = await verifyResp.json().catch(() => null);
+        const verifyJson = verifyResp.data;
         if (!verifyJson || verifyJson.ok !== true) {
           const message = verifyJson && verifyJson.error ? verifyJson.error : t('seller_verification_failed') || 'تعذر التحقق من بيانات البائع';
           toast({ title: 'تعذر التحقق', description: message, variant: 'destructive', className: 'bg-red-50 text-red-800 font-bold rtl border-2 border-red-500' });
@@ -729,15 +756,17 @@ const BusinessTransfer: React.FC = () => {
         phone_image: phoneImage || null
       };
 
-      const transferResp = await fetch(`${API_BASE_URL}/api/transfer-ownership`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(jwtTokenTransfer ? { 'Authorization': `Bearer ${jwtTokenTransfer}` } : {}) },
-        body: JSON.stringify(transferPayload)
-      });
+      const transferResp = await axiosInstance.post('/api/transfer-ownership',
+        transferPayload,
+        {
+          headers: jwtTokenTransfer ? { 'Authorization': `Bearer ${jwtTokenTransfer}` } : {},
+          validateStatus: () => true
+        }
+      );
 
-      if (!transferResp.ok) {
-        const errText = await transferResp.text();
-        throw new Error(errText || 'Transfer failed');
+      if (transferResp.status !== 200) {
+        const errMsg = transferResp.data?.error || transferResp.data?.message || 'Transfer failed';
+        throw new Error(errMsg);
       }
 
       // 5) نجاح
@@ -957,6 +986,11 @@ const BusinessTransfer: React.FC = () => {
                   </div>
                   <div>
                     <label className="block text-black mb-1">{t('seller_phone')}</label>
+                    {typeof sellerPhone === 'string' && sellerPhone.includes('encryptedData') && (
+                      <div className="mb-2 p-2 bg-yellow-100 border border-yellow-400 rounded text-yellow-800 text-sm">
+                        ⚠️ البيانات مشفرة. يرجى تحديث الصفحة.
+                      </div>
+                    )}
                     <input
                       type="text"
                       value={sellerPhone}

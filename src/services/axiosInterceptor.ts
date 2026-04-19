@@ -31,7 +31,7 @@ const processQueue = (error: AxiosError | null, token: string | null = null) => 
  * إعداد axios interceptor للتعامل مع CSRF token
  * @param axiosInstance - instance من axios
  */
-export const setupCsrfInterceptor = (axiosInstance: AxiosInstance) => {
+const setupCsrfInterceptor = (axiosInstance: AxiosInstance) => {
   /**
    * Interceptor للطلب: إضافة CSRF token
    */
@@ -113,9 +113,15 @@ export const setupCsrfInterceptor = (axiosInstance: AxiosInstance) => {
 /**
  * إنشاء axios instance مع CSRF interceptor
  */
-export const createAxiosInstance = (): AxiosInstance => {
+const createAxiosInstance = (): AxiosInstance => {
+  // في بيئة التطوير: استخدم http://localhost:3000 مباشرة
+  // في بيئة الإنتاج: استخدم https://imei-safe.me
+  const baseURL = import.meta.env.PROD 
+    ? 'https://imei-safe.me' 
+    : 'http://localhost:3000';
+  
   const instance = axios.create({
-    baseURL: process.env.REACT_APP_API_URL || 'http://localhost:3001/api',
+    baseURL,
     withCredentials: true,
     headers: {
       'Content-Type': 'application/json'
@@ -127,4 +133,8 @@ export const createAxiosInstance = (): AxiosInstance => {
   return instance;
 };
 
-export default createAxiosInstance;
+// إنشاء instance واحد للاستخدام في جميع أنحاء التطبيق
+const axiosInstance = createAxiosInstance();
+
+export default axiosInstance;
+export { setupCsrfInterceptor };

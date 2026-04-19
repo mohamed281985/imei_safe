@@ -145,7 +145,7 @@ const OffersGallery = () => {
                 .single();
 
             console.log(t('offer_data_retrieved'));
-            if (process.env.NODE_ENV !== 'production') console.debug(offerDataWithAmount);
+            if (import.meta.env.MODE !== 'production') console.debug(offerDataWithAmount);
             console.log(t('offer_fetch_error'));
 
             if (offerErrorWithAmount || !offerDataWithAmount) {

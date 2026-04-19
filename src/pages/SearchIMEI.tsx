@@ -12,6 +12,7 @@ import PageAdvertisement from '@/components/advertisements/PageAdvertisement';
 import { useScrollToTop } from '../hooks/useScrollToTop';
 import { supabase } from '../lib/supabase';
 import AdsOfferSlider from '@/components/AdsOfferSlider';
+import axiosInstance from '@/services/axiosInterceptor';
 
 const WelcomeSearch: React.FC = () => {
   useScrollToTop();
@@ -42,16 +43,16 @@ const WelcomeSearch: React.FC = () => {
     const { data: { session } } = await supabase.auth.getSession();
     const token = session?.access_token;
 
-    const response = await fetch('https://imei-safe.me/api/check-limit', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({ type: 'search_imei' })
-    });
+    const response = await axiosInstance.post('/api/check-limit', 
+      { type: 'search_imei' },
+      {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      }
+    );
 
-    const result = await response.json();
+    const result = response.data;
 
     if (!result.allowed) {
       toast({
@@ -91,14 +92,14 @@ const WelcomeSearch: React.FC = () => {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
 
-      await fetch('https://imei-safe.me/api/increment-usage', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ type: 'search_imei' })
-      });
+      await axiosInstance.post('/api/increment-usage',
+        { type: 'search_imei' },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
     } catch (error) {
       // تم تجاهل الخطأ في تحديث استخدام البحث
     }
@@ -129,35 +130,35 @@ const WelcomeSearch: React.FC = () => {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
 
-      const response = await fetch('https://imei-safe.me/api/get-finder-phone', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ userId: user.id })
-      });
-      const { finderPhone, error } = await response.json();
+      const response = await axiosInstance.post('/api/get-finder-phone',
+        { userId: user.id },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+      const { finderPhone, error } = response.data;
 
       if (error || !finderPhone) {
         throw new Error(error || 'فشل في الحصول على رقم هاتف الواجد.');
       }
 
       // 2. تحديث جدول phone_reports بوضع رقم هاتف الواجد المشفر في عمود finder_phone باستخدام IMEI
-      const updateResponse = await fetch('https://imei-safe.me/api/update-finder-phone-by-imei', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
+      const updateResponse = await axiosInstance.post('/api/update-finder-phone-by-imei',
+        {
           imei: phoneId,
           finderPhone: finderPhone
-        })
-      });
-      const updateResult = await updateResponse.json();
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+      const updateResult = updateResponse.data;
 
-      if (!updateResponse.ok || !updateResult.success) {
+      if (!updateResponse.status || !updateResult.success) {
         toast({ title: 'تنبيه', description: 'تم العثور على الهاتف لكن لم يتم حفظ رقمك في قاعدة البيانات.', variant: 'destructive' });
       } else {
 
@@ -168,16 +169,16 @@ const WelcomeSearch: React.FC = () => {
           try {
             const { data: { session } } = await supabase.auth.getSession();
             const token = session?.access_token;
-            const response = await fetch('https://imei-safe.me/api/get-owner-email-by-imei', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-              },
-              body: JSON.stringify({ imei: phoneId })
-            });
-            const result = await response.json();
-            if (!response.ok || !result?.email) {
+            const response = await axiosInstance.post('/api/get-owner-email-by-imei',
+              { imei: phoneId },
+              {
+                headers: {
+                  'Authorization': `Bearer ${token}`
+                }
+              }
+            );
+            const result = response.data;
+            if (response.status !== 200 || !result?.email) {
               throw new Error(result?.error || 'لم يتم العثور على سجل للهاتف في قاعدة البيانات');
             }
             ownerEmailForNotification = result.email;
@@ -320,15 +321,15 @@ const WelcomeSearch: React.FC = () => {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
 
-      const response = await fetch('https://imei-safe.me/api/search-imei', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ imei: imei })
-      });
-      const result = await response.json();
+      const response = await axiosInstance.post('/api/search-imei',
+        { imei: imei },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+      const result = response.data;
 
       // تحديث عدد عمليات البحث
       await updateSearchUsage(user.id);
@@ -347,6 +348,8 @@ const WelcomeSearch: React.FC = () => {
             imei: result.imei || imei,
             registration_date: result.registeredPhone.registration_date,
             status: result.registeredPhone.status,
+            phone_image_url: result.registeredPhone.phone_image_url || result.phone_image_url,
+            phone_type: result.registeredPhone.phone_type || result.phone_type,
           });
         }
       } else if (result.registeredPhone || result.registered || result.isRegistered) {
@@ -364,6 +367,8 @@ const WelcomeSearch: React.FC = () => {
           imei: rp.imei,
           registration_date: rp.registration_date,
           status: rp.status,
+          phone_image_url: rp.phone_image_url || result.phone_image_url,
+          phone_type: rp.phone_type || result.phone_type,
         });
         setSearchResult('not_found');
       } else {
@@ -470,7 +475,19 @@ const WelcomeSearch: React.FC = () => {
                 </p>
 
                 <div className="text-center text-black mb-2">
-                  <span className="font-bold">IMEI:</span> {phoneId}
+                  <span className="font-bold">IMEI:</span> {phoneId ? (() => {
+                    try {
+                      // محاولة فك تشفير IMEI إذا كان مشفراً
+                      if (/^[a-zA-Z0-9+/=]+$/.test(phoneId) && phoneId.length > 15) {
+                        const { decryptIMEI } = require('@/lib/imeiCrypto');
+                        const decrypted = decryptIMEI(phoneId);
+                        return /^\d{14,16}$/.test(decrypted) ? decrypted : phoneId;
+                      }
+                      return phoneId;
+                    } catch {
+                      return phoneId;
+                    }
+                  })() : 'N/A'}
                 </div>
                 {/* عرض مكان الفقد وتاريخ الفقد إذا توفرا */}
                 {foundReportStatus === 'active' && (
@@ -509,6 +526,25 @@ const WelcomeSearch: React.FC = () => {
                       {formatDateTime(registeredPhoneDetails.registration_date) || 'غير متوفر'}{' '}
                       {t('and_no_report_has_been_filed_yet')}
                     </h3>
+                    {/* عرض صورة وتفاصيل الهاتف */}
+                    {registeredPhoneDetails.phone_image_url && (
+                      <div className="mt-4 flex flex-col items-center">
+                        <p className="text-green-700 font-semibold mb-2">صورة الهاتف:</p>
+                        <img 
+                          src={registeredPhoneDetails.phone_image_url} 
+                          alt="صورة الهاتف" 
+                          className="w-full max-w-xs rounded-lg border border-green-400"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Crect fill=%22%23ddd%22 width=%22100%22 height=%22100%22/%3E%3Ctext x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 font-family=%22sans-serif%22 font-size=%2214%22 fill=%22%23999%22%3ENo Image%3C/text%3E%3C/svg%3E';
+                          }}
+                        />
+                      </div>
+                    )}
+                    {registeredPhoneDetails.phone_type && (
+                      <div className="mt-3 text-center">
+                        <p className="text-green-700 font-semibold">نوع الهاتف: <span className="font-normal">{registeredPhoneDetails.phone_type}</span></p>
+                      </div>
+                    )}
                   </div>
                 ) : registeredPhoneDetails.status === 'pending' ? (
                   <div className="mt-8 p-6 rounded-xl border bg-yellow-100 border-yellow-400 shadow-lg shadow-yellow-500/20">
@@ -520,6 +556,24 @@ const WelcomeSearch: React.FC = () => {
                       {formatDateTime(registeredPhoneDetails.registration_date) || 'غير متوفر'}{' '}
                       {t('and_it_is_under_review_please_check_purchase_invoice')}
                     </h3>
+                    {registeredPhoneDetails.phone_image_url && (
+                      <div className="mt-4 flex flex-col items-center">
+                        <p className="text-yellow-700 font-semibold mb-2">صورة الهاتف:</p>
+                        <img 
+                          src={registeredPhoneDetails.phone_image_url} 
+                          alt="صورة الهاتف" 
+                          className="w-full max-w-xs rounded-lg border border-yellow-400"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Crect fill=%22%23ddd%22 width=%22100%22 height=%22100%22/%3E%3Ctext x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 font-family=%22sans-serif%22 font-size=%2214%22 fill=%22%23999%22%3ENo Image%3C/text%3E%3C/svg%3E';
+                          }}
+                        />
+                      </div>
+                    )}
+                    {registeredPhoneDetails.phone_type && (
+                      <div className="mt-3 text-center">
+                        <p className="text-yellow-700 font-semibold">نوع الهاتف: <span className="font-normal">{registeredPhoneDetails.phone_type}</span></p>
+                      </div>
+                    )}
                   </div>
                 ) : registeredPhoneDetails.status === 'rejected' ? (
                   <div className="mt-8 p-6 rounded-xl border bg-red-100 border-red-400 shadow-lg shadow-red-500/20 rtl">
@@ -540,6 +594,25 @@ const WelcomeSearch: React.FC = () => {
                       {formatDateTime(registeredPhoneDetails.registration_date) || 'غير متوفر'}{' '}
                       {t('and_no_report_has_been_filed_yet')}
                     </h3>
+                    {/* عرض صورة وتفاصيل الهاتف */}
+                    {registeredPhoneDetails.phone_image_url && (
+                      <div className="mt-4 flex flex-col items-center">
+                        <p className="text-green-700 font-semibold mb-2">صورة الهاتف:</p>
+                        <img 
+                          src={registeredPhoneDetails.phone_image_url} 
+                          alt="صورة الهاتف" 
+                          className="w-full max-w-xs rounded-lg border border-green-400"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Crect fill=%22%23ddd%22 width=%22100%22 height=%22100%22/%3E%3Ctext x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 font-family=%22sans-serif%22 font-size=%2214%22 fill=%22%23999%22%3ENo Image%3C/text%3E%3C/svg%3E';
+                          }}
+                        />
+                      </div>
+                    )}
+                    {registeredPhoneDetails.phone_type && (
+                      <div className="mt-3 text-center">
+                        <p className="text-green-700 font-semibold">نوع الهاتف: <span className="font-normal">{registeredPhoneDetails.phone_type}</span></p>
+                      </div>
+                    )}
                   </div>
                 )}
               </>

@@ -167,7 +167,7 @@ const Signup: React.FC = () => {
             try {
               await fetch('/api/create-app-user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
             } catch (e) {
-              if (process.env.NODE_ENV !== 'production') console.warn('create-app-user call failed', e);
+              if (import.meta.env.MODE !== 'production') console.warn('create-app-user call failed', e);
             }
           }
         } catch (e) { /* ignore */ }
