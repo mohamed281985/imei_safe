@@ -818,9 +818,8 @@ const ReportPhone: React.FC = () => {
           console.error('❌ خطأ supabase عند رفع الصورة:', error);
           throw new Error(t('failed_to_upload_image'));
         }
-        // جلب رابط الصورة النهائي
-        const { data: publicUrlData } = supabase.storage.from('phoneimages').getPublicUrl(filePath);
-        return publicUrlData?.publicUrl || '';
+        // تخزين المسار فقط (path)، بدون URL كامل
+        return filePath;
       };
 
       let receiptImageToSend: string | null = null;

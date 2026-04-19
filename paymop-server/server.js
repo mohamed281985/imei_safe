@@ -494,6 +494,46 @@ app.get('/api/csrf-token', (req, res) => {
   }
 });
 
+// Endpoint: توليد signed URL قصير الأجل لملفات التخزين
+// يقبل: { bucket, path, expiresIn (بالثواني) }
+app.get('/api/signed-url', verifyJwtToken, async (req, res) => {
+  try {
+    const { bucket, path, expiresIn = 900 } = req.query; // 15 دقيقة افتراضياً (900 ثانية)
+
+    if (!bucket || !path) {
+      return res.status(400).json({ error: 'bucket and path are required' });
+    }
+
+    // تحقق من أن الـ bucket آمن (whitelist of allowed buckets)
+    const allowedBuckets = ['registerphone', 'phone-images', 'transfer-assets'];
+    if (!allowedBuckets.includes(String(bucket))) {
+      return res.status(400).json({ error: 'Invalid bucket' });
+    }
+
+    // تجنب path traversal attacks
+    if (String(path).includes('..') || String(path).includes('./')) {
+      return res.status(400).json({ error: 'Invalid path' });
+    }
+
+    // توليد signed URL بالمدة المطلوبة
+    const expirationSeconds = Math.min(Number(expiresIn) || 900, 86400); // حد أقصى 24 ساعة
+    const { data, error } = await supabase.storage
+      .from(String(bucket))
+      .createSignedUrl(String(path), expirationSeconds);
+
+    if (error) {
+      console.error('Error creating signed URL:', error);
+      return res.status(500).json({ error: 'Failed to create signed URL' });
+    }
+
+    return res.json({ signedUrl: data?.signedUrl || null });
+  } catch (err) {
+    console.error('Error in /api/signed-url:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+
 // ⭐ Endpoint لجلب mainimage_url من جدول ads_offar
 app.get('/api/offers/mainimage', async (req, res) => {
   try {

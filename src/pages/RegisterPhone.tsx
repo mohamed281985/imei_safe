@@ -712,7 +712,7 @@ const RegisterPhone: React.FC = () => {
     try {
       setIsLoading(true);
 
-      let phoneImageUrl = null;
+      let phoneImagePath = null;
       if (formData.phoneImage) {
         const fileName = `${formData.imei}_phone_${Date.now()}.jpg`;
         const { data: phoneUpload, error: phoneError } = await supabase.storage
@@ -721,14 +721,11 @@ const RegisterPhone: React.FC = () => {
 
         if (phoneError) throw phoneError;
 
-        const { data: { publicUrl } } = supabase.storage
-          .from('registerphone')
-          .getPublicUrl(fileName);
-
-        phoneImageUrl = publicUrl;
+        // تخزين المسار فقط (path)، بدون URL كامل
+        phoneImagePath = fileName;
       }
 
-      let receiptImageUrl = null;
+      let receiptImagePath = null;
       if (formData.receiptImage) {
         const fileName = `${formData.imei}_receipt_${Date.now()}.jpg`;
         const { data: receiptUpload, error: receiptError } = await supabase.storage
@@ -737,11 +734,8 @@ const RegisterPhone: React.FC = () => {
 
         if (receiptError) throw receiptError;
 
-        const { data: { publicUrl } } = supabase.storage
-          .from('registerphone')
-          .getPublicUrl(fileName);
-
-        receiptImageUrl = publicUrl;
+        // تخزين المسار فقط (path)، بدون URL كامل
+        receiptImagePath = fileName;
       }
 
       const now = new Date().toISOString();
@@ -755,8 +749,8 @@ const RegisterPhone: React.FC = () => {
         imei: cleanImei(formData.imei),
         phone_type: formData.phoneType,
         password: formData.password,
-        phone_image_url: phoneImageUrl,
-        receipt_image_url: receiptImageUrl,
+        phone_image_url: phoneImagePath,
+        receipt_image_url: receiptImagePath,
         registration_date: now,
         review_status: null,
         review_date: null,
