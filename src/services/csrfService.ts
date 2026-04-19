@@ -20,8 +20,6 @@ const getApiBaseUrl = (): string => {
   return import.meta.env.PROD ? 'https://imei-safe.me' : 'http://localhost:3000';
 };
 
-const API_BASE_URL = getApiBaseUrl();
-
 interface CsrfTokenResponse {
   csrfToken: string;
   expiresAt?: string;
@@ -46,11 +44,12 @@ class CsrfService {
         return storedToken;
       }
 
-      console.log('📝 جاري جلب CSRF token من الخادم...');
+      const apiBaseUrl = getApiBaseUrl();
+      console.log('📝 جاري جلب CSRF token من الخادم...', `${apiBaseUrl}/api/csrf-token`);
 
       // اطلب token جديد من الخادم
       const response = await axios.get<CsrfTokenResponse>(
-        `${API_BASE_URL}/api/csrf-token`,
+        `${apiBaseUrl}/api/csrf-token`,
         {
           withCredentials: true // إرسال cookies
         }
