@@ -784,7 +784,7 @@ const BusinessTransferBuy: React.FC = () => {
             password: newPassword,
             user_id: user?.id || null
           },
-          new_receipt_image_url: newReceiptImageUrl || null
+          new_receipt_image_url: newReceiptImagePath || null
         };
 
         const resp = await axiosInstance.post('/api/transfer-ownership',
