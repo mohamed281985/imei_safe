@@ -3,22 +3,7 @@
 
 import axios from 'axios';
 
-// Dynamic API URL detection
-const getApiBaseUrl = (): string => {
-  if (import.meta.env.VITE_API_URL) {
-    return import.meta.env.VITE_API_URL as string;
-  }
-  
-  if (typeof window !== 'undefined') {
-    const { hostname, protocol } = window.location;
-    if (hostname === 'localhost' || hostname === '127.0.0.1') {
-      return 'http://localhost:3000'; // Local dev
-    }
-    return `${protocol}//${hostname}`; // Production
-  }
-  
-  return import.meta.env.PROD ? 'https://imei-safe.me' : 'http://localhost:3000';
-};
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 interface CsrfTokenResponse {
   csrfToken: string;
@@ -44,12 +29,11 @@ class CsrfService {
         return storedToken;
       }
 
-      const apiBaseUrl = getApiBaseUrl();
-      console.log('📝 جاري جلب CSRF token من الخادم...', `${apiBaseUrl}/api/csrf-token`);
+      console.log('📝 جاري جلب CSRF token من الخادم...');
 
       // اطلب token جديد من الخادم
       const response = await axios.get<CsrfTokenResponse>(
-        `${apiBaseUrl}/api/csrf-token`,
+        `${API_BASE_URL}/api/csrf-token`,
         {
           withCredentials: true // إرسال cookies
         }
