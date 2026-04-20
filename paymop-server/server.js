@@ -5198,12 +5198,14 @@ app.get('/api/my-buyer-info', verifyJwtToken, async (req, res) => {
 
     if (business) {
       const decPhone = decryptField(business.phone);
+      const decIdLast6 = decryptField(business.id_last6);
       return res.json({
         success: true,
         data: {
           name: business.store_name || '',
           phone: decPhone || '',
           email: business.email || '',
+          idLast6: decIdLast6 || '',
           isBusiness: true,
           ownerId: userId
         }
