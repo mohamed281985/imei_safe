@@ -13,12 +13,9 @@ export async function logAudit(supabaseOrConfig, configOrUndefined) {
       supabase = supabaseOrConfig;
       config = configOrUndefined;
     } else {
-      // Only one argument: import supabase from server context
-      // For now, if supabase not provided, we'll skip audit logging to prevent crashes
+      // Only one argument: assume config object, skip audit if supabase not available
       if (!supabaseOrConfig || typeof supabaseOrConfig !== 'object' || !supabaseOrConfig.from) {
-        // Not a supabase instance, assume it's config object
         config = supabaseOrConfig;
-        // Skip audit logging if supabase not available
         console.warn('[logAudit] Supabase not provided, skipping audit log');
         return;
       }
@@ -38,6 +35,14 @@ export async function logAudit(supabaseOrConfig, configOrUndefined) {
       status = 'success',
       details = null
     } = config;
+
+    // Sanitize sensitive values
+    const sanitizeValues = (obj) => {
+      if (!obj) return null;
+      const copy = JSON.parse(JSON.stringify(obj));
+      const sensitiveFields = ['password', 'token', 'secret', 'key', 'private_key'];
+      
+      const walk = (o) => {
         if (!o || typeof o !== 'object') return;
         for (const k of Object.keys(o)) {
           if (sensitiveFields.some(f => k.toLowerCase().includes(f))) {
@@ -50,6 +55,11 @@ export async function logAudit(supabaseOrConfig, configOrUndefined) {
       walk(copy);
       return copy;
     };
+
+    // Skip if no supabase (for endpoints that don't use audit logging)
+    if (!supabase || !supabase.from) {
+      return;
+    }
 
     const { error } = await supabase
       .from('audit_logs')
