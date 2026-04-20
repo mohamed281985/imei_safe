@@ -4664,7 +4664,7 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
           phone_type: matchingPhone.phone_type || '',
           phone_image_url: matchingPhone.phone_image_url || ''
         };
-        return res.json({ exists: true, phoneDetails: maskedPhoneDetails, isOtherUser: true, hasActiveReport: false, isTransferred: true, registered: true });
+        return res.json({ isOtherUser: true });
       }
       // التحقق مما إذا كان مسجلاً لمستخدم آخر
       if (userId && matchingPhone.user_id === userId) {
@@ -4711,41 +4711,8 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
         }
         return res.json({ exists: true, phoneDetails: decryptedPhone, isOtherUser: false });
       } else {
-        // مسجل لمستخدم آخر، تحقق مما إذا كان هناك بلاغ فعال
-        const { data: reportData2, error: reportError2 } = await supabase
-          .from('phone_reports')
-          .select('id, imei')
-          .eq('status', 'active');
-
-        if (reportError2) {
-          console.error('Error checking phone_reports:', reportError2);
-          // في حالة فشل التحقق من البلاغ، ارجع للسلوك الأصلي
-          return res.json({ exists: true, phoneDetails: null, isOtherUser: true, hasActiveReport: false });
-        }
-
-        // فك تشفير جميع أرقام IMEI في البلاغات والبحث عن المطابقة
-        const matchingReport2 = reportData2 ? reportData2.find(report => {
-          const decryptedImei = decryptField(report.imei);
-          return decryptedImei === imei;
-        }) : null;
-
-        if (matchingReport2) {
-          // الهاتف مسجل لمستخدم آخر وبه بلاغ فعال
-          return res.json({ exists: true, phoneDetails: null, isOtherUser: true, hasActiveReport: true, isStolen: true });
-        }
-        // الهاتف مسجل لمستخدم آخر ولكن ليس به بلاغ فعال
-        // إرجاع بيانات مقنّعة فقط
-        const decryptedPhoneNumber = decryptField(matchingPhone.phone_number);
-        const decryptedIdLast6 = decryptField(matchingPhone.id_last6);
-        const decryptedOwnerName = decryptField(matchingPhone.owner_name) || matchingPhone.owner_name || '';
-        const maskedPhoneDetails = {
-          maskedOwnerName: maskName(decryptedOwnerName),
-          maskedPhoneNumber: maskPhoneNumber(decryptedPhoneNumber),
-          maskedIdLast6: maskIdLast6(decryptedIdLast6 || ''),
-          phone_type: matchingPhone.phone_type || '',
-          phone_image_url: matchingPhone.phone_image_url || ''
-        };
-        return res.json({ exists: true, phoneDetails: maskedPhoneDetails, isOtherUser: true, hasActiveReport: false });
+        // مسجل لمستخدم آخر - ارجع فقط isOtherUser: true بدون بيانات
+        return res.json({ isOtherUser: true });
       }
     }
 
