@@ -410,7 +410,7 @@ const RegisterPhone: React.FC = () => {
   }, [user, fromPurchase, t, toast, formData.registerType]);
   // ...existing code...
   // Restore checkImeiExists definition here if missing
-  const checkImeiExists = useCallback(async (imei: string): Promise<{ exists: boolean; phoneDetails: Partial<PhoneData> | null; isOtherUser?: boolean; hasActiveReport?: boolean; isStolen?: boolean; isOwnReport?: boolean }> => {
+  const checkImeiExists = useCallback(async (imei: string): Promise<{ exists: boolean; phoneDetails: Partial<PhoneData> | null; isOtherUser?: boolean; hasActiveReport?: boolean; isStolen?: boolean; isOwnReport?: boolean; isTransferred?: boolean }> => {
     try {
       // ملاحظة: تم تشفير رقم IMEI بالفعل قبل استدعاء هذه الدالة باستخدام AES
       // ملاحظة أمنية: استخدام JWT Token للمصادقة بدلاً من مفتاح API
@@ -468,8 +468,8 @@ const RegisterPhone: React.FC = () => {
         // ملاحظة أمنية: إرسال البيانات كنص عادي عبر HTTPS آمن
         // التشفير سيتم في الخلفية (Backend)
         const cleanImeiValue = cleanImei(value);
-        const { exists, phoneDetails, isOtherUser, hasActiveReport, isStolen, isOwnReport } = await checkImeiExists(cleanImeiValue);
-        console.log('Check IMEI result:', { exists, isOtherUser, hasActiveReport, isStolen });
+        const { exists, phoneDetails, isOtherUser, hasActiveReport, isStolen, isOwnReport, isTransferred } = await checkImeiExists(cleanImeiValue);
+        console.log('Check IMEI result:', { exists, isOtherUser, hasActiveReport, isStolen, isTransferred });
 
         if (exists) {
           // حالة: البلاغ موجود ولصاحبه هو المستخدم الحالي
@@ -493,6 +493,26 @@ const RegisterPhone: React.FC = () => {
               phoneImage: null,
             }));
             setPreviews(prev => ({ ...prev, phoneImage: '' }));
+          } else if (isTransferred && phoneDetails) {
+            // حالة: الهاتف منقول الملكية — عرض البيانات
+            setIsImeiValid(false);
+            setImeiError('imei_already_exists');
+            setFormData(prev => ({
+              ...prev,
+              ownerName: user?.role === 'business' ? prev.ownerName : cleanText(phoneDetails.owner_name || ''),
+              phoneNumber: user?.role === 'business' ? prev.phoneNumber : cleanPhoneNumber(phoneDetails.phone_number || ''),
+              phoneType: cleanText(phoneDetails.phone_type || ''),
+              phoneImage: null,
+            }));
+            setPreviews(prev => ({
+              ...prev,
+              phoneImage: phoneDetails.phone_image_url || '',
+            }));
+            toast({
+              title: t('info'),
+              description: 'هذا الهاتف منقول الملكية - تم عرض البيانات السابقة',
+              variant: 'default'
+            });
           } else if (isOtherUser) {
             if (hasActiveReport) {
               setIsImeiValid(false);
