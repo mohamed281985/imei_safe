@@ -5602,6 +5602,9 @@ app.post('/api/verify-seller-password', verifyJwtToken, async (req, res) => {
   try {
     const { imei, password } = req.body;
     const userId = req.user?.id;
+    
+    // Debug logging
+    console.log('[verify-seller-password] userId:', userId, 'imei:', imei, 'password:', !!password);
 
     // ✅ Ownership verification: يمكن فقط لمالك الهاتف التحقق من كلمة المرور
     if (!userId) {
