@@ -891,12 +891,26 @@ const BusinessTransfer: React.FC = () => {
             console.log('تعبئة اسم البائع:', sellerNameValue);
             // Phone is already decrypted from server
             setSellerPhone(phoneFromBusiness || (user as any)?.phone || '');
+
+            // تعبئة بيانات المشتري تلقائياً ببيانات المتجر كما هو مطلوب
+            const idLast6Value = businessData.id_last6 || userData?.id_last6 || '';
+            setSellerIdLast6(idLast6Value); // تحديث حالة البائع أيضاً
+            setBuyerName(sellerNameValue);
+            setBuyerPhone(phoneFromBusiness || (user as any)?.phone || '');
+            setBuyerEmail(emailFromBusiness || user?.email || '');
+            setBuyerIdLast6(idLast6Value);
           } else if (userData) {
             // Fallback to user data if no business data
             const sellerNameValue = userData.full_name?.trim() || user?.username || user?.email || 'اسم غير متوفر';
             setSellerName(sellerNameValue);
             // Phone is already decrypted from server
             setSellerPhone(userData.phone?.trim() || '');
+
+            // ملء بيانات المشتري من بيانات المستخدم
+            setBuyerName(sellerNameValue);
+            setBuyerPhone(userData.phone?.trim() || '');
+            setBuyerEmail(userData.email?.trim() || user?.email || '');
+            setBuyerIdLast6(userData.id_last6 || '');
           }
         } catch (error) {
           console.error('Error fetching decrypted user data:', error);
