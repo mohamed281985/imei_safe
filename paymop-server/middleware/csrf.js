@@ -7,8 +7,12 @@ const { invalidCsrfTokenError, generateToken, doubleCsrfProtection } = doubleCsr
   cookieName: 'x-csrf-token',
   cookieOptions: {
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-    httpOnly: true
+    // For deployed frontends on a different origin we need to allow cross-site
+    // credentialed requests. Use 'none' in production (requires Secure).
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    httpOnly: true,
+    // Optional: allow overriding cookie domain via env when needed
+    ...(process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {})
   },
   size: 64,
   ignoredMethods: ['GET', 'HEAD', 'OPTIONS']

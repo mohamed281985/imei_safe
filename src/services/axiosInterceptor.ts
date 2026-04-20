@@ -128,12 +128,13 @@ const setupCsrfInterceptor = (axiosInstance: AxiosInstance) => {
  * إنشاء axios instance مع CSRF interceptor
  */
 const createAxiosInstance = (): AxiosInstance => {
-  // في بيئة التطوير: استخدم http://localhost:3000 مباشرة
-  // في بيئة الإنتاج: استخدم https://imei-safe.me
-  const baseURL = import.meta.env.PROD 
-    ? 'https://imei-safe.me' 
-    : 'http://localhost:3000';
-  
+  // Use explicit VITE_API_BASE_URL when provided (recommended for Render).
+  // Fallbacks:
+  // - in production: use current origin (window.location.origin)
+  // - in development: use localhost:3000
+  const envBase = import.meta.env.VITE_API_BASE_URL as string | undefined;
+  const baseURL = envBase || (import.meta.env.PROD ? (typeof window !== 'undefined' ? window.location.origin : 'https://imei-safe.me') : 'http://localhost:3000');
+
   const instance = axios.create({
     baseURL,
     withCredentials: true,
