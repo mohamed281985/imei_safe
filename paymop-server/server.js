@@ -5673,11 +5673,9 @@ app.post('/api/transfer-ownership', verifyJwtToken, async (req, res) => {
 
     const registeredPhone = phones ? phones.find(p => decryptField(p.imei) === imei) : null;
     if (!registeredPhone) return res.status(404).json({ error: 'Phone not found' });
-    if (!registeredPhone.user_id || registeredPhone.user_id !== req.user?.id) {
-      return res.status(403).json({ error: 'Forbidden: only current owner can transfer this phone' });
-    }
-
-    // تحقق من كلمة المرور للبائع مع ترقية تلقائية للهاش القديم
+    
+    // تحقق من كلمة المرور للبائع أولاً (بدلاً من فحص user_id)
+    // هذا يسمح للمشتري بنقل الملكية إذا عرف كلمة مرور البائع الحالي
     // Rate limit check (per seller/user)
     const userKey = req.user && req.user.id ? `uid:${req.user.id}` : `ip:${req.ip}`;
     const blocked = checkAuthBlocked(userKey);
