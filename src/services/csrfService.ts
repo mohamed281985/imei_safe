@@ -3,7 +3,11 @@
 
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+// Prefer VITE_API_BASE_URL (set in Render / .env). Fall back to legacy VITE_API_URL then localhost.
+const API_BASE_URL = (import.meta.env.VITE_API_BASEURL as string)
+  || (import.meta.env.VITE_API_BASE_URL as string)
+  || (import.meta.env.VITE_API_URL as string)
+  || 'http://localhost:3000';
 
 interface CsrfTokenResponse {
   csrfToken: string;

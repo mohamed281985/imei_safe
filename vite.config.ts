@@ -27,7 +27,8 @@ export default defineConfig(({ mode }) => ({
       }
       ,
       '/api': {
-        target: 'http://localhost:3000',
+        // Proxy API requests to the configured backend URL (set VITE_API_BASE_URL in .env or Render)
+        target: process.env.VITE_API_BASE_URL || 'http://localhost:3000',
         changeOrigin: true,
         secure: false,
         configure: (proxy, _options) => {
