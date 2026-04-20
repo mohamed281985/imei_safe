@@ -5202,7 +5202,7 @@ app.get('/api/my-buyer-info', verifyJwtToken, async (req, res) => {
       return res.json({
         success: true,
         data: {
-          name: business.store_name || '',
+          name: business.owner_name || '',
           phone: decPhone || '',
           email: business.email || '',
           idLast6: decIdLast6 || '',

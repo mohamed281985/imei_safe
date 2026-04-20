@@ -946,7 +946,7 @@ const BusinessTransferBuy: React.FC = () => {
           // Use masked fields only after ownership confirmed
           setBuyerName(data.name || '');
           setBuyerPhone(data.phone || '');
-          setBuyerIdLast6(data.id_last6 || '');
+          setBuyerIdLast6(data.idLast6 || '');
           // Do not store or expose raw email; keep masked email if needed
           setBuyerEmail(data.email || '');
         }
