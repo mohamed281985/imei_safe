@@ -1080,19 +1080,6 @@ const BusinessTransferBuy: React.FC = () => {
                       {imeiMessage}
                     </div>
                   )}
-                  {isImeiRegisteredToOtherUser && imei.length === 15 && (
-                    <Alert className="mt-3 border-2 border-orange-400 bg-orange-50 text-orange-900">
-                      <AlertDescription className="text-sm">
-                        <div className="font-bold mb-2">هذا الـ IMEI مسجل لمستخدم آخر</div>
-                        <div className="space-y-1">
-                          <div>الاسم: {otherOwnerInfo?.name || 'غير متوفر'}</div>
-                          <div>الهاتف: {otherOwnerInfo?.phone || 'غير متوفر'}</div>
-                          <div>رقم الهوية (آخر أرقام): {otherOwnerInfo?.idLast6 || 'غير متوفر'}</div>
-                          <div>نوع الهاتف: {otherOwnerInfo?.phoneType || 'غير متوفر'}</div>
-                        </div>
-                      </AlertDescription>
-                    </Alert>
-                  )}
                 </div>
                 <div>
                   <label className="block text-black mb-1">{t('phone_type')}</label>
