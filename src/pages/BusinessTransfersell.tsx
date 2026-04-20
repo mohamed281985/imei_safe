@@ -720,14 +720,10 @@ const BusinessTransfer: React.FC = () => {
 
       // 2) تحقق الهوية وكلمة المرور عبر السيرفر بدلاً من قراءة الحقول الحساسة في العميل
       if (!(user && user.role === 'business')) {
-        let jwtTokenVerify = '';
-        try { const { data: { session } } = await supabase.auth.getSession(); jwtTokenVerify = session?.access_token || ''; } catch(e) { jwtTokenVerify = ''; }
+        // Let axios interceptor handle Authorization header automatically
         const verifyResp = await axiosInstance.post('/api/verify-seller-password',
           { imei, password: sellerPassword, sellerIdLast6 },
-          {
-            headers: jwtTokenVerify ? { 'Authorization': `Bearer ${jwtTokenVerify}` } : {},
-            validateStatus: () => true
-          }
+          { validateStatus: () => true }
         );
 
         if (verifyResp.status !== 200) {
