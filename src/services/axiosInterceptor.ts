@@ -131,9 +131,9 @@ const createAxiosInstance = (): AxiosInstance => {
   // Use explicit VITE_API_BASE_URL when provided (recommended for Render).
   // Fallbacks:
   // - in production: use current origin (window.location.origin)
-  // - in development: use localhost:3000
+  // - in development: use empty string (vite proxy will intercept /api requests)
   const envBase = import.meta.env.VITE_API_BASE_URL as string | undefined;
-  const baseURL = envBase || (import.meta.env.PROD ? (typeof window !== 'undefined' ? window.location.origin : 'https://imei-safe.me') : 'http://localhost:3000');
+  const baseURL = envBase || (import.meta.env.PROD ? (typeof window !== 'undefined' ? window.location.origin : 'https://imei-safe.me') : '');
 
   const instance = axios.create({
     baseURL,

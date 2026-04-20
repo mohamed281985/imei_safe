@@ -5646,7 +5646,7 @@ app.post('/api/verify-seller-password', verifyJwtToken, async (req, res) => {
       userId: req.user?.id,
       action: 'verify_seller_password',
       resourceType: 'phone',
-      resourceId: foundPhone.id,
+      resourceId: found.id,
       details: { imei_last_4: imei.slice(-4), verified: true },
       ip: req.ip,
       userAgent: req.headers['user-agent']
