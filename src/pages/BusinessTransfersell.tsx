@@ -462,6 +462,21 @@ const BusinessTransfer: React.FC = () => {
           setIsLoading(false);
           return;
         }
+
+        // التحقق من isOtherUser: إذا كان الهاتف مسجل لمستخدم آخر فقط
+        if (registeredPhone?.isOtherUser && !registeredPhone?.phoneDetails) {
+          setSellerName('');
+          setSellerPhone('');
+          setSellerIdLast6('');
+          setPhoneType('');
+          setPhoneImage('');
+          setOriginalReceiptImage('');
+          setIsFormLocked(true);
+          setImeiNotice(t('phone_registered_other_field') || (t('phone_owned_by_other') || 'هذا الهاتف مسجل لمستخدم آخر. لا يمكن تعبئة الحقول هنا.'));
+          toast({ title: 'معلومات', description: t('phone_owned_by_other') || 'هذا الهاتف مسجل لمستخدم آخر', variant: 'default' });
+          setIsLoading(false);
+          return;
+        }
         
         if (!registeredPhone) throw new Error('Failed to fetch phone info');
 
@@ -1234,10 +1249,10 @@ const BusinessTransfer: React.FC = () => {
           <Dialog open={showRegisterDialog} onOpenChange={setShowRegisterDialog}>
             <DialogContent className="bg-imei-darker text-white border-2 border-imei-cyan shadow-lg shadow-imei-cyan/20">
               <DialogHeader>
-                <DialogTitle className="text-black text-xl mb-4">
+                <DialogTitle className="text-imei-cyan text-xl mb-4">
                   {t('unregistered_phone') || 'هاتف غير مسجل'}
                 </DialogTitle>
-                <DialogDescription className="text-black mb-6">
+                <DialogDescription className="text-white mb-6">
                   {t('unregistered_phone_prompt') || 'هذا الهاتف غير مسجل بالنظام. هل تريد التسجيل قبل نقل الملكية؟'}
                 </DialogDescription>
               </DialogHeader>
