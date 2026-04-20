@@ -4638,40 +4638,12 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
       });
     }
 
-    // إذا كان الهاتف مسجلاً (وليس منقول الملكية)
+    // إذا كان الهاتف مسجلاً
     if (matchingPhone) {
-      // إذا كانت حالة السجل 'transferred' نعامله كـ موجود ومُنقَل
-        if (matchingPhone.status === 'transferred') {
-        // If the record is marked transferred, still check if the requesting user is the new owner.
-        if (userId && matchingPhone.user_id === userId) {
-          // Treat as owned by current user (allow access to decrypted details)
-          const decryptedOwnerName = decryptField(matchingPhone.owner_name) || matchingPhone.owner_name || '';
-          const decryptedPhone = {
-            ...matchingPhone,
-            imei: decryptField(matchingPhone.imei),
-            phone_number: decryptField(matchingPhone.phone_number),
-            id_last6: decryptField(matchingPhone.id_last6),
-            owner_name: decryptedOwnerName
-          };
-          return res.json({ exists: true, phoneDetails: decryptedPhone, isOtherUser: false, hasActiveReport: false, isTransferred: true });
-        }
-
-        const decryptedPhoneNumber = decryptField(matchingPhone.phone_number);
-        const decryptedIdLast6 = decryptField(matchingPhone.id_last6);
-        const decryptedOwnerName = decryptField(matchingPhone.owner_name) || matchingPhone.owner_name || '';
-        const decryptedPhone = {
-          ...matchingPhone,
-          imei: decryptField(matchingPhone.imei),
-          phone_number: decryptedPhoneNumber,
-          id_last6: decryptedIdLast6 || '',
-          owner_name: decryptedOwnerName
-        };
-        return res.json({ exists: true, isOtherUser: true, phoneDetails: decryptedPhone, isTransferred: true });
-      }
-      // التحقق مما إذا كان مسجلاً لمستخدم آخر
+      // التحقق مما إذا كان مسجلاً لمستخدم آخر أو منقول الملكية
       if (userId && matchingPhone.user_id === userId) {
         // الهاتف مسجل للمستخدم الحالي، نسمح له بتحديث البيانات
-        // فك تشفير البيانات قبل إرجاعها - تأكد من أننا نفك التشفير بشكل صحيح
+        // فك تشفير البيانات قبل إرجاعها
         let decryptedPhoneNumber = null;
         try {
           decryptedPhoneNumber = decryptField(matchingPhone.phone_number);
@@ -4711,24 +4683,14 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
             owner_name: decryptedOwnerName
           });
         }
-        return res.json({ exists: true, phoneDetails: decryptedPhone, isOtherUser: false, isTransferred: false });
+        return res.json({ exists: true, phoneDetails: decryptedPhone, isOtherUser: false });
       } else {
-        // مسجل لمستخدم آخر - ارجع بيانات مقنعة فقط
-        const decryptedPhoneNumber = decryptField(matchingPhone.phone_number);
-        const decryptedIdLast6 = decryptField(matchingPhone.id_last6);
-        const decryptedOwnerName = decryptField(matchingPhone.owner_name) || matchingPhone.owner_name || '';
-        const maskedPhoneDetails = {
-          owner_name: decryptedOwnerName,
-          phone_number: decryptedPhoneNumber,
-          id_last6: decryptedIdLast6 || '',
-          phone_type: matchingPhone.phone_type || '',
-          phone_image_url: matchingPhone.phone_image_url || ''
-        };
-        return res.json({ exists: true, isOtherUser: true, phoneDetails: maskedPhoneDetails, isTransferred: false });
+        // مسجل لمستخدم آخر أو منقول الملكية - لا نرجع أي بيانات
+        return res.json({ exists: true, isOtherUser: true, phoneDetails: null });
       }
     }
 
-    res.json({ exists: false, phoneDetails: null, isTransferred: false });
+    res.json({ exists: false, phoneDetails: null });
   } catch (error) {
     console.error('Error checking IMEI:', error);
     return sendError(res, 500, 'حدث خطأ في الخادم', error);
