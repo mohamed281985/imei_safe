@@ -4659,14 +4659,14 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
         const decryptedPhoneNumber = decryptField(matchingPhone.phone_number);
         const decryptedIdLast6 = decryptField(matchingPhone.id_last6);
         const decryptedOwnerName = decryptField(matchingPhone.owner_name) || matchingPhone.owner_name || '';
-        const maskedPhoneDetails = {
-          maskedOwnerName: maskName(decryptedOwnerName),
-          maskedPhoneNumber: maskPhoneNumber(decryptedPhoneNumber),
-          maskedIdLast6: maskIdLast6(decryptedIdLast6 || ''),
-          phone_type: matchingPhone.phone_type || '',
-          phone_image_url: matchingPhone.phone_image_url || ''
+        const decryptedPhone = {
+          ...matchingPhone,
+          imei: decryptField(matchingPhone.imei),
+          phone_number: decryptedPhoneNumber,
+          id_last6: decryptedIdLast6 || '',
+          owner_name: decryptedOwnerName
         };
-        return res.json({ isOtherUser: true, phoneDetails: maskedPhoneDetails, isTransferred: true });
+        return res.json({ exists: true, isOtherUser: true, phoneDetails: decryptedPhone, isTransferred: true });
       }
       // التحقق مما إذا كان مسجلاً لمستخدم آخر
       if (userId && matchingPhone.user_id === userId) {
@@ -4711,24 +4711,24 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
             owner_name: decryptedOwnerName
           });
         }
-        return res.json({ exists: true, phoneDetails: decryptedPhone, isOtherUser: false });
+        return res.json({ exists: true, phoneDetails: decryptedPhone, isOtherUser: false, isTransferred: false });
       } else {
         // مسجل لمستخدم آخر - ارجع بيانات مقنعة فقط
         const decryptedPhoneNumber = decryptField(matchingPhone.phone_number);
         const decryptedIdLast6 = decryptField(matchingPhone.id_last6);
         const decryptedOwnerName = decryptField(matchingPhone.owner_name) || matchingPhone.owner_name || '';
         const maskedPhoneDetails = {
-          maskedOwnerName: maskName(decryptedOwnerName),
-          maskedPhoneNumber: maskPhoneNumber(decryptedPhoneNumber),
-          maskedIdLast6: maskIdLast6(decryptedIdLast6 || ''),
+          owner_name: decryptedOwnerName,
+          phone_number: decryptedPhoneNumber,
+          id_last6: decryptedIdLast6 || '',
           phone_type: matchingPhone.phone_type || '',
           phone_image_url: matchingPhone.phone_image_url || ''
         };
-        return res.json({ isOtherUser: true, phoneDetails: maskedPhoneDetails });
+        return res.json({ exists: true, isOtherUser: true, phoneDetails: maskedPhoneDetails, isTransferred: false });
       }
     }
 
-    res.json({ exists: false, phoneDetails: null });
+    res.json({ exists: false, phoneDetails: null, isTransferred: false });
   } catch (error) {
     console.error('Error checking IMEI:', error);
     return sendError(res, 500, 'حدث خطأ في الخادم', error);
