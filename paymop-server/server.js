@@ -5199,13 +5199,15 @@ app.get('/api/my-buyer-info', verifyJwtToken, async (req, res) => {
     if (business) {
       const decPhone = decryptField(business.phone);
       const decIdLast6 = decryptField(business.id_last6);
+      const decOwnerName = decryptField(business.owner_name);
       // إزالة علامات التنصيص الزائدة
       const cleanPhone = typeof decPhone === 'string' ? decPhone.replace(/^"|"$/g, '') : '';
       const cleanIdLast6 = typeof decIdLast6 === 'string' ? decIdLast6.replace(/^"|"$/g, '') : '';
+      const cleanOwnerName = typeof decOwnerName === 'string' ? decOwnerName.replace(/^"|"$/g, '') : '';
       return res.json({
         success: true,
         data: {
-          name: business.owner_name || '',
+          name: cleanOwnerName,
           phone: cleanPhone,
           email: business.email || '',
           idLast6: cleanIdLast6,
