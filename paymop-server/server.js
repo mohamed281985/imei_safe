@@ -5187,7 +5187,7 @@ app.get('/api/my-buyer-info', verifyJwtToken, async (req, res) => {
     // تحقق مما إذا كان المستخدم مرتبطًا بعمل تجاري
     const { data: business, error: bizErr } = await supabase
       .from('businesses')
-      .select('store_name, phone, email')
+      .select('store_name, phone, email, id_last6')
       .eq('user_id', userId)
       .maybeSingle();
 
@@ -5215,7 +5215,7 @@ app.get('/api/my-buyer-info', verifyJwtToken, async (req, res) => {
     // إذا لم يكن عملًا تجاريًا، حاول جلب بيانات المستخدم العامة
     const { data: userData, error: userErr } = await supabase
       .from('users')
-      .select('full_name, phone, email')
+      .select('full_name, phone, email, id_last6')
       .eq('id', userId)
       .maybeSingle();
 
@@ -5226,12 +5226,14 @@ app.get('/api/my-buyer-info', verifyJwtToken, async (req, res) => {
 
     if (userData) {
       const decPhone = decryptField(userData.phone);
+      const decIdLast6 = decryptField(userData.id_last6);
       return res.json({
         success: true,
         data: {
           name: userData.full_name || '',
           phone: decPhone || '',
           email: userData.email || '',
+          idLast6: decIdLast6 || '',
           isBusiness: false,
           ownerId: userId
         }
