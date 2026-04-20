@@ -1726,8 +1726,10 @@ const maskEmail = (email) => {
 
 const maskIdLast6 = (id) => {
   if (!id) return '';
-  if (id.length <= 2) return '*'.repeat(id.length);
-  return '*'.repeat(id.length - 2) + id.slice(-2);
+  const cleanId = String(id).replace(/\D/g, '');
+  if (cleanId.length <= 6) return cleanId;
+  // إذا كانت أطول من 6، أظهر آخر 6 أرقام بدون إخفاء
+  return cleanId.slice(-6);
 };
 // Normalize IMEI/phone-like values: keep digits only for robust comparisons
 const normalizeDigitsOnly = (s) => {
