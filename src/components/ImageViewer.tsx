@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { X } from 'lucide-react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
@@ -44,6 +44,8 @@ const ImageViewer: React.FC<ImageViewerProps> = ({ imageUrl, isOpen, onClose }) 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="bg-black/90 border-none w-screen h-screen max-w-full max-h-full rounded-none top-0 left-0 translate-x-0 translate-y-0 p-0 pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]">
+        <DialogTitle className="sr-only">عارض الصورة</DialogTitle>
+        <DialogDescription className="sr-only">نافذة منبثقة لعرض الصورة بحجم كامل</DialogDescription>
         <button
           onClick={onClose}
           className="absolute top-2 right-2 text-white hover:text-gray-300 z-50"
