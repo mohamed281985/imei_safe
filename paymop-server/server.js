@@ -597,6 +597,110 @@ app.get('/api/image-url', verifyJwtToken, async (req, res) => {
   }
 });
 
+// ⭐ Endpoint متخصص: يحول اسم الملف من قاعدة البيانات إلى رابط كامل
+app.get('/api/phone-image-url', verifyJwtToken, async (req, res) => {
+  try {
+    const { filename, phoneId, expiresIn = 3600 } = req.query;
+
+    if (!filename) {
+      return res.status(400).json({ error: 'filename is required' });
+    }
+
+    // بناء المسار الكامل للملف
+    // القالب: registerphone/phone-images/{phoneId}/{filename}
+    // أو ببساطة: registerphone/{filename} إذا كان الملف موجود مباشرة
+    
+    let fullPath = String(filename);
+    
+    // إذا كان الملف بدون مسار كامل، أضف البادئة المناسبة
+    if (!fullPath.includes('/')) {
+      // افترض أن الملف في مجلد يحتوي على phoneId
+      if (phoneId) {
+        fullPath = `phone-images/${phoneId}/${filename}`;
+      } else {
+        fullPath = `phone-images/${filename}`;
+      }
+    }
+
+    console.log('[phone-image-url] building URL for:', { filename, phoneId, fullPath });
+
+    // حاول جلب الرابط العام أولاً من registerphone bucket
+    try {
+      const { data: publicData } = supabase.storage
+        .from('registerphone')
+        .getPublicUrl(fullPath);
+      
+      if (publicData && publicData.publicUrl) {
+        console.log('[phone-image-url] got public URL:', publicData.publicUrl);
+        return res.json({ 
+          url: publicData.publicUrl,
+          type: 'public',
+          path: fullPath,
+          bucket: 'registerphone'
+        });
+      }
+    } catch (e) {
+      console.warn('[phone-image-url] public URL attempt failed, trying signed URL:', e.message);
+    }
+
+    // إذا لم ينجح الرابط العام، أنشئ signed URL
+    const expirationSeconds = Math.min(Number(expiresIn) || 3600, 86400);
+    const { data, error } = await supabase.storage
+      .from('registerphone')
+      .createSignedUrl(fullPath, expirationSeconds);
+
+    if (error) {
+      console.error('[phone-image-url] Error creating signed URL:', error);
+      // حاول مسارات بديلة
+      const alternativePaths = [
+        filename, // اسم الملف مباشرة
+        `phone-images/${filename}`,
+        `photos/${filename}`,
+        `${phoneId}/${filename}`
+      ];
+
+      for (const altPath of alternativePaths) {
+        try {
+          const { data: altData, error: altErr } = await supabase.storage
+            .from('registerphone')
+            .createSignedUrl(altPath, expirationSeconds);
+          
+          if (!altErr && altData?.signedUrl) {
+            console.log('[phone-image-url] SUCCESS with alternative path:', altPath);
+            return res.json({ 
+              url: altData.signedUrl,
+              type: 'signed',
+              path: altPath,
+              bucket: 'registerphone',
+              expiresIn: expirationSeconds
+            });
+          }
+        } catch (e) {
+          // continue to next alternative
+        }
+      }
+
+      // إذا فشلت جميع المحاولات
+      return res.status(404).json({ 
+        error: 'Image file not found',
+        tried: [fullPath, ...alternativePaths]
+      });
+    }
+
+    console.log('[phone-image-url] got signed URL:', data.signedUrl ? 'YES' : 'NO');
+    return res.json({ 
+      url: data?.signedUrl || null,
+      type: 'signed',
+      path: fullPath,
+      bucket: 'registerphone',
+      expiresIn: expirationSeconds
+    });
+  } catch (err) {
+    console.error('Error in /api/phone-image-url:', err);
+    return res.status(500).json({ error: 'Server error', details: err.message });
+  }
+});
+
 
 // ⭐ Endpoint لجلب mainimage_url من جدول ads_offar
 app.get('/api/offers/mainimage', async (req, res) => {
