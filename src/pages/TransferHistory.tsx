@@ -225,22 +225,8 @@ const TransferHistory: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    const fetchTransferRecords = async () => {
-      setIsLoading(true);
-      try {
-        const resp = await axiosInstance.post('/api/transfer-records', {});
-        const json = resp.data;
-        
-        setRecords((json?.data || []) as TransferRecord[]);
-      } catch (error) {
-        console.debug('Error fetching transfer records:', error);
-      }
-      setIsLoading(false);
-    };
-
-    fetchTransferRecords();
-  }, []);
+  // لاحقًا: لا نجلب سجلات النقل عند تحميل الصفحة تلقائياً لأن ذلك يتطلب `imei`
+  // السجلات تُجلب عندما يضغط المستخدم زر البحث ويُدخل IMEI.
 
   const findPhoneImage = async (imei: string): Promise<string | null> => {
     const { data: transferData, error: transferError } = await supabase
