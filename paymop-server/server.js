@@ -6005,7 +6005,7 @@ app.post('/api/transfer-records/verify-owner', async (req, res) => {
     // ابحث عن مالك الـ IMEI في جدول registered_phones
     const { data: phones, error: phonesErr } = await supabase
       .from('registered_phones')
-      .select('user_id, imei')
+      .select('id, user_id, imei, password')
       .limit(1000);
     if (phonesErr) throw phonesErr;
 
@@ -6013,53 +6013,17 @@ app.post('/api/transfer-records/verify-owner', async (req, res) => {
       const dec = decryptField(p.imei) || p.imei;
       return normalizeDigitsOnly(dec) === normalizeDigitsOnly(imei);
     });
+    if (!matching) return res.status(404).json({ error: 'Owner not found for IMEI' });
 
-    if (!matching || !matching.user_id) return res.status(404).json({ error: 'Owner not found for IMEI' });
-    const ownerId = matching.user_id;
-
-    // جلب بيانات المستخدم من Supabase Admin API (لنحصل على البريد الإلكتروني)
-    if (!SUPABASE_URL || !SUPABASE_KEY) return res.status(500).json({ error: 'Server not configured for admin operations' });
-    const adminUserUrl = `${SUPABASE_URL.replace(/\/+$/,'')}/auth/v1/admin/users/${ownerId}`;
-    const userResp = await fetch(adminUserUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${SUPABASE_KEY}`,
-        'apikey': SUPABASE_KEY,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (!userResp.ok) {
-      const txt = await userResp.text();
-      if (process.env.NODE_ENV !== 'production') console.warn('/api/transfer-records/verify-owner admin user fetch failed', userResp.status, txt);
-      return res.status(500).json({ error: 'Failed to fetch owner user' });
+    // إذا تم تعيين كلمة مرور عند تسجيل الهاتف، تحقق منها هنا (هذه كلمة مرور خاصة بالتسجيل، ليست كلمة مرور تسجيل الدخول)
+    const storedHash = matching.password;
+    if (!storedHash) {
+      // لا توجد كلمة مرور مخزنة للهاتف المسجل
+      return res.status(400).json({ error: 'No registration password set for this IMEI' });
     }
 
-    const ownerJson = await userResp.json();
-    const ownerEmail = ownerJson?.email;
-    if (!ownerEmail) return res.status(500).json({ error: 'Owner email not available' });
-
-    // تحقق من كلمة المرور عبر endpoint المصادقة (نتحقق فقط من صلاحية كلمة المرور)
-    const tokenUrl = `${SUPABASE_URL.replace(/\/+$/,'')}/auth/v1/token?grant_type=password`;
-    // Supabase expects form-encoded body for the password grant; send urlencoded data and include apikey
-    const tokenResp = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: {
-        'apikey': SUPABASE_KEY,
-        'Authorization': `Bearer ${SUPABASE_KEY}`,
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: `email=${encodeURIComponent(ownerEmail)}&password=${encodeURIComponent(ownerPassword)}`
-    });
-
-    // إذا كانت بيانات الاعتماد خاطئة، يعيد endpoint حالة 400/401
-    if (!tokenResp.ok) {
-      try {
-        const txt = await tokenResp.text();
-        if (process.env.NODE_ENV !== 'production') console.warn('/api/transfer-records/verify-owner tokenResp failed', tokenResp.status, txt);
-      } catch (e) {
-        if (process.env.NODE_ENV !== 'production') console.warn('/api/transfer-records/verify-owner tokenResp failed and body could not be read', e);
-      }
+    const passwordMatches = await bcrypt.compare(String(ownerPassword), String(storedHash));
+    if (!passwordMatches) {
       return res.status(401).json({ error: 'Invalid owner credentials' });
     }
 
