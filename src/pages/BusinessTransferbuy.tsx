@@ -187,11 +187,55 @@ const BusinessTransferBuy: React.FC = () => {
   const [isPhoneReported, setIsPhoneReported] = useState<boolean | null>(null);
 
   // الاسم المقنع للبائع للعرض (أو العرض غير المقنع إذا طُلب)
-  const maskedSellerName = showUnmaskedSellerInfo ? sellerName : maskName(sellerName);
+  const isLikelyMasked = (val: string) => {
+    if (!val) return false;
+    const s = String(val).trim();
+    // If it starts with many asterisks or contains the common '******' marker, assume server already masked it
+    if (/^\*+/.test(s)) return true;
+    if (s.includes('******')) return true;
+    return false;
+  };
+
+  const isInvalidMasked = (val: string) => {
+    if (!val) return false;
+    const s = String(val).trim();
+    // If the string is absurdly long it's likely malformed
+    if (s.length > 300) return true;
+    return false;
+  };
+
+  const sanitizeServerValue = (val: any) => {
+    if (val === null || val === undefined) return '';
+    let s = String(val).trim();
+    // Remove wrapping braces or quotes accidentally included
+    s = s.replace(/^[\s\{\["']+|[\s\}\]\"']+$/g, '');
+
+    // If it's JSON-like or contains encrypted payload markers, drop it
+    if (s.includes('encryptedData') || s.includes('authTag') || s.includes('iv')) return '';
+
+    // Collapse excessive asterisk runs to a reasonable length (max 12)
+    s = s.replace(/\*{3,}/g, (m) => (m.length > 12 ? '*'.repeat(12) : m));
+
+    // Final sanity checks
+    if (isInvalidMasked(s)) return '';
+    // If after cleaning it's only punctuation, return empty
+    if (!/[\w\*\p{L}]/u.test(s)) return '';
+    return s;
+  };
+
+  let maskedSellerName = showUnmaskedSellerInfo ? sellerName : (isLikelyMasked(sellerName) ? sellerName : maskName(sellerName));
+  // If server returned an unreadable all-asterisk name, fallback to phone/id or a friendly placeholder
+  if (!showUnmaskedSellerInfo) {
+    const s = String(maskedSellerName || '').trim();
+    if (/^\*{3,}$/.test(s) && s.length > 6) {
+      const fallback = otherOwnerInfo?.name || otherOwnerInfo?.phone || sellerPhone || '';
+      maskedSellerName = fallback ? (fallback.length > 20 ? (fallback.slice(0, 20) + '...') : fallback) : (t('name_hidden_for_privacy') || 'مستخدم مسجل');
+    }
+  }
   // رقم الهاتف المقنع للبائع للعرض (أو العرض غير المقنع إذا طُلب)
-  const maskedSellerPhone = showUnmaskedSellerInfo ? sellerPhone : maskPhone(sellerPhone);
+  const maskedSellerPhone = showUnmaskedSellerInfo ? sellerPhone : (isLikelyMasked(sellerPhone) ? sellerPhone : maskPhone(sellerPhone));
   // رقم البطاقة المقنع للبائع للعرض (أو العرض غير المقنع إذا طُلب)
-  const maskedSellerId = showUnmaskedSellerInfo ? sellerIdLast6 : maskIdNumber(sellerIdLast6);
+  const maskedSellerId = showUnmaskedSellerInfo ? sellerIdLast6 : (isLikelyMasked(sellerIdLast6) ? sellerIdLast6 : maskIdNumber(sellerIdLast6));
 
   // Image states for the current transaction
   const [receiptImage, setReceiptImage] = useState<string>('');
@@ -523,9 +567,9 @@ const BusinessTransferBuy: React.FC = () => {
           }
 
           // املأ الحقول: استخدم حقول المالك الحقيقية إن توفرت وإلا استخدم النسخ المقنعة
-          setSellerName(pick(details, ['owner_name', 'ownerName', 'maskedOwnerName', 'owner', 'name']));
-          setSellerPhone(decryptPhoneIfEncrypted(pick(details, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber', 'phone', 'owner_phone_number'])));
-          setSellerIdLast6(pick(details, ['owner_id_last6', 'ownerIdLast6', 'maskedIdLast6', 'id_last6']));
+          setSellerName(sanitizeServerValue(pick(details, ['owner_name', 'ownerName', 'maskedOwnerName', 'owner', 'name'])));
+          setSellerPhone(sanitizeServerValue(decryptPhoneIfEncrypted(pick(details, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber', 'phone', 'owner_phone_number']))));
+          setSellerIdLast6(sanitizeServerValue(pick(details, ['owner_id_last6', 'ownerIdLast6', 'maskedIdLast6', 'id_last6'])));
           setPhoneType(pick(details, ['phone_type', 'phoneType', 'model']));
           setPhoneImage(resolveImageUrl(pick(details, ['phone_image_url', 'phoneImageUrl', 'phone_image'])));
           setOriginalReceiptImage(resolveImageUrl(pick(details, ['receipt_image_url', 'receiptImageUrl'])));
@@ -542,22 +586,35 @@ const BusinessTransferBuy: React.FC = () => {
             toast({ title: t('warning'), description: t('phone_has_active_report') || 'يوجد بلاغ نشط على هذا الهاتف', variant: 'destructive' });
             // لا نعرض مربع التسجيل لأن السجل موجود لكن بدون تفاصيل؛ اسمح للمستخدم بالتحقق أو التواصل
           } else if (registeredPhone.isOtherUser || registeredPhone.owner_name || registeredPhone.maskedOwnerName) {
+            // حاول الحصول على معلومات مقنّعة من السيرفر (endpoint منفصل يوفر معلومات مُقنّعة/موقَّعة)
+            let maskedData: any = null;
+            try {
+              let jwt = '';
+              try { const { data: { session } } = await supabase.auth.getSession(); jwt = session?.access_token || ''; } catch(e) { jwt = ''; }
+              const miResp = await axiosInstance.post('/api/imei-masked-info', { imei: debouncedImei }, { headers: jwt ? { Authorization: `Bearer ${jwt}` } : {}, validateStatus: () => true });
+              if (miResp && miResp.status === 200 && miResp.data) maskedData = miResp.data;
+            } catch (err) {
+              console.debug('Failed to fetch masked IMEI info:', err);
+            }
+
+            const source = maskedData && (maskedData.maskedOwnerName || maskedData.maskedPhoneNumber) ? maskedData : registeredPhone;
+
             setIsImeiRegisteredToOtherUser(true);
             setOtherOwnerInfo({
-              name: pick(registeredPhone, ['owner_name', 'ownerName', 'maskedOwnerName', 'owner', 'name']),
-              phone: pick(registeredPhone, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber', 'phone', 'owner_phone_number']),
-              idLast6: pick(registeredPhone, ['owner_id_last6', 'ownerIdLast6', 'maskedIdLast6', 'id_last6']),
-              phoneType: pick(registeredPhone, ['phone_type', 'phoneType', 'model'])
+              name: pick(source, ['owner_name', 'ownerName', 'maskedOwnerName', 'owner', 'name']),
+              phone: pick(source, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber', 'phone', 'owner_phone_number']),
+              idLast6: pick(source, ['owner_id_last6', 'ownerIdLast6', 'maskedIdLast6', 'id_last6']),
+              phoneType: pick(source, ['phone_type', 'phoneType', 'model'])
             });
             // السجل موجود لحساب آخر ولكن بدون phoneDetails التفصيلية - املأ الحقول المتاحة
-            setSellerName(pick(registeredPhone, ['owner_name', 'ownerName', 'maskedOwnerName', 'owner', 'name']));
-            setSellerPhone(decryptPhoneIfEncrypted(pick(registeredPhone, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber', 'phone', 'owner_phone_number'])));
-            setSellerIdLast6(pick(registeredPhone, ['owner_id_last6', 'ownerIdLast6', 'maskedIdLast6', 'id_last6']));
-            setPhoneType(pick(registeredPhone, ['phone_type', 'phoneType', 'model']));
-            setPhoneImage(resolveImageUrl(pick(registeredPhone, ['phone_image_url', 'phoneImageUrl', 'phone_image'])));
-            setOriginalReceiptImage(resolveImageUrl(pick(registeredPhone, ['receipt_image_url', 'receiptImageUrl'])));
+            setSellerName(sanitizeServerValue(pick(source, ['owner_name', 'ownerName', 'maskedOwnerName', 'owner', 'name'])));
+            setSellerPhone(sanitizeServerValue(decryptPhoneIfEncrypted(pick(source, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber', 'phone', 'owner_phone_number']))));
+            setSellerIdLast6(sanitizeServerValue(pick(source, ['owner_id_last6', 'ownerIdLast6', 'maskedIdLast6', 'id_last6'])));
+            setPhoneType(pick(source, ['phone_type', 'phoneType', 'model']));
+            setPhoneImage(resolveImageUrl(pick(source, ['phone_image_url', 'phoneImageUrl', 'phone_image'])));
+            setOriginalReceiptImage(resolveImageUrl(pick(source, ['receipt_image_url', 'receiptImageUrl'])));
             // عرض القيم غير المقنعة (أو الحقيقية إن وفرت)
-            setShowUnmaskedSellerInfo(Boolean(pick(registeredPhone, ['owner_name', 'owner_phone', 'owner_id_last6', 'maskedOwnerName', 'maskedPhoneNumber', 'maskedIdLast6'])));
+            setShowUnmaskedSellerInfo(Boolean(pick(source, ['owner_name', 'owner_phone', 'owner_id_last6', 'maskedOwnerName', 'maskedPhoneNumber', 'maskedIdLast6'])));
             // تخزين المرجع للسجل المسترجع إن لزم لاحقاً
             setCurrentRegisteredPhone(registeredPhone);
           } else {
