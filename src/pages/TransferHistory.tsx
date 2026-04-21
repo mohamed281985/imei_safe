@@ -125,6 +125,29 @@ const TransferHistory: React.FC = () => {
     fetchUser();
   }, []);
 
+  // Helper to resolve storage paths into signed URLs via server
+  const resolveImageUrl = async (path: string | null | undefined, bucket?: string) => {
+    if (!path || typeof path !== 'string') return '';
+    const cleanPath = path.trim();
+    if (cleanPath.startsWith('http') || cleanPath.startsWith('data:') || cleanPath.startsWith('blob:')) return cleanPath;
+
+    try {
+      const reqBucket = bucket || (cleanPath.startsWith('receipts/') ? 'transfer-assets' : 'registerphone');
+      const resp = await axiosInstance.get('/api/signed-url', { params: { bucket: reqBucket, path: cleanPath, expiresIn: 300 } });
+      if (resp && resp.status === 200 && resp.data && resp.data.signedUrl) return resp.data.signedUrl;
+    } catch (e) {
+      console.debug('resolveImageUrl signed-url error', e);
+    }
+
+    // fallback to Supabase public URL
+    try {
+      const { data } = supabase.storage.from(bucket || 'registerphone').getPublicUrl(cleanPath);
+      return data?.publicUrl || '';
+    } catch (e) {
+      return '';
+    }
+  };
+
   // تم إزالة هذا useEffect لأننا نتحقق من الحد مباشرة في الدوال
 
   const checkTransferLimit = async (userId: string) => {
@@ -371,6 +394,21 @@ const TransferHistory: React.FC = () => {
       const json = resp.data;
       if (json && json.success) {
         const transferRecords = (json.data || []) as TransferRecord[];
+
+        // Resolve image paths to signed URLs
+        for (const rec of transferRecords) {
+          try {
+            rec.phone_image = (await resolveImageUrl(rec.phone_image)) || rec.phone_image || null;
+          } catch (e) {
+            rec.phone_image = rec.phone_image || null;
+          }
+          try {
+            rec.receipt_image = (await resolveImageUrl(rec.receipt_image)) || rec.receipt_image || null;
+          } catch (e) {
+            rec.receipt_image = rec.receipt_image || null;
+          }
+        }
+
         setRecords(transferRecords);
         setPhoneImage(transferRecords.length > 0 ? transferRecords[0].phone_image || null : null);
         setShowOwnerPasswordModal(false);
