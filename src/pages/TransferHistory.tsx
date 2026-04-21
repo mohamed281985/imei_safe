@@ -376,8 +376,9 @@ const TransferHistory: React.FC = () => {
 
     setIsVerifyingOwnerPassword(true);
     try {
+      const cleanedImei = String(searchTerm || '').replace(/\D/g, '').trim();
       const resp = await axiosInstance.post('/api/transfer-records/verify-owner', {
-        imei: searchTerm,
+        imei: cleanedImei,
         ownerPassword
       });
 

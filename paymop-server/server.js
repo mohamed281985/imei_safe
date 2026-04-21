@@ -6015,6 +6015,13 @@ app.post('/api/transfer-records/verify-owner', async (req, res) => {
     });
     if (!matching) return res.status(404).json({ error: 'Owner not found for IMEI' });
 
+    try {
+      const matchedDec = (() => { try { return decryptField(matching.imei) || matching.imei; } catch(e){ return '<err>'; } })();
+      console.log(`/api/transfer-records/verify-owner: matched registered_phone id=${matching.id} user_id=${matching.user_id} imei_decrypted=${String(matchedDec).slice(0,200)}`);
+    } catch(e) {
+      console.warn('/api/transfer-records/verify-owner: failed to log matched phone details', e);
+    }
+
     // إذا تم تعيين كلمة مرور عند تسجيل الهاتف، تحقق منها هنا (هذه كلمة مرور خاصة بالتسجيل، ليست كلمة مرور تسجيل الدخول)
     const storedHash = matching.password;
     if (!storedHash) {
@@ -6036,15 +6043,13 @@ app.post('/api/transfer-records/verify-owner', async (req, res) => {
 
     if (error) throw error;
 
-    // Diagnostic logging to help debug empty results
+    // Diagnostic logging to help debug empty results (always log for debugging)
     try {
       const incomingNorm = normalizeDigitsOnly(imei);
-      if (process.env.NODE_ENV !== 'production') {
-        console.log('/api/transfer-records/verify-owner: fetched records count=', (records || []).length);
-        const sample = (records || []).slice(0, 8).map(r => ({ id: r.id, imei_raw: r.imei, imei_decrypted_preview: (() => { try { return decryptField(r.imei); } catch(e){ return '<err>'; } })() }));
-        console.log('/api/transfer-records/verify-owner: sample records (decrypted preview):', JSON.stringify(sample, null, 2));
-        console.log('/api/transfer-records/verify-owner: incoming imei normalized=', incomingNorm);
-      }
+      console.log('/api/transfer-records/verify-owner: fetched records count=', (records || []).length);
+      const sample = (records || []).slice(0, 8).map(r => ({ id: r.id, imei_raw: r.imei, imei_decrypted_preview: (() => { try { return decryptField(r.imei); } catch(e){ return '<err>'; } })() }));
+      console.log('/api/transfer-records/verify-owner: sample records (decrypted preview):', JSON.stringify(sample, null, 2));
+      console.log('/api/transfer-records/verify-owner: incoming imei normalized=', incomingNorm);
     } catch (diagErr) {
       console.warn('/api/transfer-records/verify-owner diagnostic logging failed', diagErr);
     }
@@ -6054,9 +6059,7 @@ app.post('/api/transfer-records/verify-owner', async (req, res) => {
       return normalizeDigitsOnly(decImei) === normalizeDigitsOnly(imei);
     });
 
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('/api/transfer-records/verify-owner: filtered count=', filtered.length);
-    }
+    console.log('/api/transfer-records/verify-owner: filtered count=', filtered.length, 'filtered_ids=', (filtered||[]).map(x=>x.id));
 
     const decrypted = filtered.map(r => ({
       ...r,
