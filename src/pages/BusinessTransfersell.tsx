@@ -33,11 +33,11 @@ const decryptPhoneIfEncrypted = (phone: any): string => {
     let phoneStr = typeof phone === 'object' ? JSON.stringify(phone) : String(phone);
 
     // تحقق مما إذا كان النص يبدو مشفراً
-    if (phoneStr.includes('encryptedData') || 
-        (/^[A-Za-z0-9+/=]+$/.test(phoneStr) && phoneStr.length > 20)) {
-      
+    if (phoneStr.includes('encryptedData') ||
+      (/^[A-Za-z0-9+/=]+$/.test(phoneStr) && phoneStr.length > 20)) {
+
       const decrypted = decryptPhoneNumber(phoneStr);
-      
+
       // إذا نجح فك التشفير وأعطى نتيجة مختلفة عن النص الأصلي، فارجعها
       if (decrypted && decrypted !== phoneStr && !decrypted.includes('encryptedData')) {
         return decrypted;
@@ -313,14 +313,6 @@ const BusinessTransfer: React.FC = () => {
     const cleanPath = path.trim();
     if (cleanPath.startsWith('http') || cleanPath.startsWith('data:') || cleanPath.startsWith('blob:')) return cleanPath;
 
-    // 1) حاول الحصول على public URL أولاً
-    try {
-      const pub = await supabase.storage.from('registerphone').getPublicUrl(cleanPath as string);
-      const publicUrl = pub?.data?.publicUrl || null;
-      if (publicUrl) return publicUrl;
-    } catch (e) {
-      // ignore
-    }
 
     // 2) اطلب signed URL من الخادم (يتطلب توكن الجلسة)
     try {
@@ -328,7 +320,7 @@ const BusinessTransfer: React.FC = () => {
       try { const { data: { session } } = await supabase.auth.getSession(); token = session?.access_token || ''; } catch (e) { token = ''; }
       const headers: any = token ? { Authorization: `Bearer ${token}` } : {};
       const resp = await axiosInstance.get('/api/signed-url', {
-        params: { bucket: 'registerphone', path: cleanPath, expiresIn: 3600 },
+        params: { bucket: 'registerphone', path: cleanPath, expiresIn: 300 },
         headers,
         validateStatus: () => true
       });
@@ -463,7 +455,7 @@ const BusinessTransfer: React.FC = () => {
         }
 
         let jwtToken = '';
-        try { const { data: { session } } = await supabase.auth.getSession(); jwtToken = session?.access_token || ''; } catch(e) { jwtToken = ''; }
+        try { const { data: { session } } = await supabase.auth.getSession(); jwtToken = session?.access_token || ''; } catch (e) { jwtToken = ''; }
 
         const resp = await axiosInstance.post('/api/check-imei',
           { imei: debouncedImei, userId: user?.id || null },
@@ -486,7 +478,7 @@ const BusinessTransfer: React.FC = () => {
         const registeredPhone = resp.data;
         // احفظ استجابة السيرفر لتستخدم في العرض (مثلاً إظهار أن الهاتف مسجل لمستخدم آخر)
         setCurrentRegisteredPhone(registeredPhone || null);
-        
+
         // التحقق من البلاغات من استجابة السيرفر
         if (registeredPhone?.hasActiveReport || registeredPhone?.isStolen) {
           console.log('🔴 هاتف مبلغ عنه من السيرفر:', { hasActiveReport: registeredPhone?.hasActiveReport, isStolen: registeredPhone?.isStolen });
@@ -510,7 +502,7 @@ const BusinessTransfer: React.FC = () => {
           setIsLoading(false);
           return;
         }
-        
+
         if (!registeredPhone) throw new Error('Failed to fetch phone info');
 
         const pick = (obj: any, keys: string[]) => {
@@ -689,7 +681,7 @@ const BusinessTransfer: React.FC = () => {
 
       // Request masked info from server instead of direct DB read
       let jwtTokenForSubmit = '';
-      try { const { data: { session } } = await supabase.auth.getSession(); jwtTokenForSubmit = session?.access_token || ''; } catch(e) { jwtTokenForSubmit = ''; }
+      try { const { data: { session } } = await supabase.auth.getSession(); jwtTokenForSubmit = session?.access_token || ''; } catch (e) { jwtTokenForSubmit = ''; }
 
       const resp = await axiosInstance.post('/api/check-imei',
         { imei },
@@ -833,7 +825,7 @@ const BusinessTransfer: React.FC = () => {
 
       // 4) Delegate the transfer and update to server-side endpoint to handle sensitive writes
       let jwtTokenTransfer = '';
-      try { const { data: { session } } = await supabase.auth.getSession(); jwtTokenTransfer = session?.access_token || ''; } catch(e) { jwtTokenTransfer = ''; }
+      try { const { data: { session } } = await supabase.auth.getSession(); jwtTokenTransfer = session?.access_token || ''; } catch (e) { jwtTokenTransfer = ''; }
       const transferPayload: any = {
         imei: String(imei).trim(),
         sellerPassword,
@@ -926,7 +918,7 @@ const BusinessTransfer: React.FC = () => {
           // Use server endpoint that properly decrypts all fields
           const response = await axiosInstance.get('/api/decrypted-user');
           const decryptedData = response.data;
-          
+
           if (!decryptedData || (!decryptedData.user && !decryptedData.business)) {
             throw new Error('No data returned from decrypted-user endpoint');
           }
@@ -958,7 +950,7 @@ const BusinessTransfer: React.FC = () => {
             setSellerName(sellerNameValue);
             // Phone is already decrypted from server
             setSellerPhone(userData.phone?.trim() || '');
-            
+
             // تعبئة البائع فقط، لا نملأ حقول المشتري
             setSellerIdLast6(userData.id_last6 || '');
           }
@@ -1020,8 +1012,8 @@ const BusinessTransfer: React.FC = () => {
           {/* Removed top duplicated Alert — message now shown under IMEI input */}
           {success ? (
             <div className="text-green-500 text-center text-lg font-semibold py-8">
-                {t('ownership_transferred')}
-              </div>
+              {t('ownership_transferred')}
+            </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-8">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

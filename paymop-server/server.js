@@ -5253,6 +5253,9 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
               isOwner: true,
               isTransferred: true,
               receipt_image_url: registeredPhone.receipt_image_url,
+              owner_name: ownerName,
+              phone_number: phoneNumber,
+              id_last6: idLast6,
               maskedOwnerName: maskName(ownerName),
               maskedPhoneNumber: maskPhoneNumber(phoneNumber),
               maskedIdLast6: maskIdLast6(idLast6 || ''),
@@ -5333,6 +5336,9 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
             isOwner: true,
             isTransferred: true,
             receipt_image_url: registeredPhone.receipt_image_url,
+            owner_name: ownerName,
+            phone_number: phoneNumber,
+            id_last6: idLast6,
             maskedOwnerName: maskName(ownerName),
             maskedPhoneNumber: maskPhoneNumber(phoneNumber),
             maskedIdLast6: maskIdLast6(idLast6 || ''),
@@ -5609,6 +5615,15 @@ app.post('/api/transfer-ownership', verifyJwtToken, async (req, res) => {
 
     const registeredPhone = phones ? phones.find(p => decryptField(p.imei) === imei) : null;
     if (!registeredPhone) return res.status(404).json({ error: 'Phone not found' });
+    console.log('[transfer-ownership] registeredPhone (raw) for imei=', imei, {
+      id: registeredPhone?.id,
+      owner_name_raw: registeredPhone?.owner_name,
+      maskedOwnerName: registeredPhone?.maskedOwnerName,
+      phone_number_raw: registeredPhone?.phone_number,
+      id_last6_raw: registeredPhone?.id_last6,
+      status: registeredPhone?.status,
+      user_id: registeredPhone?.user_id
+    });
     
     // تحقق من كلمة المرور للبائع أولاً (بدلاً من فحص user_id)
     // هذا يسمح للمشتري بنقل الملكية إذا عرف كلمة مرور البائع الحالي
@@ -5642,6 +5657,8 @@ app.post('/api/transfer-ownership', verifyJwtToken, async (req, res) => {
         updateData.owner_name = null;
       } else {
         const encOwner = encryptAES(newOwner.owner_name);
+        console.log('[transfer-ownership] incoming newOwner.owner_name:', newOwner.owner_name);
+        console.log('[transfer-ownership] encryptAES result for owner_name:', encOwner);
         if (encOwner) updateData.owner_name = JSON.stringify({ encryptedData: encOwner.encryptedData, iv: encOwner.iv, authTag: encOwner.authTag });
       }
     }
@@ -5714,12 +5731,31 @@ app.post('/api/transfer-ownership', verifyJwtToken, async (req, res) => {
       }
     }
 
+    console.log('[transfer-ownership] updateData prepared:', updateData);
+
     const { data: updated, error: updateErr } = await supabase
       .from('registered_phones')
       .update(updateData)
       .eq('id', registeredPhone.id)
       .select();
-    if (updateErr) throw updateErr;
+    if (updateErr) {
+      console.error('transfer-ownership: update registered_phones error:', updateErr);
+      throw updateErr;
+    }
+    console.log('[transfer-ownership] registered_phones updated result:', updated);
+    try {
+      const after = (updated && updated[0]) || null;
+      if (after) {
+        console.log('[transfer-ownership] decrypted stored values after update:', {
+          owner_name_decrypted: decryptField(after.owner_name) || after.owner_name,
+          phone_number_decrypted: decryptField(after.phone_number) || after.phone_number,
+          id_last6_decrypted: decryptField(after.id_last6) || after.id_last6,
+          maskedOwnerName_after: after.maskedOwnerName
+        });
+      }
+    } catch (e) {
+      console.debug('transfer-ownership: error decrypting after-update values', e);
+    }
 
     // إنشاء سجل نقل الملكية عبر السيرفر مع تشفير البيانات الحساسة
     const encryptToJson = (value) => {
