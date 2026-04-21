@@ -5981,7 +5981,53 @@ app.post('/api/transfer-records', verifyJwtToken, async (req, res) => {
       buyer_id_last6: decryptField(r.buyer_id_last6) || r.buyer_id_last6
     }));
 
-    return res.json({ success: true, data: decrypted });
+    // Convert storage paths (phone_image, receipt_image) into short-lived signed URLs
+    try {
+      const withUrls = [];
+      for (const r of decrypted) {
+        const copy = { ...r };
+        // phone_image: typically stored in `registerphone` bucket
+        try {
+          const pi = copy.phone_image;
+          if (pi && typeof pi === 'string' && !pi.startsWith('http') && !pi.startsWith('data:') && !pi.startsWith('blob:')) {
+            try {
+              const cleaned = String(pi).replace(/^\/+/, '');
+              const { data: urlData, error: urlErr } = await supabase.storage.from('registerphone').createSignedUrl(cleaned, 300);
+              if (!urlErr && urlData && urlData.signedUrl) copy.phone_image = urlData.signedUrl;
+            } catch (e) {
+              // ignore, leave original path
+            }
+          }
+        } catch (e) {
+          // ignore per-record errors
+        }
+
+        // receipt_image: may be in transfer-assets under receipts/
+        try {
+          const rc = copy.receipt_image;
+          if (rc && typeof rc === 'string' && !rc.startsWith('http') && !rc.startsWith('data:') && !rc.startsWith('blob:')) {
+            try {
+              const cleaned = String(rc).replace(/^\/+/, '');
+              const bucket = cleaned.startsWith('receipts/') ? 'transfer-assets' : 'registerphone';
+              const { data: urlData, error: urlErr } = await supabase.storage.from(bucket).createSignedUrl(cleaned, 300);
+              if (!urlErr && urlData && urlData.signedUrl) copy.receipt_image = urlData.signedUrl;
+            } catch (e) {
+              // ignore
+            }
+          }
+        } catch (e) {
+          // ignore
+        }
+
+        withUrls.push(copy);
+      }
+
+      return res.json({ success: true, data: withUrls });
+    } catch (e) {
+      // On any failure here, fall back to returning the decrypted records as-is
+      console.warn('/api/transfer-records/verify-owner: failed to generate signed URLs for images', e?.message || e);
+      return res.json({ success: true, data: decrypted });
+    }
   } catch (err) {
     console.error('transfer-records error:', err);
     return res.status(500).json({ error: 'Server error', details: err?.message || '' });
