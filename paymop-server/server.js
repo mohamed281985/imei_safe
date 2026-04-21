@@ -5350,13 +5350,14 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
         console.log('[IMEI-MASKED-INFO] حالة transferred: returning masked transferred info');
         const decryptedPhoneNumber = decryptField(registeredPhone.phone_number);
         const decryptedIdLast6 = decryptField(registeredPhone.id_last6);
+        const maskedOwnerRaw = (function(){ try { return decryptField(registeredPhone.owner_name) || registeredPhone.owner_name || ''; } catch(e){ return registeredPhone.owner_name || ''; } })();
         const maskedPhoneDetails = {
-          maskedOwnerName: maskName(registeredPhone.owner_name),
-          maskedPhoneNumber: maskPhoneNumber(decryptedPhoneNumber),
-          maskedIdLast6: maskIdLast6(decryptedIdLast6 || ''),
-          phone_type: registeredPhone.phone_type || '',
-          phone_image_url: registeredPhone.phone_image_url || ''
-        };
+            maskedOwnerName: maskName(maskedOwnerRaw),
+            maskedPhoneNumber: maskPhoneNumber(decryptedPhoneNumber),
+            maskedIdLast6: maskIdLast6(decryptedIdLast6 || ''),
+            phone_type: registeredPhone.phone_type || '',
+            phone_image_url: registeredPhone.phone_image_url || ''
+          };
         return res.json({
           found: true,
           masked: true,
