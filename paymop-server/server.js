@@ -6041,18 +6041,25 @@ app.post('/api/transfer-records/verify-owner', async (req, res) => {
 
     // تحقق من كلمة المرور عبر endpoint المصادقة (نتحقق فقط من صلاحية كلمة المرور)
     const tokenUrl = `${SUPABASE_URL.replace(/\/+$/,'')}/auth/v1/token?grant_type=password`;
+    // Supabase expects form-encoded body for the password grant; send urlencoded data and include apikey
     const tokenResp = await fetch(tokenUrl, {
       method: 'POST',
       headers: {
         'apikey': SUPABASE_KEY,
         'Authorization': `Bearer ${SUPABASE_KEY}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/x-www-form-urlencoded'
       },
-      body: JSON.stringify({ email: ownerEmail, password: ownerPassword })
+      body: `email=${encodeURIComponent(ownerEmail)}&password=${encodeURIComponent(ownerPassword)}`
     });
 
     // إذا كانت بيانات الاعتماد خاطئة، يعيد endpoint حالة 400/401
     if (!tokenResp.ok) {
+      try {
+        const txt = await tokenResp.text();
+        if (process.env.NODE_ENV !== 'production') console.warn('/api/transfer-records/verify-owner tokenResp failed', tokenResp.status, txt);
+      } catch (e) {
+        if (process.env.NODE_ENV !== 'production') console.warn('/api/transfer-records/verify-owner tokenResp failed and body could not be read', e);
+      }
       return res.status(401).json({ error: 'Invalid owner credentials' });
     }
 

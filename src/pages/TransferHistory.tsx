@@ -691,7 +691,7 @@ const TransferHistory: React.FC = () => {
                   type="password"
                   value={ownerPassword}
                   onChange={(e) => setOwnerPassword(e.target.value)}
-                  className="w-full p-2 border rounded mb-4"
+                  className="w-full p-2 border rounded mb-4 text-black placeholder-gray-400"
                   placeholder="كلمة المرور"
                 />
                 <div className="flex justify-end gap-2">
