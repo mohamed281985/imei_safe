@@ -314,7 +314,7 @@ const BusinessTransfer: React.FC = () => {
     if (cleanPath.startsWith('http') || cleanPath.startsWith('data:') || cleanPath.startsWith('blob:')) return cleanPath;
 
     // إنشاء الرابط العام من bucket 'phoneimages' (المستخدم لصور الهواتف)
-    const { data } = supabase.storage.from('registerphone').getPublicUrl(cleanPath);
+    const { data } = supabase.storage.from('phoneimages').getPublicUrl(cleanPath);
     return data.publicUrl;
   };
 
