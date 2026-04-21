@@ -55,6 +55,18 @@ const maskIdNumber = (idNumber: string | undefined | null): string => {
   return lastFourDigits + '*'.repeat(Math.min(idNumber.length - 4, 6));
 };
 
+// دالة مساعدة لبناء رابط الصورة الكامل من Supabase
+const resolveImageUrl = (path: string | null | undefined) => {
+  if (!path || typeof path !== 'string') return '';
+  const cleanPath = path.trim();
+  if (cleanPath.startsWith('http') || cleanPath.startsWith('data:') || cleanPath.startsWith('blob:')) return cleanPath;
+
+  // إنشاء الرابط العام من bucket 'phone-images'
+  // إنشاء الرابط العام من bucket 'phoneimages'
+  const { data } = supabase.storage.from('phoneimages').getPublicUrl(cleanPath);
+  return data.publicUrl;
+};
+
 const PhoneDetails: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   useScrollToTop();
@@ -367,13 +379,13 @@ const PhoneDetails: React.FC = () => {
             {phone.phone_image_url ? (
               <button
                 onClick={() => {
-                  setSelectedImage(phone.phone_image_url);
+                  setSelectedImage(resolveImageUrl(phone.phone_image_url));
                   setIsImageViewerOpen(true);
                 }}
                 className="w-full cursor-pointer"
               >
                 <img
-                  src={phone.phone_image_url}
+                  src={resolveImageUrl(phone.phone_image_url)}
                   alt={t('phone_image')}
                   className="w-full h-64 object-contain p-4 transition-transform hover:scale-[1.02]"
                 />

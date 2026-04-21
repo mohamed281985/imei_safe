@@ -307,6 +307,17 @@ const BusinessTransfer: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [currentRegisteredPhone, setCurrentRegisteredPhone] = useState<any>(null); // لتخزين سجل الهاتف من registered_phones
 
+  // دالة مساعدة لبناء رابط الصورة الكامل من Supabase
+  const resolveImageUrl = (path: string | null | undefined) => {
+    if (!path || typeof path !== 'string') return '';
+    const cleanPath = path.trim();
+    if (cleanPath.startsWith('http') || cleanPath.startsWith('data:') || cleanPath.startsWith('blob:')) return cleanPath;
+
+    // إنشاء الرابط العام من bucket 'phoneimages' (المستخدم لصور الهواتف)
+    const { data } = supabase.storage.from('registerphone').getPublicUrl(cleanPath);
+    return data.publicUrl;
+  };
+
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, setImage: (url: string) => void) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -563,8 +574,8 @@ const BusinessTransfer: React.FC = () => {
             setSellerPhone(resolvedPhone || '');
             setSellerIdLast6(pick(details, ['owner_id_last6', 'ownerIdLast6', 'maskedIdLast6', 'id_last6']) || '');
             setPhoneType(pick(details, ['phone_type', 'phoneType', 'model']) || '');
-            setPhoneImage(pick(details, ['phone_image_url', 'phoneImageUrl', 'phone_image']) || '');
-            setOriginalReceiptImage(pick(details, ['receipt_image_url', 'receiptImageUrl']) || '');
+            setPhoneImage(resolveImageUrl(pick(details, ['phone_image_url', 'phoneImageUrl', 'phone_image'])));
+            setOriginalReceiptImage(resolveImageUrl(pick(details, ['receipt_image_url', 'receiptImageUrl'])));
 
             toast({
               title: 'معلومات',
@@ -582,16 +593,16 @@ const BusinessTransfer: React.FC = () => {
           setSellerPhone(decryptPhoneIfEncrypted(pick(details, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber', 'phone', 'owner_phone_number'])));
           setSellerIdLast6(pick(details, ['owner_id_last6', 'ownerIdLast6', 'maskedIdLast6', 'id_last6']));
           setPhoneType(pick(details, ['phone_type', 'phoneType', 'model']));
-          setPhoneImage(pick(details, ['phone_image_url', 'phoneImageUrl', 'phone_image']));
-          setOriginalReceiptImage(pick(details, ['receipt_image_url', 'receiptImageUrl']));
+          setPhoneImage(resolveImageUrl(pick(details, ['phone_image_url', 'phoneImageUrl', 'phone_image'])));
+          setOriginalReceiptImage(resolveImageUrl(pick(details, ['receipt_image_url', 'receiptImageUrl'])));
         } else if (registeredPhone && registeredPhone.exists) {
           setImeiNotice('');
           setSellerName(pick(registeredPhone, ['owner_name', 'ownerName', 'maskedOwnerName']));
           setSellerPhone(decryptPhoneIfEncrypted(pick(registeredPhone, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber'])));
           setSellerIdLast6(pick(registeredPhone, ['owner_id_last6', 'maskedIdLast6']));
           setPhoneType(pick(registeredPhone, ['phone_type', 'phoneType']));
-          setPhoneImage(pick(registeredPhone, ['phone_image_url', 'phoneImageUrl']));
-          setOriginalReceiptImage(pick(registeredPhone, ['receipt_image_url', 'receiptImageUrl']));
+          setPhoneImage(resolveImageUrl(pick(registeredPhone, ['phone_image_url', 'phoneImageUrl'])));
+          setOriginalReceiptImage(resolveImageUrl(pick(registeredPhone, ['receipt_image_url', 'receiptImageUrl'])));
         } else {
           setShowRegisterDialog(true);
         }

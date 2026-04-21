@@ -226,6 +226,17 @@ const BusinessTransferBuy: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [currentPhoneReport, setCurrentPhoneReport] = useState<any>(null); // لتخزين بلاغ الهاتف الحالي
 
+  // دالة مساعدة لبناء رابط الصورة الكامل من Supabase
+  const resolveImageUrl = (path: string | null | undefined) => {
+    if (!path || typeof path !== 'string') return '';
+    const cleanPath = path.trim();
+    if (cleanPath.startsWith('http') || cleanPath.startsWith('data:') || cleanPath.startsWith('blob:')) return cleanPath;
+
+    // إنشاء الرابط العام من bucket 'phone-images'
+    const { data } = supabase.storage.from('phone-images').getPublicUrl(cleanPath);
+    return data.publicUrl;
+  };
+
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, setImage: (url: string) => void, type?: 'receipt') => {
     const file = e.target.files?.[0];
     if (file) {
@@ -516,8 +527,8 @@ const BusinessTransferBuy: React.FC = () => {
           setSellerPhone(decryptPhoneIfEncrypted(pick(details, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber', 'phone', 'owner_phone_number'])));
           setSellerIdLast6(pick(details, ['owner_id_last6', 'ownerIdLast6', 'maskedIdLast6', 'id_last6']));
           setPhoneType(pick(details, ['phone_type', 'phoneType', 'model']));
-          setPhoneImage(pick(details, ['phone_image_url', 'phoneImageUrl', 'phone_image']));
-          setOriginalReceiptImage(pick(details, ['receipt_image_url', 'receiptImageUrl']));
+          setPhoneImage(resolveImageUrl(pick(details, ['phone_image_url', 'phoneImageUrl', 'phone_image'])));
+          setOriginalReceiptImage(resolveImageUrl(pick(details, ['receipt_image_url', 'receiptImageUrl'])));
           // عرض القيم غير المقنعة للمستخدم لأن الهاتف مسجل لحساب آخر (إظهار حقيقي إن وُجد)
           setShowUnmaskedSellerInfo(Boolean(pick(details, ['owner_name', 'owner_phone', 'owner_id_last6', 'maskedOwnerName', 'maskedPhoneNumber', 'maskedIdLast6'])));
 
@@ -543,8 +554,8 @@ const BusinessTransferBuy: React.FC = () => {
             setSellerPhone(decryptPhoneIfEncrypted(pick(registeredPhone, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber', 'phone', 'owner_phone_number'])));
             setSellerIdLast6(pick(registeredPhone, ['owner_id_last6', 'ownerIdLast6', 'maskedIdLast6', 'id_last6']));
             setPhoneType(pick(registeredPhone, ['phone_type', 'phoneType', 'model']));
-            setPhoneImage(pick(registeredPhone, ['phone_image_url', 'phoneImageUrl', 'phone_image']));
-            setOriginalReceiptImage(pick(registeredPhone, ['receipt_image_url', 'receiptImageUrl']));
+            setPhoneImage(resolveImageUrl(pick(registeredPhone, ['phone_image_url', 'phoneImageUrl', 'phone_image'])));
+            setOriginalReceiptImage(resolveImageUrl(pick(registeredPhone, ['receipt_image_url', 'receiptImageUrl'])));
             // عرض القيم غير المقنعة (أو الحقيقية إن وفرت)
             setShowUnmaskedSellerInfo(Boolean(pick(registeredPhone, ['owner_name', 'owner_phone', 'owner_id_last6', 'maskedOwnerName', 'maskedPhoneNumber', 'maskedIdLast6'])));
             // تخزين المرجع للسجل المسترجع إن لزم لاحقاً

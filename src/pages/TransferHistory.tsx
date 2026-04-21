@@ -8,6 +8,7 @@ import ImageViewer from '@/components/ImageViewer';
 import { jsPDF } from 'jspdf';
 import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
+import axiosInstance from '@/services/axiosInterceptor';
 import { Share } from '@capacitor/share';
 import autoTable from 'jspdf-autotable';
 import bidiFactory from 'bidi-js';
@@ -125,23 +126,11 @@ const TransferHistory: React.FC = () => {
 
   const checkTransferLimit = async (userId: string) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-
-      const response = await fetch('https://imei-safe.me/api/check-limit', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ type: 'search_history' })
+      const response = await axiosInstance.post('/api/check-limit', { 
+        type: 'search_history' 
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to check limit');
-      }
-
-      const result = await response.json();
+      const result = response.data;
 
       if (!result.allowed) {
         toast({
@@ -175,23 +164,11 @@ const TransferHistory: React.FC = () => {
 
   const checkPrintLimit = async (userId: string) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-
-      const response = await fetch('https://imei-safe.me/api/check-limit', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ type: 'print_history' })
+      const response = await axiosInstance.post('/api/check-limit', { 
+        type: 'print_history' 
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to check limit');
-      }
-
-      const result = await response.json();
+      const result = response.data;
 
       if (!result.allowed) {
         toast({
@@ -225,16 +202,8 @@ const TransferHistory: React.FC = () => {
 
   const updateSearchUsage = async (userId: string) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-
-      await fetch('https://imei-safe.me/api/increment-usage', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ type: 'search_history' })
+      await axiosInstance.post('/api/increment-usage', { 
+        type: 'search_history' 
       });
     } catch (error) {
       console.debug('خطأ في تحديث استخدام البحث:', error);
@@ -244,16 +213,8 @@ const TransferHistory: React.FC = () => {
 
   const updatePrintUsage = async (userId: string) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-
-      await fetch('https://imei-safe.me/api/increment-usage', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ type: 'print_history' })
+      await axiosInstance.post('/api/increment-usage', { 
+        type: 'print_history' 
       });
     } catch (error) {
       console.debug('خطأ في تحديث استخدام الطباعة:', error);
@@ -265,20 +226,9 @@ const TransferHistory: React.FC = () => {
     const fetchTransferRecords = async () => {
       setIsLoading(true);
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token;
-        const resp = await fetch(`${API_BASE_URL}/api/transfer-records`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-          },
-          body: JSON.stringify({})
-        });
-        const json = await resp.json().catch(() => null);
-        if (!resp.ok) {
-          throw new Error((json && (json.error || json.details)) || 'Failed to fetch transfer records');
-        }
+        const resp = await axiosInstance.post('/api/transfer-records', {});
+        const json = resp.data;
+        
         setRecords((json?.data || []) as TransferRecord[]);
       } catch (error) {
         console.debug('Error fetching transfer records:', error);
@@ -345,20 +295,10 @@ const TransferHistory: React.FC = () => {
       }
     }
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      const resp = await fetch(`${API_BASE_URL}/api/transfer-records`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({ imei })
+      const resp = await axiosInstance.post('/api/transfer-records', { 
+        imei 
       });
-      const json = await resp.json().catch(() => null);
-      if (!resp.ok) {
-        throw new Error((json && (json.error || json.details)) || 'Failed to fetch transfer records');
-      }
+      const json = resp.data;
 
       const transferRecords = (json?.data || []) as TransferRecord[];
       if (transferRecords.length === 0) {
@@ -583,16 +523,16 @@ const TransferHistory: React.FC = () => {
         styles: {
           font: fontForTable,
           halign: 'center',
-          fontSize: 11,
-          cellPadding: 6,
+          fontSize: 9,
+          cellPadding: 4,
           lineWidth: 0.2,
           lineColor: [80, 80, 80]
         },
         headStyles: {
           font: fontForTable,
           halign: 'center',
-          fontSize: 13,
-          fontStyle: 'bold',
+          fontSize: 10,
+          fontStyle: 'normal',
           fillColor: [25, 118, 210],
           textColor: [255, 255, 255],
           cellPadding: 8
@@ -742,13 +682,13 @@ const TransferHistory: React.FC = () => {
                         <td className="px-6 py-4 border border-gray-700 text-sm text-gray-300">
                           {maskName(record.seller_name)} ({maskPhone(record.seller_phone)})
                         </td>
-                        <td className="px-6 py-4 border border-gray-700 text-sm text-gray-300">
+                        <td className="px-6 py-4 border border-gray-700 text-xs text-gray-300">
                           {isSellerBusiness(record) ? t('store') : (record.seller_id_last6 ? maskIdNumber(record.seller_id_last6) : t('not_available'))}
                         </td>
                         <td className="px-6 py-4 border border-gray-700 text-sm text-gray-300">
                           {record.buyer_name ? `${maskName(record.buyer_name)} (${maskPhone(record.buyer_phone || t('no_phone'))})` : t('no_buyer_data')}
                         </td>
-                        <td className="px-6 py-4 border border-gray-700 text-sm text-gray-300">
+                        <td className="px-6 py-4 border border-gray-700 text-xs text-gray-300">
                           {isBuyerBusiness(record) ? t('store') : (record.buyer_id_last6 ? maskIdNumber(record.buyer_id_last6) : t('not_available'))}
                         </td>
                       </tr>
@@ -768,4 +708,3 @@ const TransferHistory: React.FC = () => {
 };
 
 export default TransferHistory;
-
