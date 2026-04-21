@@ -518,16 +518,98 @@ app.get('/api/signed-url', verifyJwtToken, async (req, res) => {
 
     // توليد signed URL بالمدة المطلوبة
     const expirationSeconds = Math.min(Number(expiresIn) || 900, 86400); // حد أقصى 24 ساعة
-    const { data, error } = await supabase.storage
-      .from(String(bucket))
-      .createSignedUrl(String(path), expirationSeconds);
+    const cleanedPath = String(path).replace(/^\/+/, '');
 
-    if (error) {
-      console.error('Error creating signed URL:', error);
-      return res.status(500).json({ error: 'Failed to create signed URL' });
+    // Diagnostic logging to help debug failing signed-url requests
+    try {
+      const requester = req.user && req.user.id ? req.user.id : 'unknown';
+      const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+      console.log(`/api/signed-url called by=${requester} bucket=${String(bucket)} path=${cleanedPath} expiresIn=${expirationSeconds} ip=${clientIp}`);
+    } catch (logErr) {
+      console.error('Failed to log /api/signed-url request details', logErr);
     }
 
-    return res.json({ signedUrl: data?.signedUrl || null });
+    try {
+      // Quick heuristic: for transfer-assets we commonly store receipts under 'receipts/<filename>'.
+      // Try that prefixed path first when caller passed only a filename to avoid extra download checks.
+      if (String(bucket) === 'transfer-assets' && !cleanedPath.startsWith('receipts/')) {
+        try {
+          const prefPath = `receipts/${cleanedPath}`;
+          const { data: prefData, error: prefErr } = await supabase.storage
+            .from(String(bucket))
+            .createSignedUrl(prefPath, expirationSeconds);
+          if (!prefErr && prefData && prefData.signedUrl) {
+            return res.json({ signedUrl: prefData.signedUrl, path: prefPath });
+          }
+        } catch (e) {
+          // ignore and continue to the normal flow below
+        }
+      }
+
+      const { data, error } = await supabase.storage
+        .from(String(bucket))
+        .createSignedUrl(cleanedPath, expirationSeconds);
+
+      if (error) {
+        console.error('Error creating signed URL (createSignedUrl):', error);
+        // حاول التحقق من وجود الملف كسبب شائع للفشل
+        try {
+          const { data: dlData, error: dlErr } = await supabase.storage.from(String(bucket)).download(cleanedPath);
+          if (dlErr) {
+            console.error('Signed-url: object not found or download failed for path:', cleanedPath, dlErr && dlErr.message ? dlErr.message : dlErr);
+
+            // حاول البحث عن الملف في مسارات محتملة شائعة (prefixes)
+            const prefixes = ['receipts/', `${req.user?.id || ''}/`, 'images/', 'phone-images/', 'phones/'].filter(Boolean);
+            for (const p of prefixes) {
+              try {
+                const tryPath = (p + cleanedPath).replace(/^\/+/, '');
+                const { data: testDl, error: testErr } = await supabase.storage.from(String(bucket)).download(tryPath);
+                if (!testErr) {
+                  // وجدنا الملف في مسار بديل — قم بإنشاء signed URL لهذا المسار
+                  const { data: altData, error: altErr } = await supabase.storage.from(String(bucket)).createSignedUrl(tryPath, expirationSeconds);
+                  if (!altErr && altData && altData.signedUrl) {
+                    return res.json({ signedUrl: altData.signedUrl, path: tryPath });
+                  }
+                }
+              } catch (pe) {
+                // تجاهل المحاولات الفاشلة واستمر
+              }
+            }
+
+            return res.status(404).json({ error: 'Object not found in storage', details: dlErr && dlErr.message ? dlErr.message : dlErr });
+          }
+          // إذا نجح التنزيل ولكن createSignedUrl فشل لسبب آخر، قم بإرجاع خطأ مفصّل في بيئة التطوير
+          console.error('createSignedUrl failed but object exists; returning server error');
+          if (process.env.NODE_ENV !== 'production') {
+            try {
+              const listChecks = {};
+              const prefixesToCheck = [cleanedPath, `receipts/${cleanedPath}`, `images/${cleanedPath}`, `phone-images/${cleanedPath}`];
+              for (const p of prefixesToCheck) {
+                try {
+                  const prefix = p.replace(/^\/+/, '').replace(/\/+$/, '');
+                  const { data: listData, error: listErr } = await supabase.storage.from(String(bucket)).list(prefix, { limit: 50 });
+                  listChecks[p] = { ok: !listErr, items: listData || null, error: listErr ? (listErr.message || listErr) : null };
+                } catch (le) {
+                  listChecks[p] = { ok: false, items: null, error: String(le) };
+                }
+              }
+              return res.status(500).json({ error: 'Failed to create signed URL', details: error, listChecks });
+            } catch (diagErr) {
+              console.error('Diagnostic list check failed:', diagErr);
+            }
+          }
+          return res.status(500).json({ error: 'Failed to create signed URL', details: error });
+        } catch (inner) {
+          console.error('Error while checking object existence:', inner);
+          return res.status(500).json({ error: 'Failed to create signed URL' });
+        }
+      }
+
+      return res.json({ signedUrl: data?.signedUrl || null });
+    } catch (createErr) {
+      console.error('Unexpected error creating signed URL:', createErr);
+      return res.status(500).json({ error: 'Failed to create signed URL', details: createErr && createErr.message ? createErr.message : null });
+    }
   } catch (err) {
     console.error('Error in /api/signed-url:', err);
     return res.status(500).json({ error: 'Server error' });
