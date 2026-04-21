@@ -6036,10 +6036,27 @@ app.post('/api/transfer-records/verify-owner', async (req, res) => {
 
     if (error) throw error;
 
+    // Diagnostic logging to help debug empty results
+    try {
+      const incomingNorm = normalizeDigitsOnly(imei);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('/api/transfer-records/verify-owner: fetched records count=', (records || []).length);
+        const sample = (records || []).slice(0, 8).map(r => ({ id: r.id, imei_raw: r.imei, imei_decrypted_preview: (() => { try { return decryptField(r.imei); } catch(e){ return '<err>'; } })() }));
+        console.log('/api/transfer-records/verify-owner: sample records (decrypted preview):', JSON.stringify(sample, null, 2));
+        console.log('/api/transfer-records/verify-owner: incoming imei normalized=', incomingNorm);
+      }
+    } catch (diagErr) {
+      console.warn('/api/transfer-records/verify-owner diagnostic logging failed', diagErr);
+    }
+
     const filtered = (records || []).filter(r => {
       const decImei = decryptField(r.imei) || r.imei;
       return normalizeDigitsOnly(decImei) === normalizeDigitsOnly(imei);
     });
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('/api/transfer-records/verify-owner: filtered count=', filtered.length);
+    }
 
     const decrypted = filtered.map(r => ({
       ...r,
