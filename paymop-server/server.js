@@ -534,6 +534,69 @@ app.get('/api/signed-url', verifyJwtToken, async (req, res) => {
   }
 });
 
+// ⭐ Endpoint ذكي: يتعامل مع buckets العامة والخاصة تلقائياً
+app.get('/api/image-url', verifyJwtToken, async (req, res) => {
+  try {
+    const { bucket, path, expiresIn = 3600 } = req.query;
+
+    if (!bucket || !path) {
+      return res.status(400).json({ error: 'bucket and path are required' });
+    }
+
+    // تحقق من أن الـ bucket آمن
+    const allowedBuckets = ['registerphone', 'phone-images', 'transfer-assets', 'public'];
+    if (!allowedBuckets.includes(String(bucket))) {
+      return res.status(400).json({ error: 'Invalid bucket' });
+    }
+
+    // تجنب path traversal
+    if (String(path).includes('..') || String(path).includes('./')) {
+      return res.status(400).json({ error: 'Invalid path' });
+    }
+
+    // 🌐 للـ buckets العامة: أرجع الرابط المباشر (Public URL)
+    const publicBuckets = ['public', 'phone-images'];
+    if (publicBuckets.includes(String(bucket))) {
+      try {
+        const { data: publicData } = supabase.storage
+          .from(String(bucket))
+          .getPublicUrl(String(path));
+        
+        if (publicData && publicData.publicUrl) {
+          return res.json({ 
+            url: publicData.publicUrl,
+            type: 'public',
+            message: 'Public URL (no expiration)' 
+          });
+        }
+      } catch (e) {
+        console.warn('Failed to get public URL, falling back to signed URL:', e);
+      }
+    }
+
+    // 🔒 للـ buckets الخاصة: أنشئ Signed URL قصير الأجل
+    const expirationSeconds = Math.min(Number(expiresIn) || 3600, 86400);
+    const { data, error } = await supabase.storage
+      .from(String(bucket))
+      .createSignedUrl(String(path), expirationSeconds);
+
+    if (error) {
+      console.error('Error creating signed URL:', error);
+      return res.status(500).json({ error: 'Failed to create image URL' });
+    }
+
+    return res.json({ 
+      url: data?.signedUrl || null,
+      type: 'signed',
+      expiresIn: expirationSeconds,
+      message: `Signed URL expires in ${expirationSeconds}s`
+    });
+  } catch (err) {
+    console.error('Error in /api/image-url:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
 
 // ⭐ Endpoint لجلب mainimage_url من جدول ads_offar
 app.get('/api/offers/mainimage', async (req, res) => {
