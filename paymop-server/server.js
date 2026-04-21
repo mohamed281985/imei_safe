@@ -750,12 +750,17 @@ app.post('/api/supabase-auth-webhook', async (req, res) => {
         if (publicUrl) return res.json({ ok: true, url: publicUrl, filename: storagePath });
 
         // create signed url (1 hour)
-        const ttl = Number(process.env.SIGNED_URL_TTL) || 60 * 60;
-        const signedRes = await supabase.storage.from(bucket).createSignedUrl(storagePath, ttl);
-        const signedUrl = (signedRes && signedRes.data && (signedRes.data.signedUrl || signedRes.data.signed_url)) || signedRes?.signedUrl || signedRes?.signed_url || null;
-        if (signedUrl) return res.json({ ok: true, url: signedUrl, filename: storagePath });
+         const ttl = Number(process.env.SIGNED_URL_TTL) || 60 * 60; // ساعة واحدة
+      const signedRes = await supabase.storage.from(bucket).createSignedUrl(storagePath, ttl);
+      
+      const signedUrl = (signedRes && signedRes.data && (signedRes.data.signedUrl || signedRes.data.signed_url)) || signedRes?.signedUrl || signedRes?.signed_url || null;
 
-        return sendError(res, 500, 'failed_to_generate_url');
+      if (signedUrl) {
+        return res.json({ ok: true, url: signedUrl, filename: storagePath });
+      }
+
+      // إذا فشل توليد الرابط الموقّع (لسبب ما)، نرجع خطأ
+      return sendError(res, 500, 'failed_to_generate_url');
       } catch (e) {
         if (process.env.NODE_ENV !== 'production') console.error('error generating public/signed url', e);
         return sendError(res, 500, 'url_generation_failed', e);

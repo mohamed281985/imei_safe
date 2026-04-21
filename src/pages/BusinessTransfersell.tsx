@@ -307,15 +307,37 @@ const BusinessTransfer: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [currentRegisteredPhone, setCurrentRegisteredPhone] = useState<any>(null); // لتخزين سجل الهاتف من registered_phones
 
-  // دالة مساعدة لبناء رابط الصورة الكامل من Supabase
-  const resolveImageUrl = (path: string | null | undefined) => {
+  // دالة مساعدة لبناء رابط الصورة الكامل من Supabase أو من الخادم (signed URL)
+  const resolveImageUrl = async (path: string | null | undefined) => {
     if (!path || typeof path !== 'string') return '';
     const cleanPath = path.trim();
     if (cleanPath.startsWith('http') || cleanPath.startsWith('data:') || cleanPath.startsWith('blob:')) return cleanPath;
 
-    // إنشاء الرابط العام من bucket 'phoneimages' (المستخدم لصور الهواتف)
-    const { data } = supabase.storage.from('phoneimages').getPublicUrl(cleanPath);
-    return data.publicUrl;
+    // 1) حاول الحصول على public URL أولاً
+    try {
+      const pub = await supabase.storage.from('registerphone').getPublicUrl(cleanPath as string);
+      const publicUrl = pub?.data?.publicUrl || null;
+      if (publicUrl) return publicUrl;
+    } catch (e) {
+      // ignore
+    }
+
+    // 2) اطلب signed URL من الخادم (يتطلب توكن الجلسة)
+    try {
+      let token = '';
+      try { const { data: { session } } = await supabase.auth.getSession(); token = session?.access_token || ''; } catch (e) { token = ''; }
+      const headers: any = token ? { Authorization: `Bearer ${token}` } : {};
+      const resp = await axiosInstance.get('/api/signed-url', {
+        params: { bucket: 'registerphone', path: cleanPath, expiresIn: 3600 },
+        headers,
+        validateStatus: () => true
+      });
+      if (resp.status === 200 && resp.data?.signedUrl) return resp.data.signedUrl;
+    } catch (e) {
+      console.error('resolveImageUrl signed-url error', e);
+    }
+
+    return '';
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, setImage: (url: string) => void) => {
@@ -574,8 +596,16 @@ const BusinessTransfer: React.FC = () => {
             setSellerPhone(resolvedPhone || '');
             setSellerIdLast6(pick(details, ['owner_id_last6', 'ownerIdLast6', 'maskedIdLast6', 'id_last6']) || '');
             setPhoneType(pick(details, ['phone_type', 'phoneType', 'model']) || '');
-            setPhoneImage(resolveImageUrl(pick(details, ['phone_image_url', 'phoneImageUrl', 'phone_image'])));
-            setOriginalReceiptImage(resolveImageUrl(pick(details, ['receipt_image_url', 'receiptImageUrl'])));
+            {
+              const imgPath = pick(details, ['phone_image_url', 'phoneImageUrl', 'phone_image']);
+              const r = await resolveImageUrl(imgPath);
+              setPhoneImage(r);
+            }
+            {
+              const rcpt = pick(details, ['receipt_image_url', 'receiptImageUrl']);
+              const r2 = await resolveImageUrl(rcpt);
+              setOriginalReceiptImage(r2);
+            }
 
             toast({
               title: 'معلومات',
@@ -593,16 +623,32 @@ const BusinessTransfer: React.FC = () => {
           setSellerPhone(decryptPhoneIfEncrypted(pick(details, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber', 'phone', 'owner_phone_number'])));
           setSellerIdLast6(pick(details, ['owner_id_last6', 'ownerIdLast6', 'maskedIdLast6', 'id_last6']));
           setPhoneType(pick(details, ['phone_type', 'phoneType', 'model']));
-          setPhoneImage(resolveImageUrl(pick(details, ['phone_image_url', 'phoneImageUrl', 'phone_image'])));
-          setOriginalReceiptImage(resolveImageUrl(pick(details, ['receipt_image_url', 'receiptImageUrl'])));
+          {
+            const imgPath = pick(details, ['phone_image_url', 'phoneImageUrl', 'phone_image']);
+            const r = await resolveImageUrl(imgPath);
+            setPhoneImage(r);
+          }
+          {
+            const rcpt = pick(details, ['receipt_image_url', 'receiptImageUrl']);
+            const r2 = await resolveImageUrl(rcpt);
+            setOriginalReceiptImage(r2);
+          }
         } else if (registeredPhone && registeredPhone.exists) {
           setImeiNotice('');
           setSellerName(pick(registeredPhone, ['owner_name', 'ownerName', 'maskedOwnerName']));
           setSellerPhone(decryptPhoneIfEncrypted(pick(registeredPhone, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber'])));
           setSellerIdLast6(pick(registeredPhone, ['owner_id_last6', 'maskedIdLast6']));
           setPhoneType(pick(registeredPhone, ['phone_type', 'phoneType']));
-          setPhoneImage(resolveImageUrl(pick(registeredPhone, ['phone_image_url', 'phoneImageUrl'])));
-          setOriginalReceiptImage(resolveImageUrl(pick(registeredPhone, ['receipt_image_url', 'receiptImageUrl'])));
+          {
+            const imgPath = pick(registeredPhone, ['phone_image_url', 'phoneImageUrl']);
+            const r = await resolveImageUrl(imgPath);
+            setPhoneImage(r);
+          }
+          {
+            const rcpt = pick(registeredPhone, ['receipt_image_url', 'receiptImageUrl']);
+            const r2 = await resolveImageUrl(rcpt);
+            setOriginalReceiptImage(r2);
+          }
         } else {
           setShowRegisterDialog(true);
         }

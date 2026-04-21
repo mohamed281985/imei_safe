@@ -340,6 +340,49 @@ const RegisterPhone: React.FC = () => {
     });
   }, [t, toast]);
 
+  // Resolve a stored storage path to a usable URL (public or signed)
+  const resolveImageUrl = async (path: string | null | undefined) => {
+    if (!path || typeof path !== 'string') return '';
+    const cleanPath = path.trim();
+    if (cleanPath.startsWith('http') || cleanPath.startsWith('data:') || cleanPath.startsWith('blob:')) return cleanPath;
+
+    // Try public URL first
+    try {
+      const pub = await supabase.storage.from('registerphone').getPublicUrl(cleanPath);
+      const publicUrl = pub?.data?.publicUrl || null;
+      if (publicUrl) return publicUrl;
+    } catch (e) {
+      // ignore
+    }
+
+    // Fallback to server-signed URL
+    try {
+      let token = '';
+      try { const { data: { session } } = await supabase.auth.getSession(); token = session?.access_token || ''; } catch (e) { token = ''; }
+      const headers: any = token ? { Authorization: `Bearer ${token}` } : {};
+      const resp = await axiosInstance.get('/api/signed-url', {
+        params: { bucket: 'registerphone', path: cleanPath, expiresIn: 3600 },
+        headers,
+        validateStatus: () => true
+      });
+      if (resp.status === 200 && resp.data?.signedUrl) return resp.data.signedUrl;
+    } catch (e) {
+      console.error('resolveImageUrl error', e);
+    }
+
+    return '';
+  };
+
+  // Safe getter for multiple possible property names (avoids TS errors)
+  const getFirstProp = (obj: any, keys: string[]) => {
+    if (!obj) return '';
+    for (const k of keys) {
+      const v = (obj as any)[k];
+      if (v !== undefined && v !== null && String(v).trim() !== '') return v;
+    }
+    return '';
+  };
+
   useEffect(() => {
     const fetchUserData = async () => {
       if (!user || fromPurchase) return;
@@ -544,10 +587,14 @@ const RegisterPhone: React.FC = () => {
                 phoneType: cleanText(phoneDetails.phone_type || ''),
                 phoneImage: null,
               }));
-              setPreviews(prev => ({
-                ...prev,
-                phoneImage: phoneDetails.phone_image_url || '',
-              }));
+              {
+                const storedImg = getFirstProp(phoneDetails, ['phone_image_url', 'phoneImageUrl', 'phone_image']);
+                let previewUrl = '';
+                if (storedImg) {
+                  try { previewUrl = await resolveImageUrl(storedImg); } catch (e) { previewUrl = ''; }
+                }
+                setPreviews(prev => ({ ...prev, phoneImage: previewUrl }));
+              }
               setImeiError('imei_already_exists');
               setIsImeiValid(false);
               showToast('error', 'imei_already_exists_data_prefilled');
