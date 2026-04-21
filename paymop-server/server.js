@@ -686,91 +686,60 @@ app.post('/api/supabase-auth-webhook', async (req, res) => {
   // Accepts JSON { bucket, filename, base64 } where `base64` may be a data URL
   // Validates file-type using `file-type`, rejects non-images, re-encodes with `sharp` to webp, and uploads via Supabase service role.
   app.post('/api/upload-image', async (req, res) => {
-    try {
-      const { bucket = 'public', filename } = req.body || {};
-      let base64 = req.body && req.body.base64;
-      if (!base64 || typeof base64 !== 'string') return res.status(400).json({ error: 'missing base64 payload' });
+  try {
+    const bucket = 'registerphone';
+    const { filename } = req.body;
 
-      // If a data URL is provided, extract the payload
-      const dataUrlMatch = base64.match(/^data:(.+);base64,(.+)$/);
-      if (dataUrlMatch) {
-        base64 = dataUrlMatch[2];
-      }
+    let base64 = req.body?.base64;
+    if (!base64) return res.status(400).json({ error: 'missing base64' });
 
-      const buffer = Buffer.from(base64, 'base64');
+    const match = base64.match(/^data:(.+);base64,(.+)$/);
+    if (match) base64 = match[2];
 
-      // Optional size limit (5 MB)
-      const MAX_BYTES = Number(process.env.UPLOAD_MAX_BYTES) || 5 * 1024 * 1024;
-      if (buffer.length > MAX_BYTES) return res.status(400).json({ error: 'file_too_large' });
+    const buffer = Buffer.from(base64, 'base64');
 
-      // Use file-type for robust detection
-      const ft = await fileTypeFromBuffer(buffer);
-      if (!ft || !ft.mime || !ft.mime.startsWith('image/')) {
-        return res.status(400).json({ error: 'invalid_image_type' });
-      }
-
-      // Re-encode with sharp to a safe format (webp) and constrain dimensions
-      let outBuffer;
-      try {
-        outBuffer = await sharp(buffer)
-          .rotate() // respect EXIF orientation
-          .resize({ width: 2048, withoutEnlargement: true })
-          .webp({ quality: 80 })
-          .toBuffer();
-      } catch (e) {
-        if (process.env.NODE_ENV !== 'production') console.error('sharp re-encode error', e);
-        return sendError(res, 500, 'image_processing_failed', e);
-      }
-
-      const outExt = 'webp';
-      const safeNameBase = (filename && String(filename).replace(/[^a-zA-Z0-9-_\.]/g, '-')) || `img-${Date.now()}`;
-      const finalFilename = safeNameBase.replace(/\.[^/.]+$/, '') + '.' + outExt;
-      const storagePath = finalFilename;
-
-      // Upload using Supabase service role
-      try {
-        const { data: uploadData, error: uploadErr } = await supabase.storage.from(bucket).upload(storagePath, outBuffer, {
-          contentType: 'image/webp',
-          upsert: true
-        });
-        if (uploadErr) {
-          if (process.env.NODE_ENV !== 'production') console.error('supabase upload error', uploadErr);
-          return sendError(res, 500, 'upload_failed', uploadErr);
-        }
-      } catch (e) {
-        if (process.env.NODE_ENV !== 'production') console.error('supabase.upload exception', e);
-        return sendError(res, 500, 'upload_exception', e);
-      }
-
-      // Try to get a public URL first; fall back to signed URL
-      try {
-        const pub = await supabase.storage.from(bucket).getPublicUrl(storagePath);
-        // getPublicUrl may return different shapes depending on SDK version
-        const publicUrl = (pub && pub.data && (pub.data.publicUrl || pub.data.publicURL)) || pub?.publicURL || pub?.publicUrl || null;
-        if (publicUrl) return res.json({ ok: true, url: publicUrl, filename: storagePath });
-
-        // create signed url (1 hour)
-         const ttl = Number(process.env.SIGNED_URL_TTL) || 60 * 60; // ساعة واحدة
-      const signedRes = await supabase.storage.from(bucket).createSignedUrl(storagePath, ttl);
-      
-      const signedUrl = (signedRes && signedRes.data && (signedRes.data.signedUrl || signedRes.data.signed_url)) || signedRes?.signedUrl || signedRes?.signed_url || null;
-
-      if (signedUrl) {
-        return res.json({ ok: true, url: signedUrl, filename: storagePath });
-      }
-
-      // إذا فشل توليد الرابط الموقّع (لسبب ما)، نرجع خطأ
-      return sendError(res, 500, 'failed_to_generate_url');
-      } catch (e) {
-        if (process.env.NODE_ENV !== 'production') console.error('error generating public/signed url', e);
-        return sendError(res, 500, 'url_generation_failed', e);
-      }
-    } catch (e) {
-      if (process.env.NODE_ENV !== 'production') console.error('/api/upload-image error', e);
-      return sendError(res, 500, 'Server error', e);
+    const ft = await fileTypeFromBuffer(buffer);
+    if (!ft || !ft.mime.startsWith('image/')) {
+      return res.status(400).json({ error: 'invalid_image' });
     }
-  });
 
+    const outBuffer = await sharp(buffer)
+      .rotate()
+      .resize({ width: 2048, withoutEnlargement: true })
+      .webp({ quality: 80 })
+      .toBuffer();
+
+    const safeName = (filename || `img-${Date.now()}`)
+      .replace(/[^a-zA-Z0-9-_\.]/g, '-')
+      .replace(/\.[^/.]+$/, '');
+
+    const userId = req.user?.id || 'anon';
+    const storagePath = `${userId}/${Date.now()}-${safeName}.webp`;
+
+    const { error: uploadErr } = await supabase.storage
+      .from(bucket)
+      .upload(storagePath, outBuffer, {
+        contentType: 'image/webp',
+        upsert: false
+      });
+
+    if (uploadErr) return res.status(500).json({ error: 'upload_failed' });
+
+    const { data } = await supabase.storage
+      .from(bucket)
+      .createSignedUrl(storagePath, 60);
+
+    return res.json({
+      ok: true,
+      url: data.signedUrl,
+      filename: storagePath
+    });
+
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'server_error' });
+  }
+});
 // Internal endpoint: create application `users` row after auth signup
 // Frontend calls this after `supabase.auth.signUp` to persist encrypted app user data.
 app.post('/api/create-app-user', createAppUserLimiter, async (req, res) => {

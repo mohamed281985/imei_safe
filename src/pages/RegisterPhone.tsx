@@ -341,38 +341,21 @@ const RegisterPhone: React.FC = () => {
   }, [t, toast]);
 
   // Resolve a stored storage path to a usable URL (public or signed)
-  const resolveImageUrl = async (path: string | null | undefined) => {
-    if (!path || typeof path !== 'string') return '';
-    const cleanPath = path.trim();
-    if (cleanPath.startsWith('http') || cleanPath.startsWith('data:') || cleanPath.startsWith('blob:')) return cleanPath;
+  const resolveImageUrl = async (path: string) => {
+  if (!path) return '';
+  if (path.startsWith('http')) return path;
 
-    // Try public URL first
-    try {
-      const pub = await supabase.storage.from('registerphone').getPublicUrl(cleanPath);
-      const publicUrl = pub?.data?.publicUrl || null;
-      if (publicUrl) return publicUrl;
-    } catch (e) {
-      // ignore
-    }
+  try {
+    const { data } = await axiosInstance.get('/api/signed-url', {
+      params: { bucket: 'registerphone', path, expiresIn: 60 }
+    });
 
-    // Fallback to server-signed URL
-    try {
-      let token = '';
-      try { const { data: { session } } = await supabase.auth.getSession(); token = session?.access_token || ''; } catch (e) { token = ''; }
-      const headers: any = token ? { Authorization: `Bearer ${token}` } : {};
-      const resp = await axiosInstance.get('/api/signed-url', {
-        params: { bucket: 'registerphone', path: cleanPath, expiresIn: 3600 },
-        headers,
-        validateStatus: () => true
-      });
-      if (resp.status === 200 && resp.data?.signedUrl) return resp.data.signedUrl;
-    } catch (e) {
-      console.error('resolveImageUrl error', e);
-    }
-
+    return data?.signedUrl || '';
+  } catch (e) {
+    console.error(e);
     return '';
-  };
-
+  }
+};
   // Safe getter for multiple possible property names (avoids TS errors)
   const getFirstProp = (obj: any, keys: string[]) => {
     if (!obj) return '';
