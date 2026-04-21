@@ -270,15 +270,57 @@ const BusinessTransferBuy: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [currentPhoneReport, setCurrentPhoneReport] = useState<any>(null); // لتخزين بلاغ الهاتف الحالي
 
-  // دالة مساعدة لبناء رابط الصورة الكامل من Supabase
-  const resolveImageUrl = (path: string | null | undefined) => {
+  // دالة مساعدة لبناء رابط صورة مؤقت موقع (signed URL) من السيرفر
+  const resolveImageUrl = async (path: string | null | undefined, bucket?: string) => {
     if (!path || typeof path !== 'string') return '';
     const cleanPath = path.trim();
     if (cleanPath.startsWith('http') || cleanPath.startsWith('data:') || cleanPath.startsWith('blob:')) return cleanPath;
 
-    // إنشاء الرابط العام من bucket 'phone-images'
-    const { data } = supabase.storage.from('phone-images').getPublicUrl(cleanPath);
-    return data.publicUrl;
+    try {
+      // حاول الحصول على الـ access token من جلسة Supabase
+      let jwt = '';
+      try { const { data: { session } } = await supabase.auth.getSession(); jwt = session?.access_token || ''; } catch (e) { jwt = ''; }
+
+      // استدعاء endpoint السيرفر الذي ينشئ signed URL
+      // allow caller to specify bucket; otherwise try to guess 'registerphone' for phone images
+      const reqBucket = bucket || (cleanPath.startsWith('receipts/') ? 'transfer-assets' : 'registerphone');
+      const headers = jwt ? { Authorization: `Bearer ${jwt}` } : {};
+
+      // Client-side quick fallback: if asking transfer-assets and the stored value
+      // looks like a bare filename, first try 'receipts/<filename>' before the raw path.
+      if (reqBucket === 'transfer-assets' && !cleanPath.startsWith('receipts/') && !cleanPath.includes('/')) {
+        try {
+          const prefPath = `receipts/${cleanPath}`;
+          const prefResp = await axiosInstance.get('/api/signed-url', {
+            params: { bucket: reqBucket, path: prefPath, expiresIn: 300 },
+            headers,
+            validateStatus: () => true
+          });
+          if (prefResp && prefResp.status === 200 && prefResp.data && prefResp.data.signedUrl) return prefResp.data.signedUrl;
+        } catch (e) {
+          // ignore and fall back to trying the original path
+        }
+      }
+
+      const resp = await axiosInstance.get('/api/signed-url', {
+        params: { bucket: reqBucket, path: cleanPath, expiresIn: 300 },
+        headers,
+        validateStatus: () => true
+      });
+
+      if (resp && resp.status === 200 && resp.data && resp.data.signedUrl) return resp.data.signedUrl;
+    } catch (e) {
+      console.debug('Failed to fetch signed url for', path, e);
+    }
+
+    // Fallback: return public URL (useful in dev or if signed url endpoint fails)
+    try {
+      const fallbackBucket = bucket || (cleanPath.startsWith('receipts/') ? 'transfer-assets' : 'registerphone');
+      const { data } = supabase.storage.from(fallbackBucket).getPublicUrl(cleanPath);
+      return data.publicUrl;
+    } catch (e) {
+      return '';
+    }
   };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, setImage: (url: string) => void, type?: 'receipt') => {
@@ -571,8 +613,8 @@ const BusinessTransferBuy: React.FC = () => {
           setSellerPhone(sanitizeServerValue(decryptPhoneIfEncrypted(pick(details, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber', 'phone', 'owner_phone_number']))));
           setSellerIdLast6(sanitizeServerValue(pick(details, ['owner_id_last6', 'ownerIdLast6', 'maskedIdLast6', 'id_last6'])));
           setPhoneType(pick(details, ['phone_type', 'phoneType', 'model']));
-          setPhoneImage(resolveImageUrl(pick(details, ['phone_image_url', 'phoneImageUrl', 'phone_image'])));
-          setOriginalReceiptImage(resolveImageUrl(pick(details, ['receipt_image_url', 'receiptImageUrl'])));
+          setPhoneImage(await resolveImageUrl(pick(details, ['phone_image_url', 'phoneImageUrl', 'phone_image']), 'registerphone'));
+          setOriginalReceiptImage(await resolveImageUrl(pick(details, ['receipt_image_url', 'receiptImageUrl']), 'transfer-assets'));
           // عرض القيم غير المقنعة للمستخدم لأن الهاتف مسجل لحساب آخر (إظهار حقيقي إن وُجد)
           setShowUnmaskedSellerInfo(Boolean(pick(details, ['owner_name', 'owner_phone', 'owner_id_last6', 'maskedOwnerName', 'maskedPhoneNumber', 'maskedIdLast6'])));
 
@@ -611,8 +653,8 @@ const BusinessTransferBuy: React.FC = () => {
             setSellerPhone(sanitizeServerValue(decryptPhoneIfEncrypted(pick(source, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber', 'phone', 'owner_phone_number']))));
             setSellerIdLast6(sanitizeServerValue(pick(source, ['owner_id_last6', 'ownerIdLast6', 'maskedIdLast6', 'id_last6'])));
             setPhoneType(pick(source, ['phone_type', 'phoneType', 'model']));
-            setPhoneImage(resolveImageUrl(pick(source, ['phone_image_url', 'phoneImageUrl', 'phone_image'])));
-            setOriginalReceiptImage(resolveImageUrl(pick(source, ['receipt_image_url', 'receiptImageUrl'])));
+            setPhoneImage(await resolveImageUrl(pick(source, ['phone_image_url', 'phoneImageUrl', 'phone_image']), 'registerphone'));
+            setOriginalReceiptImage(await resolveImageUrl(pick(source, ['receipt_image_url', 'receiptImageUrl']), 'transfer-assets'));
             // عرض القيم غير المقنعة (أو الحقيقية إن وفرت)
             setShowUnmaskedSellerInfo(Boolean(pick(source, ['owner_name', 'owner_phone', 'owner_id_last6', 'maskedOwnerName', 'maskedPhoneNumber', 'maskedIdLast6'])));
             // تخزين المرجع للسجل المسترجع إن لزم لاحقاً
