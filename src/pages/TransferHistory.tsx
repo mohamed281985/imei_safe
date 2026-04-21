@@ -108,6 +108,9 @@ const TransferHistory: React.FC = () => {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [showOwnerPasswordModal, setShowOwnerPasswordModal] = useState(false);
+  const [ownerPassword, setOwnerPassword] = useState('');
+  const [isVerifyingOwnerPassword, setIsVerifyingOwnerPassword] = useState(false);
   const [hasReachedSearchLimit, setHasReachedSearchLimit] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [hasReachedPrintLimit, setHasReachedPrintLimit] = useState(false);
@@ -344,19 +347,65 @@ const TransferHistory: React.FC = () => {
   };
 
   const handleSearchButtonClick = async () => {
-    if (searchTerm.length === 15 && userId) {
-      // استخدم checkTransferLimit فقط، المنطق الموحد
-      const canProceed = await checkTransferLimit(userId);
-      if (!canProceed) {
-        setShowUpgradeModal(true);
-        return;
+    if (searchTerm.length === 15) {
+      // تحقق من الحد أولاً إذا كان المستخدم مسجلاً
+      if (userId) {
+        const canProceed = await checkTransferLimit(userId);
+        if (!canProceed) {
+          setShowUpgradeModal(true);
+          return;
+        }
       }
-      const results = await fetchPhoneDetails(searchTerm);
-      if (results && results.length > 0) {
-        await updateSearchUsage(userId);
-      }
+
+      // أظهر مربع إدخال كلمة مرور المالك لطلب التحقق من الخادم
+      setShowOwnerPasswordModal(true);
     } else {
       toast({ title: 'خطأ', description: 'يرجى تسجيل الدخول أولاً أو إدخال رقم IMEI صحيح', variant: 'destructive' });
+    }
+  };
+
+  const verifyOwnerPasswordAndFetch = async () => {
+    if (!searchTerm || searchTerm.length !== 15) {
+      toast({ title: 'خطأ', description: 'IMEI غير صالح', variant: 'destructive' });
+      return;
+    }
+    if (!ownerPassword) {
+      toast({ title: 'خطأ', description: 'يرجى إدخال كلمة المرور', variant: 'destructive' });
+      return;
+    }
+
+    setIsVerifyingOwnerPassword(true);
+    try {
+      const resp = await axiosInstance.post('/api/transfer-records/verify-owner', {
+        imei: searchTerm,
+        ownerPassword
+      });
+
+      const json = resp.data;
+      if (json && json.success) {
+        const transferRecords = (json.data || []) as TransferRecord[];
+        setRecords(transferRecords);
+        setPhoneImage(transferRecords.length > 0 ? transferRecords[0].phone_image || null : null);
+        setShowOwnerPasswordModal(false);
+        setOwnerPassword('');
+
+        // عدّل استخدام البحث إذا كان المستخدم مسجلاً
+        if (userId) await updateSearchUsage(userId);
+      } else {
+        // handle unexpected shape
+        toast({ title: 'خطأ', description: (json && json.error) ? json.error : 'فشل استرجاع السجلات', variant: 'destructive' });
+      }
+    } catch (err: any) {
+      if (err.response?.status === 401) {
+        toast({ title: 'خطأ في المصادقة', description: 'كلمة مرور المالك غير صحيحة', variant: 'destructive' });
+      } else if (err.response?.status === 404) {
+        toast({ title: 'غير موجود', description: 'لم يتم العثور على مالك هذا الـ IMEI', variant: 'destructive' });
+      } else {
+        console.debug('verifyOwnerPasswordAndFetch error:', err);
+        toast({ title: 'خطأ', description: 'حدث خطأ أثناء الاستعلام', variant: 'destructive' });
+      }
+    } finally {
+      setIsVerifyingOwnerPassword(false);
     }
   };
 
@@ -632,6 +681,38 @@ const TransferHistory: React.FC = () => {
               {t('print_pdf')}
             </Button>
           </div>
+          {/* Owner password modal (server-side verification) */}
+          {showOwnerPasswordModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+              <div className="bg-white rounded-lg p-6 w-full max-w-sm">
+                <h3 className="text-lg font-semibold mb-2">تأكيد صاحب الـ IMEI</h3>
+                <p className="text-sm text-gray-600 mb-4">أدخل كلمة مرور صاحب الرقم لعرض السجلات</p>
+                <input
+                  type="password"
+                  value={ownerPassword}
+                  onChange={(e) => setOwnerPassword(e.target.value)}
+                  className="w-full p-2 border rounded mb-4"
+                  placeholder="كلمة المرور"
+                />
+                <div className="flex justify-end gap-2">
+                  <button
+                    className="px-3 py-2 rounded bg-gray-200"
+                    onClick={() => { setShowOwnerPasswordModal(false); setOwnerPassword(''); }}
+                    disabled={isVerifyingOwnerPassword}
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    className="px-3 py-2 rounded bg-orange-500 text-white"
+                    onClick={verifyOwnerPasswordAndFetch}
+                    disabled={isVerifyingOwnerPassword}
+                  >
+                    {isVerifyingOwnerPassword ? 'جارٍ التحقق...' : 'تحقق'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
           {phoneImage && (
             <div className="mt-4">
               <h3 className="text-lg font-bold text-white mb-2">{t('latest_phone_image')}</h3>

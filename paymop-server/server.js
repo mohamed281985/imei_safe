@@ -650,6 +650,49 @@ app.get('/api/offers/mainimage', async (req, res) => {
   }
 });
 
+// Temporary debug endpoint to list storage items matching a filename or prefix
+app.get('/api/debug-storage-list', verifyJwtToken, async (req, res) => {
+  try {
+    if (process.env.NODE_ENV === 'production') return res.status(404).json({ error: 'Not available' });
+    const bucket = String(req.query.bucket || '');
+    const filename = String(req.query.filename || '').trim();
+    if (!bucket || !filename) return res.status(400).json({ error: 'bucket and filename required' });
+
+    // Try exact filename, receipts/, and a fuzzy search by listing root and filtering
+    const results = {};
+
+    // exact
+    try {
+      const { data, error } = await supabase.storage.from(bucket).list('', { search: filename, limit: 100 });
+      results.search = { ok: !error, items: data || null, error: error ? (error.message || error) : null };
+    } catch (e) {
+      results.search = { ok: false, error: String(e) };
+    }
+
+    // receipts/ prefix
+    try {
+      const p = `receipts/${filename}`;
+      const { data, error } = await supabase.storage.from(bucket).list('receipts', { limit: 100 });
+      results.receipts_prefix = { ok: !error, items: data || null, error: error ? (error.message || error) : null, triedPath: p };
+    } catch (e) {
+      results.receipts_prefix = { ok: false, error: String(e) };
+    }
+
+    // full list root (capped)
+    try {
+      const { data, error } = await supabase.storage.from(bucket).list('', { limit: 200 });
+      results.root = { ok: !error, items: data || null, error: error ? (error.message || error) : null };
+    } catch (e) {
+      results.root = { ok: false, error: String(e) };
+    }
+
+    return res.json({ ok: true, bucket, filename, results });
+  } catch (err) {
+    console.error('/api/debug-storage-list error', err);
+    return res.status(500).json({ error: 'Server error', details: String(err) });
+  }
+});
+
 // Endpoint بسيط لتشفير بيانات الدفع أو أي JSON حساس في الخلفية
 app.post('/api/encrypt', async (req, res) => {
   try {
@@ -5941,6 +5984,106 @@ app.post('/api/transfer-records', verifyJwtToken, async (req, res) => {
     return res.json({ success: true, data: decrypted });
   } catch (err) {
     console.error('transfer-records error:', err);
+    return res.status(500).json({ error: 'Server error', details: err?.message || '' });
+  }
+});
+
+// نقطة نهاية للتحقق من كلمة مرور مالك الـ IMEI على الخادم ثم إرجاع السجلات
+// استقبال: { imei, ownerPassword }
+// ملاحظات أمان: لا نخزن كلمة المرور؛ نستخدمها مؤقتاً للتحقق عبر Supabase Auth ثم نتخلص منها.
+app.post('/api/transfer-records/verify-owner', async (req, res) => {
+  try {
+    try {
+      const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+      console.log(`/api/transfer-records/verify-owner called ip=${clientIp} body=${JSON.stringify(req.body).slice(0,200)}`);
+    } catch (logErr) {
+      console.warn('Failed to log verify-owner request details', logErr);
+    }
+    const { imei, ownerPassword } = req.body || {};
+    if (!imei || !ownerPassword) return res.status(400).json({ error: 'imei and ownerPassword are required' });
+
+    // ابحث عن مالك الـ IMEI في جدول registered_phones
+    const { data: phones, error: phonesErr } = await supabase
+      .from('registered_phones')
+      .select('user_id, imei')
+      .limit(1000);
+    if (phonesErr) throw phonesErr;
+
+    const matching = (phones || []).find(p => {
+      const dec = decryptField(p.imei) || p.imei;
+      return normalizeDigitsOnly(dec) === normalizeDigitsOnly(imei);
+    });
+
+    if (!matching || !matching.user_id) return res.status(404).json({ error: 'Owner not found for IMEI' });
+    const ownerId = matching.user_id;
+
+    // جلب بيانات المستخدم من Supabase Admin API (لنحصل على البريد الإلكتروني)
+    if (!SUPABASE_URL || !SUPABASE_KEY) return res.status(500).json({ error: 'Server not configured for admin operations' });
+    const adminUserUrl = `${SUPABASE_URL.replace(/\/+$/,'')}/auth/v1/admin/users/${ownerId}`;
+    const userResp = await fetch(adminUserUrl, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'apikey': SUPABASE_KEY,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!userResp.ok) {
+      const txt = await userResp.text();
+      if (process.env.NODE_ENV !== 'production') console.warn('/api/transfer-records/verify-owner admin user fetch failed', userResp.status, txt);
+      return res.status(500).json({ error: 'Failed to fetch owner user' });
+    }
+
+    const ownerJson = await userResp.json();
+    const ownerEmail = ownerJson?.email;
+    if (!ownerEmail) return res.status(500).json({ error: 'Owner email not available' });
+
+    // تحقق من كلمة المرور عبر endpoint المصادقة (نتحقق فقط من صلاحية كلمة المرور)
+    const tokenUrl = `${SUPABASE_URL.replace(/\/+$/,'')}/auth/v1/token?grant_type=password`;
+    const tokenResp = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ email: ownerEmail, password: ownerPassword })
+    });
+
+    // إذا كانت بيانات الاعتماد خاطئة، يعيد endpoint حالة 400/401
+    if (!tokenResp.ok) {
+      return res.status(401).json({ error: 'Invalid owner credentials' });
+    }
+
+    // كلمة المرور صحيحة — الآن ارجع سجلات النقل كما في نقطة النهاية الأساسية
+    const { data: records, error } = await supabase
+      .from('transfer_records')
+      .select('*')
+      .order('date', { ascending: false })
+      .limit(1000);
+
+    if (error) throw error;
+
+    const filtered = (records || []).filter(r => {
+      const decImei = decryptField(r.imei) || r.imei;
+      return normalizeDigitsOnly(decImei) === normalizeDigitsOnly(imei);
+    });
+
+    const decrypted = filtered.map(r => ({
+      ...r,
+      imei: decryptField(r.imei) || r.imei,
+      seller_name: decryptField(r.seller_name) || r.seller_name,
+      seller_phone: decryptField(r.seller_phone) || r.seller_phone,
+      seller_id_last6: decryptField(r.seller_id_last6) || r.seller_id_last6,
+      buyer_name: decryptField(r.buyer_name) || r.buyer_name,
+      buyer_phone: decryptField(r.buyer_phone) || r.buyer_phone,
+      buyer_id_last6: decryptField(r.buyer_id_last6) || r.buyer_id_last6
+    }));
+
+    return res.json({ success: true, data: decrypted });
+  } catch (err) {
+    console.error('/api/transfer-records/verify-owner error:', err);
     return res.status(500).json({ error: 'Server error', details: err?.message || '' });
   }
 });
