@@ -5087,6 +5087,17 @@ app.post('/api/create-phone', verifyJwtToken, async (req, res) => {
 
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
+  // Minimal masked logging to help debug client 400s (avoid logging full IMEI)
+  try {
+    if (process.env.NODE_ENV !== 'production') {
+      const masked = rawImei ? `****${String(rawImei).slice(-4)}` : null;
+      console.log(`/api/create-phone called user=${userId} imei_last4=${masked} bodyKeys=${Object.keys(phoneData).join(',')}`);
+    }
+  } catch (e) {
+    // non-fatal logging error
+    console.warn('/api/create-phone logging failed', e && e.message);
+  }
+
   try {
     // Rate limit / plan checks
     const limitCheck = await checkRegisterLimit(userId);
