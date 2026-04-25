@@ -7,7 +7,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 interface PhoneData {
   id: string;
   title: string;
-  brand: string;
+  phone_type: string;
   model: string;
   price: number;
   condition: string;
@@ -33,7 +33,7 @@ const EditPhoneListing: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     title: '',
-    brand: '',
+    phone_type: '',
     model: '',
     price: '',
     condition: '',
@@ -79,7 +79,7 @@ const EditPhoneListing: React.FC = () => {
           
           const formData = {
             title: data.title || '',
-            brand: data.brand || '',
+            phone_type: data.phone_type || '',
             model: data.model || '',
             price: data.price?.toString() || '',
             condition: data.condition || '',
@@ -110,19 +110,25 @@ const EditPhoneListing: React.FC = () => {
     e.preventDefault();
     try {
       setSaving(true);
+      // Prepare update payload and guard against invalid numeric values (avoid sending NaN)
+      const priceVal = form.price === '' ? null : Number(parseFloat(form.price));
+      const warrantyVal = form.warranty_months === '' ? null : Number(parseInt(form.warranty_months, 10));
+      const updatePayload: any = {
+        title: form.title,
+        phone_type: form.phone_type,
+        model: form.model,
+        condition: form.condition,
+        store_name: form.store_name,
+        description: form.description,
+        specs: form.specs || {},
+      };
+
+      if (Number.isFinite(priceVal)) updatePayload.price = priceVal; else updatePayload.price = null;
+      if (Number.isFinite(warrantyVal)) updatePayload.warranty_months = warrantyVal; else updatePayload.warranty_months = null;
+
       const { error } = await supabase
         .from('phones')
-        .update({
-          title: form.title,
-          brand: form.brand,
-          model: form.model,
-          price: parseFloat(form.price),
-          condition: form.condition,
-          warranty_months: parseInt(form.warranty_months),
-          store_name: form.store_name,
-          description: form.description,
-          specs: form.specs,
-        })
+        .update(updatePayload)
         .eq('id', id);
 
       if (error) throw error;
@@ -242,11 +248,11 @@ const EditPhoneListing: React.FC = () => {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('brand')}</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('phone_type')}</label>
                     <input
-                      name="brand"
-                      value={form.brand}
-                      onChange={(e) => setForm(prev => ({ ...prev, brand: e.target.value }))}
+                      name="phone_type"
+                      value={form.phone_type}
+                      onChange={(e) => setForm(prev => ({ ...prev, phone_type: e.target.value }))}
                       className="w-full p-2 border rounded-lg"
                       required
                     />
