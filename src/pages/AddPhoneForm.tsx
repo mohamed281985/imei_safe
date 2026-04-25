@@ -322,7 +322,7 @@ const AddPhoneForm: React.FC = () => {
         .select('amount')
         .eq('type', 'normal')
         .eq('duration_days', 1) // تكلفة يوم واحد كتكلفة نشر عادي
-        .single();
+        .maybeSingle();
 
       if (normalPriceError && normalPriceError.code !== 'PGRST116') {
         throw normalPriceError;

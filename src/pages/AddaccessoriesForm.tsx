@@ -226,32 +226,30 @@ const AddAccessoriesForm: React.FC = () => {
       setLoading(true);
       setError('');
 
-      // 1. إنشاء الإكسسوار في قاعدة البيانات
-      const { data: accessoryData, error: accessoryError } = await supabase
-        .from('accessories')
-        .insert([
-          {
-            seller_id: user.id, // استخدام user.id مباشرة
-            title: formData.title,
-            category: formData.category,
-            brand: formData.brand,
-            compatibility: formData.compatibility,
-            description: formData.description,
-            price: parseFloat(formData.price) || 0,
-            condition: formData.condition,
-            warranty_months: parseInt(formData.warranty_months),
-            city: formData.city,
-            contact_methods: formData.contact_methods,
-            store_name: formData.store_name, // إضافة اسم المتجر
-            latitude: coords?.latitude,
-            longitude: coords?.longitude,
-            role: user?.role, // إضافة دور المستخدم
-          }
-        ])
-        .select()
-        .single();
+      // 1. إنشاء الإكسسوار عبر السيرفر (سيقوم السيرفر بتشفير الحقول الحساسة)
+      const createPayload = {
+        title: formData.title,
+        category: formData.category,
+        brand: formData.brand,
+        compatibility: formData.compatibility,
+        description: formData.description,
+        price: parseFloat(formData.price) || 0,
+        condition: formData.condition,
+        warranty_months: parseInt(formData.warranty_months),
+        city: formData.city,
+        contact_methods: formData.contact_methods,
+        store_name: formData.store_name,
+        latitude: coords?.latitude,
+        longitude: coords?.longitude,
+        role: user?.role,
+        status: 'pending',
+      };
 
-      if (accessoryError) throw accessoryError;
+      const createResp = await axiosInstance.post('/api/create-accessory', createPayload);
+      if (!createResp?.data || !createResp.data.success) {
+        throw createResp?.data?.error || new Error('create-accessory failed');
+      }
+      const accessoryData = createResp.data.accessory;
       // 2. رفع الصور
       if (images.length > 0) {
         for (let i = 0; i < images.length; i++) {
@@ -303,7 +301,7 @@ const AddAccessoriesForm: React.FC = () => {
         .select('amount')
         .eq('type', 'normal')
         .eq('duration_days', 1)
-        .single();
+        .maybeSingle();
 
       if (normalPriceError && normalPriceError.code !== 'PGRST116') {
         throw normalPriceError;
@@ -336,6 +334,10 @@ const AddAccessoriesForm: React.FC = () => {
         setBonusBalance(newBonus);
         toast({ title: t('ad_published_successfully'), description: t('bonus_deducted', { amount: amountToDeduct.toString() }), variant: "default" });
 
+        // Publish accessory after successful paid-with-bonus posting
+        const { error: publishErr } = await supabase.from('accessories').update({ status: 'pending' }).eq('id', accessoryData.id);
+        if (publishErr) console.warn('failed to publish accessory after bonus payment', publishErr);
+
       } else if (normalPrice > 0) {
         const { data: paymentData, error: paymentError } = await supabase.from('ads_payment').insert({
           user_id: user.id,
@@ -359,6 +361,10 @@ const AddAccessoriesForm: React.FC = () => {
       }
       // --- نهاية منطق الدفع للإعلان العادي ---
 
+      // If we reached here, no external payment redirect happened — publish the accessory
+      const { error: publishErr2 } = await supabase.from('accessories').update({ status: 'pending' }).eq('id', accessoryData.id);
+      if (publishErr2) console.warn('failed to set accessory pending', publishErr2);
+
       navigate('/seller-dashboard');
 
     } catch (err) {
@@ -381,32 +387,29 @@ const AddAccessoriesForm: React.FC = () => {
 
     try {
       // 1. Create the accessory record first
-      const { data: accessoryData, error: accessoryError } = await supabase
-        .from('accessories')
-        .insert([
-          {
-            seller_id: user.id,
-            title: formData.title,
-            category: formData.category,
-            brand: formData.brand,
-            compatibility: formData.compatibility,
-            description: formData.description,
-            price: parseFloat(formData.price) || 0,
-            condition: formData.condition,
-            warranty_months: parseInt(formData.warranty_months),
-            city: formData.city,
-            contact_methods: formData.contact_methods,
-            store_name: formData.store_name,
-            status: 'pending',
-            latitude: coords?.latitude,
-            longitude: coords?.longitude,
-            role: user?.role,
-          }
-        ])
-        .select()
-        .single();
+      const createPayload = {
+        title: formData.title,
+        category: formData.category,
+        brand: formData.brand,
+        compatibility: formData.compatibility,
+        description: formData.description,
+        price: parseFloat(formData.price) || 0,
+        condition: formData.condition,
+        warranty_months: parseInt(formData.warranty_months),
+        city: formData.city,
+        contact_methods: formData.contact_methods,
+        store_name: formData.store_name,
+        status: 'pending',
+        latitude: coords?.latitude,
+        longitude: coords?.longitude,
+        role: user?.role,
+      };
 
-      if (accessoryError) throw accessoryError;
+      const createResp = await axiosInstance.post('/api/create-accessory', createPayload);
+      if (!createResp?.data || !createResp.data.success) {
+        throw createResp?.data?.error || new Error('create-accessory failed');
+      }
+      const accessoryData = createResp.data.accessory;
 
       // 2. Upload images
       // 2. Upload images
@@ -483,6 +486,10 @@ const AddAccessoriesForm: React.FC = () => {
       // 3.3. Update the 'type' in the 'accessories' table to 'promotions'
       const { error: updateAccessoryError } = await supabase.from('accessories').update({ type: 'promotions' }).eq('id', accessoryData.id);
       if (updateAccessoryError) throw updateAccessoryError;
+
+      // Publish accessory after successful promotion
+      const { error: publishErr } = await supabase.from('accessories').update({ status: 'pending' }).eq('id', accessoryData.id);
+      if (publishErr) console.warn('failed to set accessory pending after promotion', publishErr);
 
       // 3.4. Update UI and navigate
       setBonusBalance(newBonus);
