@@ -251,35 +251,36 @@ const AddPhoneForm: React.FC = () => {
       setLoading(true);
       setError('');
 
-      // 1. إنشاء الهاتف في قاعدة البيانات
-      const { data: phoneData, error: phoneError } = await supabase
-        .from('phones')
-        .insert([
-          {
-            seller_id: user.id, // استخدام user.id مباشرة بعد التأكد من وجوده في businesses
-            title: formData.title,
-            brand: formData.brand,
-            model: formData.model,
-            description: formData.description,
-            price: parseFloat(formData.price) || 0,
-            condition: formData.condition,
-            warranty_months: parseInt(formData.warranty_months),
-            specs: formData.specs,
-            city: formData.city,
-            contact_methods: formData.contact_methods,
-            imei_hash: formData.imei, // سيتم تشفيره على السيرفر
-            store_name: formData.store_name, // إضافة اسم المتجر
-            status: 'pending', // تم تغيير الحالة إلى تحت المراجعة
-            is_verified: imeiStatus === 'verified', // إضافة حالة التحقق من IMEI
-            latitude: coords?.latitude,
-            longitude: coords?.longitude,
-            role: user?.role, // إضافة دور المستخدم
-          }
-        ])
-        .select()
-        .single();
+      // 1. Create phone record via server API so sensitive fields (IMEI, phone) are encrypted server-side
+      let phoneData: any = null;
+      try {
+        const payload = {
+          seller_id: user.id,
+          title: formData.title,
+          brand: formData.brand,
+          model: formData.model,
+          description: formData.description,
+          price: parseFloat(formData.price) || 0,
+          condition: formData.condition,
+          warranty_months: parseInt(formData.warranty_months) || 0,
+          specs: formData.specs,
+          city: formData.city,
+          contact_methods: formData.contact_methods,
+          imei: formData.imei, // send raw IMEI to server for encryption/storage
+          store_name: formData.store_name,
+          status: 'pending',
+          is_verified: imeiStatus === 'verified',
+          latitude: coords?.latitude,
+          longitude: coords?.longitude,
+          role: user?.role,
+        };
 
-      if (phoneError) throw phoneError;
+        const res = await axiosInstance.post('/api/create-phone', payload);
+        phoneData = res?.data?.phone;
+        if (!phoneData || !phoneData.id) throw new Error('Server did not return created phone id');
+      } catch (err) {
+        throw err;
+      }
 
       // 2. رفع الصور
       if (images.length > 0) {
@@ -512,35 +513,36 @@ const AddPhoneForm: React.FC = () => {
     setError('');
 
     try {
-      // 1. Create the phone record first
-      const { data: phoneData, error: phoneError } = await supabase
-        .from('phones')
-        .insert([
-          {
-            seller_id: user.id,
-            title: formData.title,
-            brand: formData.brand,
-            model: formData.model,
-            description: formData.description,
-            price: parseFloat(formData.price) || 0,
-            condition: formData.condition,
-            warranty_months: parseInt(formData.warranty_months),
-            specs: formData.specs,
-            city: formData.city,
-            contact_methods: formData.contact_methods,
-            imei_hash: formData.imei,
-            store_name: formData.store_name,
-            status: 'pending',
-            is_verified: imeiStatus === 'verified',
-            latitude: coords?.latitude,
-            longitude: coords?.longitude,
-            role: user?.role,
-          }
-        ])
-        .select()
-        .single();
+      // 1. Create the phone record via server API so sensitive fields are encrypted on server
+      let phoneData: any = null;
+      try {
+        const payload = {
+          seller_id: user.id,
+          title: formData.title,
+          brand: formData.brand,
+          model: formData.model,
+          description: formData.description,
+          price: parseFloat(formData.price) || 0,
+          condition: formData.condition,
+          warranty_months: parseInt(formData.warranty_months) || 0,
+          specs: formData.specs,
+          city: formData.city,
+          contact_methods: formData.contact_methods,
+          imei: formData.imei,
+          store_name: formData.store_name,
+          status: 'pending',
+          is_verified: imeiStatus === 'verified',
+          latitude: coords?.latitude,
+          longitude: coords?.longitude,
+          role: user?.role,
+        };
 
-      if (phoneError) throw phoneError;
+        const res = await axiosInstance.post('/api/create-phone', payload);
+        phoneData = res?.data?.phone;
+        if (!phoneData || !phoneData.id) throw new Error('Server did not return created phone id');
+      } catch (err) {
+        throw err;
+      }
 
       // 2. Upload images for the newly created phone
       for (let i = 0; i < images.length; i++) {
@@ -670,15 +672,9 @@ const AddPhoneForm: React.FC = () => {
             setError('هذا الهاتف مسجل في النظام بأنه مفقود أو مسروق ولا يمكن بيعه');
           } else {
             // استعلام آمن من السيرفر للحصول على حالة التسجيل والمعلومات المقنعة
-            try {
-              let jwt = '';
-              try { const { data: { session } } = await supabase.auth.getSession(); jwt = session?.access_token || ''; } catch (e) { jwt = ''; }
-              const resp = await fetch('/api/imei-masked-info', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}) },
-                body: JSON.stringify({ imei: value })
-              });
-              const info = await resp.json();
+              try {
+              const resp = await axiosInstance.post('/api/imei-masked-info', { imei: value });
+              const info = resp?.data;
               if (info && info.found && info.isRegistered) {
                 setImeiStatus('verified');
                 setError('');

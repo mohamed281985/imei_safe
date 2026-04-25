@@ -5079,6 +5079,132 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
   }
 });
 
+// Compatibility endpoint: create-phone (client previously posts to /api/create-phone)
+app.post('/api/create-phone', verifyJwtToken, async (req, res) => {
+  const phoneData = { ...req.body };
+  const userId = req.user?.id;
+  const rawImei = typeof phoneData.imei === 'string' ? phoneData.imei : '';
+
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    // Rate limit / plan checks
+    const limitCheck = await checkRegisterLimit(userId);
+    if (!limitCheck.canRegister) return res.status(429).json({ success: false, error: limitCheck.message });
+
+    // Prevent registration if active report exists for this IMEI
+    if (rawImei) {
+      const { data: allReports, error: reportsFetchError } = await supabase
+        .from('phone_reports')
+        .select('id, imei')
+        .eq('status', 'active');
+
+      if (reportsFetchError) {
+        console.error('Error checking phone_reports:', reportsFetchError);
+      } else if (allReports && allReports.length > 0) {
+        const matchingReport = allReports.find(report => {
+          const decryptedImei = decryptField(report.imei);
+          return normalizeDigitsOnly(decryptedImei) === normalizeDigitsOnly(rawImei);
+        });
+
+        if (matchingReport) {
+          return res.status(400).json({ success: false, error: 'Cannot register: active report exists for this IMEI', hasActiveReport: true });
+        }
+      }
+    }
+
+    // Encrypt sensitive fields (password, imei, phone_number, id_last6, email, owner_name)
+    if (phoneData.password) phoneData.password = await hashPasswordForStorage(phoneData.password);
+
+    if (phoneData.imei) {
+      const enc = encryptAES(phoneData.imei);
+      if (!enc) return res.status(400).json({ error: 'IMEI encryption failed' });
+      phoneData.imei = JSON.stringify({ encryptedData: enc.encryptedData, iv: enc.iv, authTag: enc.authTag });
+    }
+
+    if (phoneData.phone_number) {
+      const enc = encryptAES(phoneData.phone_number);
+      if (!enc) return res.status(400).json({ error: 'Phone encryption failed' });
+      phoneData.phone_number = JSON.stringify({ encryptedData: enc.encryptedData, iv: enc.iv, authTag: enc.authTag });
+    }
+
+    if (phoneData.id_last6) {
+      const enc = encryptAES(phoneData.id_last6);
+      if (!enc) return res.status(400).json({ error: 'ID encryption failed' });
+      phoneData.id_last6 = JSON.stringify({ encryptedData: enc.encryptedData, iv: enc.iv, authTag: enc.authTag });
+    }
+
+    if (phoneData.email) {
+      const enc = encryptAES(phoneData.email);
+      if (!enc) return res.status(400).json({ error: 'Email encryption failed' });
+      phoneData.email = JSON.stringify({ encryptedData: enc.encryptedData, iv: enc.iv, authTag: enc.authTag });
+    }
+
+    if (typeof phoneData.ownerName !== 'undefined') {
+      phoneData.owner_name = phoneData.ownerName;
+      delete phoneData.ownerName;
+    }
+
+    if (typeof phoneData.owner_name !== 'undefined' && phoneData.owner_name !== null && phoneData.owner_name !== '') {
+      let rawOwner = phoneData.owner_name;
+      try {
+        if (typeof rawOwner === 'string') {
+          try {
+            const parsed = JSON.parse(rawOwner);
+            if (parsed && parsed.encryptedData && parsed.iv && parsed.authTag) {
+              phoneData.owner_name = JSON.stringify({ encryptedData: parsed.encryptedData, iv: parsed.iv, authTag: parsed.authTag });
+            } else {
+              const encOwner = encryptAES(String(rawOwner));
+              if (!encOwner) return res.status(400).json({ error: 'Owner encryption failed' });
+              phoneData.owner_name = JSON.stringify({ encryptedData: encOwner.encryptedData, iv: encOwner.iv, authTag: encOwner.authTag });
+            }
+          } catch (e) {
+            const encOwner = encryptAES(String(rawOwner));
+            if (!encOwner) return res.status(400).json({ error: 'Owner encryption failed' });
+            phoneData.owner_name = JSON.stringify({ encryptedData: encOwner.encryptedData, iv: encOwner.iv, authTag: encOwner.authTag });
+          }
+        } else if (typeof rawOwner === 'object' && rawOwner.encryptedData && rawOwner.iv && rawOwner.authTag) {
+          phoneData.owner_name = JSON.stringify({ encryptedData: rawOwner.encryptedData, iv: rawOwner.iv, authTag: rawOwner.authTag });
+        } else {
+          const encOwner = encryptAES(String(rawOwner));
+          if (!encOwner) return res.status(400).json({ error: 'Owner encryption failed' });
+          phoneData.owner_name = JSON.stringify({ encryptedData: encOwner.encryptedData, iv: encOwner.iv, authTag: encOwner.authTag });
+        }
+      } catch (e) {
+        const encOwner = encryptAES(String(rawOwner));
+        if (!encOwner) return res.status(400).json({ error: 'Owner encryption failed' });
+        phoneData.owner_name = JSON.stringify({ encryptedData: encOwner.encryptedData, iv: encOwner.iv, authTag: encOwner.authTag });
+      }
+    }
+
+    // Ensure user_id set to token user
+    phoneData.user_id = userId;
+
+    const { data, error } = await supabase
+      .from('registered_phones')
+      .insert([phoneData])
+      .select()
+      .maybeSingle();
+
+    if (error) throw error;
+
+    // Audit
+    try {
+      await logAudit({ userId, action: 'create_phone', resourceType: 'registered_phone', resourceId: data?.id, details: { imei_last_4: rawImei.slice(-4) }, ip: req.ip, userAgent: req.headers['user-agent'] });
+    } catch (e) {
+      console.error('Audit log failed for create-phone:', e);
+    }
+
+    // Update usage counters
+    try { await updateRegisterUsage(userId); } catch (e) { console.error('updateRegisterUsage error:', e); }
+
+    return res.json({ success: true, phone: data });
+  } catch (error) {
+    console.error('/api/create-phone error:', error);
+    return sendError(res, 500, 'Server error', error);
+  }
+});
+
 app.post('/api/validate-other-registration-data', verifyJwtToken, async (req, res) => {
   const { ownerName, phoneNumber, id_last6 } = req.body || {};
 

@@ -205,7 +205,9 @@ const Signup: React.FC = () => {
         <Card className="w-full shadow-lg border-t-4 border-t-orange-500 bg-transparent mt-8">
         <CardHeader className="pb-0">
           <CardTitle className="text-2xl font-bold text-orange-600 text-center">
-            <Logo size="lg" className="mb-6" />
+            <div className="flex justify-center mb-6">
+              <Logo size="lg" />
+            </div>
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -218,11 +220,37 @@ const Signup: React.FC = () => {
             )}
             
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="flex items-center gap-12 justify-between mb-8">
-                <BackButton />
-                <h1 className="text-2xl font-bold text-orange-600 flex-grow text-center">
-                  {t('create_account')}
-                </h1>
+              <div className="w-full max-w-full mb-6">
+                <div className="flex items-center justify-between w-full gap-3">
+                  {/* dotted square */}
+                  <div className="flex-none">
+                    <svg className="w-10 h-10 sm:w-14 sm:h-14" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                      <defs>
+                        <linearGradient id="signup-dots-grad" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+                          <stop offset="0%" stopColor="#D8F6FF" />
+                          <stop offset="50%" stopColor="#66C8FF" />
+                          <stop offset="100%" stopColor="#0F62FF" />
+                        </linearGradient>
+                        <pattern id="signup-dots-pattern" x="0" y="0" width="6" height="6" patternUnits="userSpaceOnUse">
+                          <circle cx="1.5" cy="1.5" r="1.6" fill="url(#signup-dots-grad)" fillOpacity="0.95" />
+                        </pattern>
+                      </defs>
+                      <rect width="40" height="40" fill="url(#signup-dots-pattern)" rx="6" />
+                    </svg>
+                  </div>
+
+                  {/* title centered */}
+                  <div className="flex-1 text-center px-2">
+                    <h1 className="text-2xl font-bold text-orange-600 leading-tight">
+                      {t('create_account')}
+                    </h1>
+                  </div>
+
+                  {/* back button on right */}
+                  <div className="flex-none">
+                    <BackButton />
+                  </div>
+                </div>
               </div>
               <div>
                 <label htmlFor="email" className="block text-black text-sm font-medium mb-1">

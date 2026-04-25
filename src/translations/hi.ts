@@ -197,6 +197,7 @@ export default {
   "phone_lost": "फ़ोन खो गया",
   "phone_reported_lost": "इस फ़ोन के खोने की सूचना दी गई है",
   "phone_reported_lost_message": "यह फ़ोन खो गया है और रिपोर्ट किया गया है",
+  "phone_has_active_report": "इस फ़ोन के लिए एक सक्रिय रिपोर्ट है",
   "phone_not_reported": "इस फ़ोन के लिए कोई नुकसान की रिपोर्ट नहीं है",
   "phone_not_registered_register_now": "यह फोन हमारे सिस्टम में पंजीकृत नहीं है। अब पंजीकृत करें",
   "enter_report_password": "रिपोर्ट पासवर्ड दर्ज करें",

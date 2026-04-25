@@ -22,6 +22,7 @@ import { supabase } from '@/lib/supabase'; // استيراد Supabase
 
 import { useAuth } from '../contexts/AuthContext';
 import CountryCodeSelector from '../components/CountryCodeSelector';
+import axiosInstance from '@/services/axiosInterceptor';
 
 // تعريف واجهة البيانات للنموذجا
 interface FormData {
@@ -561,31 +562,15 @@ const ReportPhone: React.FC = () => {
         } catch (e) {
           jwtToken = '';
         }
-        const resp = await fetch('https://imei-safe.me/api/imei-masked-info', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(jwtToken ? { 'Authorization': `Bearer ${jwtToken}` } : {})
-          },
-          body: JSON.stringify({ imei: imeiValue, userId: user?.id })
-        });
-        const result = await resp.json();
+        const resp = await axiosInstance.post('/api/imei-masked-info', { imei: imeiValue, userId: user?.id });
+        const result = resp?.data;
         resultRef.current = result;
 
         // Try to get explicit report flags from the server if available
         let checkResult: any = null;
         try {
-          const resp2 = await fetch('https://imei-safe.me/api/check-imei', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(jwtToken ? { 'Authorization': `Bearer ${jwtToken}` } : {})
-            },
-            body: JSON.stringify({ imei: imeiValue, userId: user?.id })
-          });
-          if (resp2.ok) {
-            checkResult = await resp2.json();
-          }
+          const resp2 = await axiosInstance.post('/api/check-imei', { imei: imeiValue, userId: user?.id });
+          if (resp2 && resp2.data) checkResult = resp2.data;
         } catch (e) {
           // endpoint may not exist or be unreachable; ignore
         }
@@ -818,7 +803,16 @@ const ReportPhone: React.FC = () => {
           console.error('❌ خطأ supabase عند رفع الصورة:', error);
           throw new Error(t('failed_to_upload_image'));
         }
-        // تخزين المسار فقط (path)، بدون URL كامل
+        // حاول تحويل المسار إلى رابط عام مناسب لـ Supabase
+        try {
+          const { data: publicUrlData } = supabase.storage.from('phoneimages').getPublicUrl(filePath);
+          if (publicUrlData && publicUrlData.publicUrl) {
+            return publicUrlData.publicUrl;
+          }
+        } catch (e) {
+          console.warn('Could not derive public URL for uploaded file, returning path as fallback', e);
+        }
+        // افتح العودة للمسار إذا فشل توليد رابط عام
         return filePath;
       };
 
@@ -832,17 +826,14 @@ const ReportPhone: React.FC = () => {
             let jwtToken = '';
             try { const sessionResp = await supabase.auth.getSession(); jwtToken = (sessionResp?.data as any)?.session?.access_token || ''; } catch(e) { jwtToken = ''; }
 
-            const resp = await fetch('https://imei-safe.me/api/imei-masked-info', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                ...(jwtToken ? { 'Authorization': `Bearer ${jwtToken}` } : {})
-              },
-              body: JSON.stringify({ imei: formData.imei })
-            });
-            const json = await resp.json();
-            if (json && json.receipt_image_url) {
-              url = json.receipt_image_url;
+            try {
+              const resp = await axiosInstance.post('/api/imei-masked-info', { imei: formData.imei });
+              const json = resp?.data;
+              if (json && json.receipt_image_url) {
+                url = json.receipt_image_url;
+              }
+            } catch (e) {
+              console.error('فشل جلب receipt_image_url عبر /api/imei-masked-info:');
             }
             // result logged removed to avoid leaking data
           } catch (e) {
@@ -927,15 +918,8 @@ const ReportPhone: React.FC = () => {
       }
 
       // إرسال الطلب إلى السيرفر مع التوكن
-      const response = await fetch('https://imei-safe.me/api/report-lost-phone', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(jwtToken ? { 'Authorization': `Bearer ${jwtToken}` } : {})
-        },
-        body: JSON.stringify(payload),
-      });
-      const result = await response.json();
+      const resp = await axiosInstance.post('/api/report-lost-phone', payload);
+      const result = resp?.data;
       if (!result.success) {
         throw new Error(result.error || 'فشل إرسال البلاغ');
       }
