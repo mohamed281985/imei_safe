@@ -5153,8 +5153,8 @@ app.post('/api/create-phone', verifyJwtToken, async (req, res) => {
 
   try {
     // Rate limit / plan checks
-    const limitCheck = await checkRegisterLimit(userId);
-    if (!limitCheck.canRegister) return res.status(429).json({ success: false, error: limitCheck.message });
+    // NOTE: Exempt phone sale listings from registration limits per product requirement.
+    // Skipping `checkRegisterLimit(userId)` here so users can post phones for sale without quota.
 
     // Prevent registration if active report exists for this IMEI
     if (rawImei) {
