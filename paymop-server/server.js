@@ -5304,6 +5304,122 @@ app.post('/api/create-phone', verifyJwtToken, async (req, res) => {
   }
 });
 
+// Create accessory via server: normalize input, encrypt PII, insert as seller
+app.post('/api/create-accessory', verifyJwtToken, async (req, res) => {
+  const accessoryData = { ...req.body };
+  const userId = req.user?.id;
+
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    // Ensure contact_methods is an object
+    if (!accessoryData.contact_methods || typeof accessoryData.contact_methods !== 'object') accessoryData.contact_methods = {};
+
+    // Normalize contact phone (digits only)
+    if (accessoryData.contact_methods.phone) {
+      accessoryData.contact_methods.phone = normalizeDigitsOnly(String(accessoryData.contact_methods.phone)).slice(0, 20);
+      if (accessoryData.contact_methods.phone === '') delete accessoryData.contact_methods.phone;
+    }
+
+    // Clean and trim common string fields
+    ['title', 'category', 'brand', 'compatibility', 'description', 'store_name', 'city', 'status', 'role'].forEach(k => {
+      if (accessoryData[k] && typeof accessoryData[k] === 'string') accessoryData[k] = accessoryData[k].trim();
+    });
+
+    // Ensure numeric fields
+    accessoryData.price = Number(accessoryData.price) || 0;
+    accessoryData.warranty_months = parseInt(String(accessoryData.warranty_months || '0').replace(/\D/g, ''), 10) || 0;
+
+    // Default status
+    if (!accessoryData.status) accessoryData.status = 'pending';
+
+    // Encrypt PII fields if present
+    if (accessoryData.contact_methods && accessoryData.contact_methods.phone) {
+      try {
+        const enc = encryptAES(String(accessoryData.contact_methods.phone));
+        if (!enc) return res.status(400).json({ error: 'Contact phone encryption failed' });
+        accessoryData.contact_methods.phone = JSON.stringify({ encryptedData: enc.encryptedData, iv: enc.iv, authTag: enc.authTag });
+      } catch (e) {
+        console.error('Failed encrypting accessory contact phone:', e && e.message);
+        return res.status(400).json({ error: 'Contact phone encryption failed' });
+      }
+    }
+
+    if (typeof accessoryData.owner_name !== 'undefined' && accessoryData.owner_name !== null && accessoryData.owner_name !== '') {
+      try {
+        const rawOwner = accessoryData.owner_name;
+        if (typeof rawOwner === 'string') {
+          try {
+            const parsed = JSON.parse(rawOwner);
+            if (parsed && parsed.encryptedData && parsed.iv && parsed.authTag) {
+              accessoryData.owner_name = JSON.stringify({ encryptedData: parsed.encryptedData, iv: parsed.iv, authTag: parsed.authTag });
+            } else {
+              const encOwner = encryptAES(String(rawOwner));
+              if (!encOwner) return res.status(400).json({ error: 'Owner encryption failed' });
+              accessoryData.owner_name = JSON.stringify({ encryptedData: encOwner.encryptedData, iv: encOwner.iv, authTag: encOwner.authTag });
+            }
+          } catch (e) {
+            const encOwner = encryptAES(String(rawOwner));
+            if (!encOwner) return res.status(400).json({ error: 'Owner encryption failed' });
+            accessoryData.owner_name = JSON.stringify({ encryptedData: encOwner.encryptedData, iv: encOwner.iv, authTag: encOwner.authTag });
+          }
+        } else if (typeof rawOwner === 'object' && rawOwner.encryptedData && rawOwner.iv && rawOwner.authTag) {
+          accessoryData.owner_name = JSON.stringify({ encryptedData: rawOwner.encryptedData, iv: rawOwner.iv, authTag: rawOwner.authTag });
+        } else {
+          const encOwner = encryptAES(String(rawOwner));
+          if (!encOwner) return res.status(400).json({ error: 'Owner encryption failed' });
+          accessoryData.owner_name = JSON.stringify({ encryptedData: encOwner.encryptedData, iv: encOwner.iv, authTag: encOwner.authTag });
+        }
+      } catch (e) {
+        const encOwner = encryptAES(String(accessoryData.owner_name));
+        if (!encOwner) return res.status(400).json({ error: 'Owner encryption failed' });
+        accessoryData.owner_name = JSON.stringify({ encryptedData: encOwner.encryptedData, iv: encOwner.iv, authTag: encOwner.authTag });
+      }
+    }
+
+    if (accessoryData.email) {
+      const enc = encryptAES(String(accessoryData.email));
+      if (!enc) return res.status(400).json({ error: 'Email encryption failed' });
+      accessoryData.email = JSON.stringify({ encryptedData: enc.encryptedData, iv: enc.iv, authTag: enc.authTag });
+    }
+
+    // Ensure seller_id is set to token user
+    accessoryData.seller_id = userId;
+
+    // Insert
+    let inserted;
+    try {
+      const insertRes = await supabase
+        .from('accessories')
+        .insert([accessoryData])
+        .select()
+        .maybeSingle();
+
+      if (insertRes.error) {
+        console.error('/api/create-accessory supabase insert error:', insertRes.error);
+        throw insertRes.error;
+      }
+
+      inserted = insertRes.data;
+    } catch (dbErr) {
+      console.error('/api/create-accessory DB insert exception:', dbErr && (dbErr.stack || dbErr.message || dbErr));
+      return sendError(res, 500, 'Database insert failed', process.env.NODE_ENV !== 'production' ? dbErr : undefined);
+    }
+
+    // Audit
+    try {
+      await logAudit({ userId, action: 'create_accessory', resourceType: 'accessory', resourceId: inserted?.id, ip: req.ip, userAgent: req.headers['user-agent'] });
+    } catch (e) {
+      console.error('Audit log failed for create-accessory:', e);
+    }
+
+    return res.json({ success: true, accessory: inserted });
+  } catch (err) {
+    console.error('/api/create-accessory error:', err);
+    return sendError(res, 500, 'Server error', err);
+  }
+});
+
 app.post('/api/validate-other-registration-data', verifyJwtToken, async (req, res) => {
   const { ownerName, phoneNumber, id_last6 } = req.body || {};
 
