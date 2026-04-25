@@ -5489,6 +5489,8 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
 
     const registeredPhone = phones ? phones.find(p => normalizeDigitsOnly(decryptField(p.imei)) === normalizedIncoming) : null;
 
+    const hasActiveReport = !!activeReport;
+
     if (activeReport) {
       if (registeredPhone) {
         const isOwner = userId && registeredPhone.user_id === userId;
@@ -5514,6 +5516,7 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
               isRegistered: true,
               isOwner: true,
               isTransferred: true,
+              hasActiveReport: true,
               receipt_image_url: registeredPhone.receipt_image_url,
               owner_name: ownerName,
               phone_number: phoneNumber,
@@ -5540,7 +5543,7 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
             found: true,
             masked: true,
             isOtherUser: true,
-            hasActiveReport: false,
+            hasActiveReport: true,
             isTransferred: true,
             isRegistered: true,
             receipt_image_url: registeredPhone.receipt_image_url,
@@ -5558,6 +5561,7 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
           masked: false,
           isRegistered: true,
           isOwner,
+          hasActiveReport: true,
           receipt_image_url: registeredPhone.receipt_image_url,
           maskedOwnerName: maskName(ownerName),
           maskedPhoneNumber: maskPhoneNumber(phoneNumber),
@@ -5569,7 +5573,7 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
         return res.json(response);
       } else {
         // عليه بلاغ وغير مسجل
-        return res.json({ found: true, masked: false, isRegistered: false, isOwner: false });
+        return res.json({ found: true, masked: false, isRegistered: false, isOwner: false, hasActiveReport: true });
       }
     }
 
@@ -5597,6 +5601,7 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
             isRegistered: true,
             isOwner: true,
             isTransferred: true,
+            hasActiveReport: false,
             receipt_image_url: registeredPhone.receipt_image_url,
             owner_name: ownerName,
             phone_number: phoneNumber,
@@ -5626,6 +5631,7 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
           isOtherUser: true,
           isTransferred: true,
           isRegistered: true,
+          hasActiveReport: false,
           receipt_image_url: registeredPhone.receipt_image_url,
           ...maskedPhoneDetails
         });
@@ -5641,6 +5647,7 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
         masked: true,
         isOwner,
         isRegistered: true,
+        hasActiveReport: false,
         receipt_image_url: registeredPhone.receipt_image_url,
         maskedOwnerName: maskName(ownerName),
         maskedPhoneNumber: maskPhoneNumber(phoneNumber),
@@ -5653,7 +5660,7 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
     }
 
     console.log('[IMEI-MASKED-INFO] Not registered: found=false');
-    return res.json({ found: false, masked: false, isOwner: false, isRegistered: false });
+    return res.json({ found: false, masked: false, isOwner: false, isRegistered: false, hasActiveReport: false });
 
   } catch (error) {
     console.error('Error in imei-masked-info:', error);

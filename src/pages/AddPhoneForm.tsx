@@ -660,10 +660,14 @@ const AddPhoneForm: React.FC = () => {
           const resp = await axiosInstance.post('/api/imei-masked-info', { imei: value });
           const info = resp?.data || {};
 
-          // server returns { found, isRegistered, masked, isOwner, ... }
+          // server returns { found, isRegistered, masked, isOwner, hasActiveReport, ... }
           if (info.found) {
-            // If found but not registered -> active report only
-            if (info.isRegistered === false) {
+            // If server indicates an active report, mark as reported regardless of registration state
+            if (info.hasActiveReport === true) {
+              setImeiStatus('reported');
+              setError('هذا الهاتف مسجل في النظام بأنه مفقود أو مسروق ولا يمكن بيعه');
+            } else if (info.isRegistered === false) {
+              // found but explicitly not registered (no owner info)
               setImeiStatus('reported');
               setError('هذا الهاتف مسجل في النظام بأنه مفقود أو مسروق ولا يمكن بيعه');
             } else {
@@ -674,7 +678,7 @@ const AddPhoneForm: React.FC = () => {
                 setFormData(prev => ({ ...prev, is_verified: true }));
                 setError('');
               } else {
-                // Registered but masked (belongs to other user) — still consider it 'verified' for safety check
+                // Registered but masked (belongs to other user) — still mark verified for posting flow but show masked info
                 setImeiStatus('verified');
                 setError('');
               }
