@@ -5191,13 +5191,36 @@ app.post('/api/create-phone', verifyJwtToken, async (req, res) => {
     // Ensure user_id set to token user
     phoneData.user_id = userId;
 
-    const { data, error } = await supabase
-      .from('registered_phones')
-      .insert([phoneData])
-      .select()
-      .maybeSingle();
+    // Log a masked snapshot of the payload to help debug insertion errors (never log full IMEI)
+    try {
+      const safeSnapshot = { ...phoneData };
+      if (safeSnapshot.imei && typeof safeSnapshot.imei === 'string') safeSnapshot.imei = `****${String(rawImei).slice(-4)}`;
+      if (safeSnapshot.phone_number) safeSnapshot.phone_number = '***masked***';
+      // don't include large fields
+      if (safeSnapshot.specs) delete safeSnapshot.specs;
+      console.log('/api/create-phone inserting registered_phones, user=', userId, 'snapshot=', JSON.stringify(safeSnapshot));
+    } catch (logErr) {
+      console.warn('Failed to create safe snapshot for create-phone log', logErr && logErr.message);
+    }
 
-    if (error) throw error;
+    let data, error;
+    try {
+      const insertRes = await supabase
+        .from('registered_phones')
+        .insert([phoneData])
+        .select()
+        .maybeSingle();
+
+      data = insertRes.data;
+      error = insertRes.error;
+      if (error) {
+        console.error('/api/create-phone supabase insert error:', error);
+        throw error;
+      }
+    } catch (dbErr) {
+      console.error('/api/create-phone DB insert exception:', dbErr && (dbErr.stack || dbErr.message || dbErr));
+      return sendError(res, 500, 'Database insert failed', process.env.NODE_ENV !== 'production' ? dbErr : undefined);
+    }
 
     // Audit
     try {
