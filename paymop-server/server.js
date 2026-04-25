@@ -5098,6 +5098,49 @@ app.post('/api/create-phone', verifyJwtToken, async (req, res) => {
     console.warn('/api/create-phone logging failed', e && e.message);
   }
 
+  // Normalize and validate incoming payload to avoid DB insert errors
+  try {
+    // Ensure contact_methods is an object
+    if (!phoneData.contact_methods || typeof phoneData.contact_methods !== 'object') phoneData.contact_methods = {};
+
+    // Normalize phone in contact_methods (digits only)
+    if (phoneData.contact_methods.phone) {
+      phoneData.contact_methods.phone = normalizeDigitsOnly(String(phoneData.contact_methods.phone));
+      if (phoneData.contact_methods.phone === '') delete phoneData.contact_methods.phone;
+    }
+
+    // Normalize and validate IMEI: digits only, exactly 15
+    if (phoneData.imei) {
+      phoneData.imei = String(phoneData.imei).replace(/\D/g, '').slice(0, 15);
+      if (phoneData.imei.length !== 15) {
+        return res.status(400).json({ success: false, error: 'invalid_imei', message: 'IMEI must be 15 digits' });
+      }
+    } else {
+      return res.status(400).json({ success: false, error: 'missing_imei', message: 'IMEI is required' });
+    }
+
+    // Clean up city (remove stray quotes/backslashes) and trim
+    if (phoneData.city && typeof phoneData.city === 'string') {
+      phoneData.city = String(phoneData.city).replace(/(^["\\]+|["\\]+$)/g, '').trim();
+    }
+
+    // Ensure numeric fields
+    phoneData.price = Number(phoneData.price) || 0;
+    phoneData.warranty_months = parseInt(String(phoneData.warranty_months || '0').replace(/\D/g, ''), 10) || 0;
+
+    // Trim common string fields to avoid weird characters
+    ['title', 'brand', 'model', 'description', 'store_name', 'status', 'role'].forEach(k => {
+      if (phoneData[k] && typeof phoneData[k] === 'string') phoneData[k] = phoneData[k].trim();
+    });
+
+    // Ensure specs is an object
+    if (!phoneData.specs || typeof phoneData.specs !== 'object') phoneData.specs = {};
+
+  } catch (normErr) {
+    console.error('/api/create-phone payload normalization failed:', normErr && (normErr.stack || normErr.message || normErr));
+    return res.status(400).json({ success: false, error: 'payload_normalization_failed' });
+  }
+
   try {
     // Rate limit / plan checks
     const limitCheck = await checkRegisterLimit(userId);
