@@ -5204,6 +5204,18 @@ app.post('/api/create-phone', verifyJwtToken, async (req, res) => {
       phoneData.email = JSON.stringify({ encryptedData: enc.encryptedData, iv: enc.iv, authTag: enc.authTag });
     }
 
+    // Encrypt contact_methods.phone if present (store encrypted JSON blob)
+    if (phoneData.contact_methods && phoneData.contact_methods.phone) {
+      try {
+        const enc = encryptAES(String(phoneData.contact_methods.phone));
+        if (!enc) return res.status(400).json({ error: 'Contact phone encryption failed' });
+        phoneData.contact_methods.phone = JSON.stringify({ encryptedData: enc.encryptedData, iv: enc.iv, authTag: enc.authTag });
+      } catch (e) {
+        console.error('Failed encrypting contact_methods.phone:', e && e.message);
+        return res.status(400).json({ error: 'Contact phone encryption failed' });
+      }
+    }
+
     if (typeof phoneData.ownerName !== 'undefined') {
       phoneData.owner_name = phoneData.ownerName;
       delete phoneData.ownerName;
@@ -5449,6 +5461,86 @@ app.post('/api/get-user-data-for-registration', verifyJwtToken, async (req, res)
   } catch (error) {
     console.error('Error fetching user data for registration:', error);
     return sendError(res, 500, 'حدث خطأ في الخادم', error);
+  }
+});
+
+// Safe delete endpoint: remove a phone and its related records when client reports a failed post flow
+app.post('/api/delete-phone-if-failed', verifyJwtToken, async (req, res) => {
+  try {
+    const { phoneId } = req.body || {};
+    const userId = req.user && req.user.id;
+    if (!phoneId || !userId) return res.status(400).json({ error: 'phoneId required' });
+
+    // Verify ownership
+    const { data: phoneRec, error: fetchErr } = await supabase.from('phones').select('id, user_id').eq('id', phoneId).maybeSingle();
+    if (fetchErr) {
+      console.error('delete-phone-if-failed: fetch phone error', fetchErr);
+      return res.status(500).json({ error: 'database_error' });
+    }
+    if (!phoneRec) return res.status(404).json({ error: 'not_found' });
+    if (phoneRec.user_id !== userId) return res.status(403).json({ error: 'not_authorized' });
+
+    // Delete related phone_images rows
+    const { error: imgDelErr } = await supabase.from('phone_images').delete().eq('phone_id', phoneId);
+    if (imgDelErr) console.warn('delete-phone-if-failed: phone_images delete error', imgDelErr);
+
+    // Delete related ads_payment rows
+    const { error: payDelErr } = await supabase.from('ads_payment').delete().eq('phone_id', phoneId);
+    if (payDelErr) console.warn('delete-phone-if-failed: ads_payment delete error', payDelErr);
+
+    // Finally delete the phone record
+    const { error: phoneDelErr } = await supabase.from('phones').delete().eq('id', phoneId);
+    if (phoneDelErr) {
+      console.error('delete-phone-if-failed: phones delete error', phoneDelErr);
+      return res.status(500).json({ error: 'failed_to_delete_phone' });
+    }
+
+    // Audit
+    try { await logAudit({ userId, action: 'delete_phone_failed_flow', resourceType: 'phone', resourceId: phoneId, ip: req.ip, userAgent: req.headers['user-agent'] }); } catch(e){ console.warn('audit delete-phone-if-failed failed', e); }
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('delete-phone-if-failed error:', err);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
+// Safe delete endpoint for accessories when client reports a failed post flow
+app.post('/api/delete-accessory-if-failed', verifyJwtToken, async (req, res) => {
+  try {
+    const { accessoryId } = req.body || {};
+    const userId = req.user && req.user.id;
+    if (!accessoryId || !userId) return res.status(400).json({ error: 'accessoryId required' });
+
+    const { data: accRec, error: fetchErr } = await supabase.from('accessories').select('id, seller_id').eq('id', accessoryId).maybeSingle();
+    if (fetchErr) {
+      console.error('delete-accessory-if-failed: fetch accessory error', fetchErr);
+      return res.status(500).json({ error: 'database_error' });
+    }
+    if (!accRec) return res.status(404).json({ error: 'not_found' });
+    if (accRec.seller_id !== userId) return res.status(403).json({ error: 'not_authorized' });
+
+    // Delete related accessory_images
+    const { error: imgDelErr } = await supabase.from('accessory_images').delete().eq('accessory_id', accessoryId);
+    if (imgDelErr) console.warn('delete-accessory-if-failed: accessory_images delete error', imgDelErr);
+
+    // Delete related ads_payment rows
+    const { error: payDelErr } = await supabase.from('ads_payment').delete().eq('accessory_id', accessoryId);
+    if (payDelErr) console.warn('delete-accessory-if-failed: ads_payment delete error', payDelErr);
+
+    // Delete accessory record
+    const { error: accDelErr } = await supabase.from('accessories').delete().eq('id', accessoryId);
+    if (accDelErr) {
+      console.error('delete-accessory-if-failed: accessories delete error', accDelErr);
+      return res.status(500).json({ error: 'failed_to_delete_accessory' });
+    }
+
+    try { await logAudit({ userId, action: 'delete_accessory_failed_flow', resourceType: 'accessory', resourceId: accessoryId, ip: req.ip, userAgent: req.headers['user-agent'] }); } catch(e){ console.warn('audit delete-accessory-if-failed failed', e); }
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('delete-accessory-if-failed error:', err);
+    return res.status(500).json({ error: 'server_error' });
   }
 });
 

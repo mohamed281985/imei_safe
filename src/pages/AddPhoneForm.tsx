@@ -248,12 +248,10 @@ const AddPhoneForm: React.FC = () => {
       return;
     }
 
+    let phoneData: any = null;
     try {
       setLoading(true);
       setError('');
-
-      // 1. Create phone record via server API so sensitive fields (IMEI, phone) are encrypted server-side
-      let phoneData: any = null;
       try {
         const payload = {
           seller_id: user.id,
@@ -413,6 +411,15 @@ const AddPhoneForm: React.FC = () => {
 
     } catch (err) {
       console.error('Error adding phone:', err);
+      // Cleanup: if phone was created but subsequent steps failed, request server to delete it
+      try {
+        if (phoneData && phoneData.id) {
+          await axiosInstance.post('/api/delete-phone-if-failed', { phoneId: phoneData.id });
+        }
+      } catch (cleanupErr) {
+        console.warn('Cleanup failed for phone after create failure', cleanupErr);
+      }
+
       setError('حدث خطأ أثناء إضافة الهاتف. الرجاء المحاولة مرة أخرى.');
     } finally {
       setLoading(false);
@@ -510,12 +517,9 @@ const AddPhoneForm: React.FC = () => {
       return;
     }
 
-    setLoading(true);
-    setError('');
-
+    let phoneData: any = null;
     try {
       // 1. Create the phone record via server API so sensitive fields are encrypted on server
-      let phoneData: any = null;
       try {
         const payload = {
           seller_id: user.id,
@@ -616,6 +620,15 @@ const AddPhoneForm: React.FC = () => {
 
     } catch (err: any) {
       console.error('Error in handleSubmitAndFeature:', err);
+      // Cleanup if phone was created
+      try {
+        if (phoneData && phoneData.id) {
+          await axiosInstance.post('/api/delete-phone-if-failed', { phoneId: phoneData.id });
+        }
+      } catch (cleanupErr) {
+        console.warn('Cleanup failed for phone after feature flow failure', cleanupErr);
+      }
+
       setError(err.message || `حدث خطأ أثناء نشر و${t('feature_ad')}.`);
     } finally {
       setLoading(false);
@@ -702,6 +715,15 @@ const AddPhoneForm: React.FC = () => {
       } else {
         setImeiStatus('');
         setError('');
+      }
+
+      // Auto-fill phone_type if server provided it and the field is empty
+      try {
+        if (info && info.phone_type) {
+          setFormData(prev => ({ ...prev, phone_type: prev.phone_type || info.phone_type }));
+        }
+      } catch (e) {
+        console.warn('Could not auto-fill phone_type from IMEI response', e);
       }
     } catch (e) {
       console.error('Error fetching IMEI info:', e);

@@ -252,7 +252,6 @@ const AddAccessoriesForm: React.FC = () => {
         .single();
 
       if (accessoryError) throw accessoryError;
-
       // 2. رفع الصور
       if (images.length > 0) {
         for (let i = 0; i < images.length; i++) {
@@ -264,7 +263,10 @@ const AddAccessoriesForm: React.FC = () => {
             .from('accessory-images')
             .upload(filePath, file);
 
-          if (uploadError) throw uploadError;
+          if (uploadError) {
+            await axiosInstance.post('/api/delete-accessory-if-failed', { accessoryId: accessoryData.id });
+            throw uploadError;
+          }
 
           // الحصول على URL العام للصورة
           const { data: { publicUrl } } = supabase.storage
@@ -272,18 +274,26 @@ const AddAccessoriesForm: React.FC = () => {
             .getPublicUrl(filePath);
 
           // إضافة مسار الصورة في جدول accessory_images
-          const { error: imageError } = await supabase
-            .from('accessory_images')
-            .insert([
-              {
-                accessory_id: accessoryData.id,
-                image_path: publicUrl, // تخزين الرابط العام الكامل
-                main_image: i === 0, // أول صورة هي الرئيسية
-                order: i
-              }
-            ]);
+          try {
+            const { error: imageError } = await supabase
+              .from('accessory_images')
+              .insert([
+                {
+                  accessory_id: accessoryData.id,
+                  image_path: publicUrl, // تخزين الرابط العام الكامل
+                  main_image: i === 0, // أول صورة هي الرئيسية
+                  order: i
+                }
+              ]);
 
-          if (imageError) throw imageError;
+            if (imageError) {
+              await axiosInstance.post('/api/delete-accessory-if-failed', { accessoryId: accessoryData.id });
+              throw imageError;
+            }
+          } catch (imgErr) {
+            await axiosInstance.post('/api/delete-accessory-if-failed', { accessoryId: accessoryData.id });
+            throw imgErr;
+          }
         }
       }
 
@@ -399,14 +409,27 @@ const AddAccessoriesForm: React.FC = () => {
       if (accessoryError) throw accessoryError;
 
       // 2. Upload images
+      // 2. Upload images
       for (let i = 0; i < images.length; i++) {
         const file = images[i];
         const fileExt = file.name.split('.').pop();
         const filePath = `${user.id}/${accessoryData.id}/${Math.random()}.${fileExt}`;
         const { error: uploadError } = await supabase.storage.from('accessory-images').upload(filePath, file);
-        if (uploadError) throw uploadError;
+        if (uploadError) {
+          await axiosInstance.post('/api/delete-accessory-if-failed', { accessoryId: accessoryData.id });
+          throw uploadError;
+        }
         const { data: { publicUrl } } = supabase.storage.from('accessory-images').getPublicUrl(filePath);
-        await supabase.from('accessory_images').insert([{ accessory_id: accessoryData.id, image_path: publicUrl, main_image: i === 0, order: i }]);
+        try {
+          const { error: imageInsertError } = await supabase.from('accessory_images').insert([{ accessory_id: accessoryData.id, image_path: publicUrl, main_image: i === 0, order: i }]);
+          if (imageInsertError) {
+            await axiosInstance.post('/api/delete-accessory-if-failed', { accessoryId: accessoryData.id });
+            throw imageInsertError;
+          }
+        } catch (imgErr) {
+          await axiosInstance.post('/api/delete-accessory-if-failed', { accessoryId: accessoryData.id });
+          throw imgErr;
+        }
       }
 
       // 3. Now that the accessory is created, apply the feature promotion directly
