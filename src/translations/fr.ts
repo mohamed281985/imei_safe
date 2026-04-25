@@ -205,6 +205,7 @@ export default {
   "phone_lost": "Téléphone perdu",
   "phone_reported_lost": "Ce téléphone a été déclaré perdu",
   "phone_reported_lost_message": "Ce téléphone est perdu et fait l'objet d'un rapport",
+  "phone_has_active_report": "Un signalement actif existe pour ce téléphone",
   "phone_not_reported": "Aucun rapport de perte pour ce téléphone",
   "phone_not_registered_register_now": "Ce téléphone n'est pas enregistré dans notre système. Enregistrez-le maintenant",
   "enter_report_password": "Entrez le mot de passe du rapport",

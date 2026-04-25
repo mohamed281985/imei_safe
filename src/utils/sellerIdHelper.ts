@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import axiosInstance from '@/services/axiosInterceptor';
 
 /**
  * وظيفة مساعدة لتخزين رقم بطاقة البائع في جدول transfer_records
@@ -72,12 +73,8 @@ const createNewTransferRecord = async (imei: string, sellerId: string): Promise<
     try {
       let jwt = '';
       try { const { data: { session } } = await supabase.auth.getSession(); jwt = session?.access_token || ''; } catch (e) { jwt = ''; }
-      const resp = await fetch('/api/imei-masked-info', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(jwt ? { 'Authorization': `Bearer ${jwt}` } : {}) },
-        body: JSON.stringify({ imei })
-      });
-      const info = await resp.json();
+      const resp = await axiosInstance.post('/api/imei-masked-info', { imei });
+      const info = resp?.data;
 
       const seller_name = info?.maskedOwnerName || '';
       const seller_phone = info?.maskedPhoneNumber || '';

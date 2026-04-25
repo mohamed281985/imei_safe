@@ -606,7 +606,7 @@ const BusinessTransferBuy: React.FC = () => {
             setIsPhoneReported(true);
             // خزّن بيانات البلاغ إن توفرت
             setCurrentPhoneReport(registeredPhone.report || { isStolen: registeredPhone.isStolen, isOwnReport: registeredPhone.isOwnReport });
-            toast({ title: t('warning'), description: t('phone_has_active_report') || 'يوجد بلاغ نشط على هذا الهاتف', variant: 'destructive' });
+            // suppressed toast: active-report will be shown via inline UI instead of a destructive toast
             // لا نعرض مربع التسجيل لأن السجل موجود لكن بدون تفاصيل؛ اسمح للمستخدم بالتحقق أو التواصل
           } else if (registeredPhone.isOtherUser || registeredPhone.owner_name || registeredPhone.maskedOwnerName) {
             // حاول الحصول على معلومات مقنّعة من السيرفر (endpoint منفصل يوفر معلومات مُقنّعة/موقَّعة)

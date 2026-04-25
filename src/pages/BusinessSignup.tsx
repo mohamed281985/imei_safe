@@ -1,10 +1,9 @@
-import { useState, useRef, useEffect } from 'react';
-import { Card } from '@/components/ui/card';
+import { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import Logo from '@/components/Logo';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
-import { Mail, Store, User, Phone, MapPin, Briefcase, Lock, Camera } from 'lucide-react';
+import { Mail, Store, User, Phone, MapPin, Briefcase, Lock, Eye, EyeOff, ShieldCheck, UserPlus, ArrowLeft } from 'lucide-react';
 import CountryCodeSelector from '../components/CountryCodeSelector';
 import { useToast } from '@/hooks/use-toast';
 import PageContainer from '../components/PageContainer';
@@ -13,10 +12,8 @@ import { useLanguage } from '../contexts/LanguageContext';
 
 export default function BusinessSignup() {
   useScrollToTop();
+  const navigate = useNavigate();
   const { t } = useLanguage();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [logoPreview, setLogoPreview] = useState<string | null>(null);
-  const [logoFile, setLogoFile] = useState<File | null>(null);
   const [formData, setFormData] = useState({
     email: '',
     storeName: '',
@@ -56,6 +53,8 @@ export default function BusinessSignup() {
     hasNumber: false,
     hasSpecial: false,
   });
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const handleInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -124,7 +123,7 @@ export default function BusinessSignup() {
     // تحقق من الصحة الأساسية للحقول قبل الإرسال
     const pw = formData.password || '';
     if (pw !== formData.confirmPassword) {
-      toast({ title: t('verification_error'), description: t('passwords_dont_match_message'), variant: 'destructive' });
+      toast({ title: '❌ خطأ في التحقق', description: 'كلمات المرور غير متطابقة', variant: 'destructive' });
       setLoading(false);
       return;
     }
@@ -137,24 +136,24 @@ export default function BusinessSignup() {
       strongPwdOk = /^(?=.*[A-Za-z])(?=.*\d)(?=.*[\W_]).{8,}$/.test(pw);
     }
     if (!strongPwdOk) {
-      toast({ title: t('weak_password'), description: t('password_strength_requirements') || 'Password must be 8+ chars with letters, number and special char', variant: 'destructive' });
+      toast({ title: '⚠️ كلمة مرور ضعيفة', description: 'يجب أن تحتوي على 8+ أحرف مع أحرف وأرقام ورموز خاصة', variant: 'destructive' });
       setLoading(false);
       return;
     }
 
     // تحقق من اسم المتجر واسم المالك والعنوان
     if (!formData.storeName || formData.storeName.trim().length < 2) {
-      toast({ title: t('error'), description: t('store_name_too_short') || 'Store name is too short', variant: 'destructive' });
+      toast({ title: '❌ خطأ', description: 'اسم المتجر قصير جداً', variant: 'destructive' });
       setLoading(false);
       return;
     }
     if (!formData.ownerName || formData.ownerName.trim().length < 2) {
-      toast({ title: t('error'), description: t('owner_name_too_short') || 'Owner name is too short', variant: 'destructive' });
+      toast({ title: '❌ خطأ', description: 'اسم المالك قصير جداً', variant: 'destructive' });
       setLoading(false);
       return;
     }
     if (!formData.address || formData.address.trim().length < 5) {
-      toast({ title: t('error'), description: t('address_too_short') || 'Address is too short', variant: 'destructive' });
+      toast({ title: '❌ خطأ', description: 'العنوان قصير جداً', variant: 'destructive' });
       setLoading(false);
       return;
     }
@@ -163,7 +162,7 @@ export default function BusinessSignup() {
     const fullPhoneNumber = countryCode + formData.phone;
     const digitsOnly = fullPhoneNumber.replace(/\D/g, '');
     if (digitsOnly.length < 7 || digitsOnly.length > 15) {
-      toast({ title: t('error'), description: t('invalid_phone_number') || 'Phone number appears invalid', variant: 'destructive' });
+      toast({ title: '❌ خطأ', description: 'رقم الهاتف غير صحيح', variant: 'destructive' });
       setLoading(false);
       return;
     }
@@ -185,8 +184,8 @@ export default function BusinessSignup() {
 
       // Inform user to check email for verification link
       toast({
-        title: t('verification_email_sent_title') || t('registration_success_title'),
-        description: t('verification_email_sent_message') || 'A verification email was sent. Please confirm to complete registration.',
+        title: '✅ تم إرسال بريد التحقق',
+        description: 'يرجى التحقق من بريدك الإلكتروني لإكمال التسجيل',
         duration: 9000,
       });
 
@@ -220,7 +219,7 @@ export default function BusinessSignup() {
       // Optionally redirect to a page telling user to check email
       setTimeout(() => { window.location.href = '/login'; }, 1200);
     } catch (error: any) {
-      toast({ title: t('error'), description: error?.message || String(error), variant: 'destructive' });
+      toast({ title: '❌ حدث خطأ', description: error?.message || String(error), variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -228,212 +227,313 @@ export default function BusinessSignup() {
 
   return (
     <PageContainer>
-      <div className="flex flex-col items-center justify-center min-h-screen">
-        <div className="w-full max-w-6xl mt-8 mb-8">
-          <Card className="shadow-md border-t-4 border-t-orange-500 glass-bg p-6 md:p-8" style={{background: 'rgba(255,255,255,0.18)'}}>
-            <h1 className="text-2xl font-semibold mb-2 text-center text-orange-500">{t('business_signup_title')}</h1>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="email" className="block text-black text-sm font-medium mb-1">{t('email_label')}</label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Mail size={18} className="text-gray-400" />
-              </div>
-              <Input
-                id="email"
-                name="email"
-                type="email"
-                placeholder={t('email_placeholder')}
-                value={formData.email}
-                onChange={handleInputChange}
-                required
-                className={`input-field w-full pl-10 ${emailExists ? 'border-red-500' : ''}`}
-              />
-              {/* no live email existence indicator to prevent user enumeration */}
+      {/* عناصر ديكورية للخلفية */}
+      <div className="fixed top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-100/50 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-[-5%] right-[-5%] w-[30%] h-[30%] bg-orange-50/50 rounded-full blur-3xl"></div>
+      </div>
+
+      <div className="flex flex-col items-center justify-center min-h-screen px-0 py-8">
+        {/* رأس الصفحة */}
+        <div className="w-full max-w-md">
+          <div className="relative bg-white/30 backdrop-blur-xl border border-white/20 rounded-2xl shadow-md overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-orange-500 to-orange-400" />
+            <div className="p-3">
+              <div className="w-full max-w-md mb-4 relative mt-8">
+          {/* صف واحد مدمج: مربع نقطي - عنوان مركزي - زر رجوع */}
+          <div className="flex items-center justify-between w-full gap-3 px-2">
+            {/* مربع النقاط */}
+            <div className="flex-none">
+              <svg className="w-10 h-10 sm:w-16 sm:h-16 opacity-100" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                <defs>
+                  <linearGradient id="dots-grad" x1="0" y1="0" x2="1" y2="1" gradientUnits="objectBoundingBox">
+                    <stop offset="0%" stopColor="#E8F9FF" />
+                    <stop offset="50%" stopColor="#A8E1FF" />
+                    <stop offset="100%" stopColor="#1E7BFF" />
+                  </linearGradient>
+                  <pattern id="dots-pattern-compact" x="0" y="0" width="8" height="8" patternUnits="userSpaceOnUse">
+                    <circle cx="2" cy="2" r="1.6" fill="#2b78ebff" opacity="0.25" />
+                  </pattern>
+                </defs>
+                <rect width="40" height="40" fill="url(#dots-pattern-compact)" rx="6" />
+              </svg>
+            </div>
+
+            {/* العنوان مركزي */}
+            <div className="flex-1 text-center px-2">
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-orange-500 leading-tight">
+                {t('business_signup_title')}
+              </h1>
+            </div>
+
+            {/* زر الرجوع */}
+            <div className="flex-none">
+              <button 
+                onClick={() => navigate(-1)}
+                className="w-10 h-10 bg-gradient-to-br from-orange-500 to-orange-400 text-white rounded-full flex items-center justify-center shadow-md hover:scale-[0.98] transition-transform"
+                aria-label="رجوع"
+              >
+                <ArrowLeft className="text-white w-4 h-4" />
+              </button>
             </div>
           </div>
-          <div>
-            <label htmlFor="storeName" className="block text-black text-sm font-medium mb-1">{t('store_name_label')}</label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Store size={18} className="text-gray-400" />
-              </div>
-              <Input
-                id="storeName"
-                name="storeName"
-                placeholder={t('store_name_placeholder')}
-                value={formData.storeName}
-                onChange={handleInputChange}
-                required
-                className="input-field w-full pl-10"
-              />
-            </div>
+
+          {/* وصف أسفل الصف */}
+          <div className="mt-2 text-center">
+            <p className="text-gray-500 text-sm font-medium">أنشئ حسابك بسهولة وابدأ رحلتك معنا</p>
           </div>
-          <div>
-            <label htmlFor="ownerName" className="block text-black text-sm font-medium mb-1">{t('owner_name_label')}</label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <User size={18} className="text-gray-400" />
               </div>
-              <Input
-                id="ownerName"
-                name="ownerName"
-                placeholder={t('owner_name_placeholder')}
-                value={formData.ownerName}
-                onChange={handleInputChange}
-                required
-                className="input-field w-full pl-10"
-              />
-            </div>
-          </div>
-          <div>
-            <label htmlFor="phone" className="block text-black text-sm font-medium mb-1">{t('phone_label')}</label>
-            <div className="flex gap-2 items-center">
-              <CountryCodeSelector
-                value={countryCode}
-                onChange={setCountryCode}
-                disabled={loading}
-              />
-              <div className="relative w-full">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Phone size={18} className="text-gray-400" />
+
+              <div className="relative px-0">
+            <form onSubmit={handleSubmit} className="space-y-5">
+              
+              {/* البريد الإلكتروني */}
+              <div className="space-y-1.5">
+                <label className="block text-gray-700 text-sm font-bold pr-1 flex items-center gap-2">
+                  <Mail size={16} className="text-blue-500" />
+                  {t('email_label')}
+                </label>
+                <div className="relative group">
+                  <Input
+                    id="email"
+                    name="email"
+                    type="email"
+                    placeholder="user@example.com"
+                    value={formData.email}
+                    onChange={handleInputChange}
+                    required
+                    className="input-field w-full h-12 px-4 rounded-2xl bg-transparent border-gray-200 focus:border-blue-400 focus:ring-4 focus:ring-blue-100 transition-all shadow-sm"
+                  />
                 </div>
-                <Input
-                  id="phone"
-                  name="phone"
-                  type="tel"
-                  placeholder={t('phone_placeholder')}
-                  value={formData.phone}
-                  onChange={handleInputChange}
-                  required
-                  className="input-field w-full pl-10"
-                />
               </div>
-            </div>
-          </div>
-          <div>
-            <label htmlFor="address" className="block text-black text-sm font-medium mb-1">{t('address_label')}</label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <MapPin size={18} className="text-gray-400" />
-              </div>
-              <Input
-                id="address"
-                name="address"
-                placeholder={t('address_placeholder')}
-                value={formData.address}
-                onChange={handleInputChange}
-                required
-                className="input-field w-full pl-10"
-              />
-            </div>
-          </div>
-          <div>
-            <label htmlFor="businessType" className="block text-black text-sm font-medium mb-1">{t('business_type_label')}</label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Briefcase size={18} className="text-gray-400" />
-              </div>
-              <Input
-                id="businessType"
-                name="businessType"
-                placeholder={t('business_type_placeholder')}
-                value={formData.businessType}
-                onChange={handleInputChange}
-                required
-                className="input-field w-full pl-10"
-              />
-            </div>
-          </div>
-          {/* حقل آخر 6 أرقام من البطاقة الشخصية */}
-          <div>
-            <label htmlFor="id_last6" className="block text-black text-sm font-medium mb-1">{t('id_last_6_digits')}</label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Lock size={18} className="text-gray-400" />
-              </div>
-              <Input
-                id="id_last6"
-                name="id_last6"
-                placeholder={t('id_last_6_digits_placeholder')}
-                value={formData.id_last6}
-                onChange={handleInputChange}
-                required
-                className="input-field w-full pl-10"
-                maxLength={6}
-                pattern="[0-9]*"
-                inputMode="numeric"
-                style={{ direction: 'ltr', textAlign: 'left' }}
-              />
-            </div>
-          </div>
-          <div>
-            <label htmlFor="password" className="block text-black text-sm font-medium mb-1">{t('password_label')}</label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Lock size={18} className="text-gray-400" />
-              </div>
-              <Input
-                id="password"
-                name="password"
-                type="password"
-                placeholder={t('password_placeholder')}
-                value={formData.password}
-                onChange={handleInputChange}
-                onFocus={() => setPwdFocused(true)}
-                onBlur={() => setPwdFocused(false)}
-                required
-                className="input-field w-full pl-10"
-              />
-              {pwdFocused && (
-                <div className="mt-2 text-sm text-gray-700 bg-white/80 p-2 rounded shadow-sm w-full">
-                  <ul className="space-y-1">
-                    <li className={pwdChecks.minLength ? 'text-green-600' : 'text-gray-600'}>
-                      {pwdChecks.minLength ? '✓' : '○'} {t('pwd_min_chars')}
-                    </li>
-                    <li className={pwdChecks.hasLetter ? 'text-green-600' : 'text-gray-600'}>
-                      {pwdChecks.hasLetter ? '✓' : '○'} {t('pwd_letter')}
-                    </li>
-                    <li className={pwdChecks.hasNumber ? 'text-green-600' : 'text-gray-600'}>
-                      {pwdChecks.hasNumber ? '✓' : '○'} {t('pwd_number')}
-                    </li>
-                    <li className={pwdChecks.hasSpecial ? 'text-green-600' : 'text-gray-600'}>
-                      {pwdChecks.hasSpecial ? '✓' : '○'} {t('pwd_special')}
-                    </li>
-                  </ul>
+
+              {/* اسم المحل */}
+              <div className="space-y-1.5">
+                <label className="block text-gray-700 text-sm font-bold pr-1 flex items-center gap-2">
+                  <Store size={16} className="text-blue-500" />
+                  {t('store_name_label')}
+                </label>
+                <div className="relative group">
+                  <Input
+                    name="storeName"
+                    placeholder={t('store_name_placeholder')}
+                    value={formData.storeName}
+                    onChange={handleInputChange}
+                    required
+                    className="input-field w-full h-12 px-4 rounded-2xl bg-transparent border-gray-200 focus:border-blue-400 focus:ring-4 focus:ring-blue-100 transition-all shadow-sm"
+                  />
                 </div>
-              )}
-            </div>
-          </div>
-          <div>
-            <label htmlFor="confirmPassword" className="block text-black text-sm font-medium mb-1">{t('confirm_password_label')}</label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Lock size={18} className="text-gray-400" />
               </div>
-              <Input
-                id="confirmPassword"
-                name="confirmPassword"
-                type="password"
-                placeholder={t('confirm_password_placeholder')}
-                value={formData.confirmPassword}
-                onChange={handleInputChange}
-                required
-                className="input-field w-full pl-10"
-              />
+
+              {/* اسم صاحب المحل */}
+              <div className="space-y-1.5">
+                <label className="block text-gray-700 text-sm font-bold pr-1 flex items-center gap-2">
+                  <User size={16} className="text-blue-500" />
+                  {t('owner_name_label')}
+                </label>
+                <div className="relative group">
+                  <Input
+                    name="ownerName"
+                    placeholder={t('owner_name_placeholder')}
+                    value={formData.ownerName}
+                    onChange={handleInputChange}
+                    required
+                    className="input-field w-full h-12 px-4 rounded-2xl bg-transparent border-gray-200 focus:border-blue-400 focus:ring-4 focus:ring-blue-100 transition-all shadow-sm"
+                  />
+                </div>
+              </div>
+
+              {/* رقم الهاتف */}
+              <div className="space-y-1.5">
+                <label className="block text-gray-700 text-sm font-bold pr-1 flex items-center gap-2">
+                  <Phone size={16} className="text-blue-500" />
+                  {t('phone_label')}
+                </label>
+                <div className="flex gap-2">
+                  <div className="w-1/3">
+                    <CountryCodeSelector
+                      value={countryCode}
+                      onChange={setCountryCode}
+                      disabled={loading}
+                    />
+                  </div>
+                  <div className="relative flex-1 group">
+                    <Input
+                      name="phone"
+                      type="tel"
+                      placeholder={t('phone_placeholder')}
+                      value={formData.phone}
+                      onChange={handleInputChange}
+                      required
+                      className="input-field w-full h-12 px-4 rounded-2xl bg-transparent border-gray-200 focus:border-blue-400 focus:ring-4 focus:ring-blue-100 transition-all shadow-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* عنوان المحل */}
+              <div className="space-y-1.5">
+                <label className="block text-gray-700 text-sm font-bold pr-1 flex items-center gap-2">
+                  <MapPin size={16} className="text-blue-500" />
+                  {t('address_label')}
+                </label>
+                <div className="relative group">
+                  <Input
+                    name="address"
+                    placeholder={t('address_placeholder')}
+                    value={formData.address}
+                    onChange={handleInputChange}
+                    required
+                    className="input-field w-full h-12 px-4 rounded-2xl bg-transparent border-gray-200 focus:border-blue-400 focus:ring-4 focus:ring-blue-100 transition-all shadow-sm"
+                  />
+                </div>
+              </div>
+
+              {/* نوع النشاط */}
+              <div className="space-y-1.5">
+                <label className="block text-gray-700 text-sm font-bold pr-1 flex items-center gap-2">
+                  <Briefcase size={16} className="text-blue-500" />
+                  {t('business_type_label')}
+                </label>
+                <div className="relative group">
+                  <Input
+                    name="businessType"
+                    placeholder={t('business_type_placeholder')}
+                    value={formData.businessType}
+                    onChange={handleInputChange}
+                    required
+                    className="input-field w-full h-12 px-4 rounded-2xl bg-transparent border-gray-200 focus:border-blue-400 focus:ring-4 focus:ring-blue-100 transition-all shadow-sm"
+                  />
+                </div>
+              </div>
+
+              {/* آخر 6 أرقام من البطاقة */}
+              <div className="space-y-1.5">
+                <label className="block text-gray-700 text-sm font-bold pr-1 flex items-center gap-2">
+                  <Lock size={16} className="text-blue-500" />
+                  {t('id_last_6_digits')}
+                </label>
+                <div className="relative group">
+                  <Input
+                    name="id_last6"
+                    placeholder="******"
+                    value={formData.id_last6}
+                    onChange={handleInputChange}
+                    required
+                    maxLength={6}
+                    className="input-field w-full h-12 px-4 rounded-2xl bg-transparent border-gray-200 focus:border-blue-400 focus:ring-4 focus:ring-blue-100 transition-all shadow-sm"
+                  />
+                </div>
+              </div>
+
+              {/* كلمة المرور */}
+              <div className="space-y-1.5">
+                <label className="block text-gray-700 text-sm font-bold pr-1 flex items-center gap-2">
+                  <Lock size={16} className="text-blue-500" />
+                  {t('password_label')}
+                </label>
+                <div className="relative group">
+                  <Input
+                    name="password"
+                    type={showPassword ? "text" : "password"}
+                    placeholder="********"
+                    value={formData.password}
+                    onChange={handleInputChange}
+                    onFocus={() => setPwdFocused(true)}
+                    onBlur={() => setPwdFocused(false)}
+                    required
+                    className="input-field w-full h-12 pr-4 pl-12 rounded-2xl bg-transparent border-gray-200 focus:border-blue-400 focus:ring-4 focus:ring-blue-100 transition-all shadow-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 left-4 flex items-center text-gray-400 hover:text-gray-600 transition-colors"
+                  >
+                    {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                  </button>
+                </div>
+                
+                {pwdFocused && (
+                  <div className="mt-3 p-4 rounded-2xl bg-blue-50/50 border border-blue-100 space-y-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                    <p className="text-xs font-bold text-blue-600 mb-1">متطلبات كلمة المرور:</p>
+                    <ul className="grid grid-cols-2 gap-x-2 gap-y-1">
+                      <li className={`text-[10px] flex items-center gap-1 font-bold ${pwdChecks.minLength ? 'text-green-600' : 'text-gray-400'}`}>
+                        <div className={`w-1.5 h-1.5 rounded-full ${pwdChecks.minLength ? 'bg-green-600' : 'bg-gray-300'}`} /> {t('pwd_min_chars')}
+                      </li>
+                      <li className={`text-[10px] flex items-center gap-1 font-bold ${pwdChecks.hasLetter ? 'text-green-600' : 'text-gray-400'}`}>
+                        <div className={`w-1.5 h-1.5 rounded-full ${pwdChecks.hasLetter ? 'bg-green-600' : 'bg-gray-300'}`} /> {t('pwd_letter')}
+                      </li>
+                      <li className={`text-[10px] flex items-center gap-1 font-bold ${pwdChecks.hasNumber ? 'text-green-600' : 'text-gray-400'}`}>
+                        <div className={`w-1.5 h-1.5 rounded-full ${pwdChecks.hasNumber ? 'bg-green-600' : 'bg-gray-300'}`} /> {t('pwd_number')}
+                      </li>
+                      <li className={`text-[10px] flex items-center gap-1 font-bold ${pwdChecks.hasSpecial ? 'text-green-600' : 'text-gray-400'}`}>
+                        <div className={`w-1.5 h-1.5 rounded-full ${pwdChecks.hasSpecial ? 'bg-green-600' : 'bg-gray-300'}`} /> {t('pwd_special')}
+                      </li>
+                    </ul>
+                  </div>
+                )}
+              </div>
+
+              {/* تأكيد كلمة المرور */}
+              <div className="space-y-1.5 pb-2">
+                <label className="block text-gray-700 text-sm font-bold pr-1 flex items-center gap-2">
+                  <Lock size={16} className="text-blue-500" />
+                  {t('confirm_password_label')}
+                </label>
+                <div className="relative group">
+                  <Input
+                    name="confirmPassword"
+                    type={showConfirmPassword ? "text" : "password"}
+                    placeholder="********"
+                    value={formData.confirmPassword}
+                    onChange={handleInputChange}
+                    required
+                    className="input-field w-full h-12 pr-4 pl-12 rounded-2xl bg-transparent border-gray-200 focus:border-blue-400 focus:ring-4 focus:ring-blue-100 transition-all shadow-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute inset-y-0 left-4 flex items-center text-gray-400 hover:text-gray-600 transition-colors"
+                  >
+                    {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* زر التسجيل */}
+              <Button
+                type="submit"
+                disabled={loading || isEmailRegistered}
+                className={`w-full h-14 rounded-2xl text-white text-lg font-bold flex items-center justify-center gap-2 shadow-[0_10px_20px_rgba(249,115,22,0.3)] hover:shadow-[0_15px_25px_rgba(249,115,22,0.4)] transition-all active:scale-[0.98] ${
+                  isEmailRegistered ? 'bg-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-orange-500 to-orange-600'
+                }`}
+              >
+                {loading ? (
+                  <div className="flex items-center gap-2">
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    {t('registering')}
+                  </div>
+                ) : (
+                  <>
+                    <UserPlus size={22} />
+                    {t('submit_button')}
+                  </>
+                )}
+              </Button>
+
+              {/* التذييل الأمني */}
+              <div className="flex items-center justify-center gap-2 pt-4 border-t border-gray-100">
+                <ShieldCheck size={18} className="text-green-500" />
+                <p className="text-[11px] font-bold text-gray-500">
+                  بياناتك آمنة ومحفوظة بشكل سري
+                </p>
+              </div>
+            </form>
+              </div>
             </div>
           </div>
-          <Button
-            type="submit"
-            disabled={loading || isEmailRegistered} // تعطيل الزر إذا كان البريد مسجلاً
-            className={`w-full text-white text-lg font-large py-3 ${isEmailRegistered ? 'bg-gray-500 cursor-not-allowed' : 'bg-orange-500 hover:bg-orange-600'} ${loading ? 'opacity-70' : ''}`}
-          >
-            {isEmailRegistered ? t('already_registered_email') : (loading ? t('registering') : t('submit_button'))}
-          </Button>
-        </form>
-      </Card>
-    </div>
-    </div>
-  </PageContainer>
+        </div>
+      </div>
+    </PageContainer>
   );
 }

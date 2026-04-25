@@ -195,6 +195,7 @@ export default {
   "phone_lost": "هاتف مفقود",
   "phone_reported_lost": "تم الإبلاغ عن فقدان هذا الهاتف", // تم تحسين الترجمة
   "phone_reported_lost_message": "هذا الهاتف مفقود ومقدم به بلاغ",
+  "phone_has_active_report": "يوجد بلاغ نشط على هذا الهاتف",
   "phone_not_reported": "لم يتم الإبلاغ عن فقدان هذا الهاتف", // تم تحسين الترجمة
   "phone_not_registered_register_now": "هذا الهاتف غير مسجل بنظامنا التسجيل الآن",
   "enter_report_password": "أدخل كلمة مرور البلاغ",

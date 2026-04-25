@@ -194,6 +194,7 @@ export default {
   "phone_lost": "Phone Lost",
   "phone_reported_lost": "This phone has been reported as lost",
   "phone_reported_lost_message": "This phone is lost and has a report filed",
+  "phone_has_active_report": "There is an active report for this phone",
   "phone_not_reported": "This phone has not been reported as lost",
   "phone_not_registered_register_now": "This phone is not registered in our system. Register now",
   "enter_report_password": "Enter report password",
