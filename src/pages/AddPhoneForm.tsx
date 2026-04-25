@@ -252,6 +252,12 @@ const AddPhoneForm: React.FC = () => {
     try {
       setLoading(true);
       setError('');
+      // Validate required fields and images before creating
+      if (!formData.title || !formData.phone_type || !formData.price || !formData.imei || images.length === 0) {
+        setError('الرجاء إكمال جميع الحقول المطلوبة ورفع صورة واحدة على الأقل');
+        setLoading(false);
+        return;
+      }
       try {
         const payload = {
           seller_id: user.id,
@@ -519,6 +525,12 @@ const AddPhoneForm: React.FC = () => {
 
     let phoneData: any = null;
     try {
+      // Validate required fields and images before creating
+      if (!formData.title || !formData.phone_type || !formData.price || !formData.imei || images.length === 0) {
+        setError('الرجاء إكمال جميع الحقول المطلوبة ورفع صورة واحدة على الأقل');
+        setLoading(false);
+        return;
+      }
       // 1. Create the phone record via server API so sensitive fields are encrypted on server
       try {
         const payload = {

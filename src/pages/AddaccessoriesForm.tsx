@@ -226,6 +226,13 @@ const AddAccessoriesForm: React.FC = () => {
       setLoading(true);
       setError('');
 
+      // Validate required fields and images before creating
+      if (!formData.title || !formData.category || !formData.price || images.length === 0) {
+        setError('الرجاء إكمال جميع الحقول المطلوبة ورفع صورة واحدة على الأقل');
+        setLoading(false);
+        return;
+      }
+
       // 1. إنشاء الإكسسوار عبر السيرفر (سيقوم السيرفر بتشفير الحقول الحساسة)
       const createPayload = {
         title: formData.title,
@@ -271,23 +278,14 @@ const AddAccessoriesForm: React.FC = () => {
             .from('accessory-images')
             .getPublicUrl(filePath);
 
-          // إضافة مسار الصورة في جدول accessory_images
+          // إضافة مسار الصورة عبر السيرفر (يتحقق من الملكية ويدرج السجل باستخدام service role)
           try {
-            const { error: imageError } = await supabase
-              .from('accessory_images')
-              .insert([
-                {
-                  accessory_id: accessoryData.id,
-                  image_path: publicUrl, // تخزين الرابط العام الكامل
-                  main_image: i === 0, // أول صورة هي الرئيسية
-                  order: i
-                }
-              ]);
-
-            if (imageError) {
-              await axiosInstance.post('/api/delete-accessory-if-failed', { accessoryId: accessoryData.id });
-              throw imageError;
-            }
+            await axiosInstance.post('/api/insert-accessory-image', {
+              accessoryId: accessoryData.id,
+              imageUrl: publicUrl,
+              main_image: i === 0,
+              order: i,
+            });
           } catch (imgErr) {
             await axiosInstance.post('/api/delete-accessory-if-failed', { accessoryId: accessoryData.id });
             throw imgErr;
@@ -384,6 +382,13 @@ const AddAccessoriesForm: React.FC = () => {
 
     setLoading(true);
     setError('');
+
+    // Validate required fields and images before creating
+    if (!formData.title || !formData.category || !formData.price || images.length === 0) {
+      setError('الرجاء إكمال جميع الحقول المطلوبة ورفع صورة واحدة على الأقل');
+      setLoading(false);
+      return;
+    }
 
     try {
       // 1. Create the accessory record first
