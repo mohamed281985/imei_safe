@@ -649,54 +649,50 @@ const AddPhoneForm: React.FC = () => {
         ...prev,
         [name]: value
       }));
-      
-      // التحقق من رقم IMEI عند إدخاله
+
+      // When IMEI reaches 15 digits, ask the server to check/decrypt reports and registrations
       if (value.length === 15) {
         setImeiChecking(true);
         setImeiStatus('');
-        
+        setError('');
+
         try {
-          // التحقق من وجود الهاتف في جدول التقارير (مفقود أو مسروق)
-          const { data: reportData, error: reportError } = await supabase
-            .from('phone_reports')
-            .select('*')
-            .eq('imei', value)
-            .eq('status', 'active')
-            .maybeSingle();
-          
-          if (reportError) throw reportError;
-          
-          if (reportData) {
-            // الهاتف مبلغ عنه
-            setImeiStatus('reported');
-            setError('هذا الهاتف مسجل في النظام بأنه مفقود أو مسروق ولا يمكن بيعه');
-          } else {
-            // استعلام آمن من السيرفر للحصول على حالة التسجيل والمعلومات المقنعة
-              try {
-              const resp = await axiosInstance.post('/api/imei-masked-info', { imei: value });
-              const info = resp?.data;
-              if (info && info.found && info.isRegistered) {
+          const resp = await axiosInstance.post('/api/imei-masked-info', { imei: value });
+          const info = resp?.data || {};
+
+          // server returns { found, isRegistered, masked, isOwner, ... }
+          if (info.found) {
+            // If found but not registered -> active report only
+            if (info.isRegistered === false) {
+              setImeiStatus('reported');
+              setError('هذا الهاتف مسجل في النظام بأنه مفقود أو مسروق ولا يمكن بيعه');
+            } else {
+              // Registered (could be masked). If user is owner or server indicates not masked, treat as verified
+              const ownerVisible = info.isOwner === true || info.masked === false;
+              if (ownerVisible) {
+                setImeiStatus('verified');
+                setFormData(prev => ({ ...prev, is_verified: true }));
+                setError('');
+              } else {
+                // Registered but masked (belongs to other user) — still consider it 'verified' for safety check
                 setImeiStatus('verified');
                 setError('');
-                setFormData(prev => ({ ...prev, is_verified: true }));
-              } else {
-                setImeiStatus('');
-                setError('');
               }
-            } catch (e) {
-              console.error('Error fetching IMEI info:', e);
-              setImeiStatus('');
-              setError('');
             }
+          } else {
+            // Not found anywhere
+            setImeiStatus('');
+            setError('');
           }
-        } catch (err) {
-          console.error('Error checking IMEI:', err);
+        } catch (e) {
+          console.error('Error fetching IMEI info:', e);
           setImeiStatus('');
+          setError('حدث خطأ أثناء التحقق من رقم IMEI، حاول مرة أخرى');
         } finally {
           setImeiChecking(false);
         }
       } else {
-        // إعادة تعيين الحالة إذا كان طول الرقم أقل من 15
+        // Reset state while typing
         setImeiStatus('');
         setError('');
       }
