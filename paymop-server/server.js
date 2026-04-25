@@ -5259,7 +5259,7 @@ app.post('/api/create-phone', verifyJwtToken, async (req, res) => {
     let data, error;
     try {
       const insertRes = await supabase
-        .from('registered_phones')
+        .from('phones')
         .insert([phoneData])
         .select()
         .maybeSingle();
@@ -5267,17 +5267,17 @@ app.post('/api/create-phone', verifyJwtToken, async (req, res) => {
       data = insertRes.data;
       error = insertRes.error;
       if (error) {
-        console.error('/api/create-phone supabase insert error:', error);
+        console.error('/api/create-phone supabase insert error (phones):', error);
         throw error;
       }
     } catch (dbErr) {
-      console.error('/api/create-phone DB insert exception:', dbErr && (dbErr.stack || dbErr.message || dbErr));
+      console.error('/api/create-phone DB insert exception (phones):', dbErr && (dbErr.stack || dbErr.message || dbErr));
       return sendError(res, 500, 'Database insert failed', process.env.NODE_ENV !== 'production' ? dbErr : undefined);
     }
 
     // Audit
     try {
-      await logAudit({ userId, action: 'create_phone', resourceType: 'registered_phone', resourceId: data?.id, details: { imei_last_4: rawImei.slice(-4) }, ip: req.ip, userAgent: req.headers['user-agent'] });
+      await logAudit({ userId, action: 'create_phone', resourceType: 'phone', resourceId: data?.id, details: { imei_last_4: rawImei.slice(-4) }, ip: req.ip, userAgent: req.headers['user-agent'] });
     } catch (e) {
       console.error('Audit log failed for create-phone:', e);
     }
