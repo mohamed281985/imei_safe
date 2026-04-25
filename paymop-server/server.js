@@ -5129,9 +5129,19 @@ app.post('/api/create-phone', verifyJwtToken, async (req, res) => {
     phoneData.warranty_months = parseInt(String(phoneData.warranty_months || '0').replace(/\D/g, ''), 10) || 0;
 
     // Trim common string fields to avoid weird characters
-    ['title', 'brand', 'model', 'description', 'store_name', 'status', 'role'].forEach(k => {
+    ['title', 'brand', 'phone_type', 'model', 'description', 'store_name', 'status', 'role'].forEach(k => {
       if (phoneData[k] && typeof phoneData[k] === 'string') phoneData[k] = phoneData[k].trim();
     });
+
+    // If client sent `brand` but DB uses `phone_type`, move brand -> phone_type and remove brand
+    try {
+      if (phoneData.brand && !phoneData.phone_type) {
+        phoneData.phone_type = phoneData.brand;
+        delete phoneData.brand;
+      }
+    } catch (mapErr) {
+      console.warn('Failed to map brand->phone_type:', mapErr && mapErr.message);
+    }
 
     // Ensure specs is an object
     if (!phoneData.specs || typeof phoneData.specs !== 'object') phoneData.specs = {};
