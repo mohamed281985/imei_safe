@@ -5439,6 +5439,45 @@ app.post('/api/decrypt-fields', verifyJwtToken, async (req, res) => {
   }
 });
 
+// Get ad by id with decrypted PII fields (requires auth)
+app.get('/api/ad/:id', verifyJwtToken, async (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'id is required' });
+
+    const { data, error } = await supabase
+      .from('ads_payment')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error) {
+      console.error('/api/ad/:id supabase error:', error);
+      return sendError(res, 500, 'Database error', error);
+    }
+    if (!data) return res.status(404).json({ error: 'Not found' });
+
+    // Decrypt common PII fields if present
+    const out = { ...data };
+    try {
+      out.phone = decryptField(out.phone);
+    } catch (e) {
+      // keep original encrypted value if decrypt fails
+    }
+    try {
+      out.email = decryptField(out.email);
+    } catch (e) {}
+    try {
+      out.owner_name = decryptField(out.owner_name);
+    } catch (e) {}
+
+    return res.json({ ok: true, ad: out });
+  } catch (e) {
+    console.error('/api/ad/:id error:', e);
+    return sendError(res, 500, 'Server error', e);
+  }
+});
+
 app.post('/api/validate-other-registration-data', verifyJwtToken, async (req, res) => {
   const { ownerName, phoneNumber, id_last6 } = req.body || {};
 
