@@ -151,6 +151,7 @@ const AddPhoneForm: React.FC = () => {
   }, [user]);
 
   const [imeiChecking, setImeiChecking] = useState(false);
+  const isReported = imeiStatus === 'reported';
 
   // جلب اسم المتجر ورقم الهاتف من جدول businesses عند تحميل المكون
   useEffect(() => {
@@ -645,56 +646,18 @@ const AddPhoneForm: React.FC = () => {
         }
       }));
     } else if (name === 'imei') {
+      // sanitize input: keep digits only, max 15
+      const raw = (e.target as HTMLInputElement).value || '';
+      const sanitized = raw.replace(/\D/g, '').slice(0, 15);
+
       setFormData(prev => ({
         ...prev,
-        [name]: value
+        imei: sanitized
       }));
 
       // When IMEI reaches 15 digits, ask the server to check/decrypt reports and registrations
-      if (value.length === 15) {
-        setImeiChecking(true);
-        setImeiStatus('');
-        setError('');
-
-        try {
-          const resp = await axiosInstance.post('/api/imei-masked-info', { imei: value });
-          const info = resp?.data || {};
-
-          // server returns { found, isRegistered, masked, isOwner, hasActiveReport, ... }
-          if (info.found) {
-            // If server indicates an active report, mark as reported regardless of registration state
-            if (info.hasActiveReport === true) {
-              setImeiStatus('reported');
-              setError('هذا الهاتف مسجل في النظام بأنه مفقود أو مسروق ولا يمكن بيعه');
-            } else if (info.isRegistered === false) {
-              // found but explicitly not registered (no owner info)
-              setImeiStatus('reported');
-              setError('هذا الهاتف مسجل في النظام بأنه مفقود أو مسروق ولا يمكن بيعه');
-            } else {
-              // Registered (could be masked). If user is owner or server indicates not masked, treat as verified
-              const ownerVisible = info.isOwner === true || info.masked === false;
-              if (ownerVisible) {
-                setImeiStatus('verified');
-                setFormData(prev => ({ ...prev, is_verified: true }));
-                setError('');
-              } else {
-                // Registered but masked (belongs to other user) — still mark verified for posting flow but show masked info
-                setImeiStatus('verified');
-                setError('');
-              }
-            }
-          } else {
-            // Not found anywhere
-            setImeiStatus('');
-            setError('');
-          }
-        } catch (e) {
-          console.error('Error fetching IMEI info:', e);
-          setImeiStatus('');
-          setError('حدث خطأ أثناء التحقق من رقم IMEI، حاول مرة أخرى');
-        } finally {
-          setImeiChecking(false);
-        }
+      if (sanitized.length === 15) {
+        await verifyImei(sanitized);
       } else {
         // Reset state while typing
         setImeiStatus('');
@@ -706,6 +669,63 @@ const AddPhoneForm: React.FC = () => {
         [name]: value
       }));
     }
+  };
+
+  // Helper: verify IMEI with server (extracted to reuse for paste events)
+  const verifyImei = async (imeiValue: string) => {
+    try {
+      setImeiChecking(true);
+      setImeiStatus('');
+      setError('');
+
+      const resp = await axiosInstance.post('/api/imei-masked-info', { imei: imeiValue });
+      const info = resp?.data || {};
+
+      if (info.found) {
+        if (info.hasActiveReport === true) {
+          setImeiStatus('reported');
+          setError('هذا الهاتف مسجل في النظام بأنه مفقود أو مسروق ولا يمكن بيعه');
+        } else if (info.isRegistered === false) {
+          setImeiStatus('reported');
+          setError('هذا الهاتف مسجل في النظام بأنه مفقود أو مسروق ولا يمكن بيعه');
+        } else {
+          const ownerVisible = info.isOwner === true || info.masked === false;
+          if (ownerVisible) {
+            setImeiStatus('verified');
+            setFormData(prev => ({ ...prev, is_verified: true }));
+            setError('');
+          } else {
+            setImeiStatus('verified');
+            setError('');
+          }
+        }
+      } else {
+        setImeiStatus('');
+        setError('');
+      }
+    } catch (e) {
+      console.error('Error fetching IMEI info:', e);
+      setImeiStatus('');
+      setError('حدث خطأ أثناء التحقق من رقم IMEI، حاول مرة أخرى');
+    } finally {
+      setImeiChecking(false);
+    }
+  };
+
+  // Prevent non-digit keys
+  const handleImeiKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    const allowed = ['Backspace', 'ArrowLeft', 'ArrowRight', 'Delete', 'Tab', 'Home', 'End'];
+    if (allowed.includes(e.key) || e.ctrlKey || e.metaKey) return;
+    if (!/^[0-9]$/.test(e.key)) e.preventDefault();
+  };
+
+  // Handle paste: sanitize pasted content to digits only
+  const handleImeiPaste = async (e: React.ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    const text = e.clipboardData.getData('Text') || '';
+    const digits = text.replace(/\D/g, '').slice(0, 15);
+    setFormData(prev => ({ ...prev, imei: digits }));
+    if (digits.length === 15) await verifyImei(digits);
   };
 
   return (
@@ -728,6 +748,7 @@ const AddPhoneForm: React.FC = () => {
         </div>
       )}
 
+   
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* معلومات أساسية */}
         <div className="mb-8">
@@ -786,6 +807,7 @@ const AddPhoneForm: React.FC = () => {
                   required
                   value={formData.title}
                   onChange={handleInputChange}
+                  readOnly={isReported}
                   className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-base p-3 transition-all text-black font-semibold"
                   placeholder={t('write_attractive_ad_title')}
                 />
@@ -801,6 +823,7 @@ const AddPhoneForm: React.FC = () => {
                 required
                 value={formData.brand}
                 onChange={handleInputChange}
+                readOnly={isReported}
                 className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-base p-3 transition-all text-black font-semibold"
                 placeholder={t('brand_example')}
               />
@@ -816,6 +839,7 @@ const AddPhoneForm: React.FC = () => {
                 required
                 value={formData.model}
                 onChange={handleInputChange}
+                readOnly={isReported}
                 className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-base p-3 transition-all text-black font-semibold"
                 placeholder={t('model_example')}
               />
@@ -836,6 +860,7 @@ const AddPhoneForm: React.FC = () => {
                   min="0"
                   value={formData.price}
                   onChange={handleInputChange}
+                  readOnly={isReported}
                   className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-base p-3 pl-12 transition-all text-black font-semibold"
                   placeholder="0"
                 />
@@ -851,6 +876,7 @@ const AddPhoneForm: React.FC = () => {
                 required
                 value={formData.condition}
                 onChange={handleInputChange}
+                disabled={isReported}
                 className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-base p-3 transition-all text-black font-semibold"
               >
                 <option value="new">{t('new')}</option>
@@ -869,6 +895,7 @@ const AddPhoneForm: React.FC = () => {
                 min="0"
                 value={formData.warranty_months}
                 onChange={handleInputChange}
+                readOnly={isReported}
                 className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-base p-3 transition-all text-black font-semibold"
                 placeholder="0"
               />
@@ -885,6 +912,7 @@ const AddPhoneForm: React.FC = () => {
                 rows={4}
                 value={formData.description}
                 onChange={handleInputChange}
+                readOnly={isReported}
                 className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-base p-3 transition-all text-black font-semibold"
                 placeholder={t('detailed_phone_description')}
               />
@@ -913,6 +941,7 @@ const AddPhoneForm: React.FC = () => {
                     name="specs.ram"
                     value={formData.specs.ram || ''}
                     onChange={handleInputChange}
+                    readOnly={isReported}
                     placeholder={t('ram_example')}
                     className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-base p-3 pr-10 transition-all text-black font-semibold"
                   />
@@ -932,6 +961,7 @@ const AddPhoneForm: React.FC = () => {
                     name="specs.storage"
                     value={formData.specs.storage || ''}
                     onChange={handleInputChange}
+                    readOnly={isReported}
                     placeholder={t('storage_example')}
                     className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-base p-3 pr-10 transition-all text-black font-semibold"
                   />
@@ -947,6 +977,7 @@ const AddPhoneForm: React.FC = () => {
                   name="specs.color"
                   value={formData.specs.color || ''}
                   onChange={handleInputChange}
+                  readOnly={isReported}
                   placeholder={t('color_example')}
                   className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-base p-3 transition-all text-black font-semibold"
                 />
@@ -1041,6 +1072,10 @@ const AddPhoneForm: React.FC = () => {
                     required
                     value={formData.imei}
                     onChange={handleInputChange}
+                    inputMode="numeric"
+                    maxLength={15}
+                    onPaste={handleImeiPaste}
+                    onKeyDown={handleImeiKeyDown}
                     pattern="[0-9]{15}"
                     title="الرجاء إدخال رقم IMEI مكون من 15 رقم"
                     className={`mt-1 block w-full rounded-lg shadow-sm text-base p-3 transition-all text-black font-semibold ${
@@ -1117,7 +1152,8 @@ const AddPhoneForm: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => removeImage(index)}
-                        className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1.5 hover:bg-red-600 transition-all opacity-0 group-hover:opacity-100 shadow-lg"
+                        disabled={isReported}
+                        className={`absolute top-2 right-2 bg-red-500 text-white rounded-full p-1.5 hover:bg-red-600 transition-all opacity-0 group-hover:opacity-100 shadow-lg ${isReported ? 'opacity-40 cursor-not-allowed' : ''}`}
                       >
                         <X className="h-4 w-4" />
                       </button>
@@ -1151,7 +1187,8 @@ const AddPhoneForm: React.FC = () => {
                       accept="image/*"
                       className="sr-only"
                       onChange={handleImageChange}
-                      required={images.length === 0}
+                      required={!isReported && images.length === 0}
+                      disabled={isReported}
                     />
                   </label>
                   <span className="mr-1">{t('or_drag_here')}</span>
@@ -1168,7 +1205,7 @@ const AddPhoneForm: React.FC = () => {
         <div className="flex justify-center items-center mt-4 sm:mt-6 space-x-2 sm:space-x-4 space-x-reverse flex-wrap gap-2">
           <button
             type="button" // Or change to submit if it has a separate logic
-            disabled={loading}
+            disabled={loading || isReported}
             className="inline-flex items-center px-4 sm:px-6 py-2 sm:py-2.5 mb-4 border border-transparent text-sm sm:text-base font-semibold rounded-lg sm:rounded-xl shadow-lg text-white bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-600 hover:to-amber-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 disabled:opacity-50 transition-all transform hover:scale-105"
             onClick={() => setIsFeatureModalOpen(true)}
           >
@@ -1181,7 +1218,7 @@ const AddPhoneForm: React.FC = () => {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || isReported}
             className="inline-flex items-center px-4 sm:px-6 py-2 sm:py-2.5 mb-4 border border-transparent text-sm sm:text-base font-semibold rounded-lg sm:rounded-xl shadow-lg text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 transition-all transform hover:scale-105"
           >
             {loading ? (
@@ -1296,7 +1333,7 @@ const AddPhoneForm: React.FC = () => {
 
               <button
                 onClick={handleSubmitAndFeature}
-                disabled={loading}
+                disabled={loading || isReported}
                 className="w-full inline-flex items-center justify-center px-8 py-4 border border-transparent text-lg font-bold rounded-xl shadow-lg text-white bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-600 hover:to-amber-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 disabled:opacity-50 transition-all transform hover:scale-105"
               >
                 {loading ? <Loader2 className="animate-spin h-6 w-6" /> : t('feature_now_with_bonus')}
