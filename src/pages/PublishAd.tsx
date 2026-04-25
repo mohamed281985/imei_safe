@@ -205,24 +205,34 @@ const PublishAd: React.FC = () => {
       // Only run if creating a new ad and user is logged in
       if (user && !adId) {
         try {
-          const { data: business, error } = await supabase
-            .from('businesses')
-            .select('store_name, phone')
-            .eq('user_id', user.id)
-            .single();
-
-          if (error && error.code !== 'PGRST116') { // PGRST116: no rows found, which is not an error here
-            throw error;
+          // Try to get decrypted business info from server
+          let token: string | undefined;
+          try {
+            const sessionRes: any = await supabase.auth.getSession();
+            token = sessionRes?.data?.session?.access_token;
+          } catch (e) {
+            try {
+              // @ts-ignore
+              const sess = await supabase.auth.session();
+              // @ts-ignore
+              token = sess?.access_token;
+            } catch (e2) {
+              token = undefined;
+            }
           }
+
+          const resp = await fetch('/api/businesses/me', { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+          if (!resp.ok) {
+            throw new Error('failed');
+          }
+          const json = await resp.json();
+          const business = json?.business;
 
           if (business) {
             setStoreName(prev => prev || business.store_name || '');
             setPhoneNumber(prev => prev || business.phone || '');
             if (business.store_name || business.phone) {
-              toast({
-                title: t('success'),
-                description: t('business_data_auto_filled'),
-              });
+              toast({ title: t('success'), description: t('business_data_auto_filled') });
             }
           }
         } catch (error) {

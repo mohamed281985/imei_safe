@@ -4187,6 +4187,38 @@ app.get('/api/get-contact-info', verifyJwtToken, async (req, res) => {
   }
 });
 
+// Return the authenticated user's business row with decrypted phone
+app.get('/api/businesses/me', verifyJwtToken, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { data, error } = await supabase
+      .from('businesses')
+      .select('store_name, phone')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error('/api/businesses/me supabase error:', error);
+      return sendError(res, 500, 'Database error', error);
+    }
+    if (!data) return res.json({ ok: true, business: null });
+
+    const out = { store_name: data.store_name || null };
+    try {
+      out.phone = decryptField(data.phone);
+    } catch (e) {
+      out.phone = null;
+    }
+
+    return res.json({ ok: true, business: out });
+  } catch (e) {
+    console.error('/api/businesses/me error:', e);
+    return sendError(res, 500, 'Server error', e);
+  }
+});
+
 app.post('/api/get-owner-email-by-imei', verifyJwtToken, async (req, res) => {
   try {
     const requesterId = req.user?.id;
