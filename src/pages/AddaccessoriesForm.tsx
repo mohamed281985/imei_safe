@@ -420,16 +420,12 @@ const AddAccessoriesForm: React.FC = () => {
           throw uploadError;
         }
         const { data: { publicUrl } } = supabase.storage.from('accessory-images').getPublicUrl(filePath);
-        try {
-          const { error: imageInsertError } = await supabase.from('accessory_images').insert([{ accessory_id: accessoryData.id, image_path: publicUrl, main_image: i === 0, order: i }]);
-          if (imageInsertError) {
+          try {
+            await axiosInstance.post('/api/insert-accessory-image', { accessoryId: accessoryData.id, imageUrl: publicUrl, main_image: i === 0, order: i });
+          } catch (imgErr) {
             await axiosInstance.post('/api/delete-accessory-if-failed', { accessoryId: accessoryData.id });
-            throw imageInsertError;
+            throw imgErr;
           }
-        } catch (imgErr) {
-          await axiosInstance.post('/api/delete-accessory-if-failed', { accessoryId: accessoryData.id });
-          throw imgErr;
-        }
       }
 
       // 3. Now that the accessory is created, apply the feature promotion directly

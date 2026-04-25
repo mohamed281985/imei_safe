@@ -5544,6 +5544,38 @@ app.post('/api/delete-accessory-if-failed', verifyJwtToken, async (req, res) => 
   }
 });
 
+// Insert accessory image via server (bypass RLS safely with service role)
+app.post('/api/insert-accessory-image', verifyJwtToken, async (req, res) => {
+  try {
+    const { accessoryId, imageUrl, main_image = false, order = 0 } = req.body || {};
+    const userId = req.user && req.user.id;
+    if (!accessoryId || !imageUrl || !userId) return res.status(400).json({ error: 'accessoryId and imageUrl required' });
+
+    // Verify accessory ownership
+    const { data: accRec, error: fetchErr } = await supabase.from('accessories').select('id, seller_id').eq('id', accessoryId).maybeSingle();
+    if (fetchErr) {
+      console.error('insert-accessory-image: fetch accessory error', fetchErr);
+      return res.status(500).json({ error: 'database_error' });
+    }
+    if (!accRec) return res.status(404).json({ error: 'not_found' });
+    if (accRec.seller_id !== userId) return res.status(403).json({ error: 'not_authorized' });
+
+    // Insert row using service role client (this instance was created with SUPABASE_SERVICE_ROLE_KEY)
+    const { data: inserted, error: insertErr } = await supabase.from('accessory_images').insert([{ accessory_id: accessoryId, image_path: imageUrl, main_image: main_image, order }]).select().single();
+    if (insertErr) {
+      console.error('insert-accessory-image: insert error', insertErr);
+      return res.status(500).json({ error: 'failed_to_insert_image' });
+    }
+
+    try { await logAudit({ userId, action: 'insert_accessory_image', resourceType: 'accessory', resourceId: accessoryId, meta: { imageId: inserted.id }, ip: req.ip, userAgent: req.headers['user-agent'] }); } catch(e){ console.warn('audit insert-accessory-image failed', e); }
+
+    return res.json({ success: true, data: inserted });
+  } catch (err) {
+    console.error('insert-accessory-image error:', err);
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
 // نقطة نهاية لإرجاع بيانات المشتري (مقنعة) للمستخدم الموّقع فقط
 app.get('/api/my-buyer-info', verifyJwtToken, async (req, res) => {
   try {
