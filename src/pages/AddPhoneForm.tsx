@@ -11,7 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import AdsOfferSlider from '@/components/advertisements/AdsOfferSlider';
 interface PhoneFormData {
   title: string;
-  brand: string;
+  phone_type: string;
   model: string;
   description: string;
   price: string;
@@ -201,7 +201,7 @@ const AddPhoneForm: React.FC = () => {
   }, [user]);
   const [formData, setFormData] = useState<PhoneFormData>({
     title: '',
-    brand: '',
+    phone_type: '',
     model: '',
     description: '',
     price: '',
@@ -258,7 +258,7 @@ const AddPhoneForm: React.FC = () => {
         const payload = {
           seller_id: user.id,
           title: formData.title,
-          brand: formData.brand,
+          phone_type: formData.phone_type,
           model: formData.model,
           description: formData.description,
           price: parseFloat(formData.price) || 0,
@@ -520,7 +520,7 @@ const AddPhoneForm: React.FC = () => {
         const payload = {
           seller_id: user.id,
           title: formData.title,
-          brand: formData.brand,
+          phone_type: formData.phone_type,
           model: formData.model,
           description: formData.description,
           price: parseFloat(formData.price) || 0,
@@ -815,13 +815,13 @@ const AddPhoneForm: React.FC = () => {
 
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">
-                {t('brand')}*
+                {t('phone_type') || t('brand')}*
               </label>
               <input
                 type="text"
-                name="brand"
+                name="phone_type"
                 required
-                value={formData.brand}
+                value={formData.phone_type}
                 onChange={handleInputChange}
                 readOnly={isReported}
                 className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-base p-3 transition-all text-black font-semibold"
