@@ -5420,6 +5420,25 @@ app.post('/api/create-accessory', verifyJwtToken, async (req, res) => {
   }
 });
 
+// Decrypt arbitrary fields server-side using existing decryptField helper
+app.post('/api/decrypt-fields', verifyJwtToken, async (req, res) => {
+  try {
+    const incoming = req.body || {};
+    const decrypted = {};
+    for (const k of Object.keys(incoming)) {
+      try {
+        decrypted[k] = decryptField(incoming[k]);
+      } catch (e) {
+        decrypted[k] = null;
+      }
+    }
+    return res.json({ success: true, decrypted });
+  } catch (e) {
+    console.error('/api/decrypt-fields error:', e && (e.stack || e.message || e));
+    return sendError(res, 500, 'Decrypt error', e);
+  }
+});
+
 app.post('/api/validate-other-registration-data', verifyJwtToken, async (req, res) => {
   const { ownerName, phoneNumber, id_last6 } = req.body || {};
 
