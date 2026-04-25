@@ -137,34 +137,59 @@ const PublishAd: React.FC = () => {
       setAdId(id);
       const fetchAdData = async () => {
         setIsLoading(true);
-        const { data, error } = await supabase
-          .from('ads_payment')
-          .select('*')
-          .eq('id', id)
-          .single();
 
-        if (error || !data) {
+        // obtain session token if available
+        let token: string | undefined;
+        try {
+          const sessionRes: any = await supabase.auth.getSession();
+          token = sessionRes?.data?.session?.access_token;
+        } catch (e) {
+          try {
+            // fallback for older supabase
+            // @ts-ignore
+            const sess = await supabase.auth.session();
+            // @ts-ignore
+            token = sess?.access_token;
+          } catch (e2) {
+            token = undefined;
+          }
+        }
+
+        try {
+          const resp = await fetch(`/api/ad/${id}`, {
+            method: 'GET',
+            headers: token ? { Authorization: `Bearer ${token}` } : {}
+          });
+          if (!resp.ok) {
+            throw new Error('Failed to load ad');
+          }
+          const json = await resp.json();
+          const data = json?.ad;
+          if (!data) {
+            toast({ title: t('error'), description: t('error_fetching_ad_details'), variant: 'destructive' });
+            navigate('/myads');
+            return;
+          }
+
+          // Populate form with existing ad data (phone is decrypted by server)
+          setStoreName(data.store_name || '');
+          setWebsiteUrl(data.website_url || '');
+          setPhoneNumber(data.phone || '');
+          const durationDays = String(data.duration_days || '7');
+          setDuration(durationDays);
+          setAdImagePreview(data.image_url);
+
+          const fetchedPrices = await fetchAdPrices();
+          if (fetchedPrices && fetchedPrices[durationDays]) {
+            setAdPrice(fetchedPrices[durationDays]);
+          }
+        } catch (err) {
+          console.error('Error fetching ad via server:', err);
           toast({ title: t('error'), description: t('error_fetching_ad_details'), variant: 'destructive' });
-          navigate('/myads'); // Redirect if ad not found
-          return;
+          navigate('/myads');
+        } finally {
+          setIsLoading(false);
         }
-
-        // Populate form with existing ad data
-        setStoreName(data.store_name || '');
-        setWebsiteUrl(data.website_url || '');
-        setPhoneNumber(data.phone || '');
-        const durationDays = String(data.duration_days || '7');
-        setDuration(durationDays);
-        setAdImagePreview(data.image_url);
-
-        // جلب أسعار الإعلانات ثم تعيين السعر الصحيح
-        // Fetch prices and then set the correct price for the loaded ad
-        const fetchedPrices = await fetchAdPrices();
-        if (fetchedPrices && fetchedPrices[durationDays]) {
-          setAdPrice(fetchedPrices[durationDays]);
-        }
-
-        setIsLoading(false);
       };
       fetchAdData();
     } else {
@@ -431,15 +456,15 @@ const PublishAd: React.FC = () => {
       }
 
       // Build ad payload (server is source-of-truth for pricing and bonus deduction)
+      // NOTE: do NOT include `user_id` or `phone` here — server will derive the
+      // user from the Bearer token and will handle encrypting PII (phone) itself.
       const adPayload = {
-        user_id: user.id,
         store_name: storeName,
         image_url: imageUrl,
         website_url: websiteUrl,
         duration_days: duration ? parseInt(duration, 10) : null,
         latitude: coords?.latitude,
         longitude: coords?.longitude,
-        phone: phoneNumber,
         upload_date: new Date().toISOString(),
         expires_at: (() => { const d = new Date(); d.setDate(d.getDate() + parseInt(duration, 10)); return d.toISOString(); })(),
         type: 'publish',
