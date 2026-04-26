@@ -6,9 +6,10 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { getSecureItem, setSecureItem } from '@/utils/secureStorage';
 import { sanitizeError } from '@/utils/sanitizeError';
-import secureFetch, { getCSRFToken } from '@/utils/secureFetch';
+import secureFetch from '@/utils/secureFetch';
 import { validateSession } from '@/utils/session';
 import { validateId } from '@/utils/validateId';
+import axiosInstance from '@/services/axiosInterceptor';
 
 const OffersGallery = () => {
     useScrollToTop();
@@ -266,17 +267,12 @@ const OffersGallery = () => {
                     let lastErr: any = null;
                     for (let i = 0; i < attempts; i++) {
                         try {
-                            const resp = await secureFetch('https://imei-safe.me/paymob/sign', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                                body: JSON.stringify({ merchantOrderId: paymobData.merchantOrderId, offerId: offerIdNum, offerData: paymobData.offerData, timestamp })
-                            }, 15000); // مهلة أطول
-
-                            if (!resp.ok) {
-                                const err = await resp.json().catch(() => null);
-                                throw new Error(err?.error || t('error_fetching_signature'));
-                            }
-                            return await resp.json();
+                            const resp = await axiosInstance.post(
+                                'https://imei-safe.me/paymob/sign',
+                                { merchantOrderId: paymobData.merchantOrderId, offerId: offerIdNum, offerData: paymobData.offerData, timestamp },
+                                { timeout: 15000, headers: { Authorization: `Bearer ${token}` } }
+                            );
+                            return resp.data;
                         } catch (err) {
                             lastErr = err;
                             // إذا لم يعد هناك محاولات، أعد الخطأ
@@ -316,18 +312,13 @@ const OffersGallery = () => {
             // Get latest validated session token for authenticated requests
             const sessionForPayment = await validateSession();
             const tokenForPayment = sessionForPayment?.access_token;
-            const paymentResponse = await secureFetch('https://imei-safe.me/paymob/create-offer-payment', {
-                method: 'POST',
-                headers: Object.assign({ 'Content-Type': 'application/json' }, tokenForPayment ? { Authorization: `Bearer ${tokenForPayment}` } : {}),
-                body: JSON.stringify(paymobData)
-            }, 10000);
+            const paymentResponse = await axiosInstance.post(
+                'https://imei-safe.me/paymob/create-offer-payment',
+                paymobData,
+                { timeout: 10000, headers: tokenForPayment ? { Authorization: `Bearer ${tokenForPayment}` } : {} }
+            );
 
-            if (!paymentResponse.ok) {
-                const errorData = await paymentResponse.json();
-                throw new Error(errorData.error || t('error_creating_payment'));
-            }
-
-            const paymentData = await paymentResponse.json();
+            const paymentData = paymentResponse.data;
             
             // تحديث الحقول الجديدة مباشرة في قاعدة البيانات
             if (paymentData.payment_id) {

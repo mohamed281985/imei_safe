@@ -309,27 +309,21 @@ const AddAccessoriesForm: React.FC = () => {
 
       if (bonusBalance > 0 && normalPrice > 0) {
         const amountToDeduct = Math.min(bonusBalance, normalPrice);
-        const newBonus = bonusBalance - amountToDeduct;
-
-        if (lastBonusId) {
-          await supabase.from('ads_payment').update({ bonus_offer: newBonus }).eq('id', lastBonusId);
-        }
-
-        await supabase.from('ads_payment').insert({
-          user_id: user.id,
-          accessory_id: accessoryData.id,
-          phone_id: null,
-          amount: amountToDeduct,
-          duration_days: 1,
-          is_paid: true,
-          payment_status: 'paid_with_bonus',
-          type: 'normal',
-          transaction: 'ad_posting',
-          payment_date: new Date().toISOString(),
-          image_url: null,
+        const bonusResp = await axiosInstance.post('https://imei-safe.me/paymob/publish-from-bonus', {
+          adData: {
+            accessory_id: accessoryData.id,
+            duration_days: 1,
+            type: 'normal',
+            image_url: null
+          }
         });
+        if (!bonusResp?.data?.ok) throw new Error(bonusResp?.data?.error || 'فشل خصم البونص');
 
-        setBonusBalance(newBonus);
+        const remainingBonus = typeof bonusResp?.data?.remainingBonus === 'number'
+          ? bonusResp.data.remainingBonus
+          : Math.max(0, bonusBalance - amountToDeduct);
+        setBonusBalance(remainingBonus);
+        window.dispatchEvent(new CustomEvent('bonusUpdated'));
         toast({ title: t('ad_published_successfully'), description: t('bonus_deducted', { amount: amountToDeduct.toString() }), variant: "default" });
 
         // Publish accessory after successful paid-with-bonus posting
@@ -458,35 +452,18 @@ const AddAccessoriesForm: React.FC = () => {
         mainImageUrl = publicUrl;
       }
 
-      // 3.1. Deduct from bonus
-      const newBonus = bonusBalance - promotionPrice;
-      if (lastBonusId) {
-        const { error: updateBonusError } = await supabase
-          .from('ads_payment')
-          .update({ bonus_offer: newBonus })
-          .eq('id', lastBonusId);
-        if (updateBonusError) throw updateBonusError;
-      }
-
-      // 3.2. Create a new record for the promotion in ads_payment
-      const expires_at = new Date();
-      expires_at.setDate(expires_at.getDate() + parseInt(selectedDuration, 10));
-
-      const { error: insertPromotionError } = await supabase.from('ads_payment').insert({
-        user_id: user.id,
-        accessory_id: accessoryData.id,
-        phone_id: null,
-        amount: promotionPrice,
-        duration_days: parseInt(selectedDuration, 10),
-        is_paid: true,
-        payment_status: 'paid_with_bonus',
-        type: 'promotions',
-        transaction: 'ad_promotion',
-        expires_at: expires_at.toISOString(),
-        payment_date: new Date().toISOString(),
-        image_url: mainImageUrl,
+      // 3.1 + 3.2 خصم البونص وإنشاء سجل الدفع عبر الخادم (بدل insert مباشر لتجنب RLS)
+      const bonusResp = await axiosInstance.post('https://imei-safe.me/paymob/publish-from-bonus', {
+        adData: {
+          accessory_id: accessoryData.id,
+          duration_days: parseInt(selectedDuration, 10),
+          type: 'promotions',
+          image_url: mainImageUrl
+        }
       });
-      if (insertPromotionError) throw insertPromotionError;
+      if (!bonusResp?.data?.ok) {
+        throw new Error(bonusResp?.data?.error || "فشل خصم البونص أو إنشاء سجل الدفع");
+      }
 
       // 3.3. Update the 'type' in the 'accessories' table to 'promotions'
       const { error: updateAccessoryError } = await supabase.from('accessories').update({ type: 'promotions' }).eq('id', accessoryData.id);
@@ -497,7 +474,11 @@ const AddAccessoriesForm: React.FC = () => {
       if (publishErr) console.warn('failed to set accessory pending after promotion', publishErr);
 
       // 3.4. Update UI and navigate
-      setBonusBalance(newBonus);
+      const remainingBonus = typeof bonusResp?.data?.remainingBonus === 'number'
+        ? bonusResp.data.remainingBonus
+        : Math.max(0, bonusBalance - promotionPrice);
+      setBonusBalance(remainingBonus);
+      window.dispatchEvent(new CustomEvent('bonusUpdated'));
       setIsFeatureModalOpen(false);
       toast({
         title: t('ad_published_and_featured_successfully'),
