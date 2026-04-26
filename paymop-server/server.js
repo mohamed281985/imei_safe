@@ -4056,9 +4056,19 @@ const amountCents = obj.amount_cents; // number
             expiresAt.setDate(expiresAt.getDate() + duration);
 
             // 3. تحديث حالة الدفع وتاريخ الانتهاء
+            const updatePayload = {
+              is_paid: true,
+              payment_date: paymentDate.toISOString(),
+              payment_status: 'paid',
+              expires_at: expiresAt.toISOString()
+            };
+            // اشتراك العرض: حدّث transaction إلى bonus_add فقط بعد نجاح الدفع
+            if (existingAd?.offer_id) {
+              updatePayload.transaction = 'bonus_add';
+            }
             const { error: updateError } = await supabase
               .from('ads_payment')
-              .update({ is_paid: true, payment_date: paymentDate.toISOString(), payment_status: 'paid', expires_at: expiresAt.toISOString() })
+              .update(updatePayload)
               .eq('paymob_order_id', orderId);
 
             if (updateError) {

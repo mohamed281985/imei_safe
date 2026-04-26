@@ -587,41 +587,29 @@ const AddPhoneForm: React.FC = () => {
   
       const mainImageUrl = (await supabase.storage.from('phone-images').getPublicUrl(`${user.id}/${phoneData.id}/` + images[0].name.split('.').pop())).data.publicUrl;
   
-      // 3.1. Deduct from bonus
-      const newBonus = bonusBalance - promotionPrice;
-      if (lastBonusId) {
-        const { error: updateBonusError } = await supabase
-          .from('ads_payment')
-          .update({ bonus_offer: newBonus })
-          .eq('id', lastBonusId);
-        if (updateBonusError) throw updateBonusError;
-      }
-  
-      // 3.2. Create a new record for the promotion in ads_payment
-      const expires_at = new Date();
-      expires_at.setDate(expires_at.getDate() + parseInt(selectedDuration, 10));
-  
-      const { error: insertPromotionError } = await supabase.from('ads_payment').insert({
-        user_id: user.id,
-        phone_id: phoneData.id,
-        amount: promotionPrice,
-        duration_days: parseInt(selectedDuration, 10),
-        is_paid: true,
-        payment_status: 'paid_with_bonus',
-        type: 'promotions', // This is for the ads_payment table
-        transaction: 'ad_promotion',
-        expires_at: expires_at.toISOString(),
-        payment_date: new Date().toISOString(),
-        image_url: mainImageUrl,
+      // 3.1 + 3.2 خصم البونص وإنشاء سجل ads_payment عبر الخادم (لتجاوز RLS بأمان)
+      const bonusResp = await axiosInstance.post('https://imei-safe.me/paymob/publish-from-bonus', {
+        adData: {
+          phone_id: phoneData.id,
+          duration_days: parseInt(selectedDuration, 10),
+          type: 'promotions',
+          image_url: mainImageUrl
+        }
       });
-      if (insertPromotionError) throw insertPromotionError;
+      if (!bonusResp?.data?.ok) {
+        throw new Error(bonusResp?.data?.error || "فشل خصم البونص أو إنشاء سجل الدفع");
+      }
   
       // 3.3. Update the 'type' in the 'phones' table to 'promotions'
       const { error: updatePhoneError } = await supabase.from('phones').update({ type: 'promotions' }).eq('id', phoneData.id);
       if (updatePhoneError) throw updatePhoneError;
   
       // 3.4. Update UI and navigate
-      setBonusBalance(newBonus);
+      const remainingBonus = typeof bonusResp?.data?.remainingBonus === 'number'
+        ? bonusResp.data.remainingBonus
+        : Math.max(0, bonusBalance - promotionPrice);
+      setBonusBalance(remainingBonus);
+      window.dispatchEvent(new CustomEvent('bonusUpdated'));
       setIsFeatureModalOpen(false);
       toast({
         title: `تم نشر و${t('feature_ad')} بنجاح!`,

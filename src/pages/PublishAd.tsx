@@ -271,23 +271,16 @@ const PublishAd: React.FC = () => {
   useEffect(() => {
     if (!user?.id) return;
 
-    // 1. جلب أحدث رصيد بونص من آخر عملية دفع ناجحة
+    // 1. جلب أحدث رصيد بونص بنفس شروط السيرفر (bonus_add + paid)
     const fetchBonus = async () => {
       console.log("جاري جلب بيانات البونص للمستخدم:", user.id);
-      const { data: latestPaidRecord, error: fetchError } = await supabase
+      const { data: bonusRecords, error: allRecordsError } = await supabase
         .from('ads_payment')
-        .select('id, user_id, bonus_offer, is_paid, payment_date')
+        .select('bonus_offer, expires_at, payment_date, transaction, payment_status, is_paid')
         .eq('user_id', user.id)
+        .eq('transaction', 'bonus_add')
         .eq('is_paid', true)
-        .order('payment_date', { ascending: false })
-        .limit(1);
-
-      // جلب جميع السجلات المدفوعة للمستخدم للبحث عن البونص وتاريخ الانتهاء
-      const { data: allPaidRecords, error: allRecordsError } = await supabase
-        .from('ads_payment')
-        .select('bonus_offer, expires_at')
-        .eq('user_id', user.id)
-        .eq('is_paid', true)
+        .eq('payment_status', 'paid')
         .order('payment_date', { ascending: false });
 
       if (allRecordsError) {
@@ -296,8 +289,8 @@ const PublishAd: React.FC = () => {
         return;
       }
 
-      if (allPaidRecords && allPaidRecords.length > 0) {
-        const recordWithBonus = allPaidRecords.find(record => record.bonus_offer != null && record.bonus_offer > 0);
+      if (bonusRecords && bonusRecords.length > 0) {
+        const recordWithBonus = bonusRecords.find(record => record.bonus_offer != null && record.bonus_offer > 0);
 
         if (recordWithBonus) {
           const now = new Date();
@@ -450,13 +443,16 @@ const PublishAd: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const goToMyAdsAfterDelay = () => setTimeout(() => navigate('/myads'), 5000);
     if (!storeName || !phoneNumber) {
       toast({ title: t('error'), description: t('required_fields'), variant: 'destructive' });
       setIsLoading(false);
+      goToMyAdsAfterDelay();
       return;
     }
     if (!user) {
       toast({ title: t('error'), description: t('must_be_logged_in'), variant: 'destructive' });
+      goToMyAdsAfterDelay();
       return;
     }
 
@@ -480,18 +476,23 @@ const PublishAd: React.FC = () => {
         imageUrl = publicUrl;
       }
 
-      // Build ad payload (server is source-of-truth for pricing and bonus deduction)
-      // NOTE: do NOT include `user_id` or `phone` here — server will derive the
-      // user from the Bearer token and will handle encrypting PII (phone) itself.
+      const durationDays = parseInt(duration, 10);
+      if (!Number.isFinite(durationDays) || durationDays <= 0) {
+        throw new Error('مدة الإعلان غير صالحة');
+      }
+
+      // Build ad payload for bonus route.
       const adPayload = {
         store_name: storeName,
         image_url: imageUrl,
         website_url: websiteUrl,
-        duration_days: duration ? parseInt(duration, 10) : null,
+        duration_days: durationDays,
         latitude: coords?.latitude,
         longitude: coords?.longitude,
+        phone: phoneNumber || null,
+        amount: adPrice ?? 0,
         upload_date: new Date().toISOString(),
-        expires_at: (() => { const d = new Date(); d.setDate(d.getDate() + parseInt(duration, 10)); return d.toISOString(); })(),
+        expires_at: (() => { const d = new Date(); d.setDate(d.getDate() + durationDays); return d.toISOString(); })(),
         type: 'publish',
         is_active: true
       };
@@ -499,43 +500,50 @@ const PublishAd: React.FC = () => {
       // If user has enough bonus (displayed balance), call secure server endpoint to publish using bonus.
       if (!isUpdateMode && bonusBalance > 0 && adPrice !== null && bonusBalance >= adPrice) {
         try {
-          // get session token
-          let token: string | undefined;
-          try {
-            // supabase v2
-            const sessionRes: any = await supabase.auth.getSession();
-            token = sessionRes?.data?.session?.access_token;
-          } catch (e) {
-            try {
-              // fallback for older versions
-              // @ts-ignore
-              const sess = await supabase.auth.session();
-              // @ts-ignore
-              token = sess?.access_token;
-            } catch (e2) {
-              token = undefined;
-            }
-          }
-
-          const resp = await fetch('https://imei-safe.me/paymob/publish-from-bonus', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-            body: JSON.stringify({ adData: adPayload })
+          const bonusResp = await axiosInstance.post('https://imei-safe.me/paymob/publish-from-bonus', {
+            adData: adPayload
           });
-          const respJson = await resp.json().catch(() => ({}));
-          if (!resp.ok) {
-            throw new Error(respJson.error || 'فشل في نشر الإعلان باستخدام البونص');
+          if (!bonusResp?.data?.ok) {
+            throw new Error(bonusResp?.data?.error || 'فشل في نشر الإعلان باستخدام البونص');
           }
 
           window.dispatchEvent(new CustomEvent('bonusUpdated'));
-          toast({ title: t('ad_published_from_bonus'), description: respJson.message || t('ad_published_successfully') || '', variant: 'default' });
-          setTimeout(() => navigate('/myads'), 1500);
+          toast({
+            title: t('ad_published_from_bonus'),
+            description: bonusResp?.data?.message || t('ad_published_successfully') || '',
+            variant: 'default'
+          });
+          goToMyAdsAfterDelay();
           return;
         } catch (err: any) {
-          console.error('Error publishing using bonus (client):', err);
-          toast({ title: t('error'), description: err.message || t('bonus_deduction_error_desc'), variant: 'destructive' });
-          setIsLoading(false);
-          return;
+          const serverError = err?.response?.data?.error || err?.response?.data?.message || '';
+          console.error('Error publishing using bonus (client):', {
+            message: err?.message,
+            status: err?.response?.status,
+            data: err?.response?.data,
+            sentPayload: adPayload
+          });
+          const recoverableBonusError =
+            typeof serverError === 'string' &&
+            (
+              serverError.includes('No valid bonus balance available') ||
+              serverError.includes('Insufficient bonus balance') ||
+              serverError.includes('Unable to determine expected amount')
+            );
+
+          if (recoverableBonusError) {
+            // الرصيد الظاهر في الواجهة قد لا يطابق تحقق السيرفر؛ أكمل لمسار الدفع العادي
+            setBonusBalance(0);
+          } else {
+            toast({
+              title: t('error'),
+              description: serverError || err.message || t('bonus_deduction_error_desc'),
+              variant: 'destructive'
+            });
+            setIsLoading(false);
+            goToMyAdsAfterDelay();
+            return;
+          }
         }
       }
 
@@ -601,14 +609,18 @@ const PublishAd: React.FC = () => {
           window.open(data.iframe_url, '_blank', 'noopener,noreferrer');
         }
         toast({ title: t('redirecting_to_payment'), description: t('redirecting_to_payment_desc') });
+        goToMyAdsAfterDelay();
       } else if (data.payment_url) {
         window.open(data.payment_url, '_blank', 'noopener,noreferrer');
         toast({ title: t('redirecting_to_payment'), description: t('redirecting_to_payment_desc') });
+        goToMyAdsAfterDelay();
       } else {
         toast({ title: t('error'), description: t('payment_link_error'), variant: 'destructive' });
+        goToMyAdsAfterDelay();
       }
     } catch (error: any) {
       toast({ title: t('error'), description: error.message || t('operation_error'), variant: 'destructive' });
+      goToMyAdsAfterDelay();
     } finally {
       setIsLoading(false);
     }
