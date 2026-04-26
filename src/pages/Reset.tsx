@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useLanguage } from '../contexts/LanguageContext';
+import { Lock } from 'lucide-react';
+import { Input } from '@/components/ui/input';
 
 export default function Reset() {
   const { t } = useLanguage();

@@ -19,7 +19,7 @@ import sharp from 'sharp';
 import cookieParser from 'cookie-parser';
 import session from 'express-session';
 import { verifyResourceOwnership } from './middleware/ownership.js';
-import { csrfProtection, csrfErrorHandler } from './middleware/csrf.js';
+import { csrfProtection, csrfErrorHandler, getCsrfToken } from './middleware/csrf.js';
 import { logAudit } from './utils/auditLogger.js';
 import { SECURITY_CONFIG } from './config/security.js';
 
@@ -132,6 +132,35 @@ const decryptObject = (encryptedData, iv, authTag) => {
   }
 };
 
+// Normalize decrypted output: if it's a JSON-quoted string like '"0123"' or
+// a JSON object string, parse/unquote it so callers receive a plain value.
+const normalizeDecrypted = (val) => {
+  if (val === null || typeof val === 'undefined') return null;
+  if (typeof val !== 'string') return val;
+  const s = val.trim();
+
+  // quoted JSON string: "..."
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    try {
+      const parsed = JSON.parse(s);
+      return typeof parsed === 'string' ? parsed : String(parsed);
+    } catch (e) {
+      return s.substring(1, s.length - 1);
+    }
+  }
+
+  // JSON object/array string
+  if ((s.startsWith('{') && s.endsWith('}')) || (s.startsWith('[') && s.endsWith(']'))) {
+    try {
+      return JSON.parse(s);
+    } catch (e) {
+      return s;
+    }
+  }
+
+  return s;
+};
+
 /**
  * دالة مساعدة لفك تشفير الحقل من قاعدة البيانات
  * @param {string} encryptedField - الحقل المشفر (قد يكون نص عادي أو JSON مشفر)
@@ -150,7 +179,7 @@ const decryptField = (encryptedField) => {
     if (!encryptedField) return null;
     const obj = encryptedField;
     if (obj.encryptedData && obj.iv && obj.authTag) {
-      return decryptAES(obj.encryptedData, obj.iv, obj.authTag);
+      return normalizeDecrypted(decryptAES(obj.encryptedData, obj.iv, obj.authTag));
     }
     return null;
   }
@@ -184,7 +213,7 @@ const decryptField = (encryptedField) => {
           const parsed = JSON.parse(candidate);
           if (parsed && parsed.encryptedData && parsed.iv && parsed.authTag) {
             try {
-              return decryptAES(parsed.encryptedData, parsed.iv, parsed.authTag);
+            return normalizeDecrypted(decryptAES(parsed.encryptedData, parsed.iv, parsed.authTag));
             } catch (e) {
               if (process.env.NODE_ENV !== 'production') console.warn('[decryptField] decryptAES failed:', e);
               return null;
@@ -199,17 +228,19 @@ const decryptField = (encryptedField) => {
 
     // إذا كانت السلسلة عبارة عن نص عادي (مثل IMEI غير مشفّر)، أعِدها كما هي
     // إذا كانت السلسلة تحتوي أرقام فقط فاعتبرها قيمة صالحة
-    if (/^\d+$/.test(s)) return s;
+    if (/^\d+$/.test(s)) return normalizeDecrypted(s);
 
     // في الحالات الأخرى، أعِد السلسلة كما هي إذا كانت تبدو عادية
     // (ليست JSON مشفّر)
-    if (!s.includes('encryptedData') && !s.includes('authTag')) return s;
+    if (!s.includes('encryptedData') && !s.includes('authTag')) return normalizeDecrypted(s);
     
     // في حال فشل التعرف على أي نموذج صالح، لا نُرجع النص المشفر الخام
     return null;
   }
   return null;
 };
+
+
 
 
 // =================================================================
@@ -484,16 +515,7 @@ app.use(csrfProtection);
 app.use(csrfErrorHandler);
 
 // ✅ SECURITY: CSRF token endpoint - لجلب CSRF token للفرونتند
-app.get('/api/csrf-token', (req, res) => {
-  try {
-    // csurf يضع token في req.csrfToken()
-    const token = req.csrfToken();
-    res.json({ csrfToken: token });
-  } catch (err) {
-    console.error('❌ خطأ في إنشاء CSRF token:', err);
-    res.status(500).json({ error: 'Failed to generate CSRF token' });
-  }
-});
+app.get('/api/csrf-token', getCsrfToken);
 
 // Endpoint: توليد signed URL قصير الأجل لملفات التخزين
 // يقبل: { bucket, path, expiresIn (بالثواني) }
@@ -5801,13 +5823,9 @@ app.get('/api/my-buyer-info', verifyJwtToken, async (req, res) => {
     }
 
     if (business) {
-      const decPhone = decryptField(business.phone);
-      const decIdLast6 = decryptField(business.id_last6);
-      const decOwnerName = decryptField(business.owner_name);
-      // إزالة علامات التنصيص الزائدة
-      const cleanPhone = typeof decPhone === 'string' ? decPhone.replace(/^"|"$/g, '') : '';
-      const cleanIdLast6 = typeof decIdLast6 === 'string' ? decIdLast6.replace(/^"|"$/g, '') : '';
-      const cleanOwnerName = typeof decOwnerName === 'string' ? decOwnerName.replace(/^"|"$/g, '') : '';
+      const cleanPhone = decryptField(business.phone);
+      const cleanIdLast6 = decryptField(business.id_last6);
+      const cleanOwnerName = decryptField(business.owner_name);
       return res.json({
         success: true,
         data: {
@@ -5834,15 +5852,15 @@ app.get('/api/my-buyer-info', verifyJwtToken, async (req, res) => {
     }
 
     if (userData) {
-      const decPhone = decryptField(userData.phone);
-      const decIdLast6 = decryptField(userData.id_last6);
+      const cleanPhone = decryptField(userData.phone);
+      const cleanIdLast6 = decryptField(userData.id_last6);
       return res.json({
         success: true,
         data: {
           name: userData.full_name || '',
-          phone: decPhone || '',
+          phone: cleanPhone,
           email: userData.email || '',
-          idLast6: decIdLast6 || '',
+          idLast6: cleanIdLast6,
           isBusiness: false,
           ownerId: userId
         }
@@ -6163,7 +6181,7 @@ app.post('/api/reveal-imei', verifyJwtToken, async (req, res) => {
       // If object with expected keys
       if (typeof imei_encrypted === 'object' && imei_encrypted.encryptedData && imei_encrypted.iv && imei_encrypted.authTag) {
         try {
-          imeiValue = decryptAES(imei_encrypted.encryptedData, imei_encrypted.iv, imei_encrypted.authTag);
+          imeiValue = normalizeDecrypted(decryptAES(imei_encrypted.encryptedData, imei_encrypted.iv, imei_encrypted.authTag));
         } catch (e) {
           console.warn('[reveal-imei] decryptAES failed for imei_encrypted object:', e.message);
         }
