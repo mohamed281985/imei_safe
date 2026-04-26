@@ -4062,8 +4062,8 @@ const amountCents = obj.amount_cents; // number
               payment_status: 'paid',
               expires_at: expiresAt.toISOString()
             };
-            // اشتراك العرض: حدّث transaction إلى bonus_add فقط بعد نجاح الدفع
-            if (existingAd?.offer_id) {
+            // حدّث transaction إلى bonus_add بعد نجاح الدفع عندما تكون هذه عملية توليد بونص
+            if ((existingAd?.offer_id !== null && typeof existingAd?.offer_id !== 'undefined') || Number(existingAd?.bonus_offer || 0) > 0) {
               updatePayload.transaction = 'bonus_add';
             }
             const { error: updateError } = await supabase
