@@ -6056,6 +6056,82 @@ app.get('/api/my-buyer-info', verifyJwtToken, async (req, res) => {
   }
 });
 
+// تحقق من تطابق بيانات المشتري مع الحساب المسجل بالبريد الإلكتروني
+app.post('/api/validate-buyer-data', verifyJwtToken, async (req, res) => {
+  try {
+    const buyerEmail = String(req.body?.buyerEmail || '').trim().toLowerCase();
+    const buyerName = normalizeTextForCompare(req.body?.buyerName || '');
+    const buyerPhoneRaw = String(req.body?.buyerPhone || '').trim();
+    const buyerCountryCode = String(req.body?.buyerCountryCode || '').trim();
+
+    if (!buyerEmail || !buyerName || !buyerPhoneRaw) {
+      return res.status(400).json({ valid: false, error: 'missing_required_fields' });
+    }
+
+    const incomingPhones = Array.from(new Set([
+      normalizeDigitsOnly(buyerPhoneRaw),
+      normalizeDigitsOnly(`${buyerCountryCode}${buyerPhoneRaw}`),
+      normalizeDigitsOnly(String(buyerPhoneRaw).replace(/^0+/, ''))
+    ].filter(Boolean)));
+
+    const phoneMatches = (dbPhoneValue) => {
+      const dbPhone = normalizeDigitsOnly(dbPhoneValue);
+      if (!dbPhone) return false;
+      return incomingPhones.some((p) => p === dbPhone || p.endsWith(dbPhone) || dbPhone.endsWith(p));
+    };
+
+    const { data: userRow, error: userErr } = await supabase
+      .from('users')
+      .select('id, email, full_name, phone')
+      .eq('email', buyerEmail)
+      .maybeSingle();
+    if (userErr) {
+      console.error('/api/validate-buyer-data users query error:', userErr);
+      return res.status(500).json({ valid: false, error: 'database_error' });
+    }
+
+    const { data: businessRow, error: businessErr } = await supabase
+      .from('businesses')
+      .select('user_id, email, store_name, owner_name, phone')
+      .eq('email', buyerEmail)
+      .maybeSingle();
+    if (businessErr) {
+      console.error('/api/validate-buyer-data businesses query error:', businessErr);
+      return res.status(500).json({ valid: false, error: 'database_error' });
+    }
+
+    if (!userRow && !businessRow) {
+      return res.status(404).json({ valid: false, error: 'buyer_not_found' });
+    }
+
+    if (userRow) {
+      const userName = normalizeTextForCompare(decryptField(userRow.full_name) || userRow.full_name || '');
+      const userEmail = String(userRow.email || '').trim().toLowerCase();
+      const userPhone = decryptField(userRow.phone) || userRow.phone || '';
+      if (userEmail === buyerEmail && userName === buyerName && phoneMatches(userPhone)) {
+        return res.json({ valid: true, matchedType: 'user', buyerUserId: userRow.id });
+      }
+    }
+
+    if (businessRow) {
+      const businessEmail = String(businessRow.email || '').trim().toLowerCase();
+      const businessPhone = decryptField(businessRow.phone) || businessRow.phone || '';
+      const ownerName = normalizeTextForCompare(decryptField(businessRow.owner_name) || businessRow.owner_name || '');
+      const storeName = normalizeTextForCompare(businessRow.store_name || '');
+      const nameMatched = buyerName === ownerName || buyerName === storeName;
+
+      if (businessEmail === buyerEmail && nameMatched && phoneMatches(businessPhone)) {
+        return res.json({ valid: true, matchedType: 'business', buyerUserId: businessRow.user_id || null });
+      }
+    }
+
+    return res.status(200).json({ valid: false, error: 'data_mismatch' });
+  } catch (err) {
+    console.error('/api/validate-buyer-data error:', err);
+    return res.status(500).json({ valid: false, error: 'server_error' });
+  }
+});
+
 // نقطة نهاية لجلب معلومات الهاتف المقنعة (للإبلاغ عن فقدان)
 app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
   try {
