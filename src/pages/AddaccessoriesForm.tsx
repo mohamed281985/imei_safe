@@ -924,39 +924,43 @@ const AddAccessoriesForm: React.FC = () => {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg transform transition-all" onClick={(e) => e.stopPropagation()}>
             <div className="relative p-6 sm:p-8 text-center max-h-[80vh] overflow-y-auto">
               <button
-                onClick={() => setIsFeatureModalOpen(false)} //
+                onClick={() => setIsFeatureModalOpen(false)}
                 className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
               >
                 <X className="w-6 h-6" />
               </button>
-              <h2 className="text-2xl font-bold text-gray-900 mb-2"> //
-                ✨ {t('make_your_ad_top')}
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                ✨ {t('make_ad_top')}
               </h2>
               <p className="text-gray-600 mb-6">
-                {t('boost_your_sales_with_featured_ad')}
+                {t('featured_ad_service_description')}
               </p>
 
               <div className="text-right space-y-4 text-gray-700 mb-8 px-1">
-                <p> //
-                  {t('feature_ad_description')}
+                <p>
+                  {t('featured_ad_benefits')}
                 </p>
-                <h3 className="font-bold text-lg pt-2">{t('what_you_get_with_subscription')}</h3>
+                <h3 className="font-bold text-lg pt-2">{t('what_you_get')}</h3>
                 <ul className="space-y-3">
                   <li className="flex items-start">
                     <Star className="w-5 h-5 text-yellow-500 ml-3 flex-shrink-0 mt-0.5" />
-                    <span><span className="font-semibold">{t('top_of_list_appearance')}:</span> {t('be_the_first_seen')}</span>
+                    <span><span className="font-semibold">{t('ad_at_top')}</span> {t('first_seen_by_buyer')}</span>
                   </li>
                   <li className="flex items-start">
                     <MapPin className="w-5 h-5 text-red-500 ml-3 flex-shrink-0 mt-0.5" />
-                    <span><span className="font-semibold">{t('precise_location_targeting')}:</span> {t('reach_nearby_buyers')}</span>
+                    <span><span className="font-semibold">{t('precise_location_targeting')}</span> {t('reach_nearby_buyers')}</span>
+                  </li>
+                  <li className="flex items-start">
+                    <Clock className="w-5 h-5 text-blue-500 ml-3 flex-shrink-0 mt-0.5" />
+                    <span><span className="font-semibold">{t('seven_days_validity')}</span> {t('full_week_featured')}</span>
                   </li>
                   <li className="flex items-start">
                     <Eye className="w-5 h-5 text-green-500 ml-3 flex-shrink-0 mt-0.5" />
-                    <span><span className="font-semibold">{t('more_views_and_interest')}:</span> {t('attract_serious_buyers')}</span>
+                    <span><span className="font-semibold">{t('more_views_attention')}</span> {t('attract_serious_buyers')}</span>
                   </li>
                   <li className="flex items-start">
                     <Zap className="w-5 h-5 text-purple-500 ml-3 flex-shrink-0 mt-0.5" />
-                    <span><span className="font-semibold">{t('significant_increase_in_sales_speed')}:</span> {t('dont_miss_your_chance')}</span>
+                    <span><span className="font-semibold">{t('increase_selling_speed')}</span> {t('dont_miss_opportunity')}</span>
                   </li>
                 </ul>
               </div>
@@ -964,22 +968,22 @@ const AddAccessoriesForm: React.FC = () => {
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-center">
                 <div className="flex items-center justify-center gap-2">
                   <Gift className="w-5 h-5 text-blue-600" />
-                  <span className="text-sm font-medium text-gray-700">{t('current_bonus_balance')}:</span>
+                  <span className="text-sm font-medium text-gray-700">{t('current_bonus_balance')}</span>
                   <span className="text-lg font-bold text-blue-600">{Math.floor(bonusBalance).toLocaleString()} ج.م</span>
                 </div>
               </div>
 
               <div className="text-right space-y-2 text-gray-700 mb-6">
-                <h3 className="font-bold text-lg">{t('choose_feature_duration')}</h3>
+                <h3 className="font-bold text-lg">{t('select_feature_duration')}</h3>
                 <div className="grid grid-cols-2 gap-3">
                   {availableDurations.map((days) => (
                     <label key={days} htmlFor={`promo_${days}`} className={`relative flex flex-col items-center justify-center rounded-lg border-2 p-3 cursor-pointer transition-all ${selectedDuration === days ? 'border-yellow-500 bg-yellow-50 ring-2 ring-yellow-200' : 'border-gray-200 bg-white'}`}>
                       <input type="radio" id={`promo_${days}`} name="promotion_duration" value={days} checked={selectedDuration === days} onChange={(e) => setSelectedDuration(e.target.value)} className="sr-only" />
                       <div className="flex items-center gap-2">
-                        <CalendarDays className="w-5 h-5 text-gray-600" /> //
-                        <span className="text-base font-bold text-gray-800">{t('days_count', { count: days })}</span>
+                        <CalendarDays className="w-5 h-5 text-gray-600" />
+                        <span className="text-base font-bold text-gray-800">{days} {t('days')}</span>
                       </div>
-                      <span className="text-sm font-semibold text-yellow-600 mt-1">{promotionPrices[days] || 0} {t('currency_short')}</span>
+                      <span className="text-sm font-semibold text-yellow-600 mt-1">{promotionPrices[days] || 0} ج.م</span>
                     </label>
                   ))}
                 </div>
@@ -987,19 +991,19 @@ const AddAccessoriesForm: React.FC = () => {
 
               <div className="mt-4 p-3 bg-gray-100 border border-gray-200 rounded-lg text-center">
                 <p className="text-gray-800 font-medium">
-                  {t('total')}: <span className="text-xl font-bold text-gray-900">{promotionPrice || 0} {t('currency_short')}</span>
+                  {t('total')}: <span className="text-xl font-bold text-gray-900">{promotionPrice || 0} {t('currency')}</span>
                 </p>
               </div>
 
               <p className="text-gray-800 font-semibold mb-6">
-              ✨ {t('feature_ad_cta')}
+              ✨ {t('dont_let_ad_get_lost')}
               </p>
 
               <button
                 onClick={handleSubmitAndFeature}
                 disabled={loading}
                 className="w-full inline-flex items-center justify-center px-8 py-4 border border-transparent text-lg font-bold rounded-xl shadow-lg text-white bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-600 hover:to-amber-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 disabled:opacity-50 transition-all transform hover:scale-105"
-              > //
+              >
                 {loading ? <Loader2 className="animate-spin h-6 w-6" /> : t('feature_now_with_bonus')}
               </button>
 

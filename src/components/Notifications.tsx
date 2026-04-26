@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import axiosInstance from '@/services/axiosInterceptor';
 
 // ⭐ إضافة props جديدة للتحكم في طريقة العرض
 interface NotificationsProps {
@@ -47,29 +48,14 @@ const Notifications: React.FC<NotificationsProps> = ({ isBottomNavbarVersion = f
       } else {
         setLoadingImeis(prev => ({ ...prev, [id]: true }));
         try {
-          const { data: { session } } = await supabase.auth.getSession();
-          const token = session?.access_token;
-          const response = await fetch('https://imei-safe.me/api/report-details-decrypted', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({ reportId: id })
-          });
-
-          if (!response.ok) {
-            const errorText = await response.text();
-            console.error('Server error response:', errorText);
-            throw new Error(`Server returned ${response.status}: ${response.statusText}`);
-          }
-
-          const data = await response.json();
+          const response = await axiosInstance.post('https://imei-safe.me/api/report-details-decrypted', { reportId: id });
+          const data = response.data;
           if (data.success) {
             setDecryptedData(prev => ({ ...prev, [id]: data }));
             setRevealedImeis(prev => ({ ...prev, [id]: true }));
           }
-        } catch (error) {
+        } catch (error: any) {
+          console.error('Server error response:', error?.response?.data);
           console.error('Error fetching decrypted IMEI:', error);
           toast({ title: t('error'), description: t('error_fetching_data'), variant: 'destructive' });
         } finally {
@@ -182,17 +168,12 @@ const Notifications: React.FC<NotificationsProps> = ({ isBottomNavbarVersion = f
       }
 
       // Call server endpoint to verify and resolve the report atomically
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      const resp = await fetch('/api/verify-and-resolve-report', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ reportId: selectedReport.id, password: entered })
-      });
-
-      if (!resp.ok) {
-        const json = await resp.json().catch(() => ({}));
-        console.warn('verify-and-resolve-report failed:', resp.status, json);
+      try {
+        await axiosInstance.post('/api/verify-and-resolve-report', { reportId: selectedReport.id, password: entered });
+      } catch (err: any) {
+        const json = err?.response?.data || {};
+        const status = err?.response?.status;
+        console.warn('verify-and-resolve-report failed:', status, json);
         toast({ title: t('error'), description: t('invalid_report_password'), variant: 'destructive', className: "z-[10001]" });
         return;
       }
