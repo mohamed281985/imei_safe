@@ -3674,10 +3674,133 @@ app.get('/paymob/payment-link', verifyJwtToken, async (req, res) => {
 // ===================================================================
 
 // صفحة نجاح الدفع المخصصة (مع زر العودة للتطبيق)
-app.get('/paymob/redirect-success', (req, res) => {
+app.get('/paymob/redirect-success', async (req, res) => {
   try {
     console.log('تم الوصول إلى نقطة إعادة التوجيه', req.query);
-    const { success } = req.query;
+    const success = String(req.query?.success || '');
+    const pending = String(req.query?.pending || '');
+    const orderId = String(req.query?.order || '');
+    const merchantOrderId = String(req.query?.merchant_order_id || '');
+    const receivedHmac = String(req.query?.hmac || '');
+
+    // Fallback: لو webhook لم يصل، حاول تثبيت حالة الدفع من redirect بشكل آمن
+    if (success === 'true' && pending === 'false' && orderId && merchantOrderId) {
+      try {
+        let hmacValid = false;
+        const requiredForHmac = [
+          'amount_cents',
+          'created_at',
+          'currency',
+          'error_occured',
+          'has_parent_transaction',
+          'id',
+          'integration_id',
+          'is_3d_secure',
+          'is_auth',
+          'is_capture',
+          'is_refunded',
+          'is_standalone_payment',
+          'is_voided',
+          'order',
+          'owner',
+          'pending',
+          'source_data.pan',
+          'source_data.sub_type',
+          'source_data.type',
+          'success'
+        ];
+        const hasAllFields = requiredForHmac.every((k) => typeof req.query?.[k] !== 'undefined');
+
+        if (receivedHmac && hasAllFields) {
+          const concatenatedString = [
+            String(req.query['amount_cents']),
+            String(req.query['created_at']),
+            String(req.query['currency']),
+            String(req.query['error_occured']),
+            String(req.query['has_parent_transaction']),
+            String(req.query['id']),
+            String(req.query['integration_id']),
+            String(req.query['is_3d_secure']),
+            String(req.query['is_auth']),
+            String(req.query['is_capture']),
+            String(req.query['is_refunded']),
+            String(req.query['is_standalone_payment']),
+            String(req.query['is_voided']),
+            String(req.query['order']),
+            String(req.query['owner']),
+            String(req.query['pending']),
+            String(req.query['source_data.pan']),
+            String(req.query['source_data.sub_type']),
+            String(req.query['source_data.type']),
+            String(req.query['success'])
+          ].join('');
+
+          const calculatedHmac = crypto
+            .createHmac('sha512', HMAC_SECRET)
+            .update(concatenatedString)
+            .digest('hex');
+          hmacValid = calculatedHmac === receivedHmac;
+        }
+
+        if (hmacValid) {
+          const { data: existingAd, error: fetchError } = await supabase
+            .from('ads_payment')
+            .select('*')
+            .eq('paymob_order_id', Number(orderId))
+            .single();
+
+          if (fetchError || !existingAd) {
+            console.error('redirect-success fallback: payment row not found', { orderId, fetchError });
+          } else if (existingAd.is_paid === true) {
+            console.log('redirect-success fallback: payment already marked as paid', { orderId });
+          } else {
+            let expectedAmount = null;
+            if (typeof existingAd.amount !== 'undefined' && existingAd.amount !== null) expectedAmount = Number(existingAd.amount);
+            if ((expectedAmount === null || Number.isNaN(expectedAmount)) && existingAd.type && existingAd.duration_days) {
+              const { data: priceRow } = await supabase
+                .from('ads_price')
+                .select('amount')
+                .eq('type', existingAd.type)
+                .eq('duration_days', existingAd.duration_days)
+                .limit(1)
+                .single();
+              if (priceRow && typeof priceRow.amount !== 'undefined') expectedAmount = Number(priceRow.amount);
+            }
+
+            const paidAmount = Number(req.query?.amount_cents || 0) / 100;
+            if (expectedAmount !== null && !Number.isNaN(paidAmount) && Math.abs(paidAmount - expectedAmount) <= 0.001) {
+              const paymentDate = new Date();
+              const duration = parseInt(existingAd.duration_days, 10) || 0;
+              const expiresAt = new Date(paymentDate);
+              expiresAt.setDate(expiresAt.getDate() + duration);
+
+              const { error: updateError } = await supabase
+                .from('ads_payment')
+                .update({
+                  is_paid: true,
+                  payment_status: 'paid',
+                  payment_date: paymentDate.toISOString(),
+                  expires_at: expiresAt.toISOString()
+                })
+                .eq('paymob_order_id', Number(orderId));
+
+              if (updateError) console.error('redirect-success fallback: failed to mark paid', updateError);
+              else console.log('redirect-success fallback: payment marked paid', { orderId, merchantOrderId });
+            } else {
+              await supabase
+                .from('ads_payment')
+                .update({ payment_status: 'amount_mismatch', paymob_amount_cents: Number(req.query?.amount_cents || 0) })
+                .eq('paymob_order_id', Number(orderId));
+              console.warn('redirect-success fallback: amount mismatch, skipped paid', { orderId, expectedAmount, paidAmount });
+            }
+          }
+        } else {
+          console.warn('redirect-success fallback skipped: invalid or missing HMAC/required fields');
+        }
+      } catch (fallbackError) {
+        console.error('redirect-success fallback error:', fallbackError);
+      }
+    }
 
     // التحقق من حالة الدفع من خلال query parameter
     if (success === 'true') {
