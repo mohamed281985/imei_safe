@@ -3773,12 +3773,14 @@ app.get('/paymob/redirect-success', async (req, res) => {
               const duration = parseInt(existingAd.duration_days, 10) || 0;
               const expiresAt = new Date(paymentDate);
               expiresAt.setDate(expiresAt.getDate() + duration);
+              const isOffersGallerySubscription = String(merchantOrderId || '').startsWith('ads_payment-');
 
               const { error: updateError } = await supabase
                 .from('ads_payment')
                 .update({
                   is_paid: true,
                   payment_status: 'paid',
+                  ...(isOffersGallerySubscription ? { transaction: 'bonus_add' } : {}),
                   payment_date: paymentDate.toISOString(),
                   expires_at: expiresAt.toISOString()
                 })
@@ -4054,18 +4056,16 @@ const amountCents = obj.amount_cents; // number
             const duration = parseInt(existingAd.duration_days, 10) || 0;
             const expiresAt = new Date(paymentDate);
             expiresAt.setDate(expiresAt.getDate() + duration);
+            const isOffersGallerySubscription = String(merchantOrderId || '').startsWith('ads_payment-');
 
             // 3. تحديث حالة الدفع وتاريخ الانتهاء
             const updatePayload = {
               is_paid: true,
               payment_date: paymentDate.toISOString(),
               payment_status: 'paid',
+              ...(isOffersGallerySubscription ? { transaction: 'bonus_add' } : {}),
               expires_at: expiresAt.toISOString()
             };
-            // حدّث transaction إلى bonus_add بعد نجاح الدفع عندما تكون هذه عملية توليد بونص
-            if ((existingAd?.offer_id !== null && typeof existingAd?.offer_id !== 'undefined') || Number(existingAd?.bonus_offer || 0) > 0) {
-              updatePayload.transaction = 'bonus_add';
-            }
             const { error: updateError } = await supabase
               .from('ads_payment')
               .update(updatePayload)
