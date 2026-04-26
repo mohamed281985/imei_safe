@@ -240,6 +240,32 @@ const decryptField = (encryptedField) => {
   return null;
 };
 
+const isEncryptedPayloadObject = (value) => {
+  return !!(value && typeof value === 'object' && value.encryptedData && value.iv && value.authTag);
+};
+
+const encryptFieldForStorage = (value) => {
+  if (value === null || typeof value === 'undefined') return null;
+
+  if (isEncryptedPayloadObject(value)) {
+    return JSON.stringify(value);
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return value;
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (isEncryptedPayloadObject(parsed)) return trimmed;
+    } catch (e) {
+      // not encrypted JSON string; continue and encrypt below
+    }
+  }
+
+  const encrypted = encryptAES(value);
+  return encrypted ? JSON.stringify(encrypted) : value;
+};
+
 
 
 
@@ -3133,6 +3159,17 @@ app.post("/paymob/create-payment", paymentLimiter, rateLimitMiddleware({ windowM
   console.log("Step 4: Building iframe URL...");
   const iframe_url = `https://accept.paymob.com/api/acceptance/iframes/${IFRAME_ID}?payment_token=${paymentKey}`;
     
+    // تشفير الحقول الحساسة قبل الحفظ في ads_payment
+    const adDataToStore = adData ? { ...adData } : null;
+    if (adDataToStore) {
+      if (Object.prototype.hasOwnProperty.call(adDataToStore, 'phone')) {
+        adDataToStore.phone = encryptFieldForStorage(adDataToStore.phone);
+      }
+      if (Object.prototype.hasOwnProperty.call(adDataToStore, 'website_url')) {
+        adDataToStore.website_url = encryptFieldForStorage(adDataToStore.website_url);
+      }
+    }
+
     // 5. حفظ بيانات الإعلان في قاعدة البيانات
     let newAdId = null;
     if (adId) { // حالة تحديث إعلان موجود
@@ -3141,7 +3178,7 @@ app.post("/paymob/create-payment", paymentLimiter, rateLimitMiddleware({ windowM
       // adData هنا يحتوي فقط على الحقول المراد تحديثها
       const { error: updateError } = await supabase
         .from(tableName)
-        .update({ ...adData, paymob_order_id: orderData.id }) // ربط طلب الدفع الجديد
+        .update({ ...adDataToStore, paymob_order_id: orderData.id }) // ربط طلب الدفع الجديد
         .eq('id', adId);
 
       if (updateError) {
@@ -3153,7 +3190,7 @@ app.post("/paymob/create-payment", paymentLimiter, rateLimitMiddleware({ windowM
       console.log("Step 5: Saving new ad data to database...");
       const tableName = isSpecialAd ? 'ads_payment' : 'ads_payment';
       const adInsertData = {
-        ...adData,
+        ...adDataToStore,
         paymob_order_id: orderData.id, // ربط الإعلان بطلب الدفع
         payment_status: 'pending', // ⭐ تغيير: حالة الدفع المبدئية
         is_paid: false
@@ -3276,10 +3313,19 @@ app.post('/paymob/publish-from-bonus', paymentLimiter, rateLimitMiddleware({ win
       return res.status(500).json({ error: 'Server error' });
     }
 
+    // تشفير الحقول الحساسة قبل حفظ الإعلان في ads_payment
+    const adDataToStore = { ...adData };
+    if (Object.prototype.hasOwnProperty.call(adDataToStore, 'phone')) {
+      adDataToStore.phone = encryptFieldForStorage(adDataToStore.phone);
+    }
+    if (Object.prototype.hasOwnProperty.call(adDataToStore, 'website_url')) {
+      adDataToStore.website_url = encryptFieldForStorage(adDataToStore.website_url);
+    }
+
     // Insert ad as paid using bonus
     try {
       const adInsert = {
-        ...adData,
+        ...adDataToStore,
         user_id: userId,
         is_paid: true,
         payment_status: 'paid',
@@ -4852,7 +4898,7 @@ const updateRegisterUsage = async (userId) => {
 
 // نقطة نهاية للتحقق من وجود IMEI
 app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
-  const { imei, userId } = req.body;
+  const { imei } = req.body;
   const requesterId = req.user?.id;
 
   // ✅ Ownership verification: يمكن فقط للمستخدم التحقق من IMEIs الخاصة به
@@ -4881,7 +4927,7 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
       if (matchingReport) {
         // يوجد بلاغ فعال لهذا الـ IMEI، لا يسمح بالتسجيل في أي حال
         // التحقق مما إذا كان البلاغ يخص المستخدم الحالي
-        if (userId && matchingReport.user_id === userId) {
+        if (requesterId && matchingReport.user_id === requesterId) {
           // المستخدم الحالي هو صاحب البلاغ، لكن لا نسمح له بالتسجيل
           return res.json({ exists: true, phoneDetails: null, isOtherUser: false, hasActiveReport: true, isOwnReport: true, isStolen: true });
         }
@@ -4927,7 +4973,7 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
     // إذا كان الهاتف مسجلاً
     if (matchingPhone) {
       // التحقق مما إذا كان مسجلاً لمستخدم آخر أو منقول الملكية
-      if (userId && matchingPhone.user_id === userId) {
+      if (requesterId && matchingPhone.user_id === requesterId) {
         // الهاتف مسجل للمستخدم الحالي، نسمح له بتحديث البيانات
         // فك تشفير البيانات قبل إرجاعها
         let decryptedPhoneNumber = null;
@@ -5656,6 +5702,9 @@ app.get('/api/ad/:id', verifyJwtToken, async (req, res) => {
     } catch (e) {}
     try {
       out.owner_name = decryptField(out.owner_name);
+    } catch (e) {}
+    try {
+      out.website_url = decryptField(out.website_url);
     } catch (e) {}
 
     return res.json({ ok: true, ad: out });
@@ -6452,8 +6501,12 @@ app.post('/api/transfer-ownership', verifyJwtToken, async (req, res) => {
       user_id: registeredPhone?.user_id
     });
     
-    // تحقق من كلمة المرور للبائع أولاً (بدلاً من فحص user_id)
-    // هذا يسمح للمشتري بنقل الملكية إذا عرف كلمة مرور البائع الحالي
+    // تحقق ملكية المورد: يجب أن يكون الطلب من المالك الحالي للهاتف
+    if (registeredPhone.user_id !== userId) {
+      return res.status(403).json({ error: 'Forbidden: only current owner can transfer' });
+    }
+
+    // بعد التحقق من الملكية، تحقق من كلمة مرور البائع
     // Rate limit check (per seller/user)
     const userKey = req.user && req.user.id ? `uid:${req.user.id}` : `ip:${req.ip}`;
     const blocked = checkAuthBlocked(userKey);
@@ -6570,19 +6623,6 @@ app.post('/api/transfer-ownership', verifyJwtToken, async (req, res) => {
       throw updateErr;
     }
     console.log('[transfer-ownership] registered_phones updated result:', updated);
-    try {
-      const after = (updated && updated[0]) || null;
-      if (after) {
-        console.log('[transfer-ownership] decrypted stored values after update:', {
-          owner_name_decrypted: decryptField(after.owner_name) || after.owner_name,
-          phone_number_decrypted: decryptField(after.phone_number) || after.phone_number,
-          id_last6_decrypted: decryptField(after.id_last6) || after.id_last6,
-          maskedOwnerName_after: after.maskedOwnerName
-        });
-      }
-    } catch (e) {
-      console.debug('transfer-ownership: error decrypting after-update values', e);
-    }
 
     // إنشاء سجل نقل الملكية عبر السيرفر مع تشفير البيانات الحساسة
     const encryptToJson = (value) => {

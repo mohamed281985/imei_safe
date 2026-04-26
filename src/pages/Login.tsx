@@ -92,9 +92,10 @@ const BiometricButton: React.FC = () => {
             await ss.get(
               async (token: string) => {
                 if (token) {
-                  await loginWithBiometricToken?.(token);
-                  // The loginWithBiometricToken function already shows toasts on success/failure
-                  // No need to show another one here.
+                  const success = await loginWithBiometricToken?.(token);
+                  if (success) {
+                    navigate('/dashboard', { replace: true });
+                  }
                 } else {
                   toast({ title: t('error'), description: t('biometric_token_not_found'), variant: 'destructive' });
                 }

@@ -450,7 +450,23 @@ const PublishAd: React.FC = () => {
       goToMyAdsAfterDelay();
       return;
     }
-    if (!user) {
+    let activeUser = user;
+    if (!activeUser) {
+      try {
+        const { data } = await supabase.auth.getSession();
+        const sessionUser = data?.session?.user;
+        if (sessionUser) {
+          activeUser = {
+            id: sessionUser.id,
+            email: sessionUser.email || '',
+            username: sessionUser.user_metadata?.full_name || sessionUser.user_metadata?.username || ''
+          };
+        }
+      } catch (sessionErr) {
+        console.error('Failed to read current session in PublishAd:', sessionErr);
+      }
+    }
+    if (!activeUser) {
       toast({ title: t('error'), description: t('must_be_logged_in'), variant: 'destructive' });
       goToMyAdsAfterDelay();
       return;
@@ -463,7 +479,7 @@ const PublishAd: React.FC = () => {
       if (adImage) {
         const safeOriginal = sanitizeFilename(adImage.name || 'upload');
         const randomName = generateRandomFilename(safeOriginal);
-        const filePath = `ads/${user.id}/${randomName}`;
+        const filePath = `ads/${activeUser.id}/${randomName}`;
         const { data: uploadData, error: uploadError } = await supabase.storage
           .from('advertisements')
           .upload(filePath, adImage);
@@ -550,7 +566,7 @@ const PublishAd: React.FC = () => {
       // 4. إذا لم يوجد بونص كافٍ، فتح بوابة الدفع بنفس منطق SpecialAd
       const amount = prices[duration] || 0;
       const fullAdData = {
-        user_id: user.id,
+        user_id: activeUser.id,
         store_name: storeName,
         image_url: imageUrl,
         website_url: websiteUrl,
@@ -569,7 +585,7 @@ const PublishAd: React.FC = () => {
       };
       const paymentData = {
         amount: amount,
-        email: user.email,
+        email: activeUser.email,
         name: storeName,
         phone: phoneNumber,
         merchantOrderId: `AD-${Date.now()}`,
