@@ -7028,7 +7028,7 @@ app.post('/api/reset-registered-phone-password', verifyJwtToken, async (req, res
 
 // نقطة نهاية للتحقق من حدود الاستخدام
 app.post('/api/check-limit', verifyJwtToken, async (req, res) => {
-  const { type } = req.body; // 'search_imei', 'register_phone', 'search_history', 'print_history'
+  const { type, consumeBonusOnLimit = false } = req.body; // 'search_imei', 'register_phone', 'search_history', 'print_history'
   const userId = req.user.id;
   const userEmail = req.user.email;
 
@@ -7137,6 +7137,50 @@ app.post('/api/check-limit', verifyJwtToken, async (req, res) => {
     const isLastUsage = currentUsage >= limit - 1;
 
     if (currentUsage >= limit) {
+      // خيار إضافي: عند بلوغ الحد، اسمح بالاستخدام عبر خصم cost من bonus (price_offer من plan)
+      if (consumeBonusOnLimit) {
+        const offerCost = Number(planData.price_offer || 0);
+        if (offerCost > 0) {
+          const { data: lastBonus, error: bonusError } = await supabase
+            .from('ads_payment')
+            .select('id, bonus_offer, payment_status, is_paid')
+            .eq('user_id', userId)
+            .eq('transaction', 'bonus_add')
+            .eq('is_paid', true)
+            .order('payment_date', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (!bonusError && lastBonus && Number(lastBonus.bonus_offer || 0) >= offerCost) {
+            const newBonusValue = Number(lastBonus.bonus_offer) - offerCost;
+            const { error: updateErr } = await supabase
+              .from('ads_payment')
+              .update({
+                bonus_offer: newBonusValue,
+                payment_date: new Date().toISOString(),
+                is_paid: true,
+                payment_status: 'paid',
+                transaction: 'bonus_add',
+                Actual_bonus: lastBonus.bonus_offer
+              })
+              .eq('id', lastBonus.id);
+
+            if (!updateErr) {
+              return res.json({
+                allowed: true,
+                limit,
+                currentUsage,
+                isLastUsage: false,
+                usedBonus: true,
+                deductedAmount: offerCost,
+                remainingBonus: newBonusValue
+              });
+            }
+            console.error('check-limit: failed to deduct bonus:', updateErr);
+          }
+        }
+      }
+
       return res.json({ 
         allowed: false, 
         limit, 

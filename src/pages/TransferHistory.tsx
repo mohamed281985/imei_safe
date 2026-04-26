@@ -153,10 +153,19 @@ const TransferHistory: React.FC = () => {
   const checkTransferLimit = async (userId: string) => {
     try {
       const response = await axiosInstance.post('/api/check-limit', { 
-        type: 'search_history' 
+        type: 'search_history',
+        consumeBonusOnLimit: true
       });
 
       const result = response.data;
+
+      if (result?.usedBonus) {
+        toast({
+          title: t('alert'),
+          description: `تم خصم ${result.deductedAmount} من البونص ويمكنك المتابعة`,
+          variant: 'default'
+        });
+      }
 
       if (!result.allowed) {
         toast({
@@ -191,10 +200,19 @@ const TransferHistory: React.FC = () => {
   const checkPrintLimit = async (userId: string) => {
     try {
       const response = await axiosInstance.post('/api/check-limit', { 
-        type: 'print_history' 
+        type: 'print_history',
+        consumeBonusOnLimit: true
       });
 
       const result = response.data;
+
+      if (result?.usedBonus) {
+        toast({
+          title: t('alert'),
+          description: `تم خصم ${result.deductedAmount} من البونص ويمكنك المتابعة`,
+          variant: 'default'
+        });
+      }
 
       if (!result.allowed) {
         toast({
