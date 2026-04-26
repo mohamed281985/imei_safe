@@ -24,6 +24,13 @@ allprojects {
     }
 }
 
+// تكوين toolchain لتحميل Java 21 تلقائيًا
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
 task clean(type: Delete) {
     delete rootProject.buildDir
 }

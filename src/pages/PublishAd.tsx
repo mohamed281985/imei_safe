@@ -12,7 +12,7 @@ import { Browser } from '@capacitor/browser';
 import axiosInstance from '@/services/axiosInterceptor';
 
 // طلب توقيع من الخادم. يجب أن يتم التوقيع الحقيقي على الخادم.
-const requestSignature = async (payload: { merchantOrderId: string; amount: number; timestamp: number }) => {
+const requestSignature = async (payload: { merchantOrderId: string; amount: number; timestamp: number; offerId?: string; offerData?: { type: string; duration_days: number | null } }) => {
   try {
     const resp = await axiosInstance.post('https://imei-safe.me/paymob/sign', payload);
     return resp.data.signature as string;
@@ -575,7 +575,13 @@ const PublishAd: React.FC = () => {
       const timestamp = Date.now();
       let signature = '';
       try {
-        signature = await requestSignature({ merchantOrderId: paymentData.merchantOrderId, amount: paymentData.amount, timestamp });
+        signature = await requestSignature({ 
+          merchantOrderId: paymentData.merchantOrderId, 
+          amount: paymentData.amount, 
+          timestamp,
+          offerId: `publish-${fullAdData.duration_days ?? 'default'}`,
+          offerData: { type: fullAdData.type, duration_days: fullAdData.duration_days }
+        });
       } catch (err) {
         throw new Error('فشل الحصول على توقيع الدفع من الخادم');
       }
