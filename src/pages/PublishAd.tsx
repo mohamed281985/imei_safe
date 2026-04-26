@@ -9,6 +9,17 @@ import { generateRandomFilename, sanitizeFilename } from '@/lib/storageUtils';
 import ReactCrop, { type Crop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
 import { Browser } from '@capacitor/browser';
+import axiosInstance from '@/services/axiosInterceptor';
+
+// طلب توقيع من الخادم. يجب أن يتم التوقيع الحقيقي على الخادم.
+const requestSignature = async (payload: { merchantOrderId: string; amount: number; timestamp: number }) => {
+  try {
+    const resp = await axiosInstance.post('https://imei-safe.me/paymob/sign', payload);
+    return resp.data.signature as string;
+  } catch (err: any) {
+    throw new Error(err.response?.data?.error || 'Failed to obtain signature');
+  }
+};
 
 // UI Components
 import PageContainer from '../components/PageContainer';
@@ -130,6 +141,10 @@ const PublishAd: React.FC = () => {
     userDecisionTimeout: 5000,
   });
 
+  // API base (can be empty to use same-origin). Use Vite env when available.
+  const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '';
+  const api = (path: string) => (API_BASE ? `${API_BASE}${path}` : path);
+
   // Effect to check for an ad ID in the URL for editing
   useEffect(() => {
     const id = searchParams.get('id');
@@ -156,7 +171,7 @@ const PublishAd: React.FC = () => {
         }
 
         try {
-          const resp = await fetch(`/api/ad/${id}`, {
+          const resp = await fetch(api(`/api/ad/${id}`), {
             method: 'GET',
             headers: token ? { Authorization: `Bearer ${token}` } : {}
           });
@@ -221,7 +236,7 @@ const PublishAd: React.FC = () => {
             }
           }
 
-          const resp = await fetch('/api/businesses/me', { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+          const resp = await fetch(api('/api/businesses/me'), { headers: token ? { Authorization: `Bearer ${token}` } : {} });
           if (!resp.ok) {
             throw new Error('failed');
           }
@@ -230,7 +245,7 @@ const PublishAd: React.FC = () => {
 
           if (business) {
             setStoreName(prev => prev || business.store_name || '');
-            setPhoneNumber(prev => prev || business.phone || '');
+            setPhoneNumber(prev => prev || normalizePhoneNumber(business.phone) || '');
             if (business.store_name || business.phone) {
               toast({ title: t('success'), description: t('business_data_auto_filled') });
             }
@@ -555,16 +570,24 @@ const PublishAd: React.FC = () => {
         redirect_url_success: `https://imei-safe.me/paymob/redirect-success`,
         redirect_url_failed: `https://imei-safe.me/paymob/redirect-failed`
       };
-      const response = await fetch('https://imei-safe.me/paymob/create-payment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(paymentData)
-      });
-      if (!response.ok) {
-        const errorData = await response.json();
+      
+      // أرفق طابع زمني واطلب توقيعًا من الخادم قبل إرسال بيانات الدفع
+      const timestamp = Date.now();
+      let signature = '';
+      try {
+        signature = await requestSignature({ merchantOrderId: paymentData.merchantOrderId, amount: paymentData.amount, timestamp });
+      } catch (err) {
+        throw new Error('فشل الحصول على توقيع الدفع من الخادم');
+      }
+      
+      const paymentPayload = { ...paymentData, timestamp, signature };
+      
+      const response = await axiosInstance.post('https://imei-safe.me/paymob/create-payment', paymentPayload);
+      if (response.status !== 200) {
+        const errorData = response.data;
         throw new Error(errorData.error || 'فشل في إنشاء عملية الدفع');
       }
-      const data = await response.json();
+      const data = response.data;
       if (data.iframe_url) {
         if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser) {
           await window.Capacitor.Plugins.Browser.open({ url: data.iframe_url, toolbarColor: '#000000' });
@@ -588,6 +611,16 @@ const PublishAd: React.FC = () => {
   const closePaymentModal = () => {
     setShowPayment(false);
     setPaymentUrl('');
+  };
+
+  const normalizePhoneNumber = (phone: string): string => {
+    if (!phone) return '';
+    try {
+      const parsed = JSON.parse(phone);
+      return typeof parsed === 'string' ? parsed : phone;
+    } catch {
+      return phone;
+    }
   };
 
   return (

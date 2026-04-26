@@ -212,18 +212,18 @@ const AppCore = () => {
 
         // أ. عند نجاح التسجيل والحصول على التوكن
         PushNotifications.addListener('registration', (token: Token) => {
-          console.log('نجاح تسجيل الإشعارات، التوكن:', token.value);
+          // console.log removed: sensitive token data
           updateTokenToServer(token.value);
         });
 
         // ب. عند حدوث خطأ في التسجيل
         PushNotifications.addListener('registrationError', (error: any) => {
-          console.error('خطأ في تسجيل الإشعارات:', JSON.stringify(error));
+          console.warn('فشل تسجيل الإشعارات');
         });
 
         // ج. عند استقبال إشعار والتطبيق في الواجهة الأمامية (foreground)
         PushNotifications.addListener('pushNotificationReceived', (notification) => {
-          console.log('Push notification received (foreground):', notification);
+          // console.log removed: notification data not logged
           toast({
             title: notification.title || 'إشعار جديد',
             description: notification.body || '',

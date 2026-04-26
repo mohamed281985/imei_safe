@@ -3,8 +3,9 @@ import { Link } from 'react-router-dom';
 import { useLanguage } from '../contexts/LanguageContext';
 import Logo from '../components/Logo';
 import PageContainer from '../components/PageContainer';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Mail } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { Input } from '@/components/ui/input';
 
 const ForgotPassword: React.FC = () => {
   const { t } = useLanguage();
@@ -51,15 +52,20 @@ const ForgotPassword: React.FC = () => {
         </div>
         
         <form onSubmit={sendResetPassword} className="space-y-4 max-w-xs mx-auto">
-          <input
-            type="email"
-            className="w-full px-3 py-2 rounded border border-gray-400 focus:outline-none focus:border-imei-cyan text-black"
-            placeholder={t('email')}
-            value={email}
-            onChange={e => setEmail(e.target.value)}
-            required
-            disabled={loading}
-          />
+          <div className="relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Mail size={18} className="text-gray-400" />
+            </div>
+            <Input
+              type="email"
+              className="input-field pl-10 w-full"
+              placeholder={t('email')}
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              required
+              disabled={loading}
+            />
+          </div>
           <button
             type="submit"
             className="w-full bg-imei-cyan text-white font-bold py-2 px-4 rounded hover:bg-cyan-600 transition shadow-lg shadow-black/30"
