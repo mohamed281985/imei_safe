@@ -1,9 +1,14 @@
 // CSRF Protection Middleware
 import { doubleCsrf } from 'csrf-csrf';
 
+const csrfSecret = process.env.CSRF_SECRET;
+if (process.env.NODE_ENV === 'production' && (!csrfSecret || String(csrfSecret).length < 32)) {
+  throw new Error('CSRF_SECRET is required in production and must be at least 32 characters.');
+}
+
 // تكوين CSRF protection
 const { invalidCsrfTokenError, generateToken, doubleCsrfProtection } = doubleCsrf({
-  getSecret: () => process.env.CSRF_SECRET || 'default-secret-change-in-production',
+  getSecret: () => csrfSecret || 'dev-only-csrf-secret-not-for-production',
   cookieName: 'x-csrf-token',
   cookieOptions: {
     secure: process.env.NODE_ENV === 'production',

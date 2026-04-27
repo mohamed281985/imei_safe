@@ -1,3 +1,7 @@
+if (process.env.NODE_ENV === 'production' && (!process.env.SESSION_SECRET || String(process.env.SESSION_SECRET).length < 32)) {
+  throw new Error('SESSION_SECRET is required in production and must be at least 32 characters.');
+}
+
 // Security Configuration
 export const SECURITY_CONFIG = {
   // CORS
@@ -54,7 +58,7 @@ export const SECURITY_CONFIG = {
 
   // Session
   SESSION: {
-    secret: process.env.SESSION_SECRET || 'change-this-in-production',
+    secret: process.env.SESSION_SECRET || 'dev-only-session-secret-not-for-production',
     resave: false,
     saveUninitialized: false,
     cookie: {

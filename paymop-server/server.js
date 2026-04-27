@@ -474,6 +474,36 @@ const createAppUserLimiter = rateLimit({
   handler: (req, res) => res.status(429).json({ error: 'Too many account creation attempts, please try later.' })
 });
 
+// ✅ SECURITY: Rate limiter for IMEI search
+const searchImeiLimiter = rateLimit({
+  windowMs: SECURITY_CONFIG.RATE_LIMITS.SEARCH_IMEI.windowMs,
+  max: SECURITY_CONFIG.RATE_LIMITS.SEARCH_IMEI.max,
+  standardHeaders: true,
+  legacyHeaders: false,
+  trustProxy: 1,
+  handler: (req, res) => res.status(429).json({ error: 'Too many IMEI search attempts, please try later.' })
+});
+
+// ✅ SECURITY: Rate limiter for owner verification endpoint
+const verifyOwnerLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  trustProxy: 1,
+  handler: (req, res) => res.status(429).json({ error: 'Too many verification attempts, please try later.' })
+});
+
+// ✅ SECURITY: Rate limiter for upload endpoint
+const uploadImageLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  trustProxy: 1,
+  handler: (req, res) => res.status(429).json({ error: 'Too many upload attempts, please try later.' })
+});
+
 // ✅ SECURITY: Login rate limiter (NEW)
 const loginLimiter = rateLimit({
   windowMs: SECURITY_CONFIG.RATE_LIMITS.LOGIN.windowMs, // 15 دقيقة
@@ -858,7 +888,7 @@ app.post('/api/supabase-auth-webhook', async (req, res) => {
   // Endpoint: /api/upload-image
   // Accepts JSON { bucket, filename, base64 } where `base64` may be a data URL
   // Validates file-type using `file-type`, rejects non-images, re-encodes with `sharp` to webp, and uploads via Supabase service role.
-  app.post('/api/upload-image', async (req, res) => {
+app.post('/api/upload-image', verifyJwtToken, uploadImageLimiter, async (req, res) => {
   try {
     const bucket = 'registerphone';
     const { filename } = req.body;
@@ -886,7 +916,8 @@ app.post('/api/supabase-auth-webhook', async (req, res) => {
       .replace(/[^a-zA-Z0-9-_\.]/g, '-')
       .replace(/\.[^/.]+$/, '');
 
-    const userId = req.user?.id || 'anon';
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
     const storagePath = `${userId}/${Date.now()}-${safeName}.webp`;
 
     const { error: uploadErr } = await supabase.storage
@@ -915,7 +946,7 @@ app.post('/api/supabase-auth-webhook', async (req, res) => {
 });
 // Internal endpoint: create application `users` row after auth signup
 // Frontend calls this after `supabase.auth.signUp` to persist encrypted app user data.
-app.post('/api/create-app-user', createAppUserLimiter, async (req, res) => {
+app.post('/api/create-app-user', verifyJwtToken, createAppUserLimiter, async (req, res) => {
   try {
     const { id, email, metadata } = req.body || {};
     if (process.env.NODE_ENV !== 'production') console.log('/api/create-app-user called with body:', JSON.stringify(req.body));
@@ -925,6 +956,12 @@ app.post('/api/create-app-user', createAppUserLimiter, async (req, res) => {
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (typeof id !== 'string' || !uuidRegex.test(id)) {
       return res.status(400).json({ error: 'invalid id: must be a UUID from Supabase auth' });
+    }
+
+    // Enforce ownership: caller can only create/update their own application profile row.
+    const requesterId = req.user?.id;
+    if (!requesterId || requesterId !== id) {
+      return res.status(403).json({ error: 'Forbidden: cannot create app user for another account' });
     }
 
     // Idempotency: don't re-insert if exists
@@ -1356,13 +1393,9 @@ try {
 
 // Endpoint: /api/lost-phones
 // يعيد قائمة الهواتف المفقودة مع فك تشفير حقل imei و phone_type فقط
-app.get('/api/lost-phones', async (req, res) => {
+app.get('/api/lost-phones', verifyJwtToken, async (req, res) => {
   try {
-    // حماية بسيطة: يسمح بالوصول إذا تم تمرير x-api-key المطابق لـ DEV_BYPASS_TOKEN
-    const apiKey = req.headers['x-api-key'];
-    const authHeader = req.headers['authorization'];
-
-    if (!authHeader && (!IS_DEVELOPMENT || !DEV_BYPASS_TOKEN || apiKey !== DEV_BYPASS_TOKEN)) {
+    if (!req.user?.id) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
@@ -1430,16 +1463,29 @@ app.get('/api/lost-phones', async (req, res) => {
 });
 
 // Endpoint: /api/check-email
-// Accepts JSON body { email: string } and returns `true` if a user with that email exists, otherwise `false`.
+// SECURITY: disabled by default to avoid email enumeration attacks.
+// To explicitly enable legacy behavior, set ALLOW_EMAIL_EXISTENCE_CHECK=true.
 app.post('/api/check-email', checkEmailLimiter, async (req, res) => {
   try {
     const email = (req.body && req.body.email) ? String(req.body.email).trim().toLowerCase() : '';
+    const allowExistenceCheck = String(process.env.ALLOW_EMAIL_EXISTENCE_CHECK || '').toLowerCase() === 'true';
+
+    // Keep response timing consistent to reduce side-channel signals.
+    await new Promise((r) => setTimeout(r, 200));
+
+    // Default secure behavior: never reveal whether an email exists.
+    if (!allowExistenceCheck) {
+      return res.json({
+        exists: false,
+        message: 'If this email is eligible, continue with signup or password reset flow.'
+      });
+    }
+
     if (!email || typeof email !== 'string' || !email.includes('@')) {
-      if (process.env.NODE_ENV !== 'production') console.warn('[check-email] invalid email input:', req.body && req.body.email);
+      if (process.env.NODE_ENV !== 'production') console.warn('[check-email] invalid email input');
       return res.json({ exists: false });
     }
 
-    // Query the `users` table for existence. Using service role key on the server.
     const { data, error } = await supabase
       .from('users')
       .select('id')
@@ -1449,13 +1495,10 @@ app.post('/api/check-email', checkEmailLimiter, async (req, res) => {
 
     if (error) {
       if (process.env.NODE_ENV !== 'production') console.error('[check-email] supabase error:', error);
-      // For security and simplicity return exists=false on error
       return res.json({ exists: false });
     }
 
-    // If data is null => not found, otherwise found
-    const exists = !!data;
-    return res.json({ exists });
+    return res.json({ exists: !!data });
   } catch (err) {
     if (process.env.NODE_ENV !== 'production') console.error('[check-email] unexpected error:', err);
     return res.json({ exists: false });
@@ -2128,7 +2171,7 @@ app.post('/api/send-notification-by-imei', verifyJwtToken, async (req, res) => {
 });
 
 // نقطة نهاية للبحث عن IMEI
-app.post('/api/search-imei', async (req, res) => {
+app.post('/api/search-imei', searchImeiLimiter, async (req, res) => {
   try {
     const { imei, userId } = req.body;
     
@@ -2186,14 +2229,7 @@ app.post('/api/search-imei', async (req, res) => {
 
     // فك تشفير IMEI المخزن في البلاغات ومقارنته
         // Debug: طباعة كل البلاغات بعد فك التشفير
-        const debugReports = allReports ? allReports.map(r => ({
-          imei: decryptField(r.imei),
-          status: r.status,
-          user_id: r.user_id,
-          report_date: r.report_date,
-          updated_at: r.updated_at
-        })) : [];
-        console.log('DEBUG: allReports (decrypted):', debugReports);
+        // Keep logs free of decrypted sensitive payloads.
 
     // ابحث عن أي بلاغ موجود: سنُظهر البلاغ فقط إذا كان "active" صريحاً
     // تحقق هل المستخدم هو المالك (بمقارنة userId فقط)
@@ -2203,9 +2239,6 @@ app.post('/api/search-imei', async (req, res) => {
     }
     // ابحث عن بلاغ active يطابق الـ IMEI
     const activeReportAny = allReports ? allReports.find(r => normalizeDigitsOnly(decryptField(r.imei)) === normalizedIncoming && r.status === 'active') : null;
-    console.log('DEBUG: imei to search:', imei);
-    console.log('DEBUG: authenticatedUserId:', authenticatedUserId);
-    console.log('DEBUG: activeReportAny:', activeReportAny);
 
     if (activeReportAny) {
       // يوجد بلاغ فعال — نُظهره بغض النظر عن هوية المبلغ
@@ -3218,7 +3251,6 @@ app.post("/paymob/create-payment", paymentLimiter, rateLimitMiddleware({ windowM
     // 6. إرسال الرد للواجهة الأمامية
     const response = {
       ok: true,
-      payment_token: paymentKey,
       iframe_url,
       order_id: orderData.id,
       merchant_order_id: merchantOrderId || null,
@@ -3226,8 +3258,8 @@ app.post("/paymob/create-payment", paymentLimiter, rateLimitMiddleware({ windowM
       adId: newAdId || adId || null
     };
     
-    // سجل استجابة مُخفّفة لتجنب طباعة الحقول الحساسة مثل payment_token
-    console.log("Sending response (redacted):", JSON.stringify(Object.assign({}, response, { payment_token: response.payment_token ? 'REDACTED' : null }), null, 2));
+    // لا نُرجع payment_token للعميل لتقليل سطح التسريب
+    console.log("Sending response:", JSON.stringify(response, null, 2));
     return safeJson(response);
   } catch (e) {
     console.error("Error in create-payment:", e);
@@ -3422,8 +3454,8 @@ app.post("/paymob/create-invoice", async (req, res) => {
       invoice_url: invoiceUrl
     };
     
-    // سجل استجابة مُخفّفة لتجنب طباعة الحقول الحساسة
-    console.log("Sending response (redacted):", JSON.stringify(Object.assign({}, response, { payment_token: response.payment_token ? 'REDACTED' : null }), null, 2));
+    // سجل الاستجابة بدون أي حقول حساسة
+    console.log("Sending response:", JSON.stringify(response, null, 2));
     return safeJson(response);
   } catch (e) {
     console.error("Error in create-invoice:", e);
@@ -3647,15 +3679,15 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
         }
         insertedPaymentId = insertedPayment.id;
         console.log(`تم حفظ بيانات الدفع بنجاح في جدول ads_payment with ID: ${insertedPaymentId}`);
-        // حاول تخزين tokens و iframe_url في السجل إن وُجدت الأعمدة، لكن لا تفشل العملية إذا لم توجد الأعمدة
+        // نحفظ iframe_url فقط (بدون payment_token) لتقليل المخاطر الأمنية
         try {
           await supabase
             .from('ads_payment')
-            .update({ iframe_url, payment_token: paymentKey })
+            .update({ iframe_url })
             .eq('id', insertedPaymentId);
-          console.log('تم حفظ iframe_url و payment_token في ads_payment (إن وُجدت الأعمدة)');
+          console.log('تم حفظ iframe_url في ads_payment');
         } catch (storeErr) {
-          console.warn('Could not store payment token/iframe_url in ads_payment (column may not exist):', storeErr.message || storeErr);
+          console.warn('Could not store iframe_url in ads_payment (column may not exist):', storeErr.message || storeErr);
           // لا نُعيد الخطأ لأننا نريد إرجاع الـ iframe إلى العميل مهما حدث
         }
       } catch (insertError) {
@@ -3664,7 +3696,6 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
       }
       const response = {
         ok: true,
-        payment_token: paymentKey,
         iframe_url,
         order_id: orderData.id,
         merchant_order_id: merchantOrderId || null,
@@ -3680,7 +3711,7 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
     }
 });
 
-// Endpoint to fetch stored iframe_url / payment_token by payment_id
+// Endpoint to fetch stored iframe_url by payment_id
 app.get('/paymob/payment-link', verifyJwtToken, async (req, res) => {
   try {
     const userId = req.user?.id;
@@ -3694,7 +3725,7 @@ app.get('/paymob/payment-link', verifyJwtToken, async (req, res) => {
 
     let query = supabase
       .from('ads_payment')
-      .select('id, iframe_url, paymob_order_id, payment_token, user_id')
+      .select('id, iframe_url, paymob_order_id, user_id')
       .eq('user_id', userId);
     if (paymentId) query = query.eq('id', paymentId);
     else if (merchantOrderId) query = query.eq('merchant_order_id', merchantOrderId);
@@ -3708,7 +3739,7 @@ app.get('/paymob/payment-link', verifyJwtToken, async (req, res) => {
 
     if (!paymentRow) return res.status(404).json({ error: 'payment not found' });
 
-    return res.json({ ok: true, payment_id: paymentRow.id, iframe_url: paymentRow.iframe_url || null, payment_token: paymentRow.payment_token || null, order_id: paymentRow.paymob_order_id || null });
+    return res.json({ ok: true, payment_id: paymentRow.id, iframe_url: paymentRow.iframe_url || null, order_id: paymentRow.paymob_order_id || null });
   } catch (e) {
     console.error('Error in /paymob/payment-link:', e);
     return res.status(500).json({ error: 'Server error' });
@@ -4518,9 +4549,19 @@ app.get('/api/user-phones', verifyJwtToken, async (req, res) => {
 
     if (reportsError) throw reportsError;
 
+    const safeDecryptImei = (value) => {
+      if (!value) return '';
+      try {
+        const decrypted = decryptField(value);
+        return decrypted || String(value);
+      } catch (e) {
+        return String(value);
+      }
+    };
+
     // 2. معالجة البيانات: فك التشفير لحساب hasActiveReport، ثم إرسال IMEI مشفّر ونسخة مخفية للواجهة
     const processedPhones = phones.map(phone => {
-      const decryptedImei = decryptField(phone.imei);
+      const decryptedImei = safeDecryptImei(phone.imei);
       const maskedImei = decryptedImei ? `${decryptedImei.substring(0, 4)}*******${decryptedImei.slice(-4)}` : 'غير متوفر';
       const encryptedImei = encryptAES(decryptedImei || '');
 
@@ -4532,7 +4573,7 @@ app.get('/api/user-phones', verifyJwtToken, async (req, res) => {
         status: phone.status,
         imei_encrypted: encryptedImei,
         imei_masked: maskedImei,
-        hasActiveReport: reports ? reports.some(r => decryptField(r.imei) === decryptedImei) : false
+        hasActiveReport: reports ? reports.some(r => safeDecryptImei(r.imei) === decryptedImei) : false
       };
     });
 
@@ -5688,23 +5729,12 @@ app.post('/api/create-accessory', verifyJwtToken, async (req, res) => {
   }
 });
 
-// Decrypt arbitrary fields server-side using existing decryptField helper
+// Endpoint intentionally disabled: generic decrypt endpoint is a security risk.
 app.post('/api/decrypt-fields', verifyJwtToken, async (req, res) => {
-  try {
-    const incoming = req.body || {};
-    const decrypted = {};
-    for (const k of Object.keys(incoming)) {
-      try {
-        decrypted[k] = decryptField(incoming[k]);
-      } catch (e) {
-        decrypted[k] = null;
-      }
-    }
-    return res.json({ success: true, decrypted });
-  } catch (e) {
-    console.error('/api/decrypt-fields error:', e && (e.stack || e.message || e));
-    return sendError(res, 500, 'Decrypt error', e);
-  }
+  return res.status(410).json({
+    success: false,
+    error: 'This endpoint is disabled for security reasons.'
+  });
 });
 
 // Get ad by id with decrypted PII fields (requires auth)
@@ -5712,11 +5742,14 @@ app.get('/api/ad/:id', verifyJwtToken, async (req, res) => {
   try {
     const id = String(req.params.id || '').trim();
     if (!id) return res.status(400).json({ error: 'id is required' });
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
     const { data, error } = await supabase
       .from('ads_payment')
-      .select('*')
+      .select('id, user_id, amount, type, payment_status, is_paid, payment_date, paymob_order_id, offer_id, duration_days, expires_at, image_url, store_name, phone, email, owner_name, website_url, created_at, updated_at, merchant_order_id')
       .eq('id', id)
+      .eq('user_id', userId)
       .maybeSingle();
 
     if (error) {
@@ -5725,8 +5758,28 @@ app.get('/api/ad/:id', verifyJwtToken, async (req, res) => {
     }
     if (!data) return res.status(404).json({ error: 'Not found' });
 
-    // Decrypt common PII fields if present
-    const out = { ...data };
+    // Return only a strict whitelist of fields for the owner ad record.
+    const out = {
+      id: data.id,
+      amount: data.amount ?? null,
+      type: data.type ?? null,
+      payment_status: data.payment_status ?? null,
+      is_paid: data.is_paid ?? null,
+      payment_date: data.payment_date ?? null,
+      paymob_order_id: data.paymob_order_id ?? null,
+      merchant_order_id: data.merchant_order_id ?? null,
+      offer_id: data.offer_id ?? null,
+      duration_days: data.duration_days ?? null,
+      expires_at: data.expires_at ?? null,
+      image_url: data.image_url ?? null,
+      store_name: data.store_name ?? null,
+      created_at: data.created_at ?? null,
+      updated_at: data.updated_at ?? null,
+      phone: data.phone ?? null,
+      email: data.email ?? null,
+      owner_name: data.owner_name ?? null,
+      website_url: data.website_url ?? null
+    };
     try {
       out.phone = decryptField(out.phone);
     } catch (e) {
@@ -6889,14 +6942,8 @@ app.post('/api/transfer-records', verifyJwtToken, async (req, res) => {
 // نقطة نهاية للتحقق من كلمة مرور مالك الـ IMEI على الخادم ثم إرجاع السجلات
 // استقبال: { imei, ownerPassword }
 // ملاحظات أمان: لا نخزن كلمة المرور؛ نستخدمها مؤقتاً للتحقق عبر Supabase Auth ثم نتخلص منها.
-app.post('/api/transfer-records/verify-owner', async (req, res) => {
+app.post('/api/transfer-records/verify-owner', verifyOwnerLimiter, async (req, res) => {
   try {
-    try {
-      const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
-      console.log(`/api/transfer-records/verify-owner called ip=${clientIp} body=${JSON.stringify(req.body).slice(0,200)}`);
-    } catch (logErr) {
-      console.warn('Failed to log verify-owner request details', logErr);
-    }
     const { imei, ownerPassword } = req.body || {};
     if (!imei || !ownerPassword) return res.status(400).json({ error: 'imei and ownerPassword are required' });
 
@@ -6912,13 +6959,6 @@ app.post('/api/transfer-records/verify-owner', async (req, res) => {
       return normalizeDigitsOnly(dec) === normalizeDigitsOnly(imei);
     });
     if (!matching) return res.status(404).json({ error: 'Owner not found for IMEI' });
-
-    try {
-      const matchedDec = (() => { try { return decryptField(matching.imei) || matching.imei; } catch(e){ return '<err>'; } })();
-      console.log(`/api/transfer-records/verify-owner: matched registered_phone id=${matching.id} user_id=${matching.user_id} imei_decrypted=${String(matchedDec).slice(0,200)}`);
-    } catch(e) {
-      console.warn('/api/transfer-records/verify-owner: failed to log matched phone details', e);
-    }
 
     // إذا تم تعيين كلمة مرور عند تسجيل الهاتف، تحقق منها هنا (هذه كلمة مرور خاصة بالتسجيل، ليست كلمة مرور تسجيل الدخول)
     const storedHash = matching.password;
@@ -6941,23 +6981,10 @@ app.post('/api/transfer-records/verify-owner', async (req, res) => {
 
     if (error) throw error;
 
-    // Diagnostic logging to help debug empty results (always log for debugging)
-    try {
-      const incomingNorm = normalizeDigitsOnly(imei);
-      console.log('/api/transfer-records/verify-owner: fetched records count=', (records || []).length);
-      const sample = (records || []).slice(0, 8).map(r => ({ id: r.id, imei_raw: r.imei, imei_decrypted_preview: (() => { try { return decryptField(r.imei); } catch(e){ return '<err>'; } })() }));
-      console.log('/api/transfer-records/verify-owner: sample records (decrypted preview):', JSON.stringify(sample, null, 2));
-      console.log('/api/transfer-records/verify-owner: incoming imei normalized=', incomingNorm);
-    } catch (diagErr) {
-      console.warn('/api/transfer-records/verify-owner diagnostic logging failed', diagErr);
-    }
-
     const filtered = (records || []).filter(r => {
       const decImei = decryptField(r.imei) || r.imei;
       return normalizeDigitsOnly(decImei) === normalizeDigitsOnly(imei);
     });
-
-    console.log('/api/transfer-records/verify-owner: filtered count=', filtered.length, 'filtered_ids=', (filtered||[]).map(x=>x.id));
 
     const decrypted = filtered.map(r => ({
       ...r,

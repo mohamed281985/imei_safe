@@ -17,8 +17,6 @@ interface CsrfTokenResponse {
 class CsrfService {
   private csrfToken: string | null = null;
   private csrfExpiresAt: number | null = null;
-  private readonly CSRF_STORAGE_KEY = 'csrf_token';
-  private readonly CSRF_EXPIRY_KEY = 'csrf_token_expiry';
   private readonly TOKEN_EXPIRY_TIME = 60 * 60 * 1000; // ساعة واحدة
 
   /**
@@ -26,10 +24,10 @@ class CsrfService {
    */
   async fetchCsrfToken(): Promise<string> {
     try {
-      // تحقق من التخزين المحلي أولاً
+      // تحقق من الذاكرة أولاً
       const storedToken = this.getStoredToken();
       if (storedToken) {
-        console.log('✅ استخدام CSRF token من التخزين المحلي');
+        console.log('✅ استخدام CSRF token من الذاكرة');
         return storedToken;
       }
 
@@ -63,43 +61,15 @@ class CsrfService {
   private setCsrfToken(token: string): void {
     this.csrfToken = token;
     this.csrfExpiresAt = Date.now() + this.TOKEN_EXPIRY_TIME;
-
-    // احفظ في localStorage أيضاً
-    try {
-      localStorage.setItem(this.CSRF_STORAGE_KEY, token);
-      localStorage.setItem(this.CSRF_EXPIRY_KEY, this.csrfExpiresAt.toString());
-    } catch (err) {
-      console.warn('⚠️ تحذير: لا يمكن الحفظ في localStorage');
-    }
   }
 
   /**
    * احصل على CSRF token المحفوظ
    */
   public getStoredToken(): string | null {
-    // تحقق من الذاكرة أولاً
     if (this.csrfToken && this.csrfExpiresAt && Date.now() < this.csrfExpiresAt) {
       return this.csrfToken;
     }
-
-    // تحقق من localStorage
-    try {
-      const token = localStorage.getItem(this.CSRF_STORAGE_KEY);
-      const expiry = localStorage.getItem(this.CSRF_EXPIRY_KEY);
-
-      if (token && expiry && Date.now() < parseInt(expiry)) {
-        this.csrfToken = token;
-        this.csrfExpiresAt = parseInt(expiry);
-        return token;
-      }
-
-      // امسح البيانات المنتهية الصلاحية
-      localStorage.removeItem(this.CSRF_STORAGE_KEY);
-      localStorage.removeItem(this.CSRF_EXPIRY_KEY);
-    } catch (err) {
-      console.warn('⚠️ تحذير: لا يمكن قراءة localStorage');
-    }
-
     return null;
   }
 
@@ -119,13 +89,6 @@ class CsrfService {
   clearToken(): void {
     this.csrfToken = null;
     this.csrfExpiresAt = null;
-    
-    try {
-      localStorage.removeItem(this.CSRF_STORAGE_KEY);
-      localStorage.removeItem(this.CSRF_EXPIRY_KEY);
-    } catch (err) {
-      console.warn('⚠️ تحذير: لا يمكن حذف من localStorage');
-    }
   }
 
   /**
