@@ -274,7 +274,18 @@ const Dashboard: React.FC = () => {
           }
         });
 
-        const result = await response.json();
+        const text = await response.text();
+        let result: any = {};
+        try {
+          result = text ? JSON.parse(text) : {};
+        } catch (parseErr) {
+          result = {};
+        }
+
+        if (!response.ok) {
+          console.error("Error fetching user phones:", result.error || text || `HTTP ${response.status}`);
+          return;
+        }
 
         if (!result.success) {
           console.error("Error fetching user phones:", result.error?.message || result.error);
