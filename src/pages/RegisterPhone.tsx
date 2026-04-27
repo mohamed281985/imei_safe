@@ -240,7 +240,7 @@ const RegisterPhone: React.FC = () => {
       const token = session?.access_token;
 
       const response = await axiosInstance.post('/api/check-limit', 
-        { type: 'register_phone' },
+        { type: 'register_phone', consumeBonusOnLimit: true },
         {
           headers: {
             'Authorization': `Bearer ${token}`
@@ -249,6 +249,14 @@ const RegisterPhone: React.FC = () => {
       );
 
       const result = response.data;
+
+      if (result?.usedBonus) {
+        toast({
+          title: t('alert'),
+          description: `تم خصم ${result.deductedAmount} من البونص ويمكنك المتابعة`,
+          variant: 'default'
+        });
+      }
 
       if (!result.allowed) {
         toast({

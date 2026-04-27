@@ -44,7 +44,7 @@ const WelcomeSearch: React.FC = () => {
     const token = session?.access_token;
 
     const response = await axiosInstance.post('/api/check-limit', 
-      { type: 'search_imei' },
+      { type: 'search_imei', consumeBonusOnLimit: true },
       {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -53,6 +53,14 @@ const WelcomeSearch: React.FC = () => {
     );
 
     const result = response.data;
+
+    if (result?.usedBonus) {
+      toast({
+        title: t('alert'),
+        description: `تم خصم ${result.deductedAmount} من البونص ويمكنك المتابعة`,
+        variant: 'default'
+      });
+    }
 
     if (!result.allowed) {
       toast({
