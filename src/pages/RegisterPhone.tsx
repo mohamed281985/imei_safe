@@ -13,7 +13,7 @@ import AdsOfferSlider from '@/components/AdsOfferSlider';
 import axiosInstance from '@/services/axiosInterceptor';
 import imageCompression from 'browser-image-compression';
 import { Button } from '@/components/ui/button';
-import { Camera, Upload, CreditCard, User, FileText, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Camera, Upload, CreditCard, User, FileText, CheckCircle, AlertTriangle, Smartphone, Phone, Mail, KeyRound, Hash } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Camera as CapacitorCamera, CameraResultType, CameraSource, CameraDirection } from '@capacitor/camera';
 import { Filesystem, Directory } from '@capacitor/filesystem';
@@ -1058,17 +1058,23 @@ const RegisterPhone: React.FC = () => {
                 </button>
               </div>
               <div>
-                <label htmlFor="imei" className="block text-gray-800 text-sm font-medium mb-1">
+                <label htmlFor="imei" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
+                  <Hash className="w-4 h-4 text-[#0a4d8c]" />
                   IMEI
                 </label>
                 <div className="relative">
+                  {!isImeiValid && (
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <Smartphone className="h-4 w-4 text-gray-500" />
+                    </div>
+                  )}
                   <input
                     type="text"
                     id="imei"
                     name="imei"
                     value={formData.imei}
                     onChange={handleImeiChange}
-                    className={`input-field w-full text-gray-800 ${imeiError ? 'border-red-500' : ''} ${isImeiValid ? 'pl-10 border-green-500' : ''}`}
+                    className={`input-field w-full text-gray-800 !pl-12 ${imeiError ? 'border-red-500' : ''} ${isImeiValid ? 'border-green-500' : ''}`}
                     maxLength={IMEI_LENGTH}
                     pattern="[0-9]*"
                     inputMode="numeric"
@@ -1102,40 +1108,53 @@ const RegisterPhone: React.FC = () => {
                 )}
               </div>
               <div>
-                <label htmlFor="phoneType" className="block text-gray-800 text-sm font-medium mb-1">
+                <label htmlFor="phoneType" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
+                  <Smartphone className="w-4 h-4 text-[#0a4d8c]" />
                   {t('phone_type')}
                 </label>
-                <input
-                  type="text"
-                  id="phoneType"
-                  name="phoneType"
-                  value={formData.phoneType}
-                  onChange={handleChange}
-                  className="input-field w-full text-gray-800"
-                  required
-                  placeholder={t('phone_type_placeholder')}
-                  disabled={isLoading}
-                />
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <FileText className="h-4 w-4 text-gray-500" />
+                  </div>
+                  <input
+                    type="text"
+                    id="phoneType"
+                    name="phoneType"
+                    value={formData.phoneType}
+                    onChange={handleChange}
+                    className="input-field w-full text-gray-800 !pl-12"
+                    required
+                    placeholder={t('phone_type_placeholder')}
+                    disabled={isLoading}
+                  />
+                </div>
               </div>
               <div>
-                <label htmlFor="ownerName" className="block text-gray-800 text-sm font-medium mb-1">
+                <label htmlFor="ownerName" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
+                  <User className="w-4 h-4 text-[#0a4d8c]" />
                   {t('owner_name')}
                 </label>
-                <input
-                  type="text"
-                  id="ownerName"
-                  name="ownerName"
-                  value={formData.registerType === 'mine' ? maskName(formData.ownerName) : formData.ownerName}
-                  onChange={handleChange}
-                  className="input-field w-full text-gray-800"
-                  style={{ direction: 'ltr', textAlign: 'left' }}
-                  disabled={formData.registerType === 'mine' || isLoading}
-                  required
-                  placeholder={t('owner_name_placeholder')}
-                />
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <User className="h-4 w-4 text-gray-500" />
+                  </div>
+                  <input
+                    type="text"
+                    id="ownerName"
+                    name="ownerName"
+                    value={formData.registerType === 'mine' ? maskName(formData.ownerName) : formData.ownerName}
+                    onChange={handleChange}
+                    className="input-field w-full text-gray-800 !pl-12"
+                    style={{ direction: 'ltr', textAlign: 'left' }}
+                    disabled={formData.registerType === 'mine' || isLoading}
+                    required
+                    placeholder={t('owner_name_placeholder')}
+                  />
+                </div>
               </div>
               <div>
-                <label htmlFor="phoneNumber" className="block text-gray-800 text-sm font-medium mb-1">
+                <label htmlFor="phoneNumber" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
+                  <Phone className="w-4 h-4 text-[#0a4d8c]" />
                   {t('phone_label')}
                 </label>
                 <div className="flex gap-2 items-center">
@@ -1144,88 +1163,117 @@ const RegisterPhone: React.FC = () => {
                     onChange={setCountryCode}
                     disabled={formData.registerType === 'mine' || isLoading}
                   />
-                  <input
-                    type="tel"
-                    id="phoneNumber"
-                    name="phoneNumber"
-                    value={formData.registerType === 'mine' ? maskPhoneNumber(formData.phoneNumber) : formData.phoneNumber}
-                    onChange={handleChange}
-                    className="input-field w-full text-gray-800"
-                    disabled={formData.registerType === 'mine' || isLoading}
-                    required
-                    placeholder={t('phone_placeholder')}
-                    dir="ltr"
-                  />
+                  <div className="relative w-full">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <Phone className="h-4 w-4 text-gray-500" />
+                    </div>
+                    <input
+                      type="tel"
+                      id="phoneNumber"
+                      name="phoneNumber"
+                      value={formData.registerType === 'mine' ? maskPhoneNumber(formData.phoneNumber) : formData.phoneNumber}
+                      onChange={handleChange}
+                      className="input-field w-full text-gray-800 !pl-12"
+                      disabled={formData.registerType === 'mine' || isLoading}
+                      required
+                      placeholder={t('phone_placeholder')}
+                      dir="ltr"
+                    />
+                  </div>
                 </div>
               </div>
               {/* حقل الإيميل */}
               <div>
-                <label htmlFor="email" className="block text-gray-800 text-sm font-medium mb-1">
+                <label htmlFor="email" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
+                  <Mail className="w-4 h-4 text-[#0a4d8c]" />
                   {t('email')}
                 </label>
-                <input
-                  type="email"
-                  id="email"
-                  name="email"
-                  value={formData.registerType === 'mine' ? maskEmail(formData.email) : formData.email}
-                  onChange={e => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                  className="input-field w-full text-gray-800"
-                  style={{ direction: 'ltr', textAlign: 'left' }}
-                  disabled={formData.registerType === 'mine' || isLoading}
-                  required
-                  placeholder={t('email_placeholder')}
-                />
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Mail className="h-4 w-4 text-gray-500" />
+                  </div>
+                  <input
+                    type="email"
+                    id="email"
+                    name="email"
+                    value={formData.registerType === 'mine' ? maskEmail(formData.email) : formData.email}
+                    onChange={e => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                    className="input-field w-full text-gray-800 !pl-12"
+                    style={{ direction: 'ltr', textAlign: 'left' }}
+                    disabled={formData.registerType === 'mine' || isLoading}
+                    required
+                    placeholder={t('email_placeholder')}
+                  />
+                </div>
               </div>
               {/* حقل آخر 6 أرقام من البطاقة الشخصية */}
               <div>
-                <label htmlFor="id_last6" className="block text-gray-800 text-sm font-medium mb-1">
+                <label htmlFor="id_last6" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
+                  <CreditCard className="w-4 h-4 text-[#0a4d8c]" />
                   {t('id_last_6_digits')}
                 </label>
-                <input
-                  type="text"
-                  id="id_last6"
-                  name="id_last6"
-                  value={formData.registerType === 'mine' ? maskIdLast6(formData.id_last6) : formData.id_last6}
-                  onChange={handleChange}
-                  className="input-field w-full text-gray-800"
-                  maxLength={6}
-                  pattern="[0-9]*"
-                  inputMode="numeric"
-                  disabled={formData.registerType === 'mine' || isLoading}
-                  required
-                  placeholder={t('id_last_6_digits_placeholder')}
-                  style={{ direction: 'ltr', textAlign: 'left' }}
-                />
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <CreditCard className="h-4 w-4 text-gray-500" />
+                  </div>
+                  <input
+                    type="text"
+                    id="id_last6"
+                    name="id_last6"
+                    value={formData.registerType === 'mine' ? maskIdLast6(formData.id_last6) : formData.id_last6}
+                    onChange={handleChange}
+                    className="input-field w-full text-gray-800 !pl-12"
+                    maxLength={6}
+                    pattern="[0-9]*"
+                    inputMode="numeric"
+                    disabled={formData.registerType === 'mine' || isLoading}
+                    required
+                    placeholder={t('id_last_6_digits_placeholder')}
+                    style={{ direction: 'ltr', textAlign: 'left' }}
+                  />
+                </div>
               </div>
               <div>
-                <label htmlFor="password" className="block text-gray-800 text-sm font-medium mb-1">
+                <label htmlFor="password" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
+                  <KeyRound className="w-4 h-4 text-[#0a4d8c]" />
                   {t('password')}
                 </label>
-                <input
-                  type="password"
-                  id="password"
-                  name="password"
-                  value={formData.password}
-                  onChange={handleChange}
-                  className="input-field w-full text-gray-800"
-                  required
-                  placeholder={t('password_placeholder')}
-                />
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <KeyRound className="h-4 w-4 text-gray-500" />
+                  </div>
+                  <input
+                    type="password"
+                    id="password"
+                    name="password"
+                    value={formData.password}
+                    onChange={handleChange}
+                    className="input-field w-full text-gray-800 !pl-12"
+                    required
+                    placeholder={t('password_placeholder')}
+                  />
+                </div>
               </div>
               <div>
-                <label htmlFor="confirmPassword" className="block text-gray-800 text-sm font-medium mb-1">
+                <label htmlFor="confirmPassword" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
+                  <KeyRound className="w-4 h-4 text-[#0a4d8c]" />
                   {t('confirm_password')}
                 </label>
-                <input
-                  type="password"
-                  id="confirmPassword"
-                  name="confirmPassword"
-                  value={formData.confirmPassword}
-                  onChange={handleChange}
-                  className="input-field w-full text-gray-800"
-                  required
-                  placeholder={t('confirm_password_placeholder')}
-                />
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <KeyRound className="h-4 w-4 text-gray-500" />
+                  </div>
+                  <input
+                    type="password"
+                    id="confirmPassword"
+                    name="confirmPassword"
+                    value={formData.confirmPassword}
+                    onChange={handleChange}
+                    className="input-field w-full text-gray-800 !pl-12"
+                    required
+                    placeholder={t('confirm_password_placeholder')}
+                  />
+                </div>
               </div>
               <div className="space-y-4">
                 <h3 className="text-gray-800 text-lg font-semibold">{t('upload_images')}</h3>
