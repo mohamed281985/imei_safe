@@ -980,7 +980,7 @@ const ReportPhone: React.FC = () => {
                   onChange={handleChange}
                   placeholder={t('enter_imei')}
                   disabled={isReadOnly || isLoading || isSubmitting}
-                  className={`input-field w-full bg-[#c0dee5] text-gray-800 ${isImeiValid ? 'pl-10 border-green-500' : ''}`}
+                  className={`input-field w-full bg-[#c0dee5] text-gray-800 ${isImeiValid ? '!pl-12 border-green-500' : ''}`}
                   maxLength={15}
                   pattern="[0-9]*"
                   inputMode="numeric"
