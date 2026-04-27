@@ -4681,7 +4681,7 @@ app.post('/api/verify-and-resolve-report', verifyJwtToken, async (req, res) => {
 
 // نقطة نهاية لإعادة تعيين كلمة مرور الهاتف المسجل
 app.post('/api/reset-phone-password', verifyJwtToken, async (req, res) => {
-  const { imei, newPassword } = req.body;
+  const { imei, currentPassword, newPassword } = req.body;
   const userId = req.user.id;
 
   // ✅ Ownership verification: فقط مالك الهاتف يمكنه إعادة تعيين كلمة المرور
@@ -4689,8 +4689,8 @@ app.post('/api/reset-phone-password', verifyJwtToken, async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  if (!imei || !newPassword) {
-    return res.status(400).json({ error: 'IMEI and new password are required' });
+  if (!imei || !currentPassword || !newPassword) {
+    return res.status(400).json({ error: 'IMEI, current password and new password are required' });
   }
 
   try {
@@ -4705,13 +4705,17 @@ app.post('/api/reset-phone-password', verifyJwtToken, async (req, res) => {
     // 1. جلب جميع هواتف المستخدم
     const { data: userPhones, error: fetchError } = await supabase
       .from('registered_phones')
-      .select('id, imei')
+      .select('id, imei, password, user_id, email')
       .eq('user_id', userId);
 
     if (fetchError) throw fetchError;
 
-    // 2. البحث عن الهاتف المطابق بفك التشفير
-    const targetPhone = userPhones.find(p => decryptField(p.imei) === imei);
+    // 2. البحث عن الهاتف المطابق عبر IMEI بعد التطبيع (digits only)
+    const normalizedIncomingImei = normalizeDigitsOnly(imei);
+    const targetPhone = (userPhones || []).find((p) => {
+      const storedImei = decryptField(p.imei);
+      return normalizeDigitsOnly(storedImei) === normalizedIncomingImei;
+    });
 
     if (!targetPhone) {
       // Record failed attempt (possible probing)
@@ -4719,7 +4723,38 @@ app.post('/api/reset-phone-password', verifyJwtToken, async (req, res) => {
       return res.status(404).json({ error: 'Phone not found for this user' });
     }
 
-    // 3. تحديث كلمة المرور (bcrypt)
+    // 3. تحقق ملكية إضافي: user_id + email (إن وجد) + كلمة المرور الحالية
+    if (targetPhone.user_id !== userId) {
+      recordAuthFailure(userKey);
+      return res.status(403).json({ error: 'Not authorized for this phone' });
+    }
+
+    if (targetPhone.email && req.user?.email) {
+      const storedEmail = normalizeTextForCompare(decryptField(targetPhone.email));
+      const requesterEmail = normalizeTextForCompare(req.user.email);
+      if (storedEmail && requesterEmail && storedEmail !== requesterEmail) {
+        recordAuthFailure(userKey);
+        return res.status(403).json({ error: 'Identity verification failed' });
+      }
+    }
+
+    const currentPasswordMatched = targetPhone.password
+      ? await bcrypt.compare(String(currentPassword), String(targetPhone.password))
+      : false;
+    if (!currentPasswordMatched) {
+      recordAuthFailure(userKey);
+      return res.status(401).json({ error: 'Current password is incorrect' });
+    }
+
+    // منع إعادة تعيين نفس كلمة المرور الحالية
+    const sameAsOldPassword = targetPhone.password
+      ? await bcrypt.compare(String(newPassword), String(targetPhone.password))
+      : false;
+    if (sameAsOldPassword) {
+      return res.status(400).json({ error: 'New password must be different from current password' });
+    }
+
+    // 4. تحديث كلمة المرور (bcrypt) بنفس آلية القديمة
     const hashedPassword = await hashPasswordForStorage(newPassword);
 
     const { error: updateError } = await supabase

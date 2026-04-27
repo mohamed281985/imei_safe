@@ -41,8 +41,10 @@ const BusinessTransfer: React.FC = () => {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-4 py-8 glass-bg" style={{background:'rgba(255,255,255,0.18)'}}>
       <div className="w-full max-w-md p-8 rounded-2xl bg-white/10 backdrop-blur-lg border border-white/20 shadow-xl">
-        <Logo size="lg" className="mb-6" />
-        <h1 className="text-2xl md:text-3xl font-bold text-black mb-8 text-center">{t('welcome_to_store')} {storeName}</h1>
+        <div className="mb-6 flex justify-center">
+          <Logo size="lg" />
+        </div>
+        <h1 className="text-2xl md:text-3xl font-bold text-black mb-8 text-center">{storeName}</h1>
         <div className="space-y-4 w-full">
         <button
           onClick={handleBuyClick}

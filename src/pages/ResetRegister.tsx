@@ -13,6 +13,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 export default function ResetRegister() {
   useScrollToTop();
   const { t } = useLanguage();
+  const [currentPassword, setCurrentPassword] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
@@ -44,6 +45,12 @@ export default function ResetRegister() {
       return;
     }
 
+    if (!currentPassword.trim()) {
+      setError(t('seller_password_required') || 'Current password is required.');
+      setLoading(false);
+      return;
+    }
+
     if (imei) {
       // --- السلوك الجديد: إعادة تعيين كلمة مرور الهاتف ---
       try {
@@ -57,7 +64,7 @@ export default function ResetRegister() {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`
           },
-          body: JSON.stringify({ imei, newPassword: password })
+          body: JSON.stringify({ imei, currentPassword, newPassword: password })
         });
 
         if (!response.ok) {
@@ -98,6 +105,21 @@ export default function ResetRegister() {
             <span className="font-bold text-cyan-400 block mt-2">{maskedImei}</span>
           </p>
           
+          <div className="space-y-2">
+            <label htmlFor="currentPassword" className="block text-white font-medium mb-1">
+              {t('seller_current_password')}
+            </label>
+            <Input
+              id="currentPassword"
+              type="password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              className="w-full"
+              placeholder={t('enter_seller_current_password')}
+              disabled={loading}
+            />
+          </div>
+
           <div className="space-y-2">
             <label htmlFor="password" className="block text-white font-medium mb-1">
               {t('new_password')}

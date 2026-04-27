@@ -154,18 +154,10 @@ const TransferHistory: React.FC = () => {
     try {
       const response = await axiosInstance.post('/api/check-limit', { 
         type: 'search_history',
-        consumeBonusOnLimit: true
+        consumeBonusOnLimit: false
       });
 
       const result = response.data;
-
-      if (result?.usedBonus) {
-        toast({
-          title: t('alert'),
-          description: `تم خصم ${result.deductedAmount} من البونص ويمكنك المتابعة`,
-          variant: 'default'
-        });
-      }
 
       if (!result.allowed) {
         toast({
@@ -201,18 +193,10 @@ const TransferHistory: React.FC = () => {
     try {
       const response = await axiosInstance.post('/api/check-limit', { 
         type: 'print_history',
-        consumeBonusOnLimit: true
+        consumeBonusOnLimit: false
       });
 
       const result = response.data;
-
-      if (result?.usedBonus) {
-        toast({
-          title: t('alert'),
-          description: `تم خصم ${result.deductedAmount} من البونص ويمكنك المتابعة`,
-          variant: 'default'
-        });
-      }
 
       if (!result.allowed) {
         toast({
@@ -375,15 +359,6 @@ const TransferHistory: React.FC = () => {
 
   const handleSearchButtonClick = async () => {
     if (searchTerm.length === 15) {
-      // تحقق من الحد أولاً إذا كان المستخدم مسجلاً
-      if (userId) {
-        const canProceed = await checkTransferLimit(userId);
-        if (!canProceed) {
-          setShowUpgradeModal(true);
-          return;
-        }
-      }
-
       // أظهر مربع إدخال كلمة مرور المالك لطلب التحقق من الخادم
       setShowOwnerPasswordModal(true);
     } else {
@@ -413,6 +388,48 @@ const TransferHistory: React.FC = () => {
       if (json && json.success) {
         const transferRecords = (json.data || []) as TransferRecord[];
 
+        // لا نخصم بونص البحث إلا بعد ظهور نتائج فعلية في السجل
+        if (userId && transferRecords.length > 0) {
+          const limitCheckResp = await axiosInstance.post('/api/check-limit', {
+            type: 'search_history',
+            consumeBonusOnLimit: false
+          });
+          const limitCheck = limitCheckResp.data;
+
+          if (!limitCheck.allowed) {
+            const consumeBonusResp = await axiosInstance.post('/api/check-limit', {
+              type: 'search_history',
+              consumeBonusOnLimit: true
+            });
+            const consumeBonusResult = consumeBonusResp.data;
+
+            if (!consumeBonusResult.allowed) {
+              toast({
+                title: t('alert'),
+                description: t('search_limit_exceeded_plan'),
+                variant: 'destructive'
+              });
+              setHasReachedSearchLimit(true);
+              setShowUpgradeModal(true);
+              return;
+            }
+
+            if (consumeBonusResult?.usedBonus) {
+              toast({
+                title: t('alert'),
+                description: `تم خصم ${consumeBonusResult.deductedAmount} من البونص ويمكنك المتابعة`,
+                variant: 'default'
+              });
+            }
+          } else if (limitCheck.isLastUsage) {
+            toast({
+              title: t('alert'),
+              description: t('last_transfer_allowed'),
+              variant: 'default'
+            });
+          }
+        }
+
         // Resolve image paths to signed URLs
         for (const rec of transferRecords) {
           try {
@@ -432,8 +449,8 @@ const TransferHistory: React.FC = () => {
         setShowOwnerPasswordModal(false);
         setOwnerPassword('');
 
-        // عدّل استخدام البحث إذا كان المستخدم مسجلاً
-        if (userId) await updateSearchUsage(userId);
+        // عدّل استخدام البحث إذا كان المستخدم مسجلاً وظهرت نتائج فعلية
+        if (userId && transferRecords.length > 0) await updateSearchUsage(userId);
       } else {
         // handle unexpected shape
         toast({ title: 'خطأ', description: (json && json.error) ? json.error : 'فشل استرجاع السجلات', variant: 'destructive' });
@@ -501,7 +518,7 @@ const TransferHistory: React.FC = () => {
       }
 
       try {
-        const logoUrl = '/logo.png';
+        const logoUrl = '/images/imei-logo.png';
         const logoResponse = await fetch(logoUrl);
         if (!logoResponse.ok) throw new Error('Logo file not found');
         const logoBlob = await logoResponse.blob();
