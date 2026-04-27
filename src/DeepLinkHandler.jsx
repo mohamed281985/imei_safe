@@ -47,16 +47,17 @@ export default function DeepLinkHandler() {
         const hash = url.hash.replace('#', '');
         const params = new URLSearchParams(hash);
         const type = params.get('type');
-        const token = params.get('access_token');
+        const accessToken = params.get('access_token');
+        const refreshToken = params.get('refresh_token');
 
         if (type === 'signup') {
           navigate('/business-profile-complete');
         } else if (type === 'recovery') {
-          if (!token || typeof token !== 'string' || token.length < 10) {
+          if (!accessToken || typeof accessToken !== 'string' || accessToken.length < 10 || !refreshToken) {
             navigate('/');
             return;
           }
-          navigate(`/reset?token=${encodeURIComponent(token)}`);
+          navigate(`/reset?access_token=${encodeURIComponent(accessToken)}&refresh_token=${encodeURIComponent(refreshToken)}`);
         } else {
           navigate('/');
         }

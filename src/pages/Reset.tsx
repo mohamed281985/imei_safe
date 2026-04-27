@@ -26,10 +26,17 @@ export default function Reset() {
       setLoading(false);
       return;
     }
-    // Read reset token from URL query parameter to avoid persistent storage (localStorage)
-    const params = new URLSearchParams(location.search);
-    const accessToken = params.get('access_token') || params.get('token') || params.get('resetToken');
-    const refreshToken = params.get('refresh_token');
+    // Supabase غالباً يرسل التوكنات داخل hash (#...) وليس query
+    const queryParams = new URLSearchParams(location.search);
+    const hashParams = new URLSearchParams((location.hash || '').replace(/^#/, ''));
+    const accessToken =
+      hashParams.get('access_token') ||
+      queryParams.get('access_token') ||
+      queryParams.get('token') ||
+      queryParams.get('resetToken');
+    const refreshToken =
+      hashParams.get('refresh_token') ||
+      queryParams.get('refresh_token');
     if (!accessToken || !refreshToken) {
       setError(t('token_not_found'));
       setLoading(false);
@@ -37,7 +44,12 @@ export default function Reset() {
     }
     try {
       // يتطلب توكنين صحيحين من رابط الاستعادة (access + refresh)
-      await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+      const { error: sessionError } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+      if (sessionError) {
+        setError(t('failed') + ': ' + sessionError.message);
+        setLoading(false);
+        return;
+      }
       const { error } = await supabase.auth.updateUser({ password });
       if (error) {
         setError(t('failed') + ': ' + error.message);

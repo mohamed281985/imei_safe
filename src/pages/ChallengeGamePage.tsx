@@ -15,31 +15,14 @@ interface ChallengeGameProps {
 }
 
 import { supabase } from '../lib/supabase';
+import axiosInstance from '@/services/axiosInterceptor';
 
 const checkGameLimit = async (userId: string, t: any) => {
   try {
-    // جلب الحد من جدول plans
-    const { data: planData, error: planError } = await supabase
-      .from('plans')
-      .select('game_limit')
-      .limit(1)
-      .maybeSingle();
-    if (planError || !planData) throw planError || new Error('لم يتم العثور على الحد في جدول plans');
-
-    // جلب الاستخدام الحالي من جدول users_plans
-    const { data: usageData, error: usageError } = await supabase
-      .from('users_plans')
-      .select('used_game')
-      .eq('user_id', userId)
-      .maybeSingle();
-    if (usageError || !usageData) {
-      // إذا لم يوجد سجل، أنشئ واحداً بالقيمة صفر
-      await supabase.from('users_plans').insert({ user_id: userId, used_game: 0 });
-      return true;
-    }
-    const currentUsage = usageData.used_game || 0;
-    const limit = parseInt(planData.game_limit);
-    if (currentUsage >= limit) {
+    // استخدم API الخادم لتجنب مشاكل RLS وصلاحيات القراءة المباشرة من الجداول
+    const response = await axiosInstance.post('/api/check-limit', { type: 'game' });
+    const data = response?.data || {};
+    if (!data.allowed) {
       toast({ 
         title: t('warning'), 
         description: t('game_limit_reached'), 
@@ -60,8 +43,7 @@ const checkGameLimit = async (userId: string, t: any) => {
 
 const updateGameUsage = async (userId: string, t: any) => {
   try {
-    const { error } = await supabase.rpc('increment_used_game', { p_user_id: userId });
-    if (error) throw error;
+    await axiosInstance.post('/api/increment-usage', { type: 'game' });
   } catch (error) {
     toast({ 
       title: t('error'), 
