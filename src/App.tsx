@@ -138,8 +138,7 @@ const AppCore = () => {
             const params = new URLSearchParams(hash.substring(1));
             const type = params.get('type');
             if (type === 'recovery') {
-              // لاحقاً، يمكنك توجيه المستخدم لصفحة تغيير كلمة المرور
-              navigate('/login'); // توجيه مؤقت
+              navigate(`/reset?${params.toString()}`);
             }
           }
         } catch (e) {
@@ -317,7 +316,7 @@ const AppCore = () => {
             <Route path="/business-signup" element={<BusinessSignup />} />
             <Route path="/businesstransfer" element={<AuthGuard><BusinessTransfer /></AuthGuard>} />
             <Route path="/business-profile-complete" element={<AuthGuard><BusinessProfileComplete /></AuthGuard>} />
-            <Route path="/reset" element={<GuestGuard><Reset /></GuestGuard>} />
+            <Route path="/reset" element={<Reset />} />
             <Route path="/reset-register" element={<AuthGuard><ResetRegister /></AuthGuard>} />
             <Route path="/BusinessTransferbuy" element={<AuthGuard><BusinessTransferBuy /></AuthGuard>} />
             <Route path="/challenge-game" element={<AuthGuard><ChallengeGamePage /></AuthGuard>} />

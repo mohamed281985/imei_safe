@@ -7063,7 +7063,7 @@ app.post('/api/reset-registered-phone-password', verifyJwtToken, async (req, res
 
 // نقطة نهاية للتحقق من حدود الاستخدام
 app.post('/api/check-limit', verifyJwtToken, async (req, res) => {
-  const { type, consumeBonusOnLimit = false } = req.body; // 'search_imei', 'register_phone', 'search_history', 'print_history'
+  const { type, consumeBonusOnLimit = false } = req.body; // 'search_imei', 'register_phone', 'search_history', 'print_history', 'game'
   const userId = req.user.id;
   const userEmail = req.user.email;
 
@@ -7137,7 +7137,8 @@ app.post('/api/check-limit', verifyJwtToken, async (req, res) => {
             used_search_imei: 0,
             used_register_phone: 0,
             used_search_history: 0,
-            used_print_history: 0
+            used_print_history: 0,
+            used_game: 0
           })
           .select()
           .single();
@@ -7251,6 +7252,7 @@ app.post('/api/increment-usage', verifyJwtToken, async (req, res) => {
         else if (type === 'register_phone') rpcName = 'increment_register_usage';
         else if (type === 'search_history') rpcName = 'increment_search_history';
         else if (type === 'print_history') rpcName = 'increment_print_history';
+        else if (type === 'game') rpcName = 'increment_used_game';
         else return res.status(400).json({ error: 'Invalid type' });
 
         const { error } = await supabase.rpc(rpcName, { p_user_id: userId });

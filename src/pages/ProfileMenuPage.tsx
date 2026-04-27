@@ -66,6 +66,7 @@ const ProfileMenuPage: React.FC = () => {
     const [isProcessing, setIsProcessing] = useState(false);
     const [showLanguageModal, setShowLanguageModal] = useState(false);
     const [isBiometricEnabled, setIsBiometricEnabled] = useState(false);
+    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://imei-safe.me';
 
     // إعلان المتغيرات الخاصة بالجهاز
     const [phoneInfo, setPhoneInfo] = useState<{ name: string, capabilities: string[] } | null>(null);
@@ -309,7 +310,9 @@ const ProfileMenuPage: React.FC = () => {
     };
 
     const handleForgotPassword = async () => {
-        if (!forgotPasswordData.imei || !forgotPasswordData.newPassword) {
+        const imeiNormalized = String(forgotPasswordData.imei || '').replace(/\D/g, '');
+
+        if (!imeiNormalized || !forgotPasswordData.newPassword) {
             toast({
                 title: 'خطأ',
                 description: 'يرجى ملء جميع الحقول',
@@ -321,64 +324,66 @@ const ProfileMenuPage: React.FC = () => {
         setIsProcessing(true);
 
         try {
-            // استدعاء السيرفر لإعادة تعيين كلمة مرور الهاتف المسجّل (السيرفر يتحقق من الملكية)
-            try {
-                const { data: { session } } = await supabase.auth.getSession();
-                const token = session?.access_token;
-                const resp = await fetch('/api/reset-registered-phone-password', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
-                    body: JSON.stringify({ imei: forgotPasswordData.imei, newPassword: forgotPasswordData.newPassword })
-                });
-                const json = await resp.json();
-                if (!resp.ok) throw new Error(json.error || 'Failed to reset password');
-                toast({ title: 'نجح', description: 'تم تحديث كلمة المرور بنجاح' });
-                setShowForgotPasswordModal(false);
-                setForgotPasswordData({ imei: '', newPassword: '' });
-                return;
-            } catch (err) {
-                console.error('reset password error:', err);
+            // جلب CSRF token قبل أي طلب POST محمي
+            const csrfResp = await fetch(`${API_BASE_URL}/api/csrf-token`, {
+                method: 'GET',
+                credentials: 'include'
+            });
+            const csrfRaw = await csrfResp.text();
+            let csrfPayload: any = {};
+            if (csrfRaw) {
+                try {
+                    csrfPayload = JSON.parse(csrfRaw);
+                } catch {
+                    csrfPayload = {};
+                }
+            }
+            const csrfToken = csrfPayload?.csrfToken;
+            if (!csrfResp.ok || !csrfToken) {
+                throw new Error('فشل جلب CSRF token');
             }
 
-            // البحث في جدول البلاغات
-            const { data: reportData, error: reportError } = await supabase
-                .from('phone_reports')
-                .select('*')
-                .eq('imei', forgotPasswordData.imei)
-                .eq('email', user?.email)
-                .single();
+            // استدعاء الخادم فقط (التحقق والتشفير يتمان في السيرفر)
+            const { data: { session } } = await supabase.auth.getSession();
+            const token = session?.access_token;
+            const resp = await fetch(`${API_BASE_URL}/api/reset-registered-phone-password`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': csrfToken,
+                    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                },
+                body: JSON.stringify({
+                    imei: imeiNormalized,
+                    newPassword: forgotPasswordData.newPassword
+                })
+            });
 
-            if (reportData) {
-                // تحديث كلمة المرور في جدول البلاغات
-                const { error: updateError } = await supabase
-                    .from('phone_reports')
-                    .update({ password: forgotPasswordData.newPassword })
-                    .eq('imei', forgotPasswordData.imei)
-                    .eq('email', user?.email);
-
-                if (!updateError) {
-                    toast({
-                        title: 'نجح',
-                        description: 'تم تحديث كلمة المرور بنجاح'
-                    });
-                    setShowForgotPasswordModal(false);
-                    setForgotPasswordData({ imei: '', newPassword: '' });
-                    return;
+            // parsing آمن: بعض الردود قد تكون فارغة أو ليست JSON
+            const raw = await resp.text();
+            let payload: any = {};
+            if (raw) {
+                try {
+                    payload = JSON.parse(raw);
+                } catch {
+                    payload = {};
                 }
             }
 
-            // إذا لم يتم العثور على IMEI أو لا يملكه المستخدم الحالي
-            toast({
-                title: 'خطأ',
-                description: ' هذاالهاتف غير مرتبط بهذا الحساب ',
-                variant: 'destructive'
-            });
+            if (!resp.ok) {
+                throw new Error(payload?.error || `فشل تحديث كلمة المرور (${resp.status})`);
+            }
+
+            toast({ title: 'نجح', description: 'تم تحديث كلمة المرور بنجاح' });
+            setShowForgotPasswordModal(false);
+            setForgotPasswordData({ imei: '', newPassword: '' });
 
         } catch (error) {
             console.error('Error updating password:', error);
             toast({
                 title: 'خطأ',
-                description: 'حدث خطأ أثناء تحديث كلمة المرور',
+                description: (error as Error)?.message || 'حدث خطأ أثناء تحديث كلمة المرور',
                 variant: 'destructive'
             });
         } finally {
