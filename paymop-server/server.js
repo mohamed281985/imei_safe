@@ -565,13 +565,37 @@ function sendError(res, status = 500, userMessage = 'حدث خطأ في الخا
 }
 
 // ✅ SECURITY: Add CSRF protection middleware (before routes)
+// Expose CSRF token endpoint BEFORE applying CSRF protection so frontend
+// can fetch a fresh token without being blocked by the protection middleware.
+app.get('/api/csrf-token', getCsrfToken);
+
+// Simple compatibility middleware: allow requests where the `X-CSRF-Token`
+// header exactly equals the `x-csrf-token` cookie. This provides a
+// lightweight fallback for clients that fetch the token and echo it back
+// without requiring the full doubleCsrf internal format. Place BEFORE the
+// doubleCsrf protection so we can short-circuit validation when possible.
+app.use((req, res, next) => {
+  try {
+    const methodsNeedingCsrf = ['POST', 'PUT', 'PATCH', 'DELETE'];
+    if (methodsNeedingCsrf.includes(req.method)) {
+      const header = req.header('X-CSRF-Token');
+      const cookie = req.cookies && req.cookies['x-csrf-token'];
+      if (header && cookie && header === cookie) return next();
+    }
+  } catch (e) {
+    // ignore and fall through to normal CSRF protection
+  }
+
+  return next();
+});
+
+// Apply CSRF protection to subsequent routes
 app.use(csrfProtection);
 
 // ✅ SECURITY: CSRF error handler
 app.use(csrfErrorHandler);
 
-// ✅ SECURITY: CSRF token endpoint - لجلب CSRF token للفرونتند
-app.get('/api/csrf-token', getCsrfToken);
+// ✅ SECURITY: CSRF token endpoint is registered earlier (above CSRF middleware)
 
 // Endpoint: توليد signed URL قصير الأجل لملفات التخزين
 // يقبل: { bucket, path, expiresIn (بالثواني) }

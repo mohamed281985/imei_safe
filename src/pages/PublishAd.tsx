@@ -145,6 +145,9 @@ const PublishAd: React.FC = () => {
   const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '';
   const api = (path: string) => (API_BASE ? `${API_BASE}${path}` : path);
 
+  // Replace hardcoded token usage
+  const API_TOKEN = (import.meta as any).env?.VITE_API_TOKEN;
+
   // Effect to check for an ad ID in the URL for editing
   useEffect(() => {
     const id = searchParams.get('id');
