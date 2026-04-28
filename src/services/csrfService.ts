@@ -34,11 +34,12 @@ class CsrfService {
       console.log('📝 جاري جلب CSRF token من الخادم...');
 
       // اطلب token جديد من الخادم
+      // Prefer the simple endpoint which sets a basic cookie and returns
+      // the token. This avoids issues where the more advanced doubleCsrf
+      // flow may reject the request during token fetch.
       const response = await axios.get<CsrfTokenResponse>(
         `${API_BASE_URL}/api/csrf-token`,
-        {
-          withCredentials: true // إرسال cookies
-        }
+        { withCredentials: true }
       );
 
       const token = response.data.csrfToken;
