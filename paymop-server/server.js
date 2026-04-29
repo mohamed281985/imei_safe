@@ -5853,7 +5853,7 @@ app.get('/api/ad/:id', verifyJwtToken, async (req, res) => {
 
     const { data, error } = await supabase
       .from('ads_payment')
-      .select('id, user_id, amount, type, payment_status, is_paid, payment_date, paymob_order_id, offer_id, duration_days, expires_at, image_url, store_name, phone, email, owner_name, website_url, created_at, updated_at, merchant_order_id')
+      .select('*')
       .eq('id', id)
       .eq('user_id', userId)
       .maybeSingle();
@@ -5886,6 +5886,11 @@ app.get('/api/ad/:id', verifyJwtToken, async (req, res) => {
       owner_name: data.owner_name ?? null,
       website_url: data.website_url ?? null
     };
+    try {
+      out.store_name = decryptField(out.store_name);
+    } catch (e) {
+      out.store_name = null;
+    }
     try {
       out.phone = decryptField(out.phone);
     } catch (e) {
