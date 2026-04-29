@@ -5889,17 +5889,23 @@ app.get('/api/ad/:id', verifyJwtToken, async (req, res) => {
     try {
       out.phone = decryptField(out.phone);
     } catch (e) {
-      // keep original encrypted value if decrypt fails
+      out.phone = null;
     }
     try {
       out.email = decryptField(out.email);
-    } catch (e) {}
+    } catch (e) {
+      out.email = null;
+    }
     try {
       out.owner_name = decryptField(out.owner_name);
-    } catch (e) {}
+    } catch (e) {
+      out.owner_name = null;
+    }
     try {
       out.website_url = decryptField(out.website_url);
-    } catch (e) {}
+    } catch (e) {
+      out.website_url = null;
+    }
 
     return res.json({ ok: true, ad: out });
   } catch (e) {

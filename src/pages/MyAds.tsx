@@ -14,7 +14,7 @@ import type { ads_payment } from '../contexts/AdContext';
 import { supabase } from '@/lib/supabase';
 
 interface Ad extends Omit<ads_payment, 'adType'> {
-  adType: 'normal' | 'special';
+  adType: 'normal' | 'special' | 'publish';
   user_id: string;
   upload_date?: string;
   created_at?: string;
@@ -24,7 +24,36 @@ interface Ad extends Omit<ads_payment, 'adType'> {
   duration_days?: number;
 }
 
-const MyAds: React.FC = (): React.ReactNode => {
+const sanitizeServerValue = (value: any): string => {
+  if (value === null || value === undefined) return '';
+  let sanitized = typeof value === 'string' ? value.trim() : JSON.stringify(value).trim();
+  if (!sanitized) return '';
+
+  if (sanitized.includes('encryptedData') || sanitized.includes('authTag') || sanitized.includes('iv')) {
+    return '';
+  }
+  if ((sanitized.startsWith('{') && sanitized.endsWith('}')) || (sanitized.startsWith('[') && sanitized.endsWith(']'))) {
+    return '';
+  }
+  sanitized = sanitized.replace(/^[\s\[\{\("']+|[\s\]\}\)"']+$/g, '').trim();
+  return sanitized;
+};
+
+const normalizeWebsiteUrl = (url: string): string => {
+  const cleanUrl = sanitizeServerValue(url);
+  if (!cleanUrl) return '';
+  if (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://')) return cleanUrl;
+  return `https://${cleanUrl}`;
+};
+
+const sanitizeAd = (ad: any): Ad => ({
+  ...ad,
+  store_name: sanitizeServerValue(ad.store_name),
+  website_url: sanitizeServerValue(ad.website_url),
+  image_url: sanitizeServerValue(ad.image_url),
+});
+
+const MyAds: React.FC = () => {
   const { t } = useLanguage();
   useScrollToTop();
   const navigate = useNavigate();
@@ -36,14 +65,14 @@ const MyAds: React.FC = (): React.ReactNode => {
   const [loadingAds, setLoadingAds] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const handleDelete = async (adId: string, adType: 'normal' | 'special') => {
+  const handleDelete = async (adId: string, adType: 'normal' | 'special' | 'publish') => {
     if (!window.confirm(t('delete_confirmation') || 'هل أنت متأكد من حذف هذا الإعلان؟')) {
       return;
     }
 
     setDeletingId(adId);
     try {
-      const tableName = adType === 'special' ? 'ads_payment' : 'ads_payment';
+      const tableName = 'ads_payment';
       console.log(`محاولة حذف الإعلان ID: ${adId} من جدول: ${tableName}`);
 
       const { error } = await supabase
@@ -91,7 +120,7 @@ const MyAds: React.FC = (): React.ReactNode => {
     }
   };
 
-  const handleEdit = async (adId: string, adType: 'normal' | 'special') => {
+  const handleEdit = async (adId: string, adType: 'normal' | 'special' | 'publish') => {
     const path = adType === 'special' ? '/special-ad' : '/publish-ad';
     navigate(`${path}?id=${adId}`);
   };
@@ -151,12 +180,12 @@ const MyAds: React.FC = (): React.ReactNode => {
 
         // اعرض جميع الإعلانات بما فيها المنتهية
         const mappedPublishAds: Ad[] = (publishAds || []).map((ad: any) => ({
-          ...ad,
+          ...sanitizeAd(ad),
           adType: 'publish',
         }));
 
         const mappedSpecialAds: Ad[] = (specialAds || []).map((ad: any) => ({
-          ...ad,
+          ...sanitizeAd(ad),
           adType: 'special',
         }));
 
@@ -265,7 +294,7 @@ const MyAds: React.FC = (): React.ReactNode => {
                 </div>
                 <div className="flex flex-col gap-1">
                   <span className="text-white font-semibold">
-                    {ad.store_name || t('ad')}
+                    {sanitizeServerValue(ad.store_name) || t('ad')}
                     {ad.adType === 'special' && (
                       <span className="ml-2 text-yellow-500 text-xs">{t('special') || 'إعلان مميز'}</span>
                     )}
@@ -287,14 +316,14 @@ const MyAds: React.FC = (): React.ReactNode => {
                       })()
                       : '-'}
                   </span>
-                  {ad.website_url && (
+                  {normalizeWebsiteUrl(ad.website_url || '') && (
                     <a
-                      href={ad.website_url}
+                      href={normalizeWebsiteUrl(ad.website_url || '')}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-imei-cyan text-xs underline"
                     >
-                      {ad.website_url}
+                      {normalizeWebsiteUrl(ad.website_url || '')}
                     </a>
                   )}
                   <span className="text-xs text-gray-400">{ad.upload_date?.slice(0, 10)}</span>
