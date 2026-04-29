@@ -173,7 +173,7 @@ const ReportPhone: React.FC = () => {
     return cleanupImageUrls;
   }, []);
   const { t } = useLanguage();
-  const REGISTERED_IN_SYSTEM = '__REGISTERED_IN_SYSTEM__';
+  const REGISTERED_IN_SYSTEM = 'مسجل بالنظام';
   const registeredInSystemLabel = t('registered_in_system');
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -444,10 +444,10 @@ const ReportPhone: React.FC = () => {
     if (fileType === 'receiptImage') {
       // إذا كانت بيانات المستخدم مسجل بالنظام، اجعل صورة الفاتورة للقراءة فقط
       isFieldReadOnly = (
-        formData.ownerName === 'مسجل بالنظام' ||
-        formData.phone_type === 'مسجل بالنظام' ||
-        formData.phoneNumber === 'مسجل بالنظام' ||
-        formData.idLast6 === 'مسجل بالنظام'
+        formData.ownerName === REGISTERED_IN_SYSTEM ||
+        formData.phone_type === REGISTERED_IN_SYSTEM ||
+        formData.phoneNumber === REGISTERED_IN_SYSTEM ||
+        formData.idLast6 === REGISTERED_IN_SYSTEM
       );
     }
 
@@ -487,7 +487,7 @@ const ReportPhone: React.FC = () => {
               {config.showUploadButton && (
                 <>
                   <input type="file" ref={inputRef} accept="image/*" onChange={(e) => handleImageFileChange(e, fileType, setPreview)} className="hidden" disabled={isLoading || isSubmitting} />
-                  <label htmlFor={inputRef.current?.id} onClick={() => inputRef.current?.click()} className="flex-1 bg-gradient-to-r from-blue-800 via-blue-700 to-blue-800 hover:from-blue-700 hover:via-blue-600 hover:to-blue-700 text-white py-2 px-2 rounded-lg text-center cursor-pointer transition-all duration-300 shadow hover:shadow-md flex items-center justify-center text-sm">
+                  <label onClick={() => inputRef.current?.click()} className="flex-1 bg-gradient-to-r from-blue-800 via-blue-700 to-blue-800 hover:from-blue-700 hover:via-blue-600 hover:to-blue-700 text-white py-2 px-2 rounded-lg text-center cursor-pointer transition-all duration-300 shadow hover:shadow-md flex items-center justify-center text-sm">
                     <UploadIcon className="w-4 h-4 ml-1 rtl:mr-1" />
                     {t('upload')}
                   </label>
@@ -646,10 +646,10 @@ const ReportPhone: React.FC = () => {
         if (result.found && result.isRegistered && inferredIsOwner) {
           setFormData(prev => ({
             ...prev,
-            ownerName: 'مسجل بالنظام',
-            phoneNumber: 'مسجل بالنظام',
-            phone_type: 'مسجل بالنظام',
-            idLast6: 'مسجل بالنظام',
+            ownerName: REGISTERED_IN_SYSTEM,
+            phoneNumber: REGISTERED_IN_SYSTEM,
+            phone_type: REGISTERED_IN_SYSTEM,
+            idLast6: REGISTERED_IN_SYSTEM,
             lossLocation: '',
             lossTime: '',
             receiptImage: null,

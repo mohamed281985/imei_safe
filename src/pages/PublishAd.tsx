@@ -178,11 +178,12 @@ const PublishAd: React.FC = () => {
             method: 'GET',
             headers: token ? { Authorization: `Bearer ${token}` } : {}
           });
+          const result = await resp.json().catch(() => null);
           if (!resp.ok) {
-            throw new Error('Failed to load ad');
+            const message = result?.error || result?.message || resp.statusText || 'Failed to load ad';
+            throw new Error(message);
           }
-          const json = await resp.json();
-          const data = json?.ad;
+          const data = result?.ad;
           if (!data) {
             toast({ title: t('error'), description: t('error_fetching_ad_details'), variant: 'destructive' });
             navigate('/myads');
