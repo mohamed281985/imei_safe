@@ -190,6 +190,7 @@ export default {
   
   // Search
   "enter_imei": "أدخل رقم IMEI",
+  "no_phone_preview": "لا توجد معاينة للهاتف",
   "no_receipt_preview": "لا توجد معاينة للفاتورة",
   "enter_imei_to_search": "أدخل رقم IMEI للبحث",
   "phone_lost": "هاتف مفقود",
@@ -261,6 +262,21 @@ export default {
   "register_phone": "تسجيل الهاتف",
   "register_for_me": "تسجيل لنفسي",
   "register_for_other": "تسجيل لشخص آخر",
+  "step_device_info_title": "معلومات الجهاز",
+  "step_device_info_desc": "IMEI ونوع الهاتف",
+  "step_personal_info_title": "معلوماتك الشخصية",
+  "step_personal_info_desc": "الاسم، آخر 6 أرقام، رقم الهاتف",
+  "step_loss_details_title": "تفاصيل الفقد",
+  "step_loss_details_desc": "المكان والوقت",
+  "step_password_info_title": "بيانات الدخول",
+  "step_password_info_desc": "كلمة المرور وتأكيدها",
+  "step_attachments_title": "المرفقات",
+  "step_attachments_desc": "صور الفاتورة والمحضر",
+  "phone_registered_success_description": "شكراً على تسجيل الهاتف. سيتم مراجعة البيانات خلال 3 أيام عمل.",
+  "error_saving_phone_data": "فشل حفظ بيانات الهاتف",
+  "invalid_review_status": "حالة المراجعة غير صحيحة",
+  "please_login_first": "يرجى تسجيل الدخول أولاً",
+  "swipe_to_close": "اسحب للإغلاق",
   // "register_phone_title": "تسجيل هاتف", // مكرر مع register_new_phone_title
   "phone_brand": "ماركة الهاتف",
   "phone_model": "موديل الهاتف",
@@ -365,6 +381,7 @@ export default {
   "required_fields": "يرجى ملء جميع الحقول المطلوبة",
   "invalid_imei": "رقم IMEI غير صالح",
   "imei_already_exists": "رقم IMEI موجود بالفعل",
+  "imei_stolen": "هذا الهاتف مسجل لحساب آخر ولا يمكن تسجيله.",
   "error_fetching_reports": "خطأ في جلب البلاغات",
   "error_deleting_report": "خطأ في حذف البلاغ",
   "change_report_status": "تغيير حالة البلاغ",
@@ -527,6 +544,9 @@ export default {
   "and_no_report_has_been_filed_yet": "غير مقدم به بلاغ بانه مفقود" // مفتاح الترجمة الجديد
   , "this_phone_registration_has_been_rejected_due_to_incorrect_data": "تم رفض تسجيل هذا الهاتف بسبب وجود بيانات خاطئة",
   "imei_already_exists_data_prefilled": "رقم IMEI مسجل بالفعل، تم ملء بعض البيانات تلقائياً.",
+  "imei_registered_to_you_error": "هذا الهاتف مسجل بالفعل على حسابك ولا يمكن تسجيله مرة أخرى.",
+  "imei_registered_to_another_account_with_report": "هذا الهاتف مسجل لحساب آخر ويوجد بلاغ نشط ضده.",
+  "imei_registered_to_another_account": "هذا الهاتف مسجل لحساب آخر.",
   // ... other translations ...
   
   "imei_already_reported_as_lost_detail": "هذا الهاتف مبلغ عنه كمفقود بالفعل، لا يمكن تقديم بلاغ جديد.",
@@ -605,6 +625,8 @@ export default {
   "search_limit_exceeded": "لقد استهلكت الحد المسموح من عمليات البحث",
   "search_limit_exceeded_plan": "لقد استهلكت الحد المسموح من عمليات البحث في خطتك",
   "register_limit_exceeded": "لقد استهلكت الحد المسموح من عمليات تسجيل الهواتف",
+  "register_limit_check_failed": "حدث خطأ في التحقق من حد تسجيل الهاتف",
+  "register_limit_bonus_available": "لديك بونص كافٍ لإتمام التسجيل عند حفظ البيانات",
   "print_limit_exceeded": "لقد استهلكت الحد المسموح من عمليات الطباعة في خطتك",
   "last_search_allowed": "هذه آخر عملية بحث مسموحة في خطتك",
   "last_register_allowed": "هذه آخر عملية تسجيل مسموحة في خطتك",
