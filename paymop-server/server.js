@@ -7377,6 +7377,8 @@ app.post('/api/check-limit', verifyJwtToken, async (req, res) => {
         bonusAvailable,
         offerCost,
         remainingBonus
+      });
+    }
 
     return res.json({ 
       allowed: true, 
