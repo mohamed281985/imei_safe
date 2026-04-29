@@ -19,7 +19,6 @@ function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon
 
 import localAdImage from '@/assets/images/ads/default_ad.jpeg';
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 interface ads_payment {
@@ -78,57 +77,65 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
 
   const fetchAds = async (coords: { latitude: number; longitude: number } | null) => {
     const cacheKey = `page-ads-${pageName}`;
-    const { data } = await supabase
-      .from('ads_payment')
-      .select('*')
-      .gt('expires_at', new Date().toISOString()) // <-- إضافة شرط للتحقق من تاريخ الانتهاء
-      .eq('is_active', true) // <-- إضافة شرط لجلب الإعلانات النشطة فقط
-      .eq('is_paid', true)
-      .eq('type', 'publish')
-      .eq('payment_status', 'paid') // التأكد من أن الدفع مكتمل
-      .order('upload_date', { ascending: false });
 
-    // فلترة إضافية للتأكد من عدم عرض الإعلانات المنتهية
-    const now = new Date();
-    const activeAds = data ? data.filter(ad => ad.expires_at && new Date(ad.expires_at) > now) : [];
+    try {
+      const response = await fetch(`/api/public-ads?page=${encodeURIComponent(pageName)}`);
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result?.error || 'Failed to fetch ads');
+      }
 
-    if (!activeAds || activeAds.length === 0) {
+      const activeAds = Array.isArray(result?.ads)
+        ? result.ads.filter((ad: any) => ad.expires_at && new Date(ad.expires_at) > new Date())
+        : [];
+
+      if (!activeAds || activeAds.length === 0) {
+        setShowLocalAd(true);
+        setAds([]);
+        localStorage.setItem(cacheKey, JSON.stringify([]));
+        return;
+      }
+
+      const globalAds = activeAds.filter(ad => ad.latitude == null && ad.longitude == null);
+      let fetchedAds = globalAds;
+
+      if (coords) {
+        const nearbyAds = activeAds
+          .filter(ad => ad.latitude && ad.longitude)
+          .map(ad => ({
+            ...ad,
+            distance: getDistanceFromLatLonInKm(coords.latitude, coords.longitude, ad.latitude!, ad.longitude!)
+          }))
+          .sort((a, b) => a.distance - b.distance);
+
+        // أولاً، حاول العثور على إعلانات في نطاق 3 كم
+        const inRangeAds = nearbyAds.filter(ad => ad.distance <= 3);
+        
+        // إذا لم يتم العثور على إعلانات في نطاق 3 كم، حاول البحث حتى 30 كم
+        let finalNearbyAds = inRangeAds;
+        if (inRangeAds.length === 0 && nearbyAds.length > 0) {
+          finalNearbyAds = nearbyAds.filter(ad => ad.distance <= 30);
+        }
+        
+        const allAds = [...finalNearbyAds, ...globalAds];
+        const uniqueAds = Array.from(new Map(allAds.map(ad => [ad.id, ad])).values());
+        fetchedAds = uniqueAds; // تحديث القائمة النهائية
+      }
+
+      if (fetchedAds && fetchedAds.length > 0) {
+        setAds(fetchedAds);
+        setShowLocalAd(false);
+        localStorage.setItem(cacheKey, JSON.stringify(fetchedAds));
+      } else {
+        setShowLocalAd(true);
+        setAds([]);
+        localStorage.setItem(cacheKey, JSON.stringify([]));
+      }
+    } catch (error) {
+      console.error('Failed to fetch public ads:', error);
       setShowLocalAd(true);
       setAds([]);
       localStorage.setItem(cacheKey, JSON.stringify([]));
-      return;
-    }
-
-    const globalAds = activeAds.filter(ad => ad.latitude == null && ad.longitude == null);
-    let fetchedAds = globalAds;
-
-    if (coords) {
-      const nearbyAds = activeAds
-        .filter(ad => ad.latitude && ad.longitude)
-        .map(ad => ({
-          ...ad,
-          distance: getDistanceFromLatLonInKm(coords.latitude, coords.longitude, ad.latitude!, ad.longitude!)
-        }))
-        .sort((a, b) => a.distance - b.distance);
-
-      // أولاً، حاول العثور على إعلانات في نطاق 3 كم
-      const inRangeAds = nearbyAds.filter(ad => ad.distance <= 3);
-      
-      // إذا لم يتم العثور على إعلانات في نطاق 3 كم، حاول البحث حتى 30 كم
-      let finalNearbyAds = inRangeAds;
-      if (inRangeAds.length === 0 && nearbyAds.length > 0) {
-        finalNearbyAds = nearbyAds.filter(ad => ad.distance <= 30);
-      }
-      
-      const allAds = [...finalNearbyAds, ...globalAds];
-      const uniqueAds = Array.from(new Map(allAds.map(ad => [ad.id, ad])).values());
-      fetchedAds = uniqueAds; // تحديث القائمة النهائية
-    }
-
-    if (fetchedAds && fetchedAds.length > 0) {
-      setAds(fetchedAds);
-      setShowLocalAd(false);
-      localStorage.setItem(cacheKey, JSON.stringify(fetchedAds));
     }
   };
 
