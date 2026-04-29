@@ -173,6 +173,8 @@ const ReportPhone: React.FC = () => {
     return cleanupImageUrls;
   }, []);
   const { t } = useLanguage();
+  const REGISTERED_IN_SYSTEM = '__REGISTERED_IN_SYSTEM__';
+  const registeredInSystemLabel = t('registered_in_system');
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user } = useAuth(); // جلب المستخدم الحالي
@@ -214,6 +216,14 @@ const ReportPhone: React.FC = () => {
 
   // حالة لتتبع ما إذا كان IMEI مسجلاً مسبقاً
   const [isImeiRegistered, setIsImeiRegistered] = useState(false);
+  const [currentStep, setCurrentStep] = useState(1);
+
+  const stepItems = [
+    { title: t('step_device_info_title'), description: t('step_device_info_desc') },
+    { title: t('step_personal_info_title'), description: t('step_personal_info_desc') },
+    { title: t('step_loss_details_title'), description: t('step_loss_details_desc') },
+    { title: t('step_attachments_title'), description: t('step_attachments_desc') },
+  ];
 
   const [dbPassword, setDbPassword] = useState<string | null>(null); // لتخزين كلمة المرور من قاعدة البيانات للتحقق
   const [registeredPhoneEmail, setRegisteredPhoneEmail] = useState<string | null>(null); // لتخزين إيميل الهاتف المسجل
@@ -249,7 +259,7 @@ const ReportPhone: React.FC = () => {
     }
     // تحقق من صحة آخر 6 أرقام
     // إذا كان الهاتف مسجل مسبقاً، نتخطى التحقق لأن البيانات موجودة في originalData
-    if (!isImeiRegisteredStatus && data.idLast6 !== 'مسجل بالنظام') {
+    if (!isImeiRegisteredStatus && data.idLast6 !== REGISTERED_IN_SYSTEM) {
       if (!data.idLast6 || data.idLast6.length !== 6 || !/^\d{6}$/.test(data.idLast6)) {
         toast({ title: t('error'), description: t('id_last6_invalid'), variant: 'destructive' });
         return false;
@@ -268,13 +278,13 @@ const ReportPhone: React.FC = () => {
     // صورة الفاتورة مطلوبة فقط إذا كان الحقل قابلاً للتعديل ولم تكن بيانات النظام
     if (!currentFieldReadOnlyState.receiptImage) {
       // إذا لم تكن بيانات النظام، يجب رفع صورة
-      if (!data.receiptImage && data.ownerName !== 'مسجل بالنظام') {
+      if (!data.receiptImage && data.ownerName !== REGISTERED_IN_SYSTEM) {
         toast({ title: t('error'), description: t('receipt_image_required'), variant: 'destructive' });
         return false;
       }
       // إذا كانت بيانات النظام، يجب التأكد من وجود رابط صورة الفاتورة في بيانات التسجيل
       if (
-        data.ownerName === 'مسجل بالنظام' && (
+        data.ownerName === REGISTERED_IN_SYSTEM && (
           !resultRef.current ||
           !resultRef.current.receipt_image_url ||
           typeof resultRef.current.receipt_image_url !== 'string' ||
@@ -627,9 +637,9 @@ const ReportPhone: React.FC = () => {
             ownerName: true, phoneNumber: true, lossLocation: true, lossTime: true,
             receiptImage: true, reportImage: true,
           });
-          setActiveReportWarning('هذا الهاتف تم الإبلاغ عنه بالفعل من حسابك ولا يمكنك الإبلاغ مرة أخرى.');
+          setActiveReportWarning('imei_already_reported_by_your_account');
           setIsImeiValid(false);
-          toast({ title: t('info'), description: 'هذا الهاتف تم الإبلاغ عنه بالفعل من حسابك ولا يمكنك الإبلاغ مرة أخرى.' });
+          toast({ title: t('info'), description: t('imei_already_reported_by_your_account') });
           return;
         }
 
@@ -695,10 +705,10 @@ const ReportPhone: React.FC = () => {
           setIsImeiRegistered(true);
           setIsImeiValid(false);
           setIsReadOnly(true);
-          setActiveReportWarning('هذا الهاتف مسجل لحساب آخر ولا يمكنك الإبلاغ عنه من هذا الحساب.');
+          setActiveReportWarning('this_phone_registered_to_another_account');
           toast({
             title: t('access_denied'),
-            description: 'هذا الهاتف مسجل لحساب آخر ولا يمكنك الإبلاغ عنه من هذا الحساب.',
+            description: t('this_phone_registered_to_another_account'),
             variant: 'destructive',
           });
           return;
@@ -711,7 +721,7 @@ const ReportPhone: React.FC = () => {
             ownerName: true, phoneNumber: true, lossLocation: true, lossTime: true,
             receiptImage: true, reportImage: true,
           });
-          setActiveReportWarning(t('imei_already_reported_as_lost_detail'));
+          setActiveReportWarning('imei_already_reported_as_lost_detail');
           setIsImeiValid(false);
           toast({ title: t('error'), description: t('imei_already_reported_as_lost'), variant: 'destructive' });
           return;
@@ -727,9 +737,18 @@ const ReportPhone: React.FC = () => {
     fetchMaskedImeiInfo();
   }, [formData.imei, t, toast, user]);
 
+  const handlePrevStep = () => {
+    setCurrentStep((prev) => Math.max(prev - 1, 1));
+  };
+
   // تعديل دالة معالجة الإرسال
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (currentStep < 4) {
+      setCurrentStep((prev) => Math.min(prev + 1, 4));
+      return;
+    }
 
     // التحقق من صحة النموذج مع تمرير حالة القراءة فقط للحقول
     if (!validateForm(formData, isImeiRegistered, dbPassword, fieldReadOnlyState)) {
@@ -965,262 +984,340 @@ const ReportPhone: React.FC = () => {
           </h1>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6 px-4 pb-10 pt-0">
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label htmlFor="imei" className="block text-gray-800 font-medium mb-1">
-                {t('imei_number')}
-              </label>
-              <div className="relative">
-                <Input
-                  type="text"
-                  id="imei"
-                  name="imei"
-                  value={formData.imei}
-                  onChange={handleChange}
-                  placeholder={t('enter_imei')}
-                  disabled={isReadOnly || isLoading || isSubmitting}
-                  className={`input-field w-full bg-[#c0dee5] text-gray-800 ${isImeiValid ? '!pl-12 border-green-500' : ''}`}
-                  maxLength={15}
-                  pattern="[0-9]*"
-                  inputMode="numeric"
-                  required
-                />
-                {isImeiValid && (
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <CheckCircle className="h-5 w-5 text-green-500" />
+        <form onSubmit={handleSubmit} className="space-y-6 px-1 pb-10 pt-0">
+          <div className="max-w-5xl mx-auto space-y-6">
+            {/* شريط تقدم الخطوات الاحترافي */}
+            <div className="mb-8 px-2">
+              <div className="flex items-center justify-between relative">
+                {[1, 2, 3, 4].map((step) => (
+                  <React.Fragment key={step}>
+                    <div className="flex flex-col items-center z-10">
+                      <div
+                        className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white transition-all duration-500 ${
+                          currentStep === step
+                            ? 'bg-gradient-to-r from-blue-600 to-cyan-600 shadow-lg ring-4 ring-blue-100 scale-110'
+                            : currentStep > step
+                            ? 'bg-green-500'
+                            : 'bg-gray-300'
+                        }`}
+                      >
+                        {currentStep > step ? <CheckCircle className="w-6 h-6" /> : step}
+                      </div>
+                    </div>
+                    {step < 4 && (
+                      <div className="flex-1 h-1 mx-[-10px] -mt-0">
+                        <div 
+                          className={`h-full transition-all duration-500 ${
+                            currentStep > step ? 'bg-green-500' : 'bg-gray-300'
+                          }`}
+                        />
+                      </div>
+                    )}
+                  </React.Fragment>
+                ))}
+              </div>
+              <div className="flex justify-between mt-2 text-[10px] md:text-xs font-bold text-gray-600">
+                <span className={`w-1/4 text-center ${currentStep === 1 ? 'text-blue-600' : ''}`}>{t('step_device_info_title')}</span>
+                <span className={`w-1/4 text-center ${currentStep === 2 ? 'text-blue-600' : ''}`}>{t('step_personal_info_title')}</span>
+                <span className={`w-1/4 text-center ${currentStep === 3 ? 'text-blue-600' : ''}`}>{t('step_loss_details_title')}</span>
+                <span className={`w-1/4 text-center ${currentStep === 4 ? 'text-blue-600' : ''}`}>{t('step_attachments_title')}</span>
+              </div>
+            </div>
+
+            {activeReportWarning && activeReportWarning !== 'this_phone_registered_to_another_account' && (
+              <div
+                className="my-2 rounded-[28px] border border-red-200 bg-red-50/90 p-4 text-center shadow-sm"
+              >
+                <AlertTriangle className="mx-auto mb-3 h-12 w-12 text-red-500" />
+                <p className="text-red-700 font-semibold text-base">
+                  {t(activeReportWarning)}
+                </p>
+              </div>
+            )}
+            {activeReportWarning === 'this_phone_registered_to_another_account' && (
+              <div
+                className="my-2 rounded-[28px] border border-blue-200 bg-blue-50/90 p-4 text-center shadow-sm"
+              >
+                <AlertTriangle className="mx-auto mb-3 h-12 w-12 text-blue-500" />
+                <p className="text-blue-700 font-semibold text-base">
+                  {t(activeReportWarning)}
+                </p>
+              </div>
+            )}
+
+            <div className="rounded-[28px] border border-slate-200 bg-white/95 px-2 py-6 shadow-sm">
+              {currentStep === 1 && (
+                <div className="space-y-5">
+                  <div className="flex items-center mb-6 px-2">
+                    <span className="w-8 h-8 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-full flex items-center justify-center text-white text-sm ml-2">1</span>
+                    <h3 className="text-xl font-bold text-blue-900">
+                      {t('step_device_info_title')}
+                    </h3>
                   </div>
-                )}
-              </div>
-              <p className="text-sm text-gray-600">{t('imei_hint')}</p>
+                  <div className="space-y-3">
+                    <label htmlFor="imei" className="block text-slate-800 font-medium">
+                      {t('imei_number')}
+                    </label>
+                    <div className="relative">
+                      <Input
+                        type="text"
+                        id="imei"
+                        name="imei"
+                        value={formData.imei}
+                        onChange={handleChange}
+                        placeholder={t('enter_imei')}
+                        disabled={isReadOnly || isLoading || isSubmitting}
+                        className={`input-field w-full bg-[#c0dee5] text-gray-800 ${isImeiValid ? '!pl-12 border-green-500' : ''}`}
+                        maxLength={15}
+                        pattern="[0-9]*"
+                        inputMode="numeric"
+                        required
+                      />
+                      {isImeiValid && (
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <CheckCircle className="h-5 w-5 text-green-500" />
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-sm text-slate-600">{t('imei_hint')}</p>
+                  </div>
 
-              <label htmlFor="phone_type" className="block text-gray-800 font-medium mb-1 mt-2">
-                {t('phone_type')}
-              </label>
-              <Input
-                type="text"
-                id="phone_type"
-                name="phone_type"
-                value={formData.phone_type}
-                onChange={handleChange}
-                placeholder={formData.phone_type === 'مسجل بالنظام' ? 'مسجل بالنظام' : t('phone_type_placeholder')}
-                disabled={isReadOnly || isLoading || isSubmitting || formData.phone_type === 'مسجل بالنظام'}
-                className="input-field w-full bg-[#c0dee5] text-gray-800"
-                required
-              />
+                  <div className="space-y-3">
+                    <label htmlFor="phone_type" className="block text-slate-800 font-medium">
+                      {t('phone_type')}
+                    </label>
+                    <Input
+                      type="text"
+                      id="phone_type"
+                      name="phone_type"
+                      value={formData.phone_type}
+                      onChange={handleChange}
+                      placeholder={formData.phone_type === 'مسجل بالنظام' ? 'مسجل بالنظام' : t('phone_type_placeholder')}
+                      disabled={isReadOnly || isLoading || isSubmitting || formData.phone_type === 'مسجل بالنظام'}
+                      className="input-field w-full bg-[#c0dee5] text-gray-800"
+                      required
+                    />
+                  </div>
+                </div>
+              )}
+
+              {currentStep === 2 && (
+                <div className="space-y-5">
+                  <div className="flex items-center mb-6 px-2">
+                    <span className="w-8 h-8 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-full flex items-center justify-center text-white text-sm ml-2">2</span>
+                    <h3 className="text-xl font-bold text-blue-900">
+                      {t('step_personal_info_title')}
+                    </h3>
+                  </div>
+                  <div className="space-y-3">
+                    <label htmlFor="ownerName" className="block text-slate-800 font-medium">
+                      {t('owner_name')}
+                    </label>
+                    <Input
+                      type="text"
+                      id="ownerName"
+                      name="ownerName"
+                      value={formData.ownerName}
+                      onChange={handleChange}
+                      placeholder={
+                        formData.ownerName && /^[*]+$/.test(formData.ownerName)
+                          ? 'مسجل بالنظام'
+                          : t('owner_name')
+                      }
+                      disabled={isReadOnly || fieldReadOnlyState.ownerName || isLoading || isSubmitting || formData.ownerName === 'مسجل بالنظام'}
+                      className={`input-field w-full bg-[#c0dee5] text-gray-800 ${/^[*]+$/.test(formData.ownerName) || formData.ownerName.length < 2 ? 'text-gray-400 italic' : ''}`}
+                      style={(() => {
+                        if (/^[*]+$/.test(formData.ownerName) || formData.ownerName.length < 2) {
+                          return { letterSpacing: '0.2em' };
+                        }
+                        return /[a-zA-Z0-9]/.test(formData.ownerName) ? { direction: 'ltr', textAlign: 'left' } : { direction: 'rtl', textAlign: 'right' };
+                      })()}
+                    />
+                  </div>
+
+                  <div className="space-y-3">
+                    <label htmlFor="idLast6" className="block text-slate-800 font-medium">
+                      {t('id_last_6_digits')}
+                    </label>
+                    <Input
+                      type="text"
+                      id="idLast6"
+                      name="idLast6"
+                      value={formData.idLast6}
+                      onChange={handleChange}
+                      className={`input-field w-full bg-[#c0dee5] text-gray-800 ${/^[*]+$/.test(formData.idLast6) || formData.idLast6.length < 2 ? 'text-gray-400 italic' : ''}`}
+                      style={(() => {
+                        if (/^[*]+$/.test(formData.idLast6) || formData.idLast6.length < 2) {
+                          return { letterSpacing: '0.2em' };
+                        }
+                        return /[a-zA-Z0-9]/.test(formData.idLast6) ? { direction: 'ltr', textAlign: 'left' } : { direction: 'rtl', textAlign: 'right' };
+                      })()}
+                      maxLength={6}
+                      pattern="[0-9]{6}"
+                      inputMode="numeric"
+                      required
+                      placeholder={
+                        formData.idLast6 && /^[*]+$/.test(formData.idLast6)
+                          ? 'مسجل بالنظام'
+                          : t('id_last_6_digits_placeholder')
+                      }
+                      disabled={isImeiRegistered || isReadOnly || isLoading || isSubmitting || formData.idLast6 === 'مسجل بالنظام'}
+                    />
+                  </div>
+
+                  <div className="space-y-3">
+                    <label htmlFor="phoneNumber" className="block text-slate-800 font-medium">
+                      {t('phone_number')}
+                    </label>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                      <CountryCodeSelector
+                        value={countryCode}
+                        onChange={setCountryCode}
+                        disabled={fieldReadOnlyState.phoneNumber || isReadOnly || isLoading || isSubmitting || formData.phoneNumber === 'مسجل بالنظام'}
+                      />
+                      <Input
+                        id="phoneNumber"
+                        name="phoneNumber"
+                        type="tel"
+                        value={formData.phoneNumber}
+                        onChange={handleChange}
+                        disabled={fieldReadOnlyState.phoneNumber || isReadOnly || isLoading || isSubmitting}
+                        className={`input-field w-full bg-[#c0dee5] text-gray-800 ${/^[*]+$/.test(formData.phoneNumber) || formData.phoneNumber.length < 2 ? 'text-gray-400 italic' : ''}`}
+                        style={(() => {
+                          if (/^[*]+$/.test(formData.phoneNumber) || formData.phoneNumber.length < 2) {
+                            return { letterSpacing: '0.2em' };
+                          }
+                          return /[a-zA-Z0-9]/.test(formData.phoneNumber) ? { direction: 'ltr', textAlign: 'left' } : { direction: 'rtl', textAlign: 'right' };
+                        })()}
+                        placeholder={
+                          formData.phoneNumber && /^[*]+$/.test(formData.phoneNumber)
+                            ? 'مسجل بالنظام'
+                            : t('phone_placeholder')
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {currentStep === 3 && (
+                <div className="space-y-5">
+                  <div className="flex items-center mb-6 px-2">
+                    <span className="w-8 h-8 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-full flex items-center justify-center text-white text-sm ml-2">3</span>
+                    <h3 className="text-xl font-bold text-blue-900">
+                      {t('step_loss_details_title')}
+                    </h3>
+                  </div>
+                  <div className="space-y-3">
+                    <label htmlFor="lossLocation" className="block text-slate-800 font-medium">
+                      {t('loss_location')}
+                    </label>
+                    <Input
+                      id="lossLocation"
+                      name="lossLocation"
+                      type="text"
+                      value={formData.lossLocation}
+                      onChange={handleChange}
+                      disabled={fieldReadOnlyState.lossLocation || isReadOnly || isLoading || isSubmitting}
+                      className="input-field w-full bg-[#c0dee5] text-gray-800"
+                    />
+                  </div>
+                  <div className="space-y-3">
+                    <label htmlFor="lossTime" className="block text-slate-800 font-medium">
+                      {t('loss_time')}
+                    </label>
+                    <Input
+                      id="lossTime"
+                      name="lossTime"
+                      type="datetime-local"
+                      value={formData.lossTime}
+                      onChange={handleChange}
+                      disabled={fieldReadOnlyState.lossTime || isReadOnly || isLoading || isSubmitting}
+                      className="input-field w-full bg-[#c0dee5] text-gray-800"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {currentStep === 4 && (
+                <div className="space-y-5">
+                  <div className="flex items-center mb-6 px-2">
+                    <span className="w-8 h-8 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-full flex items-center justify-center text-white text-sm ml-2">4</span>
+                    <h3 className="text-xl font-bold text-blue-900">
+                      {t('step_attachments_title')}
+                    </h3>
+                  </div>
+                  {isImeiRegistered && (
+                    <div className="space-y-3">
+                      <label htmlFor="password" className="block text-slate-800 font-medium">
+                        {t('password')}
+                      </label>
+                      <Input
+                        id="password"
+                        name="password"
+                        type="password"
+                        value={formData.password}
+                        onChange={handleChange}
+                        disabled={isReadOnly || isLoading || isSubmitting}
+                        className="input-field w-full bg-[#c0dee5] text-gray-800"
+                      />
+                      <Button
+                        type="button"
+                        className="inline-flex items-center justify-center rounded-lg bg-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-300"
+                        onClick={handleForgotPassword}
+                        disabled={isReadOnly || isLoading || isSubmitting}
+                      >
+                        {t('forgot_password')}
+                      </Button>
+                    </div>
+                  )}
+
+                  <div className="space-y-4">
+                    <h3 className="text-slate-800 text-lg font-semibold">{t('upload_images')}</h3>
+                    {renderImageUpload(
+                      t('receipt_image'),
+                      'receiptImage',
+                      receiptImagePreview,
+                      setReceiptImagePreview,
+                      CreditCard,
+                      Upload,
+                      { showCaptureButton: true, showUploadButton: true },
+                      receiptImageInputRef
+                    )}
+                    {renderImageUpload(
+                      t('report_and_box_image'),
+                      'reportImage',
+                      reportImagePreview,
+                      setReportImagePreview,
+                      FileText,
+                      Upload,
+                      { showCaptureButton: !fieldReadOnlyState.reportImage && !isReadOnly, showUploadButton: !fieldReadOnlyState.reportImage && !isReadOnly },
+                      reportImageInputRef
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* إظهار تحذير فقط إذا لم يكن الهاتف مسجل لحساب آخر */}
-            {activeReportWarning && activeReportWarning !== 'هذا الهاتف مسجل لحساب آخر ولا يمكنك الإبلاغ عنه من هذا الحساب.' && (
-              <div
-                className="my-4 p-4 rounded-lg text-center flex flex-col items-center space-y-3 shadow-lg border"
-                style={{
-                  background:
-                    'linear-gradient(90deg, #fff0f0 0%, #ffeaea 100%)',
-                  borderColor: '#ff4d4f',
-                }}
-              >
-                <AlertTriangle className="w-12 h-12 text-red-500" />
-                <p className="text-red-700 font-semibold text-lg">
-                  {t('imei_already_reported_as_lost_detail') || activeReportWarning}
-                </p>
-              </div>
-            )}
-            {/* رسالة خاصة للهاتف المسجل لحساب آخر */}
-            {activeReportWarning === 'هذا الهاتف مسجل لحساب آخر ولا يمكنك الإبلاغ عنه من هذا الحساب.' && (
-              <div
-                className="my-4 p-4 rounded-lg text-center flex flex-col items-center space-y-3 shadow-lg border"
-                style={{
-                  background:
-                    'linear-gradient(90deg, #f0f7ff 0%, #eaf4ff 100%)',
-                  borderColor: '#2196f3',
-                }}
-              >
-                <AlertTriangle className="w-12 h-12 text-blue-500" />
-                <p className="text-blue-700 font-semibold text-lg">
-                  هذا الهاتف مسجل لحساب آخر ولا يمكنك الإبلاغ عنه من هذا الحساب.
-                </p>
-              </div>
-            )}
-
-            {/* Own-account info box removed per request */}
-
-            <div className="space-y-2">
-              <label htmlFor="ownerName" className="block text-gray-800 font-medium mb-1">
-                {t('owner_name')}
-              </label>
-              <Input
-                type="text"
-                id="ownerName"
-                name="ownerName"
-                value={formData.ownerName}
-                onChange={handleChange}
-                placeholder={
-                  formData.ownerName && /^[*]+$/.test(formData.ownerName)
-                    ? 'مسجل بالنظام'
-                    : t('owner_name')
-                }
-                disabled={isReadOnly || fieldReadOnlyState.ownerName || isLoading || isSubmitting || formData.ownerName === 'مسجل بالنظام'}
-                className={`input-field w-full bg-[#c0dee5] text-gray-800 ${/^[*]+$/.test(formData.ownerName) || formData.ownerName.length < 2 ? 'text-gray-400 italic' : ''}`}
-                style={(() => {
-                  if (/^[*]+$/.test(formData.ownerName) || formData.ownerName.length < 2) {
-                    return { letterSpacing: '0.2em' };
-                  }
-                  return /[a-zA-Z0-9]/.test(formData.ownerName) ? { direction: 'ltr', textAlign: 'left' } : { direction: 'rtl', textAlign: 'right' };
-                })()}
-              />
-              
-              <div>
-                <label htmlFor="idLast6" className="block text-gray-800 font-medium mb-1">
-                  {t('id_last_6_digits')}
-                </label>
-                <Input
-                  type="text"
-                  id="idLast6"
-                  name="idLast6"
-                  value={formData.idLast6}
-                  onChange={handleChange}
-                  className={`input-field w-full bg-[#c0dee5] text-gray-800 ${/^[*]+$/.test(formData.idLast6) || formData.idLast6.length < 2 ? 'text-gray-400 italic' : ''}`}
-                  style={(() => {
-                    if (/^[*]+$/.test(formData.idLast6) || formData.idLast6.length < 2) {
-                      return { letterSpacing: '0.2em' };
-                    }
-                    return /[a-zA-Z0-9]/.test(formData.idLast6) ? { direction: 'ltr', textAlign: 'left' } : { direction: 'rtl', textAlign: 'right' };
-                  })()}
-                  maxLength={6}
-                  pattern="[0-9]{6}"
-                  inputMode="numeric"
-                  required
-                  placeholder={
-                    formData.idLast6 && /^[*]+$/.test(formData.idLast6)
-                      ? 'مسجل بالنظام'
-                      : t('id_last_6_digits_placeholder')
-                  }
-                  disabled={isImeiRegistered || isReadOnly || isLoading || isSubmitting || formData.idLast6 === 'مسجل بالنظام'}
-                />
-              </div>
-            </div>
-
-            <div>
-              <label htmlFor="phoneNumber" className="block text-gray-800 font-medium mb-1">
-                {t('phone_number')}
-              </label>
-              <div className="flex gap-2 items-center">
-                <CountryCodeSelector
-                  value={countryCode}
-                  onChange={setCountryCode}
-                  disabled={fieldReadOnlyState.phoneNumber || isReadOnly || isLoading || isSubmitting || formData.phoneNumber === 'مسجل بالنظام'}
-                />
-                <Input
-                  id="phoneNumber"
-                  name="phoneNumber"
-                  type="tel"
-                  value={formData.phoneNumber}
-                  onChange={handleChange}
-                  disabled={fieldReadOnlyState.phoneNumber || isReadOnly || isLoading || isSubmitting}
-                  className={`input-field w-full bg-[#c0dee5] text-gray-800 ${/^[*]+$/.test(formData.phoneNumber) || formData.phoneNumber.length < 2 ? 'text-gray-400 italic' : ''}`}
-                  style={(() => {
-                    if (/^[*]+$/.test(formData.phoneNumber) || formData.phoneNumber.length < 2) {
-                      return { letterSpacing: '0.2em' };
-                    }
-                    return /[a-zA-Z0-9]/.test(formData.phoneNumber) ? { direction: 'ltr', textAlign: 'left' } : { direction: 'rtl', textAlign: 'right' };
-                  })()}
-                  placeholder={
-                    formData.phoneNumber && /^[*]+$/.test(formData.phoneNumber)
-                      ? 'مسجل بالنظام'
-                      : t('phone_placeholder')
-                  }
-                />
-              </div>
-            </div>
-
-            <div>
-              <label htmlFor="lossLocation" className="block text-gray-800 font-medium mb-1">
-                {t('loss_location')}
-              </label>
-              <Input
-                id="lossLocation"
-                name="lossLocation"
-                type="text"
-                value={formData.lossLocation}
-                onChange={handleChange}
-                disabled={fieldReadOnlyState.lossLocation || isReadOnly || isLoading || isSubmitting}
-                className="input-field w-full bg-[#c0dee5] text-gray-800"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="lossTime" className="block text-gray-800 font-medium mb-1">
-                {t('loss_time')}
-              </label>
-              <Input
-                id="lossTime"
-                name="lossTime"
-                type="datetime-local"
-                value={formData.lossTime}
-                onChange={handleChange}
-                disabled={fieldReadOnlyState.lossTime || isReadOnly || isLoading || isSubmitting}
-                className="input-field w-full bg-[#c0dee5] text-gray-800"
-              />
-            </div>
-
-            {isImeiRegistered && (
-              <div>
-                <label htmlFor="password" className="block text-gray-800 font-medium mb-1">
-                  {t('password')}
-                </label>
-                <Input
-                  id="password"
-                  name="password"
-                  type="password"
-                  value={formData.password}
-                  onChange={handleChange}
-                  disabled={isReadOnly || isLoading || isSubmitting}
-                  className="input-field w-full bg-[#c0dee5] text-gray-800"
-                />
+            <div className="flex gap-3 mt-8">
+              {currentStep > 1 && (
                 <Button
                   type="button"
-                  variant="link"
-                  className="p-0 h-auto text-cyan-400 hover:text-cyan-300 mt-1 text-sm"
-                  onClick={handleForgotPassword}
-                  disabled={isReadOnly || isLoading || isSubmitting}
+                  onClick={handlePrevStep}
+                  disabled={isLoading || isSubmitting}
+                  className="flex-1 rounded-xl border border-slate-300 bg-slate-100 px-2 py-4 text-slate-700 font-bold transition hover:bg-slate-200 shadow-md"
                 >
-                  {t('forgot_password')}
+                  {t('previous') || 'الرجوع'}
                 </Button>
-              </div>
-            )}
-
-            <div className="space-y-4">
-              <h3 className="text-gray-800 text-lg font-semibold">{t('upload_images')}</h3>
-              {renderImageUpload(
-                t('receipt_image'),
-                'receiptImage',
-                receiptImagePreview,
-                setReceiptImagePreview,
-                CreditCard,
-                Upload,
-                { showCaptureButton: true, showUploadButton: true },
-                receiptImageInputRef
               )}
-              {renderImageUpload(
-                t('report_and_box_image'),
-                'reportImage',
-                reportImagePreview,
-                setReportImagePreview,
-                FileText,
-                Upload,
-                { showCaptureButton: !fieldReadOnlyState.reportImage && !isReadOnly, showUploadButton: !fieldReadOnlyState.reportImage && !isReadOnly },
-                reportImageInputRef
-              )}
+              <Button
+                type="submit"
+                disabled={isLoading || isSubmitting || isReadOnly}
+                className="flex-1 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-500 px-2 py-4 text-white font-bold shadow-lg transition hover:from-blue-700 hover:to-cyan-600"
+              >
+                {currentStep < 4 ? t('next') || 'التالي' : t('submit_report')}
+              </Button>
             </div>
-
-            <Button
-              type="submit"
-              disabled={isLoading || isSubmitting || isReadOnly}
-              className="w-full bg-orange-500 hover:bg-orange-400 text-white font-bold py-2 px-4 rounded-lg border-2 border-orange-600 hover:border-orange-500 shadow-lg"
-            >
-              {t('submit_report')}
-            </Button>
           </div>
         </form>
 

@@ -232,6 +232,18 @@ const RegisterPhone: React.FC = () => {
   const fromPurchase = location.state?.fromPurchase;
   const passedImei = location.state?.imei || '';
   const [countryCode, setCountryCode] = useState('+20');
+  const [currentStep, setCurrentStep] = useState(1);
+
+  const stepItems = [
+    { title: t('step_device_info_title'), description: t('step_device_info_desc') },
+    { title: t('step_personal_info_title'), description: t('step_personal_info_desc') },
+    { title: t('step_password_info_title'), description: t('step_password_info_desc') },
+    { title: t('step_attachments_title'), description: t('step_attachments_desc') },
+  ];
+
+  const handlePrevStep = useCallback(() => {
+    setCurrentStep(prev => Math.max(prev - 1, 1));
+  }, []);
 
   // دالة التحقق من حد التسجيل بنفس منطق SearchIMEI
   const checkRegisterLimit = useCallback(async (userId: string) => {
@@ -240,7 +252,7 @@ const RegisterPhone: React.FC = () => {
       const token = session?.access_token;
 
       const response = await axiosInstance.post('/api/check-limit', 
-        { type: 'register_phone', consumeBonusOnLimit: true },
+        { type: 'register_phone', consumeBonusOnLimit: false },
         {
           headers: {
             'Authorization': `Bearer ${token}`
@@ -250,15 +262,17 @@ const RegisterPhone: React.FC = () => {
 
       const result = response.data;
 
-      if (result?.usedBonus) {
-        toast({
-          title: t('alert'),
-          description: `تم خصم ${result.deductedAmount} من البونص ويمكنك المتابعة`,
-          variant: 'default'
-        });
-      }
-
       if (!result.allowed) {
+        if (result.bonusAvailable) {
+          toast({
+            title: t('alert'),
+            description: t('register_limit_bonus_available'),
+            variant: 'default'
+          });
+          setHasReachedRegisterLimit(false);
+          return true;
+        }
+
         toast({
           title: t('alert'),
           description: t('register_limit_exceeded'),
@@ -281,32 +295,13 @@ const RegisterPhone: React.FC = () => {
     } catch (error) {
       console.error('Error in checkRegisterLimit:', error);
       toast({
-        title: 'خطأ',
-        description: 'حدث خطأ في التحقق من حد التسجيل',
+        title: t('error'),
+        description: t('register_limit_check_failed'),
         variant: 'destructive'
       });
       return false;
     }
   }, [toast]);
-
-  // دالة تحديث العداد بعد التسجيل بنفس منطق SearchIMEI
-  const updateRegisterUsage = useCallback(async (userId: string) => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-
-      await axiosInstance.post('/api/increment-usage',
-        { type: 'register_phone' },
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        }
-      );
-    } catch (error) {
-      console.error('خطأ في تحديث استخدام التسجيل:', error);
-    }
-  }, []);
 
   const [formData, setFormData] = useState<FormData>({
     ownerName: '',
@@ -512,7 +507,7 @@ const RegisterPhone: React.FC = () => {
             setImeiError('imei_registered_to_you');
             toast({
               title: t('error'),
-              description: 'هذا الهاتف مسجل بالفعل على حسابك ولا يمكن تسجيله مرة أخرى',
+              description: t('imei_registered_to_you_error'),
               variant: 'destructive'
             });
           } else if (isStolen) {
@@ -534,7 +529,7 @@ const RegisterPhone: React.FC = () => {
               setImeiError('imei_already_exists');
               toast({
                 title: t('error'),
-                description: 'هذا الهاتف مسجل لحساب اخر ومقدم به بلاغ',
+                description: t('imei_registered_to_another_account_with_report'),
                 variant: 'destructive',
                 className: 'z-[10001] bg-red-600 text-white',
                 duration: 5000
@@ -545,7 +540,7 @@ const RegisterPhone: React.FC = () => {
               setImeiError('imei_already_exists');
               toast({
                 title: t('error'),
-                description: 'هذا الهاتف مسجل لحساب اخر',
+                description: t('imei_registered_to_another_account'),
                 variant: 'destructive',
                 className: 'z-[10001] bg-red-600 text-white',
                 duration: 5000
@@ -566,7 +561,7 @@ const RegisterPhone: React.FC = () => {
               setIsImeiValid(false);
               toast({
                 title: t('error'),
-                description: 'هذا الهاتف مسجل بالفعل على حسابك ولا يمكن تسجيله مرة أخرى',
+                description: t('imei_registered_to_you_error'),
                 variant: 'destructive'
               });
               // لا نفرّغ الحقول - نتركها كما هي أو يمكن تهيئتها من بيانات المستخدم
@@ -817,7 +812,7 @@ const RegisterPhone: React.FC = () => {
       const token = session?.access_token;
 
       const response = await axiosInstance.post('/api/register-phone',
-        phoneData,
+        { ...phoneData, useBonusOnLimit: true },
         {
           headers: {
             'Authorization': `Bearer ${token}`
@@ -830,14 +825,14 @@ const RegisterPhone: React.FC = () => {
       if (response.status >= 200 && response.status < 300) {
         // نجاح
         Object.values(previews).forEach(url => url && URL.revokeObjectURL(url));
-        showToast('success', 'شكراً على تسجيل الهاتف. سيتم مراجعة البيانات خلال 3 أيام عمل');
+        showToast('success', 'phone_registered_success_description');
         setTimeout(() => {
           navigate('/dashboard');
         }, 3000);
       } else {
         // فشل
         const errorData = response.data;
-        const errorMsg = errorData?.error || errorData?.message || 'فشل حفظ البيانات';
+        const errorMsg = errorData?.error || errorData?.message || t('error_saving_phone_data');
         console.error('Register phone error response:', { status: response.status, data: errorData });
         showToast('error', errorMsg);
       }
@@ -850,7 +845,7 @@ const RegisterPhone: React.FC = () => {
       } else if ((error as any)?.response?.data?.code === '23514') {
         showToast('error', 'invalid_review_status');
       } else {
-        const errorMsg = (error as any)?.message || 'حدث خطأ في حفظ البيانات';
+        const errorMsg = (error as any)?.message || t('error_saving_phone_data');
         showToast('error', errorMsg);
       }
     } finally {
@@ -894,6 +889,10 @@ const RegisterPhone: React.FC = () => {
 
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
+    if (currentStep < 4) {
+      setCurrentStep(prev => Math.min(prev + 1, 4));
+      return;
+    }
     if (isSubmitting) return;
 
     setIsSubmitting(true);
@@ -902,7 +901,7 @@ const RegisterPhone: React.FC = () => {
     try {
       // تحقق من الحد المسموح أولاً
       if (!user?.id) {
-        toast({ title: 'خطأ', description: 'يرجى تسجيل الدخول أولاً', variant: 'destructive' });
+        toast({ title: t('error'), description: t('please_login_first'), variant: 'destructive' });
         setIsSubmitting(false);
         setIsLoading(false);
         return;
@@ -927,8 +926,6 @@ const RegisterPhone: React.FC = () => {
         }
 
         await savePhoneData();
-        // تحديث العداد بعد التسجيل الناجح
-        await updateRegisterUsage(user.id);
       }
     } catch (error) {
       console.error('Error submitting form:', error);
@@ -937,7 +934,7 @@ const RegisterPhone: React.FC = () => {
       setIsLoading(false);
       setIsSubmitting(false);
     }
-  }, [isSubmitting, validateForm, savePhoneData, showToast, user, checkRegisterLimit, updateRegisterUsage, toast, formData.registerType, validateOtherUserData, t]);
+  }, [isSubmitting, validateForm, savePhoneData, showToast, user, checkRegisterLimit, toast, formData.registerType, validateOtherUserData, t]);
 
   useEffect(() => {
     return () => {
@@ -946,7 +943,7 @@ const RegisterPhone: React.FC = () => {
   }, [previews]);
 
   const imageTypesData: { type: ImageType; labelKey: string; icon: React.ElementType; showUpload: boolean; cameraDirection: 'front' | 'back' }[] = [
-    { type: 'phoneImage', labelKey: 'صورة الهاتف والعلبة', icon: Camera, showUpload: true, cameraDirection: 'back' },
+    { type: 'phoneImage', labelKey: 'phone_image', icon: Camera, showUpload: true, cameraDirection: 'back' },
     { type: 'receiptImage', labelKey: 'receipt_image', icon: FileText, showUpload: true, cameraDirection: 'back' },
   ];
 
@@ -1037,8 +1034,8 @@ const RegisterPhone: React.FC = () => {
         {showUpgradeModal && user && (
           <AdsOfferSlider onClose={() => setShowUpgradeModal(false)} userId={user.id} isUpgradePrompt={true} />
         )}
-        <Card className="max-w-6xl border-[#289c8e]/20 p-0" style={{ backgroundColor: 'transparent' }}>
-          <CardContent className="p-2 pb-10">
+        <Card className="max-w-6xl p-0 bg-transparent shadow-none border-none" style={{ backgroundColor: 'transparent' }}>
+          <CardContent className="p-0">
             <form onSubmit={handleSubmit} className="space-y-6">
               {/* أزرار نوع التسجيل */}
               <div className="flex gap-4 mb-4">
@@ -1057,80 +1054,122 @@ const RegisterPhone: React.FC = () => {
                   {t('register_for_other')}
                 </button>
               </div>
-              <div>
-                <label htmlFor="imei" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
-                  <Hash className="w-4 h-4 text-[#0a4d8c]" />
-                  IMEI
-                </label>
-                <div className="relative">
-                  {!isImeiValid && (
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <Smartphone className="h-4 w-4 text-gray-500" />
-                    </div>
-                  )}
-                  <input
-                    type="text"
-                    id="imei"
-                    name="imei"
-                    value={formData.imei}
-                    onChange={handleImeiChange}
-                    className={`input-field w-full text-gray-800 !pl-12 ${imeiError ? 'border-red-500' : ''} ${isImeiValid ? 'border-green-500' : ''}`}
-                    maxLength={IMEI_LENGTH}
-                    pattern="[0-9]*"
-                    inputMode="numeric"
-                    required
-                    placeholder={t('imei_placeholder_15_digits')}
-                    disabled={hasReachedRegisterLimit}
+              <div className="w-full px-0 mb-4">
+                <div className="relative w-full py-4">
+                  <div className="absolute inset-x-0 top-1/2 h-[2px] -translate-y-1/2 bg-slate-200" />
+                  <div
+                    className="absolute left-0 top-1/2 h-[2px] -translate-y-1/2 bg-emerald-500 transition-all duration-300"
+                    style={{ width: `${((currentStep - 1) / (stepItems.length - 1)) * 100}%` }}
                   />
-                  {isImeiValid && (
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <CheckCircle className="h-5 w-5 text-green-500" />
-                    </div>
-                  )}
-                </div>
-                {imeiError && (
-                  (imeiError === 'imei_stolen' || imeiError === 'imei_registered_to_you') ? (
-                    <div
-                      className="my-4 p-4 rounded-lg text-center flex flex-col items-center space-y-3 shadow-lg border"
-                      style={{
-                        background: 'linear-gradient(90deg, rgb(240, 247, 255) 0%, rgb(234, 244, 255) 100%)',
-                        borderColor: '#2196f3'
-                      }}
-                    >
-                      <AlertTriangle className="w-12 h-12 text-blue-500" />
-                      <p className="text-blue-700 font-semibold text-lg">
-                        {imeiError === 'imei_stolen' ? 'هذا الهاتف مسجل لحساب آخر ولايمكنك تسجيله' : 'هذا الهاتف مسجل بالفعل على حسابك ولا يمكن تسجيله مرة أخرى'}
-                      </p>
-                    </div>
-                  ) : (
-                    <p className="text-red-500 text-sm mt-1">{t(imeiError)}</p>
-                  )
-                )}
-              </div>
-              <div>
-                <label htmlFor="phoneType" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
-                  <Smartphone className="w-4 h-4 text-[#0a4d8c]" />
-                  {t('phone_type')}
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <FileText className="h-4 w-4 text-gray-500" />
+                  <div className="relative grid w-full grid-cols-4 gap-2 px-2">
+                    {stepItems.map((item, index) => {
+                      const stepIndex = index + 1;
+                      const isCompleted = stepIndex < currentStep;
+                      const isActive = stepIndex === currentStep;
+                      return (
+                        <div key={item.title} className="flex min-w-0 flex-col items-center text-center">
+                          <div
+                            className={`relative flex h-14 w-14 items-center justify-center rounded-full text-sm font-semibold shadow-sm transition-all duration-300 ${
+                              isCompleted
+                                ? 'bg-emerald-500 text-white'
+                                : isActive
+                                ? 'bg-gradient-to-br from-sky-500 to-cyan-400 text-white shadow-xl'
+                                : 'bg-white border border-slate-300 text-slate-600'
+                            }`}
+                          >
+                            {isCompleted ? <CheckCircle className="h-5 w-5" /> : stepIndex}
+                          </div>
+                          <p className={`mt-3 w-full text-[10px] leading-5 font-semibold ${isActive ? 'text-slate-900' : 'text-slate-600'}`}>
+                            {item.title}
+                          </p>
+                        </div>
+                      );
+                    })}
                   </div>
-                  <input
-                    type="text"
-                    id="phoneType"
-                    name="phoneType"
-                    value={formData.phoneType}
-                    onChange={handleChange}
-                    className="input-field w-full text-gray-800 !pl-12"
-                    required
-                    placeholder={t('phone_type_placeholder')}
-                    disabled={isLoading}
-                  />
                 </div>
               </div>
-              <div>
-                <label htmlFor="ownerName" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
+              <div className="rounded-[28px] border border-slate-200 bg-white/95 p-4 sm:p-5 shadow-sm">
+                <div className="space-y-5">
+                  {currentStep === 1 && (
+                    <div className="space-y-5">
+                      <div>
+                        <label htmlFor="imei" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
+                      <Hash className="w-4 h-4 text-[#0a4d8c]" />
+                      IMEI
+                    </label>
+                    <div className="relative">
+                      {!isImeiValid && (
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <Smartphone className="h-4 w-4 text-gray-500" />
+                        </div>
+                      )}
+                      <input
+                        type="text"
+                        id="imei"
+                        name="imei"
+                        value={formData.imei}
+                        onChange={handleImeiChange}
+                        className={`input-field w-full text-gray-800 !pl-12 ${imeiError ? 'border-red-500' : ''} ${isImeiValid ? 'border-green-500' : ''}`}
+                        maxLength={IMEI_LENGTH}
+                        pattern="[0-9]*"
+                        inputMode="numeric"
+                        required
+                        placeholder={t('imei_placeholder_15_digits')}
+                        disabled={hasReachedRegisterLimit}
+                      />
+                      {isImeiValid && (
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <CheckCircle className="h-5 w-5 text-green-500" />
+                        </div>
+                      )}
+                    </div>
+                    {imeiError && (
+                      (imeiError === 'imei_stolen' || imeiError === 'imei_registered_to_you') ? (
+                        <div
+                          className="my-4 p-4 rounded-lg text-center flex flex-col items-center space-y-3 shadow-lg border"
+                          style={{
+                            background: 'linear-gradient(90deg, rgb(240, 247, 255) 0%, rgb(234, 244, 255) 100%)',
+                            borderColor: '#2196f3'
+                          }}
+                        >
+                          <AlertTriangle className="w-12 h-12 text-blue-500" />
+                          <p className="text-blue-700 font-semibold text-lg">
+                            {imeiError === 'imei_stolen' ? t('imei_stolen') : t('imei_registered_to_you_error')}
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-red-500 text-sm mt-1">{t(imeiError)}</p>
+                      )
+                    )}
+                  </div>
+                  <div>
+                    <label htmlFor="phoneType" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
+                      <Smartphone className="w-4 h-4 text-[#0a4d8c]" />
+                      {t('phone_type')}
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <FileText className="h-4 w-4 text-gray-500" />
+                      </div>
+                      <input
+                        type="text"
+                        id="phoneType"
+                        name="phoneType"
+                        value={formData.phoneType}
+                        onChange={handleChange}
+                        className="input-field w-full text-gray-800 !pl-12"
+                        required
+                        placeholder={t('phone_type_placeholder')}
+                        disabled={isLoading}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+              {currentStep === 2 && (
+                <div className="space-y-5">
+                  <div>
+                    <label htmlFor="ownerName" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
                   <User className="w-4 h-4 text-[#0a4d8c]" />
                   {t('owner_name')}
                 </label>
@@ -1233,8 +1272,12 @@ const RegisterPhone: React.FC = () => {
                   />
                 </div>
               </div>
-              <div>
-                <label htmlFor="password" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
+                </div>
+              )}
+              {currentStep === 3 && (
+                <div className="space-y-5">
+                  <div>
+                    <label htmlFor="password" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
                   <KeyRound className="w-4 h-4 text-[#0a4d8c]" />
                   {t('password')}
                 </label>
@@ -1275,18 +1318,36 @@ const RegisterPhone: React.FC = () => {
                   />
                 </div>
               </div>
-              <div className="space-y-4">
-                <h3 className="text-gray-800 text-lg font-semibold">{t('upload_images')}</h3>
-                {imageTypesData.map(renderImageUpload)}
-              </div>
+                </div>
+              )}
+              {currentStep === 4 && (
+                <div className="space-y-4">
+                  <h3 className="text-gray-800 text-lg font-semibold">{t('upload_images')}</h3>
+                  {imageTypesData.map(renderImageUpload)}
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="flex gap-3 mt-5">
+            {currentStep > 1 && (
               <Button
-                type="submit"
-                className="glowing-button w-full mt-6 bg-gradient-to-r from-orange-600 via-orange-500 to-orange-600 hover:from-orange-500 hover:via-orange-400 hover:to-orange-500 text-white"
-                disabled={isSubmitting || imeiError !== '' || hasReachedRegisterLimit}
+                type="button"
+                onClick={handlePrevStep}
+                disabled={isLoading || isSubmitting}
+                className="flex-1 rounded-lg border border-slate-300 bg-slate-100 px-4 py-3 text-slate-700 font-semibold transition hover:bg-slate-200"
               >
-                {isSubmitting ? t('submitting') : t('register_phone')}
+                {t('previous')}
               </Button>
-            </form>
+            )}
+            <Button
+              type="submit"
+              className="flex-1 rounded-lg bg-gradient-to-r from-sky-600 to-cyan-500 px-4 py-3 text-white font-semibold shadow-lg transition hover:from-sky-700 hover:to-cyan-600"
+              disabled={isSubmitting || imeiError !== '' || hasReachedRegisterLimit}
+            >
+              {currentStep < 4 ? t('next') : (isSubmitting ? t('submitting') : t('register_phone'))}
+            </Button>
+          </div>
+        </form>
           </CardContent>
         </Card>
         {/* نافذة عرض الصورة الكاملة */}

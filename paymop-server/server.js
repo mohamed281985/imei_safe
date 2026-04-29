@@ -4854,7 +4854,7 @@ app.post('/api/reset-phone-password', verifyJwtToken, async (req, res) => {
 // --- نقاط نهاية تسجيل الهاتف ---
 
 // دالة التحقق من حد التسجيل (Rate Limiting)
-const checkRegisterLimit = async (userId) => {
+const checkRegisterLimit = async (userId, consumeBonusOnLimit = false) => {
   try {
     // 1. جلب أحدث دفع من جدول ads_payment
     const { data: latestPayment, error: paymentError } = await supabase
@@ -4948,7 +4948,7 @@ const checkRegisterLimit = async (userId) => {
         if (insertError) {
           throw new Error('حدث خطأ في تهيئة بيانات الخطة الخاصة بك');
         }
-        return { canRegister: true, limit: parseInt(planData.register_phone_limit), currentUsage: 0 };
+        return { canRegister: true, limit: parseInt(planData.register_phone_limit), currentUsage: 0, isLastUsage: false, bonusAvailable: false, offerCost: Number(planData.price_offer || 0), remainingBonus: 0 };
       }
       throw usageError;
     }
@@ -4958,21 +4958,81 @@ const checkRegisterLimit = async (userId) => {
     const isLastUsage = currentUsage >= limit - 1;
 
     if (currentUsage >= limit) {
-      return { 
-        canRegister: false, 
-        limit, 
-        currentUsage, 
+      const offerCost = Number(planData.price_offer || 0);
+      let bonusAvailable = false;
+      let remainingBonus = 0;
+      let lastBonusId = null;
+
+      if (offerCost > 0) {
+        const { data: lastBonus, error: bonusError } = await supabase
+          .from('ads_payment')
+          .select('id, bonus_offer, payment_status, is_paid')
+          .eq('user_id', userId)
+          .eq('transaction', 'bonus_add')
+          .eq('is_paid', true)
+          .order('payment_date', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (!bonusError && lastBonus) {
+          const amount = Number(lastBonus.bonus_offer || 0);
+          bonusAvailable = amount >= offerCost;
+          remainingBonus = amount;
+          lastBonusId = lastBonus.id;
+        }
+      }
+
+      if (consumeBonusOnLimit && bonusAvailable && lastBonusId) {
+        const newBonusValue = Number(remainingBonus) - offerCost;
+        const { error: updateErr } = await supabase
+          .from('ads_payment')
+          .update({
+            bonus_offer: newBonusValue,
+            payment_date: new Date().toISOString(),
+            is_paid: true,
+            payment_status: 'paid',
+            transaction: 'bonus_add',
+            Actual_bonus: remainingBonus
+          })
+          .eq('id', lastBonusId);
+
+        if (!updateErr) {
+          return {
+            canRegister: true,
+            limit,
+            currentUsage,
+            isLastUsage: false,
+            usedBonus: true,
+            deductedAmount: offerCost,
+            remainingBonus: newBonusValue,
+            bonusAvailable: true,
+            offerCost
+          };
+        }
+        console.error('checkRegisterLimit: failed to deduct bonus:', updateErr);
+      }
+
+      return {
+        canRegister: false,
+        limit,
+        currentUsage,
         isLastUsage: false,
-        message: 'تم الوصول إلى الحد الأقصى للتسجيل'
+        message: 'تم الوصول إلى الحد الأقصى للتسجيل',
+        bonusAvailable,
+        offerCost,
+        remainingBonus
       };
     }
 
-    return { 
-      canRegister: true, 
-      limit, 
-      currentUsage, 
+    return {
+      canRegister: true,
+      limit,
+      currentUsage,
       isLastUsage,
-      message: isLastUsage ? 'هذا هو آخر تسجيل مسموح' : null
+      message: isLastUsage ? 'هذا هو آخر تسجيل مسموح' : null,
+      bonusAvailable: false,
+      offerCost: Number(planData.price_offer || 0),
+      remainingBonus: 0
     };
   } catch (error) {
     console.error('Error in checkRegisterLimit:', error);
@@ -5194,6 +5254,8 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
   const phoneData = req.body;
   const userId = req.user.id;
   const rawImei = typeof phoneData.imei === 'string' ? phoneData.imei : '';
+  const useBonusOnLimit = phoneData.useBonusOnLimit === true || phoneData.useBonusOnLimit === 'true';
+  delete phoneData.useBonusOnLimit;
 
   // ✅ Ownership verification: فقط المستخدم نفسه يمكنه تسجيل هاتفه الخاص
   if (!userId) {
@@ -5317,13 +5379,16 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
 
   try {
     // ⭐ التحقق من حد التسجيل (Rate Limiting)
-    const limitCheck = await checkRegisterLimit(req.user.id);
-    if (!limitCheck.canRegister) {
+    const limitCheck = await checkRegisterLimit(req.user.id, false);
+    if (!limitCheck.canRegister && !(useBonusOnLimit && limitCheck.bonusAvailable)) {
       return res.status(429).json({ 
         success: false, 
         error: limitCheck.message || 'تم الوصول إلى الحد الأقصى للتسجيل',
         limit: limitCheck.limit,
-        currentUsage: limitCheck.currentUsage
+        currentUsage: limitCheck.currentUsage,
+        bonusAvailable: limitCheck.bonusAvailable || false,
+        offerCost: limitCheck.offerCost || 0,
+        remainingBonus: limitCheck.remainingBonus || 0
       });
     }
 
@@ -5371,13 +5436,30 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
 
     if (error) throw error;
 
+    const registeredId = Array.isArray(data) ? data[0]?.id : data?.id;
+
+    if (useBonusOnLimit && limitCheck.currentUsage >= limitCheck.limit) {
+      const bonusResult = await checkRegisterLimit(req.user.id, true);
+      if (!bonusResult.canRegister) {
+        console.error('Failed to consume bonus after successful registration:', bonusResult);
+        try {
+          if (registeredId) {
+            await supabase.from('registered_phones').delete().eq('id', registeredId);
+          }
+        } catch (deleteError) {
+          console.error('Failed to rollback registered phone after bonus consumption failure:', deleteError);
+        }
+        return res.status(500).json({ success: false, error: 'فشل خصم البونص بعد حفظ الهاتف' });
+      }
+    }
+
     // 📝 Audit Log: Record phone registration
     try {
       await logAudit({
         userId: userId,
         action: 'register_phone',
         resourceType: 'registered_phone',
-        resourceId: data?.id,
+        resourceId: registeredId,
         details: { 
           imei_last_4: rawImei.slice(-4),
           phone_type: phoneData.phone_type,
@@ -7225,46 +7307,64 @@ app.post('/api/check-limit', verifyJwtToken, async (req, res) => {
 
     if (currentUsage >= limit) {
       // خيار إضافي: عند بلوغ الحد، اسمح بالاستخدام عبر خصم cost من bonus (price_offer من plan)
-      if (consumeBonusOnLimit) {
-        const offerCost = Number(planData.price_offer || 0);
-        if (offerCost > 0) {
-          const { data: lastBonus, error: bonusError } = await supabase
+      const offerCost = Number(planData.price_offer || 0);
+      let bonusAvailable = false;
+      let remainingBonus = 0;
+
+      if (offerCost > 0) {
+        const { data: lastBonus, error: bonusError } = await supabase
+          .from('ads_payment')
+          .select('id, bonus_offer, payment_status, is_paid')
+          .eq('user_id', userId)
+          .eq('transaction', 'bonus_add')
+          .eq('is_paid', true)
+          .order('payment_date', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (!bonusError && lastBonus) {
+          remainingBonus = Number(lastBonus.bonus_offer || 0);
+          bonusAvailable = remainingBonus >= offerCost;
+        }
+      }
+
+      if (consumeBonusOnLimit && offerCost > 0 && bonusAvailable) {
+        const { data: lastBonus, error: bonusError } = await supabase
+          .from('ads_payment')
+          .select('id, bonus_offer')
+          .eq('user_id', userId)
+          .eq('transaction', 'bonus_add')
+          .eq('is_paid', true)
+          .order('payment_date', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (!bonusError && lastBonus && Number(lastBonus.bonus_offer || 0) >= offerCost) {
+          const newBonusValue = Number(lastBonus.bonus_offer) - offerCost;
+          const { error: updateErr } = await supabase
             .from('ads_payment')
-            .select('id, bonus_offer, payment_status, is_paid')
-            .eq('user_id', userId)
-            .eq('transaction', 'bonus_add')
-            .eq('is_paid', true)
-            .order('payment_date', { ascending: false })
-            .limit(1)
-            .maybeSingle();
+            .update({
+              bonus_offer: newBonusValue,
+              payment_date: new Date().toISOString(),
+              is_paid: true,
+              payment_status: 'paid',
+              transaction: 'bonus_add',
+              Actual_bonus: lastBonus.bonus_offer
+            })
+            .eq('id', lastBonus.id);
 
-          if (!bonusError && lastBonus && Number(lastBonus.bonus_offer || 0) >= offerCost) {
-            const newBonusValue = Number(lastBonus.bonus_offer) - offerCost;
-            const { error: updateErr } = await supabase
-              .from('ads_payment')
-              .update({
-                bonus_offer: newBonusValue,
-                payment_date: new Date().toISOString(),
-                is_paid: true,
-                payment_status: 'paid',
-                transaction: 'bonus_add',
-                Actual_bonus: lastBonus.bonus_offer
-              })
-              .eq('id', lastBonus.id);
-
-            if (!updateErr) {
-              return res.json({
-                allowed: true,
-                limit,
-                currentUsage,
-                isLastUsage: false,
-                usedBonus: true,
-                deductedAmount: offerCost,
-                remainingBonus: newBonusValue
-              });
-            }
-            console.error('check-limit: failed to deduct bonus:', updateErr);
+          if (!updateErr) {
+            return res.json({
+              allowed: true,
+              limit,
+              currentUsage,
+              isLastUsage: false,
+              usedBonus: true,
+              deductedAmount: offerCost,
+              remainingBonus: newBonusValue
+            });
           }
+          console.error('check-limit: failed to deduct bonus:', updateErr);
         }
       }
 
@@ -7273,9 +7373,10 @@ app.post('/api/check-limit', verifyJwtToken, async (req, res) => {
         limit, 
         currentUsage, 
         isLastUsage: false, 
-        message: 'Limit exceeded'
-      });
-    }
+        message: 'Limit exceeded',
+        bonusAvailable,
+        offerCost,
+        remainingBonus
 
     return res.json({ 
       allowed: true, 
