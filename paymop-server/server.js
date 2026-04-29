@@ -5919,6 +5919,54 @@ app.get('/api/ad/:id', verifyJwtToken, async (req, res) => {
   }
 });
 
+app.get('/api/public-ads', async (req, res) => {
+  try {
+    const page = String(req.query.page || '').trim();
+    const now = new Date().toISOString();
+
+    let query = supabase
+      .from('ads_payment')
+      .select('id, image_url, latitude, longitude, shop_location, page, expires_at, website_url')
+      .gt('expires_at', now)
+      .eq('is_active', true)
+      .eq('is_paid', true)
+      .eq('type', 'publish')
+      .eq('payment_status', 'paid');
+
+    if (page) {
+      query = query.eq('page', page);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.error('/api/public-ads supabase error:', error);
+      return sendError(res, 500, 'Database error', error);
+    }
+
+    const ads = (data || []).map((ad) => ({
+      id: ad.id,
+      image_url: ad.image_url || null,
+      latitude: ad.latitude || null,
+      longitude: ad.longitude || null,
+      shop_location: ad.shop_location || null,
+      page: ad.page || null,
+      expires_at: ad.expires_at || null,
+      website_url: (() => {
+        try {
+          return decryptField(ad.website_url);
+        } catch (e) {
+          return null;
+        }
+      })()
+    }));
+
+    return res.json({ ok: true, ads });
+  } catch (e) {
+    console.error('/api/public-ads error:', e);
+    return sendError(res, 500, 'Server error', e);
+  }
+});
+
 app.post('/api/validate-other-registration-data', verifyJwtToken, async (req, res) => {
   const { ownerName, phoneNumber, id_last6 } = req.body || {};
 
