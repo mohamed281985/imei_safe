@@ -5923,8 +5923,25 @@ const normalizeRedirectUrl = (url) => {
   if (!url) return null;
   let normalized = String(url).trim();
   if (!normalized) return null;
-  if (/^https?:\/\//i.test(normalized) || /^whatsapp:\/\//i.test(normalized)) return normalized;
-  if (/^wa\.me\//i.test(normalized) || /^api\.whatsapp\.com\//i.test(normalized) || /^chat\.whatsapp\.com\//i.test(normalized) || /^web\.whatsapp\.com\//i.test(normalized)) {
+
+  if (/^whatsapp:\/\//i.test(normalized)) {
+    let whatsappPath = normalized.replace(/^whatsapp:\/\//i, '');
+    if (/^message\//i.test(whatsappPath) || /^send\?/i.test(whatsappPath) || /^chat\?/i.test(whatsappPath)) {
+      return `https://api.whatsapp.com/${whatsappPath}`;
+    }
+    return `https://api.whatsapp.com/${whatsappPath}`;
+  }
+
+  if (/^https?:\/\//i.test(normalized)) {
+    if (/^https?:\/\/wa\.me\//i.test(normalized)) {
+      return normalized.replace(/^https?:\/\/wa\.me\//i, 'https://api.whatsapp.com/');
+    }
+    return normalized;
+  }
+  if (/^wa\.me\//i.test(normalized)) {
+    return `https://api.whatsapp.com/${normalized.replace(/^wa\.me\//i, '')}`;
+  }
+  if (/^api\.whatsapp\.com\//i.test(normalized) || /^chat\.whatsapp\.com\//i.test(normalized) || /^web\.whatsapp\.com\//i.test(normalized)) {
     return `https://${normalized}`;
   }
   if (/^\/\//.test(normalized)) {
