@@ -5919,6 +5919,60 @@ app.get('/api/ad/:id', verifyJwtToken, async (req, res) => {
   }
 });
 
+const normalizeRedirectUrl = (url) => {
+  if (!url) return null;
+  let normalized = String(url).trim();
+  if (!normalized) return null;
+  if (/^https?:\/\//i.test(normalized) || /^whatsapp:\/\//i.test(normalized)) return normalized;
+  if (/^wa\.me\//i.test(normalized) || /^api\.whatsapp\.com\//i.test(normalized) || /^chat\.whatsapp\.com\//i.test(normalized) || /^web\.whatsapp\.com\//i.test(normalized)) {
+    return `https://${normalized}`;
+  }
+  if (/^\/\//.test(normalized)) {
+    return `https:${normalized}`;
+  }
+  return `https://${normalized}`;
+};
+
+app.get('/api/ad-redirect/:id', async (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'id is required' });
+
+    const { data, error } = await supabase
+      .from('ads_payment')
+      .select('id, type, is_active, is_paid, payment_status, expires_at, website_url')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error) {
+      console.error('/api/ad-redirect/:id supabase error:', error);
+      return sendError(res, 500, 'Database error', error);
+    }
+    if (!data) return res.status(404).json({ error: 'Not found' });
+    if (!data.is_active || !data.is_paid || data.payment_status !== 'paid') {
+      return res.status(404).json({ error: 'Ad not available' });
+    }
+    if (data.expires_at && new Date(data.expires_at) <= new Date()) {
+      return res.status(404).json({ error: 'Ad expired' });
+    }
+
+    const url = decryptField(data.website_url);
+    if (!url || typeof url !== 'string') {
+      return res.status(404).json({ error: 'Invalid ad URL' });
+    }
+
+    const redirectUrl = normalizeRedirectUrl(url);
+    if (!redirectUrl) {
+      return res.status(404).json({ error: 'Invalid redirect URL' });
+    }
+
+    return res.redirect(redirectUrl);
+  } catch (e) {
+    console.error('/api/ad-redirect/:id error:', e);
+    return sendError(res, 500, 'Server error', e);
+  }
+});
+
 app.post('/api/validate-other-registration-data', verifyJwtToken, async (req, res) => {
   const { ownerName, phoneNumber, id_last6 } = req.body || {};
 

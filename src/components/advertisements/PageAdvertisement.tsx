@@ -169,7 +169,7 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
 
   if (showLocalAd) {
     return (
-      <div className="sticky top-10 z-10">
+      <div className="sticky top-1 z-10">
         <div className="rounded-lg overflow-hidden shadow-md w-full aspect-video relative bg-gray-100">
           <img src={localAdImage} alt={t('local_ad')} className="w-full h-full object-cover absolute inset-0" />
         </div>
@@ -179,15 +179,13 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
   if (!ads || ads.length === 0) return null;
 
   return (
-    <div className="sticky top-10 z-10">
+    <div className="sticky top-1 z-10">
       {ads && ads.length > 0 && currentAdIndex < ads.length && (
         <>
           <div className="rounded-lg overflow-hidden shadow-md w-full aspect-video relative bg-gray-100">
             {ads[currentAdIndex]?.website_url ? (
               <a
-                href={ads[currentAdIndex].website_url}
-                target="_blank"
-                rel="noopener noreferrer"
+                href={`/api/ad-redirect/${ads[currentAdIndex].id}`}
                 title={t('click_to_visit_ad_link')}
                 className="block w-full h-full relative"
               >
