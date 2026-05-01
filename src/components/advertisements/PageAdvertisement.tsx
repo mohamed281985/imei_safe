@@ -44,6 +44,8 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
   const [currentAdIndex, setCurrentAdIndex] = useState(0);
   const [showLocalAd, setShowLocalAd] = useState(true);
 
+  const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || 'https://imei-safe.me';
+
   useEffect(() => {
     const cacheKey = `page-ads-${pageName}`;
     // 1. محاولة تحميل الإعلانات من ذاكرة التخزين المؤقت أولاً
@@ -167,6 +169,26 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
     return () => clearInterval(timer);
   }, [ads.length, currentAdIndex, ads]);
 
+  const openAdRedirect = async (id: number) => {
+    const baseUrl = API_BASE_URL.replace(/\/+$/, '');
+    const url = `${baseUrl}/api/ad-redirect/${id}`;
+    try {
+      const browserPlugin = (window as any)?.Capacitor?.Plugins?.Browser;
+      if (browserPlugin?.openExternal) {
+        await browserPlugin.openExternal({ url });
+        return;
+      }
+      if (browserPlugin?.open) {
+        await browserPlugin.open({ url, toolbarColor: '#000000' });
+        return;
+      }
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (error) {
+      console.error('Failed to open ad redirect URL:', error);
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+  };
+
   if (showLocalAd) {
     return (
       <div className="sticky top-1 z-10">
@@ -182,12 +204,16 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
     <div className="sticky top-1 z-10">
       {ads && ads.length > 0 && currentAdIndex < ads.length && (
         <>
-          <div className="rounded-lg overflow-hidden shadow-md w-full aspect-video relative bg-gray-100">
+          <div className="rounded-lg overflow-hidden shadow-md w-full aspect-video relative bg-gray-100 mb-3">
             {ads[currentAdIndex]?.website_url ? (
               <a
-                href={`/api/ad-redirect/${ads[currentAdIndex].id}`}
+                href={`${API_BASE_URL}/api/ad-redirect/${ads[currentAdIndex].id}`}
                 title={t('click_to_visit_ad_link')}
                 className="block w-full h-full relative"
+                onClick={(e) => {
+                  e.preventDefault();
+                  openAdRedirect(ads[currentAdIndex].id);
+                }}
               >
                 <img
                   src={ads[currentAdIndex]?.image_url}
@@ -208,9 +234,9 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
                 className="w-full h-full object-cover absolute inset-0"
               />
             )}
-            {/* ⭐ تم نقل الزر هنا ليكون فوق الصورة */}
+            {/* زر الموقع الجغرافي */}
             {ads[currentAdIndex]?.latitude && ads[currentAdIndex]?.longitude && (
-              <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20 w-auto">
+              <div className="absolute bottom-2 right-2 z-20 w-auto">
                 <button
                   onClick={(e) => {
                     e.preventDefault();
@@ -226,20 +252,6 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
                   </svg>
                   {t('store_location')}
                 </button>
-              </div>
-            )}
-            {/* نقاط التنقل */}
-            {ads.length > 1 && (
-              <div className="absolute bottom-2 right-2 z-20 flex space-x-2" style={{ direction: 'ltr' }}>
-                {ads.map((_, index) => (
-                  <button
-                    key={index}
-                    onClick={() => setCurrentAdIndex(index)}
-                    className={`h-2 w-2 rounded-full transition-all duration-300 ${
-                      currentAdIndex === index ? 'bg-white scale-125' : 'bg-white/50'
-                    }`}
-                  />
-                ))}
               </div>
             )}
           </div>

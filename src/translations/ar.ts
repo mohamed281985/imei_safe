@@ -276,6 +276,11 @@ export default {
   "error_saving_phone_data": "فشل حفظ بيانات الهاتف",
   "invalid_review_status": "حالة المراجعة غير صحيحة",
   "please_login_first": "يرجى تسجيل الدخول أولاً",
+  "step": "الخطوة",
+  "of": "من",
+  "previous": "السابق",
+  "next": "التالي",
+  "complete": "إتمام",
   "swipe_to_close": "اسحب للإغلاق",
   // "register_phone_title": "تسجيل هاتف", // مكرر مع register_new_phone_title
   "phone_brand": "ماركة الهاتف",

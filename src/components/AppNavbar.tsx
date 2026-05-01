@@ -210,7 +210,7 @@ const AppNavbar: React.FC = () => {
   return (
     <div className="relative">
       {/* تم تعديل الكلاسات لتكون متجاوبة مع مختلف أحجام الشاشات */}
-      <div className="flex justify-between items-center pt-8 sm:pt-8 pb-2 px-4 min-h-[3.5rem]">
+      <div className="flex justify-between items-center pt-3 pb-2 px-4">
         <div className="flex items-center h-14 min-h-[3.5rem]">
           {/* تصغير حجم الشعار على الشاشات الصغيرة */}
           <Logo size="md" className="scale-110" />
