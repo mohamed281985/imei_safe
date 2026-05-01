@@ -8,10 +8,10 @@ interface LogoProps {
 
 const Logo: React.FC<LogoProps> = ({ size = 'md', className = '' }) => {
   const sizeMap: Record<string, string> = {
-    sm: 'h-12',
-    md: 'h-14',
-    lg: 'h-16',
-    xl: 'h-24'
+    sm: 'h-8',
+    md: 'h-10',
+    lg: 'h-12',
+    xl: 'h-18'
   };
 
   const imgClass = `!m-0 ${sizeMap[size] || sizeMap.md} ${className} object-contain`;
