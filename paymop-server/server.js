@@ -1897,6 +1897,14 @@ async function sendFCMNotificationV1({ token, title, body, data }) {
     message: {
       token,
       notification: { title, body }, // هذا المفتاح ضروري لظهور الإشعار في الخارج
+      android: {
+        priority: 'high'
+      },
+      apns: {
+        headers: {
+          'apns-priority': '10'
+        }
+      },
       data: data || {},
     },
   };
@@ -2358,7 +2366,7 @@ app.post('/api/search-imei', searchImeiLimiter, async (req, res) => {
       await supabase.from('search_history').insert({
         user_id: authenticatedUserId,
         imei: imei,
-        found: !!activeReport || !!regPhone,
+        found: !!activeReportAny || !!regPhone,
         created_at: new Date().toISOString()
       });
     } catch (logError) {
@@ -2947,13 +2955,13 @@ app.post('/api/get-finder-phone', verifyJwtToken, async (req, res) => {
 
     // ⭐ تحقق من نتيجة البحث في جدول users
     if (userResult.status === 'fulfilled' && userResult.value.data && !userResult.value.error) {
-      finderPhoneNumber = userResult.value.data.phone;
+      finderPhoneNumber = decryptField(userResult.value.data.phone) || userResult.value.data.phone;
       console.log('تم العثور على رقم هاتف في جدول users:', finderPhoneNumber);
     }
 
     // ⭐ إذا لم يتم العثوره في users، تحقق من نتيجة البحث في جدول businesses
     if (!finderPhoneNumber && businessResult.status === 'fulfilled' && businessResult.value.data && !businessResult.value.error) {
-      finderPhoneNumber = businessResult.value.data.phone;
+      finderPhoneNumber = decryptField(businessResult.value.data.phone) || businessResult.value.data.phone;
       console.log('تم العثور على رقم هاتف في جدول businesses:', finderPhoneNumber);
     }
 
