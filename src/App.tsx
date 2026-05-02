@@ -170,9 +170,19 @@ const AppCore = () => {
       }
       console.log('جاري تحديث توكن FCM للمستخدم:', user.id);
       try {
+        const session = await supabase.auth.getSession();
+        const token = session?.data?.session?.access_token;
+        if (!token) {
+          console.warn('لا يوجد توكن جلسة صالح لتحديث FCM token.');
+          return;
+        }
+
         const response = await fetch('https://imei-safe.me/api/update-fcm-token', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
           body: JSON.stringify({ id: user.id, fcmToken: fcmToken }),
         });
         const result = await response.json();
