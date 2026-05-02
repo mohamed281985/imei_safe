@@ -2123,6 +2123,50 @@ app.post('/api/send-fcm-v1', verifyJwtToken, async (req, res) => {
   }
 });
 
+app.post('/api/update-fcm-token', verifyJwtToken, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+
+    const { fcmToken } = req.body;
+    if (!fcmToken || typeof fcmToken !== 'string') {
+      return res.status(400).json({ success: false, error: 'fcmToken is required' });
+    }
+
+    const updates = {
+      fcm_token: fcmToken,
+      updated_at: new Date().toISOString()
+    };
+
+    const { error: userError } = await supabase
+      .from('users')
+      .update(updates)
+      .eq('id', userId);
+
+    if (userError) {
+      console.error('Failed to update user FCM token:', userError);
+      return res.status(500).json({ success: false, error: 'Failed to update user FCM token' });
+    }
+
+    const { error: reportError } = await supabase
+      .from('phone_reports')
+      .update({ fcm_token: fcmToken })
+      .eq('user_id', userId);
+
+    if (reportError) {
+      console.error('Failed to update fcm_token on phone_reports for user:', reportError);
+      // لا نوقف العملية، لأن التحديث في users يكفي في أغلب الحالات
+    }
+
+    res.json({ success: true, message: 'FCM token updated successfully' });
+  } catch (err) {
+    console.error('Error in /api/update-fcm-token:', err);
+    return sendError(res, 500, 'حدث خطأ في الخادم', err, { success: false });
+  }
+});
+
 // نقطة نهاية لإرسال إشعارات باستخدام IMEI
 app.post('/api/send-notification-by-imei', verifyJwtToken, async (req, res) => {
   try {
@@ -2788,12 +2832,30 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
 
     const localizedContent = notificationsByLang[normalizedLang] || notificationsByLang.ar;
 
-    if (foundReport.fcm_token) {
-      console.log(`Found FCM token, sending push notification to: ${foundReport.fcm_token}`);
+    let ownerFcmToken = foundReport.fcm_token;
+    if (!ownerFcmToken && foundReport.user_id) {
+      try {
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('fcm_token')
+          .eq('id', foundReport.user_id)
+          .maybeSingle();
+
+        if (userData && !userError && userData.fcm_token) {
+          ownerFcmToken = userData.fcm_token;
+          console.log('Using owner FCM token fallback from users table for owner id:', foundReport.user_id);
+        }
+      } catch (fcmLookupError) {
+        console.error('Error looking up owner FCM token fallback:', fcmLookupError);
+      }
+    }
+
+    if (ownerFcmToken) {
+      console.log(`Found FCM token, sending push notification to: ${ownerFcmToken}`);
       try {
         const notificationBody = localizedContent.body;
         await sendFCMNotificationV1({
-          token: foundReport.fcm_token,
+          token: ownerFcmToken,
           title: localizedContent.title,
           body: notificationBody,
           data: {
@@ -2807,7 +2869,7 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
         console.error('Failed to send FCM notification:', fcmError);
       }
     } else {
-      console.log('No FCM token found for this report, skipping push notification.');
+      console.log('No FCM token found for this report or owner, skipping push notification.');
     }
 
     // 4. إرسال البريد الإلكتروني (كما كان)
