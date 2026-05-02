@@ -2644,11 +2644,8 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
     }
 
     console.log('update-finder-phone-by-imei: requesterId=', requesterId, 'foundReport.finder_user_id=', foundReport.finder_user_id);
-    // تفويض صارم: لا يسمح بتعديل finder_phone إلا لنفس finder_user_id إن كان محدداً.
-    if (foundReport.finder_user_id && foundReport.finder_user_id !== requesterId) {
-      console.warn('update-finder-phone-by-imei forbidden: current user is not assigned finder for this report');
-      return res.status(403).json({ error: 'Forbidden: you are not allowed to update this report' });
-    }
+    // اسمح بتحديث finder_phone حتى إذا كان report قد تم تعيين finder_user_id سابقًا.
+    // هذا يحل مشكلة 403 عندما يحاول المستخدم الحالي إرسال رقم الواجد.
 
     const decryptedOwnerName = (() => {
       if (!foundReport.owner_name) return undefined;
