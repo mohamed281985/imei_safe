@@ -33,11 +33,10 @@ export const createNotification = async (payload: NotificationPayload) => {
     }
 
     // إنشاء الإشعار
-    const { finder_phone, ...safePayload } = payload;
     const result = await supabase
       .from('notifications')
       .insert({
-        ...safePayload,
+        ...payload,
         title: titleWithImei,
         is_read: payload.is_read || false,
         created_at: payload.created_at || new Date().toISOString()

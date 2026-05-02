@@ -305,8 +305,8 @@ const PhoneDetails: React.FC = () => {
       // سيقوم الخادم الآن بإرسال الإشعار والبريد الإلكتروني بعد تحديث قاعدة البيانات بنجاح.
       // هذا يضمن أن البيانات محدثة قبل إرسال التنبيهات.
       
-      notificationSent = updateResult.success; // نعتبر الإشعار ناجحًا إذا نجح طلب الخادم
-      emailSent = updateResult.success; // نفس المنطق للبريد الإلكتروني
+      notificationSent = updateResult.success || updateResult.ok; // نعتبر الإشعار ناجحًا إذا نجح طلب الخادم
+      emailSent = updateResult.success || updateResult.ok; // نفس المنطق للبريد الإلكتروني
 
       if (notificationSent || emailSent) {
         toast({ title: t('notification_sent'), description: t('owner_notified_success') });
