@@ -75,6 +75,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsFirstLogin(false);
   };
 
+  // Check whether a biometric token is still present in secure storage.
+  const isBiometricTokenStored = async (): Promise<boolean> => {
+    if (!(window as any).SecureStorage) {
+      return false;
+    }
+
+    return new Promise<boolean>((resolve) => {
+      try {
+        const ss = new (window as any).SecureStorage(() => {}, () => {}, 'my_app_storage');
+        ss.get(
+          (token: string) => {
+            resolve(!!token);
+          },
+          () => {
+            resolve(false);
+          },
+          'biometricAuthToken'
+        );
+      } catch (err) {
+        console.warn('SecureStorage check failed:', err);
+        resolve(false);
+      }
+    });
+  };
+
   // تم تعريف دالة الخروج هنا وتغليفها بـ useCallback
   // لحل مشكلة "used before its declaration" في الـ useEffects.
   const logout = useCallback(async () => {
@@ -89,21 +114,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsFirstLogin(false); // ⭐ إعادة تعيين الحالة عند الخروج
     setLastActivity(Date.now());
 
-    // إبطال الجلسة من Supabase لتقليل مخاطر إعادة استخدام التوكن.
-    try {
-      await supabase.auth.signOut();
-    } catch (err) {
-      console.error('Supabase signOut failed:', err);
-    }
-
-    // تنظيف أي توكن بصمة محفوظ محليًا.
-    try {
-      if ((window as any).SecureStorage) {
-        const ss = new (window as any).SecureStorage(() => {}, () => {}, 'my_app_storage');
-        ss.remove(() => {}, () => {}, 'biometricAuthToken');
+    // إذا كان هناك توكن بصمة مفعل، لا نريد إبطال التوكن على الخادم لأن ذلك سيمنع البصمة من العمل بعد الخروج.
+    const biometricStored = await isBiometricTokenStored();
+    if (!biometricStored) {
+      try {
+        await supabase.auth.signOut();
+      } catch (err) {
+        console.error('Supabase signOut failed:', err);
       }
-    } catch (e) {
-      console.warn('Could not clear biometricAuthToken on logout.', e);
+    } else {
+      console.log('Biometric token present; skipping Supabase signOut to preserve biometric login.');
     }
   }, []); // الاعتماديات فارغة لأن دوال الحالة (setters) مستقرة
 
@@ -492,13 +512,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     try {
-      // 1. تحديث الجلسة باستخدام refresh_token المحفوظ
-      const { data: sessionData, error: sessionError } = await supabase.auth.refreshSession({
-        refresh_token: biometricToken,
-      });
+      // 1. محاولة استعادة الجلسة من refresh_token المخزن
+      const { data: sessionData, error: sessionError } = await supabase.auth.refreshSession({ refresh_token: biometricToken });
 
-      if (sessionError) {
-        console.error("Biometric login - setSession error:", sessionError);
+      if (sessionError || !sessionData || !sessionData.session) {
+        console.error('Biometric login - refreshSession error:', sessionError, sessionData);
+        setError('biometric_login_failed'); // قد يكون التوكن منتهي الصلاحية
+        // إذا فشل التحديث (مثلاً، التوكن غير صالح)، قم بحذفه لمنع المحاولات الفاشلة المتكررة
+        try {
+          if ((window as any).SecureStorage) {
+            const ss = new (window as any).SecureStorage(() => {}, () => {}, 'my_app_storage');
+            ss.remove(
+              () => { console.log('SecureStorage: Removed invalid biometric token.'); },
+              () => {},
+              'biometricAuthToken'
+            );
+          }
+        } catch (e) {
+          console.warn('Could not remove invalid biometric token.', e);
+        }
+        toast({ title: 'خطأ', description: 'فشل تسجيل الدخول بالبصمة', variant: 'destructive' });
+        return false;
+      }
+
+      if (sessionError || !sessionData || !sessionData.session) {
+        console.error('Biometric login - refresh/setSession error:', sessionError, sessionData);
         setError('biometric_login_failed'); // قد يكون التوكن منتهي الصلاحية
         // إذا فشل التحديث (مثلاً، التوكن غير صالح)، قم بحذفه لمنع المحاولات الفاشلة المتكررة
         try {
@@ -535,7 +573,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       // 3. جلب بيانات المستخدم من الجلسة النشطة الآن
-      const user = sessionData.user;
+      const session = sessionData.session;
+      const user = sessionData.user || session?.user;
+
+      if (!session) {
+        console.error('Biometric login - refreshSession returned no session:', sessionData);
+      }
 
       if (user) {
         console.log("Biometric login successful, user:", user);

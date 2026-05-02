@@ -171,21 +171,25 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
 
   const openAdRedirect = async (id: number) => {
     const baseUrl = API_BASE_URL.replace(/\/+$/, '');
-    const url = `${baseUrl}/api/ad-redirect/${id}`;
+    const apiUrl = `${baseUrl}/api/ad-redirect/${id}`;
+
     try {
+      const response = await fetch(apiUrl, { method: 'GET', redirect: 'follow' });
+      const finalUrl = response.url || apiUrl;
+
       const browserPlugin = (window as any)?.Capacitor?.Plugins?.Browser;
       if (browserPlugin?.openExternal) {
-        await browserPlugin.openExternal({ url });
+        await browserPlugin.openExternal({ url: finalUrl });
         return;
       }
       if (browserPlugin?.open) {
-        await browserPlugin.open({ url, toolbarColor: '#000000' });
+        await browserPlugin.open({ url: finalUrl, toolbarColor: '#000000' });
         return;
       }
-      window.open(url, '_blank', 'noopener,noreferrer');
+      window.open(finalUrl, '_blank', 'noopener,noreferrer');
     } catch (error) {
-      console.error('Failed to open ad redirect URL:', error);
-      window.open(url, '_blank', 'noopener,noreferrer');
+      console.error('Failed to fetch/open ad redirect URL:', error);
+      window.open(apiUrl, '_blank', 'noopener,noreferrer');
     }
   };
 

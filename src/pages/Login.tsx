@@ -91,10 +91,13 @@ const BiometricButton: React.FC = () => {
             );
             await ss.get(
               async (token: string) => {
+                console.log('SecureStorage: Retrieved biometric token:', token);
                 if (token) {
                   const success = await loginWithBiometricToken?.(token);
                   if (success) {
                     navigate('/dashboard', { replace: true });
+                  } else {
+                    toast({ title: t('error'), description: t('biometric_login_failed'), variant: 'destructive' });
                   }
                 } else {
                   toast({ title: t('error'), description: t('biometric_token_not_found'), variant: 'destructive' });
@@ -102,8 +105,7 @@ const BiometricButton: React.FC = () => {
               }, 
               (error: any) => {
                 console.error('SecureStorage: Failed to get token.', typeof error === 'object' ? JSON.stringify(error) : String(error));
-                // عرض رسالة خطأ أكثر وضوحًا للمستخدم
-                toast({ title: t('biometric_not_activated_title'), description: t('biometric_not_activated_desc'), variant: 'destructive', duration: 7000 });
+                toast({ title: t('error'), description: t('biometric_not_activated_desc'), variant: 'destructive', duration: 7000 });
               },
               'biometricAuthToken'
             );
