@@ -2664,7 +2664,7 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
     console.log(`Searching for phone with IMEI: ${imei}`);
     const { data: allReports, error: reportError } = await supabase
       .from('phone_reports')
-      .select('id, imei, email, owner_name, fcm_token, finder_user_id')
+      .select('id, imei, email, owner_name, fcm_token, user_id, finder_user_id')
       .order('id', { ascending: true });
 
     if (reportError || !allReports || allReports.length === 0) {
@@ -2716,7 +2716,24 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
       }
     })();
 
-    console.log(`Phone found for IMEI: ${imei}. Owner: ${decryptedOwnerName || foundReport.owner_name}`);
+    let ownerUserId = foundReport.user_id || null;
+    if (!ownerUserId && decryptedOwnerEmail) {
+      try {
+        const { data: userLookup, error: userLookupError } = await supabase
+          .from('users')
+          .select('id')
+          .ilike('email', decryptedOwnerEmail)
+          .maybeSingle();
+        if (!userLookupError && userLookup?.id) {
+          ownerUserId = userLookup.id;
+          console.log('Fallback owner user_id found via users table for email:', decryptedOwnerEmail);
+        }
+      } catch (e) {
+        console.error('Error looking up owner user_id by email:', e);
+      }
+    }
+
+    console.log(`Phone found for IMEI: ${imei}. Owner: ${decryptedOwnerName || foundReport.owner_name}, ownerUserId: ${ownerUserId}`);
 
     // 2. تشفير finder_phone قبل الحفظ
     let encryptedFinderPhone = null;
@@ -2886,7 +2903,7 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
         title: localizedContent.title,
         body: localizedContent.body,
         email: decryptedOwnerEmail || null,
-        user_id: foundReport.user_id || null,
+        user_id: ownerUserId,
         finder_phone: decryptedFinderPhone,
         imei: decryptedImei || foundReport.imei,
         notification_type: 'phone_found',
