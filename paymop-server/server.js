@@ -1652,7 +1652,9 @@ const corsOptions = {
       callback(new Error('Not allowed by CORS'));
     }
   },
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key']
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'X-CSRF-Token', 'X-Requested-With'],
+  exposedHeaders: ['Authorization']
 };
 
 app.use(cors(corsOptions));
