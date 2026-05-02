@@ -277,6 +277,7 @@ const encryptFieldForStorage = (value) => {
 const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || 'imeisafe-b2dd8';
 const CLIENT_EMAIL = process.env.FIREBASE_CLIENT_EMAIL;
 const PRIVATE_KEY = process.env.FIREBASE_PRIVATE_KEY;
+const RESEND_FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
 
 // تعريف auth في النطاق الرئيسي
 let auth;
@@ -2616,7 +2617,7 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
     console.log(`Searching for phone with IMEI: ${imei}`);
     const { data: allReports, error: reportError } = await supabase
       .from('phone_reports')
-      .select('id, imei, email, owner_name, fcm_token, finder_user_id')
+      .select('id, imei, email, owner_name, fcm_token, finder_user_id, user_id')
       .order('id', { ascending: true });
 
     if (reportError || !allReports || allReports.length === 0) {
@@ -2666,6 +2667,35 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
         return foundReport.email;
       }
     })();
+
+    let ownerLanguageFallback = null;
+    let ownerEmail = decryptedOwnerEmail;
+    if (!ownerEmail && foundReport.user_id) {
+      try {
+        const { data: ownerUser, error: ownerUserError } = await supabase
+          .from('users')
+          .select('email, language')
+          .eq('id', foundReport.user_id)
+          .single();
+
+        if (!ownerUserError && ownerUser?.email) {
+          ownerEmail = (() => {
+            try {
+              return decryptField(ownerUser.email) || ownerUser.email;
+            } catch (e) {
+              console.error('فشل فك تشفير email المالك من جدول users:', e);
+              return ownerUser.email;
+            }
+          })();
+          ownerLanguageFallback = ownerUser.language || null;
+          console.log('Fallback owner email loaded from users table for owner user_id:', foundReport.user_id);
+        } else {
+          console.log('No fallback email found in users table for owner user_id:', foundReport.user_id, ownerUserError);
+        }
+      } catch (e) {
+        console.error('Failed to load owner email fallback from users table:', e);
+      }
+    }
 
     console.log(`Phone found for IMEI: ${imei}. Owner: ${decryptedOwnerName || foundReport.owner_name}`);
 
@@ -2731,12 +2761,12 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
     })();
 
     const ownerLanguage = await (async () => {
-      if (!decryptedOwnerEmail) return 'ar';
+      if (!ownerEmail) return 'ar';
       try {
         const { data, error } = await supabase
           .from('users')
           .select('language')
-          .ilike('email', decryptedOwnerEmail)
+          .ilike('email', ownerEmail)
           .maybeSingle();
         if (error) {
           console.error('فشل جلب لغة المستخدم:', error);
@@ -2791,6 +2821,10 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
 
     const localizedContent = notificationsByLang[normalizedLang] || notificationsByLang.ar;
 
+    let fcmSent = false;
+    let emailSent = false;
+    const sendErrors = [];
+
     if (foundReport.fcm_token) {
       console.log(`Found FCM token, sending push notification to: ${foundReport.fcm_token}`);
       try {
@@ -2805,33 +2839,40 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
           }
         });
         console.log('Push notification sent successfully.');
+        fcmSent = true;
       } catch (fcmError) {
-        // لا توقف العملية كلها إذا فشل الإشعار، فقط سجل الخطأ
         console.error('Failed to send FCM notification:', fcmError);
+        sendErrors.push(`FCM: ${fcmError.message || fcmError}`);
       }
     } else {
       console.log('No FCM token found for this report, skipping push notification.');
     }
 
     // 4. إرسال البريد الإلكتروني (كما كان)
-    if (decryptedOwnerEmail) {
-      const cleanEmail = decryptedOwnerEmail.trim();
+    if (ownerEmail) {
+      const cleanEmail = ownerEmail.trim();
       console.log('إرسال بريد إلكتروني إلى:', cleanEmail);
 
-      await resend.emails.send({
-        from: 'onboarding@resend.dev',
-        to: cleanEmail,
-        subject: localizedContent.emailSubject,
-        html: localizedContent.emailHtml
-      });
-      console.log('Email sent successfully.');
+      try {
+        await resend.emails.send({
+          from: RESEND_FROM_EMAIL,
+          to: cleanEmail,
+          subject: localizedContent.emailSubject,
+          html: localizedContent.emailHtml
+        });
+        console.log('Email sent successfully.');
+        emailSent = true;
+      } catch (emailError) {
+        console.error('Failed to send owner email:', emailError);
+        sendErrors.push(`Email: ${emailError.message || emailError}`);
+      }
     } else {
       console.log('No email found for this report, skipping email notification.');
     }
 
-    // إذا لم يكن هناك بريد إلكتروني أو توكن، قد يكون هناك مشكلة
-    if (!foundReport.fcm_token && !decryptedOwnerEmail) {
-      return res.status(400).json({ error: 'لم يتم العثور على بريد إلكتروني أو توكن إشعارات مسجل لهذا الهاتف' });
+    if (!fcmSent && !emailSent) {
+      const errorMessage = sendErrors.length > 0 ? sendErrors.join(' | ') : 'لم يتم العثور على بريد إلكتروني أو توكن إشعارات مسجل لهذا الهاتف';
+      return res.status(500).json({ error: errorMessage });
     }
 
     // --- ⭐ بدء فترة التهدئة بعد الإرسال الناجح ---

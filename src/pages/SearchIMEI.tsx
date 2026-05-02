@@ -254,8 +254,8 @@ const WelcomeSearch: React.FC = () => {
           }
         }
 
-        notificationSent = updateResult.success;
-        emailSent = updateResult.success;
+        notificationSent = updateResult.success || updateResult.ok;
+        emailSent = updateResult.success || updateResult.ok;
 
         if (notificationSent || emailSent) {
           toast({ title: t('notification_sent'), description: t('owner_notified_success') });
