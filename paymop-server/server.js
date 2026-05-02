@@ -2880,6 +2880,37 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
       console.log('No FCM token found for this report or owner, skipping push notification.');
     }
 
+    // 3.5 تسجيل الإشعار في جدول notifications ليظهر للمالك داخل التطبيق
+    try {
+      const notificationRecord = {
+        title: localizedContent.title,
+        body: localizedContent.body,
+        email: decryptedOwnerEmail || null,
+        user_id: foundReport.user_id || null,
+        finder_phone: decryptedFinderPhone,
+        imei: decryptedImei || foundReport.imei,
+        notification_type: 'phone_found',
+        is_read: false,
+        created_at: new Date().toISOString(),
+        data: {
+          type: 'phone_found',
+          imei: decryptedImei || foundReport.imei
+        }
+      };
+
+      const { error: notificationInsertError } = await supabase
+        .from('notifications')
+        .insert([notificationRecord]);
+
+      if (notificationInsertError) {
+        console.error('Failed to insert owner notification record:', notificationInsertError);
+      } else {
+        console.log('Owner notification record inserted successfully for owner user_id:', foundReport.user_id);
+      }
+    } catch (notificationInsertException) {
+      console.error('Error inserting owner notification record:', notificationInsertException);
+    }
+
     // 4. إرسال البريد الإلكتروني (كما كان)
     if (decryptedOwnerEmail) {
       const cleanEmail = decryptedOwnerEmail.trim();
