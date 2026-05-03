@@ -2858,17 +2858,17 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
     const localizedContent = notificationsByLang[normalizedLang] || notificationsByLang.ar;
 
     let ownerFcmToken = foundReport.fcm_token;
-    if (!ownerFcmToken && ownerUserId) {
+    if (!ownerFcmToken && foundReport.user_id) {
       try {
         const { data: userData, error: userError } = await supabase
           .from('users')
           .select('fcm_token')
-          .eq('id', ownerUserId)
+          .eq('id', foundReport.user_id)
           .maybeSingle();
 
         if (userData && !userError && userData.fcm_token) {
           ownerFcmToken = userData.fcm_token;
-          console.log('Using owner FCM token fallback from users table for owner id:', ownerUserId);
+          console.log('Using owner FCM token fallback from users table for owner id:', foundReport.user_id);
         }
       } catch (fcmLookupError) {
         console.error('Error looking up owner FCM token fallback:', fcmLookupError);
@@ -2915,17 +2915,14 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
         }
       };
 
-      const { data: insertedNotification, error: notificationInsertError } = await supabase
+      const { error: notificationInsertError } = await supabase
         .from('notifications')
-        .insert([notificationRecord])
-        .select()
-        .single();
+        .insert([notificationRecord]);
 
       if (notificationInsertError) {
         console.error('Failed to insert owner notification record:', notificationInsertError);
-        console.error('Notification payload was:', JSON.stringify(notificationRecord));
       } else {
-        console.log('Owner notification record inserted successfully for owner user_id:', ownerUserId, 'record:', insertedNotification);
+        console.log('Owner notification record inserted successfully for owner user_id:', foundReport.user_id);
       }
     } catch (notificationInsertException) {
       console.error('Error inserting owner notification record:', notificationInsertException);
