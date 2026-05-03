@@ -3034,7 +3034,7 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
                 const { data: usageRow, error: usageErr } = await supabase
                   .from('users_plans')
                   .select('used_notify_in_app, used_notify_email, used_notify_push')
-                  .eq('user_id', ownerIdForUsage)
+                  .eq('id', ownerIdForUsage)
                   .maybeSingle();
 
                 if (usageErr) {
@@ -3044,12 +3044,12 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
                 if (!usageRow) {
                   // no existing row -> insert initial counters (use upsert to be safe)
                   const insertObj = {
-                    user_id: ownerIdForUsage,
+                    id: ownerIdForUsage,
                     used_notify_in_app: notifyInApp ? 1 : 0,
                     used_notify_email: notifyEmail ? 1 : 0,
                     used_notify_push: notifyPush ? 1 : 0
                   };
-                  const { error: insertUsageErr } = await supabase.from('users_plans').upsert(insertObj, { onConflict: ['user_id'] });
+                  const { error: insertUsageErr } = await supabase.from('users_plans').upsert(insertObj, { onConflict: ['id'] });
                   if (insertUsageErr) console.error('Failed to upsert users_plans notify counters:', insertUsageErr);
                   else console.log('Inserted users_plans notify counters for owner');
                 } else {
@@ -3063,7 +3063,7 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
                     const { error: updErr } = await supabase
                       .from('users_plans')
                       .update(updates)
-                      .eq('user_id', ownerIdForUsage);
+                      .eq('id', ownerIdForUsage);
                     if (updErr) console.error('Failed to update users_plans notify counters:', updErr);
                     else console.log('Updated users_plans notify counters for owner');
                   } else {
