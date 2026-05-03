@@ -2920,6 +2920,56 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
       return res.status(400).json({ error: 'لم يتم العثور على بريد إلكتروني أو توكن إشعارات مسجل لهذا الهاتف' });
     }
 
+    // --- ⭐ إنشاء سجل الإشعار في جدول `notifications` باستخدام صلاحيات الخادم ---
+    try {
+      const notificationEmail = (decryptedOwnerEmail || '').trim().toLowerCase();
+
+      // حاول تحديد user_id إذا لم يكن موجوداً في foundReport
+      let resolvedOwnerUserId = foundReport.user_id || null;
+      if (!resolvedOwnerUserId && notificationEmail) {
+        try {
+          const { data: userRow, error: userErr } = await supabase
+            .from('users')
+            .select('id')
+            .ilike('email', notificationEmail)
+            .maybeSingle();
+          if (!userErr && userRow && userRow.id) resolvedOwnerUserId = userRow.id;
+        } catch (uErr) {
+          console.error('Error resolving owner user id for notification:', uErr);
+        }
+      }
+
+      const notifPayload = {
+        title: localizedContent.title + (decryptedImei ? ` (IMEI: ${decryptedImei})` : ''),
+        body: localizedContent.body,
+        email: notificationEmail || null,
+        user_id: resolvedOwnerUserId,
+        finder_phone: decryptedFinderPhone || null,
+        imei: decryptedImei || (foundReport.imei || null),
+        notification_type: 'phone_found',
+        is_read: false,
+        created_at: new Date().toISOString()
+      };
+
+      try {
+        const { data: notifData, error: notifError } = await supabase
+          .from('notifications')
+          .insert(notifPayload)
+          .select()
+          .single();
+
+        if (notifError) {
+          console.error('Failed to insert notification record:', notifError);
+        } else {
+          console.log('Notification record created (server-side):', notifData && notifData.id ? notifData.id : '<no-id>');
+        }
+      } catch (insertErr) {
+        console.error('Exception inserting notification record:', insertErr);
+      }
+    } catch (e) {
+      console.error('Notification creation (server-side) failed:', e);
+    }
+
     // --- ⭐ بدء فترة التهدئة بعد الإرسال الناجح ---
     // أضف الـ IMEI إلى المجموعة وقم بإزالته بعد 30 ثانية.
     recentlyNotifiedByImei.set(imei, Date.now());
