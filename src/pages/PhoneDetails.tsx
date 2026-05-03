@@ -240,6 +240,7 @@ const PhoneDetails: React.FC = () => {
           const notificationPayload = { 
             title: localizedContent.title, 
             body: localizedContent.body,
+            user_id: currentUserId, // لم نعد نستخدم user_id في الإشعارات
             finder_phone: finderPhone,
             imei: phone.imei,
             email: ownerEmailForNotification, // بريد صاحب الهاتف
