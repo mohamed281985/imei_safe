@@ -2877,97 +2877,159 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
       }
     }
 
-    if (ownerFcmToken) {
-      console.log(`Found FCM token, sending push notification to: ${ownerFcmToken}`);
+    // --- ⭐ قراءة خطة المالك لتقرير أي قنوات يجب استخدامها ---
+    let notifyPush = false;
+    let notifyEmail = false;
+    let notifyInApp = false;
+
+    try {
+      // حاول تحديد owner user id
+      let ownerUserId = foundReport.user_id || null;
+      if (!ownerUserId && decryptedOwnerEmail) {
+        try {
+          const { data: urow, error: uerr } = await supabase
+            .from('users')
+            .select('id')
+            .ilike('email', decryptedOwnerEmail)
+            .maybeSingle();
+          if (!uerr && urow && urow.id) ownerUserId = urow.id;
+        } catch (qe) {
+          console.error('Error resolving owner user id for plan lookup:', qe);
+        }
+      }
+
+      // جلب دور المالك (role) إن توفر ownerUserId
+      let ownerRole = null;
+      if (ownerUserId) {
+        try {
+          const { data: urole, error: roleErr } = await supabase
+            .from('users')
+            .select('role')
+            .eq('id', ownerUserId)
+            .maybeSingle();
+          if (!roleErr && urole) ownerRole = urole.role || null;
+        } catch (roleEx) {
+          console.error('Error fetching owner role:', roleEx);
+        }
+      }
+
+      // جلب صف الخطة المطابق للـ type = ownerRole
+      let planRow = null;
+      if (ownerRole) {
+        try {
+          const { data: prow, error: pErr } = await supabase
+            .from('plans')
+            .select('notify_in_app, notify_email, notify_push')
+            .eq('type', ownerRole)
+            .maybeSingle();
+          if (!pErr && prow) planRow = prow;
+        } catch (pFetchErr) {
+          console.error('Error fetching plan row:', pFetchErr);
+        }
+      }
+
+      // قرارات الإرسال: إن وُجدت خطة، استخدم أعلامها، وإلا احتفظ بالسلوك الافتراضي القديم
+      if (planRow) {
+        notifyInApp = !!planRow.notify_in_app;
+        notifyEmail = !!planRow.notify_email;
+        notifyPush = !!planRow.notify_push;
+      } else {
+        // default: إرسال القنوات المتاحة كما في السلوك السابق
+        notifyPush = !!ownerFcmToken;
+        notifyEmail = !!decryptedOwnerEmail;
+        notifyInApp = true;
+      }
+    } catch (planErr) {
+      console.error('Plan decision error, falling back to defaults:', planErr);
+      notifyPush = !!ownerFcmToken;
+      notifyEmail = !!decryptedOwnerEmail;
+      notifyInApp = true;
+    }
+
+    // تنفيذ الإرسال طبقاً لقرارات الخطة
+    if (notifyPush && ownerFcmToken) {
       try {
-        const notificationBody = localizedContent.body;
+        console.log(`Plan allows push. Sending push to token: ${ownerFcmToken}`);
         await sendFCMNotificationV1({
           token: ownerFcmToken,
           title: localizedContent.title,
-          body: notificationBody,
-          data: {
-            type: 'phone_found',
-            imei: decryptedImei || foundReport.imei
-          }
+          body: localizedContent.body,
+          data: { type: 'phone_found', imei: decryptedImei || foundReport.imei }
         });
-        console.log('Push notification sent successfully.');
-      } catch (fcmError) {
-        // لا توقف العملية كلها إذا فشل الإشعار، فقط سجل الخطأ
-        console.error('Failed to send FCM notification:', fcmError);
+        console.log('Push notification sent (per plan).');
+      } catch (fcmErr) {
+        console.error('Failed to send plan-based FCM notification:', fcmErr);
       }
     } else {
-      console.log('No FCM token found for this report or owner, skipping push notification.');
+      console.log('Skipping push notification due to plan or missing token.');
     }
 
-    // 4. إرسال البريد الإلكتروني (كما كان)
-    if (decryptedOwnerEmail) {
-      const cleanEmail = decryptedOwnerEmail.trim();
-      console.log('إرسال بريد إلكتروني إلى:', cleanEmail);
-
-      await resend.emails.send({
-        from: 'onboarding@resend.dev',
-        to: cleanEmail,
-        subject: localizedContent.emailSubject,
-        html: localizedContent.emailHtml
-      });
-      console.log('Email sent successfully.');
-    } else {
-      console.log('No email found for this report, skipping email notification.');
-    }
-
-    // إذا لم يكن هناك بريد إلكتروني أو توكن، قد يكون هناك مشكلة
-    if (!foundReport.fcm_token && !decryptedOwnerEmail) {
-      return res.status(400).json({ error: 'لم يتم العثور على بريد إلكتروني أو توكن إشعارات مسجل لهذا الهاتف' });
-    }
-
-    // --- ⭐ إنشاء سجل الإشعار في جدول `notifications` باستخدام صلاحيات الخادم ---
-    try {
-      const notificationEmail = (decryptedOwnerEmail || '').trim().toLowerCase();
-
-      // حاول تحديد user_id إذا لم يكن موجوداً في foundReport
-      let resolvedOwnerUserId = foundReport.user_id || null;
-      if (!resolvedOwnerUserId && notificationEmail) {
-        try {
-          const { data: userRow, error: userErr } = await supabase
-            .from('users')
-            .select('id')
-            .ilike('email', notificationEmail)
-            .maybeSingle();
-          if (!userErr && userRow && userRow.id) resolvedOwnerUserId = userRow.id;
-        } catch (uErr) {
-          console.error('Error resolving owner user id for notification:', uErr);
-        }
-      }
-
-      const notifPayload = {
-        title: localizedContent.title + (decryptedImei ? ` (IMEI: ${decryptedImei})` : ''),
-        body: localizedContent.body,
-        email: notificationEmail || null,
-        user_id: resolvedOwnerUserId,
-        finder_phone: decryptedFinderPhone || null,
-        imei: decryptedImei || (foundReport.imei || null),
-        notification_type: 'phone_found',
-        is_read: false,
-        created_at: new Date().toISOString()
-      };
-
+    if (notifyEmail && decryptedOwnerEmail) {
       try {
-        const { data: notifData, error: notifError } = await supabase
-          .from('notifications')
-          .insert(notifPayload)
-          .select()
-          .single();
-
-        if (notifError) {
-          console.error('Failed to insert notification record:', notifError);
-        } else {
-          console.log('Notification record created (server-side):', notifData && notifData.id ? notifData.id : '<no-id>');
-        }
-      } catch (insertErr) {
-        console.error('Exception inserting notification record:', insertErr);
+        console.log('Plan allows email. Sending email to:', decryptedOwnerEmail);
+        await resend.emails.send({
+          from: 'onboarding@resend.dev',
+          to: decryptedOwnerEmail.trim(),
+          subject: localizedContent.emailSubject,
+          html: localizedContent.emailHtml
+        });
+        console.log('Email sent (per plan).');
+      } catch (emailErr) {
+        console.error('Failed to send plan-based email:', emailErr);
       }
-    } catch (e) {
-      console.error('Notification creation (server-side) failed:', e);
+    } else {
+      console.log('Skipping email notification due to plan or missing email.');
+    }
+
+    // إنشاء سجل الإشعار داخل التطبيق إذا سمحت الخطة
+    if (notifyInApp) {
+      try {
+        const notificationEmail = (decryptedOwnerEmail || '').trim().toLowerCase() || null;
+        let resolvedOwnerUserId = foundReport.user_id || null;
+        if (!resolvedOwnerUserId && notificationEmail) {
+          try {
+            const { data: urow, error: uerr } = await supabase
+              .from('users')
+              .select('id')
+              .ilike('email', notificationEmail)
+              .maybeSingle();
+            if (!uerr && urow && urow.id) resolvedOwnerUserId = urow.id;
+          } catch (uErr2) {
+            console.error('Error resolving owner user id for notification insert:', uErr2);
+          }
+        }
+
+        const notifPayload = {
+          title: localizedContent.title + (decryptedImei ? ` (IMEI: ${decryptedImei})` : ''),
+          body: localizedContent.body,
+          email: notificationEmail,
+          user_id: resolvedOwnerUserId,
+          imei: decryptedImei || (foundReport.imei || null),
+          notification_type: 'phone_found',
+          is_read: false,
+          created_at: new Date().toISOString(),
+          metadata: { finder_phone: decryptedFinderPhone || null }
+        };
+
+        try {
+          const { data: notifData, error: notifError } = await supabase
+            .from('notifications')
+            .insert(notifPayload)
+            .select()
+            .single();
+          if (notifError) {
+            console.error('Failed to insert notification record (per plan):', notifError);
+          } else {
+            console.log('Notification record created (server-side, per plan):', notifData && notifData.id ? notifData.id : '<no-id>');
+          }
+        } catch (insertErr) {
+          console.error('Exception inserting notification record (per plan):', insertErr);
+        }
+      } catch (e) {
+        console.error('Notification creation (server-side, per plan) failed:', e);
+      }
+    } else {
+      console.log('Skipping in-app notification creation due to plan.');
     }
 
     // --- ⭐ بدء فترة التهدئة بعد الإرسال الناجح ---
