@@ -78,7 +78,7 @@ const BottomNavbar: React.FC<BottomNavbarProps> = ({ isVisible = true }) => {
       let query = supabase
         .from('notifications')
         .select('*', { count: 'exact' })
-        .eq('email', user.email);
+        .or(`user_id.eq.${user.id},email.ilike.${user.email}`);
 
       if (!showAllNotifications) {
         query = query.eq('is_read', false);
@@ -121,7 +121,7 @@ const BottomNavbar: React.FC<BottomNavbarProps> = ({ isVisible = true }) => {
   const markAllAsRead = async () => {
     if (!user || unreadCount === 0) return;
     try {
-      await supabase.from('notifications').update({ is_read: true }).eq('email', user.email).eq('is_read', false);
+      await supabase.from('notifications').update({ is_read: true }).ilike('email', user.email).eq('is_read', false);
       fetchNotifications();
       refreshNotifications();
     } catch (err) {
@@ -155,7 +155,7 @@ const BottomNavbar: React.FC<BottomNavbarProps> = ({ isVisible = true }) => {
       fetchActiveReportsCount();
       fetchNotifications();
 
-      const notificationsChannel = supabase.channel(`notifications:${user.id}`).on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `email=eq.${user.email}` }, fetchNotifications).subscribe();
+      const notificationsChannel = supabase.channel(`notifications:${user.id}`).on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, fetchNotifications).subscribe();
       const reportsChannel = supabase.channel(`reports:${user.id}`).on('postgres_changes', { event: '*', schema: 'public', table: 'phone_reports', filter: `user_id=eq.${user.id}` }, fetchActiveReportsCount).subscribe();
 
       return () => {

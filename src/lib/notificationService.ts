@@ -82,10 +82,11 @@ export const createNotification = async (payload: NotificationPayload) => {
 export const getUnreadNotificationCount = async (email: string) => {
   try {
     console.log('Getting unread count for email:', email);
+    const normalizedEmail = email.trim().toLowerCase();
     const { count, error } = await supabase
       .from('notifications')
       .select('*', { count: 'exact', head: true })
-      .eq('email', email)
+      .ilike('email', normalizedEmail)
       .eq('is_read', false);
 
     console.log('Unread count result:', count);
@@ -110,10 +111,11 @@ export const getUnreadNotificationCount = async (email: string) => {
 export const getUnreadNotifications = async (email: string) => {
   try {
     console.log('Getting unread notifications for email:', email);
+    const normalizedEmail = email.trim().toLowerCase();
     const { data, error } = await supabase
       .from('notifications')
       .select('*')
-      .eq('email', email)
+      .ilike('email', normalizedEmail)
       .eq('is_read', false)
       .order('created_at', { ascending: false });
 
@@ -170,10 +172,11 @@ export const markNotificationAsRead = async (notificationId: string) => {
 export const markAllNotificationsAsRead = async (email: string) => {
   try {
     console.log('Marking all notifications as read for email:', email);
+    const normalizedEmail = email.trim().toLowerCase();
     const { data, error } = await supabase
       .from('notifications')
       .update({ is_read: true })
-      .eq('email', email)
+      .ilike('email', normalizedEmail)
       .eq('is_read', false)
       .select();
 

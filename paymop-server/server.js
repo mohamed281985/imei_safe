@@ -2716,17 +2716,19 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
       }
     })();
 
+    const normalizedOwnerEmail = decryptedOwnerEmail ? decryptedOwnerEmail.trim().toLowerCase() : null;
+
     let ownerUserId = foundReport.user_id || null;
-    if (!ownerUserId && decryptedOwnerEmail) {
+    if (!ownerUserId && normalizedOwnerEmail) {
       try {
         const { data: userLookup, error: userLookupError } = await supabase
           .from('users')
           .select('id')
-          .ilike('email', decryptedOwnerEmail)
+          .ilike('email', normalizedOwnerEmail)
           .maybeSingle();
         if (!userLookupError && userLookup?.id) {
           ownerUserId = userLookup.id;
-          console.log('Fallback owner user_id found via users table for email:', decryptedOwnerEmail);
+          console.log('Fallback owner user_id found via users table for email:', normalizedOwnerEmail);
         }
       } catch (e) {
         console.error('Error looking up owner user_id by email:', e);
@@ -2797,12 +2799,12 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
     })();
 
     const ownerLanguage = await (async () => {
-      if (!decryptedOwnerEmail) return 'ar';
+      if (!normalizedOwnerEmail) return 'ar';
       try {
         const { data, error } = await supabase
           .from('users')
           .select('language')
-          .ilike('email', decryptedOwnerEmail)
+          .ilike('email', normalizedOwnerEmail)
           .maybeSingle();
         if (error) {
           console.error('فشل جلب لغة المستخدم:', error);
@@ -2858,17 +2860,17 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
     const localizedContent = notificationsByLang[normalizedLang] || notificationsByLang.ar;
 
     let ownerFcmToken = foundReport.fcm_token;
-    if (!ownerFcmToken && foundReport.user_id) {
+    if (!ownerFcmToken && ownerUserId) {
       try {
         const { data: userData, error: userError } = await supabase
           .from('users')
           .select('fcm_token')
-          .eq('id', foundReport.user_id)
+          .eq('id', ownerUserId)
           .maybeSingle();
 
         if (userData && !userError && userData.fcm_token) {
           ownerFcmToken = userData.fcm_token;
-          console.log('Using owner FCM token fallback from users table for owner id:', foundReport.user_id);
+          console.log('Using owner FCM token fallback from users table for owner id:', ownerUserId);
         }
       } catch (fcmLookupError) {
         console.error('Error looking up owner FCM token fallback:', fcmLookupError);
@@ -2902,7 +2904,7 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
       const notificationRecord = {
         title: localizedContent.title,
         body: localizedContent.body,
-        email: decryptedOwnerEmail || null,
+        email: normalizedOwnerEmail,
         user_id: ownerUserId,
         finder_phone: decryptedFinderPhone,
         imei: decryptedImei || foundReport.imei,
@@ -2915,14 +2917,17 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
         }
       };
 
-      const { error: notificationInsertError } = await supabase
+      const { data: insertedNotification, error: notificationInsertError } = await supabase
         .from('notifications')
-        .insert([notificationRecord]);
+        .insert([notificationRecord])
+        .select()
+        .single();
 
       if (notificationInsertError) {
         console.error('Failed to insert owner notification record:', notificationInsertError);
+        console.error('Notification payload was:', JSON.stringify(notificationRecord));
       } else {
-        console.log('Owner notification record inserted successfully for owner user_id:', foundReport.user_id);
+        console.log('Owner notification record inserted successfully for owner user_id:', ownerUserId, 'record:', insertedNotification);
       }
     } catch (notificationInsertException) {
       console.error('Error inserting owner notification record:', notificationInsertException);

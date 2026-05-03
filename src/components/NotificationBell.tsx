@@ -43,7 +43,7 @@ const NotificationBell: React.FC = () => {
       const { data, error } = await supabase
         .from('notifications')
         .select('*')
-        .eq('email', user.email || '')
+        .or(`user_id.eq.${user.id},email.ilike.${user.email}`)
         .eq('is_read', false)
         .order('created_at', { ascending: false });
 
