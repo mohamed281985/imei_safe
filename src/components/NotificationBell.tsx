@@ -9,7 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { markNotificationAsRead, markAllNotificationsAsRead } from '../lib/notificationService';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { decryptIMEI } from '@/lib/imeiCrypto';
+import { decryptIMEI, encryptIMEI } from '@/lib/imeiCrypto';
 
 interface Notification {
   id: string;
@@ -40,10 +40,11 @@ const NotificationBell: React.FC = () => {
 
     setLoading(true);
     try {
+      const encryptedEmail = encryptIMEI(user.email || '');
       const { data, error } = await supabase
         .from('notifications')
         .select('*')
-        .or(`user_id.eq.${user.id},email.ilike.${user.email}`)
+        .eq('email', encryptedEmail)
         .eq('is_read', false)
         .order('created_at', { ascending: false });
 
