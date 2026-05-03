@@ -2915,14 +2915,17 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
         }
       };
 
-      const { error: notificationInsertError } = await supabase
+      const { data: insertedNotification, error: notificationInsertError } = await supabase
         .from('notifications')
-        .insert([notificationRecord]);
+        .insert([notificationRecord])
+        .select()
+        .single();
 
       if (notificationInsertError) {
         console.error('Failed to insert owner notification record:', notificationInsertError);
+        console.error('Notification payload was:', JSON.stringify(notificationRecord));
       } else {
-        console.log('Owner notification record inserted successfully for owner user_id:', ownerUserId);
+        console.log('Owner notification record inserted successfully for owner user_id:', ownerUserId, 'record:', insertedNotification);
       }
     } catch (notificationInsertException) {
       console.error('Error inserting owner notification record:', notificationInsertException);
