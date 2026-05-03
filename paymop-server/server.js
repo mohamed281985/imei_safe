@@ -3030,7 +3030,7 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
               if (!ownerIdForUsage) {
                 console.log('Skipping users_plans update: owner user id not resolved');
               } else {
-                console.log('Updating users_plans notify counters for owner:', ownerIdForUsage);
+                console.log('Updating users_plans notify counters for owner:', ownerIdForUsage, { notifyInApp, notifyEmail, notifyPush });
                 const { data: usageRow, error: usageErr } = await supabase
                   .from('users_plans')
                   .select('used_notify_in_app, used_notify_email, used_notify_push')
@@ -3049,9 +3049,9 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
                     used_notify_email: notifyEmail ? 1 : 0,
                     used_notify_push: notifyPush ? 1 : 0
                   };
-                  const { error: insertUsageErr } = await supabase.from('users_plans').upsert(insertObj, { onConflict: ['id'] });
+                  const { data: upsertData, error: insertUsageErr } = await supabase.from('users_plans').upsert(insertObj, { onConflict: ['id'] }).select().maybeSingle();
                   if (insertUsageErr) console.error('Failed to upsert users_plans notify counters:', insertUsageErr);
-                  else console.log('Inserted users_plans notify counters for owner');
+                  else console.log('Inserted users_plans notify counters for owner:', upsertData);
                 } else {
                   // existing row -> compute increments and update
                   const updates = {};
@@ -3060,12 +3060,14 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
                   if (notifyPush) updates.used_notify_push = (usageRow.used_notify_push || 0) + 1;
 
                   if (Object.keys(updates).length > 0) {
-                    const { error: updErr } = await supabase
+                    const { data: updatedData, error: updErr } = await supabase
                       .from('users_plans')
                       .update(updates)
-                      .eq('id', ownerIdForUsage);
+                      .eq('id', ownerIdForUsage)
+                      .select()
+                      .maybeSingle();
                     if (updErr) console.error('Failed to update users_plans notify counters:', updErr);
-                    else console.log('Updated users_plans notify counters for owner');
+                    else console.log('Updated users_plans notify counters for owner:', updatedData);
                   } else {
                     console.log('No notify counters to update for owner');
                   }
@@ -3657,6 +3659,32 @@ app.post('/paymob/publish-from-bonus', paymentLimiter, rateLimitMiddleware({ win
 
       // Informational: trigger server-side event (no window in backend) by updating a small field or returning info
       console.log(`Ad published using bonus for user ${userId}, ad id: ${insertedAd.id}`);
+        // Also insert into `publish_ad` table if it exists (best-effort)
+        try {
+          const publishRow = {
+            ad_id: insertedAd.id,
+            id: insertedAd.id,
+            user_id: userId,
+            store_name: adInsert.store_name || null,
+            image_url: adInsert.image_url || null,
+            website_url: adInsert.website_url ? encryptFieldForStorage(adInsert.website_url) : null,
+            phone: adInsert.phone ? encryptFieldForStorage(adInsert.phone) : null,
+            duration_days: adInsert.duration_days || null,
+            amount: adInsert.amount || null,
+            is_paid: true,
+            payment_status: 'paid',
+            upload_date: adInsert.upload_date || new Date().toISOString(),
+            expires_at: adInsert.expires_at || null
+          };
+          const { data: pubData, error: pubErr } = await supabase.from('publish_ad').insert(publishRow).select().maybeSingle();
+          if (pubErr) {
+            console.warn('publish_ad insert skipped or failed (table may not exist):', pubErr.message || pubErr);
+          } else {
+            console.log('Inserted row into publish_ad:', pubData && pubData.id ? pubData.id : '<no-id>');
+          }
+        } catch (e) {
+          console.warn('Exception while inserting into publish_ad (ignored):', e?.message || e);
+        }
       return res.json({ ok: true, adId: insertedAd.id, deducted: expectedAmount, remainingBonus: newBonusValue });
     } catch (e) {
       console.error('Exception inserting ad using bonus:', e);
@@ -3968,6 +3996,32 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
           console.warn('Could not store iframe_url in ads_payment (column may not exist):', storeErr.message || storeErr);
           // لا نُعيد الخطأ لأننا نريد إرجاع الـ iframe إلى العميل مهما حدث
         }
+          // Best-effort: also insert into `publish_ad` table to reflect published ad record
+          try {
+            const publishRow = {
+              ad_id: insertedPaymentId,
+              id: insertedPaymentId,
+              user_id: paymentData.user_id,
+              store_name: paymentData.store_name || null,
+              image_url: paymentData.image_url || null,
+              website_url: paymentData.website_url ? encryptFieldForStorage(paymentData.website_url) : null,
+              phone: paymentData.phone ? encryptFieldForStorage(paymentData.phone) : null,
+              duration_days: paymentData.duration_days || null,
+              amount: paymentData.amount || null,
+              is_paid: false,
+              payment_status: paymentData.payment_status || 'pending',
+              upload_date: paymentData.upload_date || new Date().toISOString(),
+              expires_at: paymentData.expires_at || null
+            };
+            const { data: pubData, error: pubErr } = await supabase.from('publish_ad').insert(publishRow).select().maybeSingle();
+            if (pubErr) {
+              console.warn('publish_ad insert skipped or failed (table may not exist):', pubErr.message || pubErr);
+            } else {
+              console.log('Inserted row into publish_ad for payment path:', pubData && pubData.id ? pubData.id : '<no-id>');
+            }
+          } catch (e) {
+            console.warn('Exception while inserting into publish_ad (ignored):', e?.message || e);
+          }
       } catch (insertError) {
         console.error('خطأ في حفظ بيانات الدفع في جدول ads_payment:', insertError);
         throw insertError;
