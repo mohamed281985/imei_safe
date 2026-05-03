@@ -3678,9 +3678,11 @@ app.post('/paymob/publish-from-bonus', paymentLimiter, rateLimitMiddleware({ win
           };
           const { data: pubData, error: pubErr } = await supabase.from('publish_ad').insert(publishRow).select().maybeSingle();
           if (pubErr) {
-            console.warn('publish_ad insert skipped or failed (table may not exist):', pubErr.message || pubErr);
+            try { console.warn('publish_ad insert skipped or failed (table may not exist or RLS/constraint):', JSON.stringify(pubErr)); } catch (_) { console.warn('publish_ad insert error (non-serializable):', pubErr); }
+            try { console.warn('Attempted publish_ad row:', JSON.stringify(publishRow)); } catch (_) { console.warn('Attempted publish_ad row (non-serializable)'); }
           } else {
             console.log('Inserted row into publish_ad:', pubData && pubData.id ? pubData.id : '<no-id>');
+            try { console.log('publish_ad returned row:', JSON.stringify(pubData)); } catch (_) {}
           }
         } catch (e) {
           console.warn('Exception while inserting into publish_ad (ignored):', e?.message || e);
@@ -3767,6 +3769,27 @@ app.post("/paymob/create-invoice", async (req, res) => {
     console.error("Error in create-invoice:", e);
     if (_timedOut) return;
     return sendError(res, 500, 'حدث خطأ في الخادم', e);
+  }
+});
+
+// Debug endpoint: attempt to insert into publish_ad (development only / protected)
+app.post('/debug/insert-publish-ad', async (req, res) => {
+  if (!IS_DEVELOPMENT && (!DEV_BYPASS_TOKEN || req.headers['x-dev-bypass'] !== DEV_BYPASS_TOKEN)) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  const row = req.body || {};
+  try {
+    console.log('Debug insert publish_ad attempt', { row });
+    const { data, error } = await supabase.from('publish_ad').insert(row).select().maybeSingle();
+    if (error) {
+      try { console.error('Debug publish_ad insert error:', JSON.stringify(error)); } catch (_) { console.error('Debug publish_ad insert error (non-serializable):', error); }
+      return res.status(500).json({ error: 'insert_failed', detail: error });
+    }
+    return res.json({ ok: true, data });
+  } catch (e) {
+    console.error('Exception during debug publish_ad insert:', e);
+    return res.status(500).json({ error: 'exception', detail: String(e) });
   }
 });
 
@@ -4015,9 +4038,11 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
             };
             const { data: pubData, error: pubErr } = await supabase.from('publish_ad').insert(publishRow).select().maybeSingle();
             if (pubErr) {
-              console.warn('publish_ad insert skipped or failed (table may not exist):', pubErr.message || pubErr);
+              try { console.warn('publish_ad insert skipped or failed (table may not exist or RLS/constraint):', JSON.stringify(pubErr)); } catch (_) { console.warn('publish_ad insert error (non-serializable):', pubErr); }
+              try { console.warn('Attempted publish_ad row:', JSON.stringify(publishRow)); } catch (_) { console.warn('Attempted publish_ad row (non-serializable)'); }
             } else {
               console.log('Inserted row into publish_ad for payment path:', pubData && pubData.id ? pubData.id : '<no-id>');
+              try { console.log('publish_ad returned row:', JSON.stringify(pubData)); } catch (_) {}
             }
           } catch (e) {
             console.warn('Exception while inserting into publish_ad (ignored):', e?.message || e);
