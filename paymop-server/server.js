@@ -2664,7 +2664,7 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
     console.log(`Searching for phone with IMEI: ${imei}`);
     const { data: allReports, error: reportError } = await supabase
       .from('phone_reports')
-      .select('id, imei, email, owner_name, fcm_token, user_id, finder_user_id')
+      .select('id, imei, email, owner_name, fcm_token, finder_user_id')
       .order('id', { ascending: true });
 
     if (reportError || !allReports || allReports.length === 0) {
@@ -2716,26 +2716,7 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
       }
     })();
 
-    const normalizedOwnerEmail = decryptedOwnerEmail ? decryptedOwnerEmail.trim().toLowerCase() : null;
-
-    let ownerUserId = foundReport.user_id || null;
-    if (!ownerUserId && normalizedOwnerEmail) {
-      try {
-        const { data: userLookup, error: userLookupError } = await supabase
-          .from('users')
-          .select('id')
-          .ilike('email', normalizedOwnerEmail)
-          .maybeSingle();
-        if (!userLookupError && userLookup?.id) {
-          ownerUserId = userLookup.id;
-          console.log('Fallback owner user_id found via users table for email:', normalizedOwnerEmail);
-        }
-      } catch (e) {
-        console.error('Error looking up owner user_id by email:', e);
-      }
-    }
-
-    console.log(`Phone found for IMEI: ${imei}. Owner: ${decryptedOwnerName || foundReport.owner_name}, ownerUserId: ${ownerUserId}`);
+    console.log(`Phone found for IMEI: ${imei}. Owner: ${decryptedOwnerName || foundReport.owner_name}`);
 
     // 2. تشفير finder_phone قبل الحفظ
     let encryptedFinderPhone = null;
@@ -2799,12 +2780,12 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
     })();
 
     const ownerLanguage = await (async () => {
-      if (!normalizedOwnerEmail) return 'ar';
+      if (!decryptedOwnerEmail) return 'ar';
       try {
         const { data, error } = await supabase
           .from('users')
           .select('language')
-          .ilike('email', normalizedOwnerEmail)
+          .ilike('email', decryptedOwnerEmail)
           .maybeSingle();
         if (error) {
           console.error('فشل جلب لغة المستخدم:', error);
@@ -2860,20 +2841,39 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
     const localizedContent = notificationsByLang[normalizedLang] || notificationsByLang.ar;
 
     let ownerFcmToken = foundReport.fcm_token;
-    if (!ownerFcmToken && ownerUserId) {
+
+    // إذا كان توكن البلاغ غير متوفر أو نريد تأكيد أنه تابع للمالك، حاول الحصول عليه من جدول المستخدمين حسب البريد الإلكتروني.
+    if (!ownerFcmToken && decryptedOwnerEmail) {
       try {
         const { data: userData, error: userError } = await supabase
           .from('users')
           .select('fcm_token')
-          .eq('id', ownerUserId)
+          .ilike('email', decryptedOwnerEmail)
           .maybeSingle();
 
         if (userData && !userError && userData.fcm_token) {
           ownerFcmToken = userData.fcm_token;
-          console.log('Using owner FCM token fallback from users table for owner id:', ownerUserId);
+          console.log('Using owner FCM token fallback from users table for owner email:', decryptedOwnerEmail);
         }
       } catch (fcmLookupError) {
-        console.error('Error looking up owner FCM token fallback:', fcmLookupError);
+        console.error('Error looking up owner FCM token fallback by email:', fcmLookupError);
+      }
+    }
+
+    if (!ownerFcmToken && foundReport.user_id) {
+      try {
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('fcm_token')
+          .eq('id', foundReport.user_id)
+          .maybeSingle();
+
+        if (userData && !userError && userData.fcm_token) {
+          ownerFcmToken = userData.fcm_token;
+          console.log('Using owner FCM token fallback from users table for owner id:', foundReport.user_id);
+        }
+      } catch (fcmLookupError) {
+        console.error('Error looking up owner FCM token fallback by user id:', fcmLookupError);
       }
     }
 
@@ -2897,40 +2897,6 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
       }
     } else {
       console.log('No FCM token found for this report or owner, skipping push notification.');
-    }
-
-    // 3.5 تسجيل الإشعار في جدول notifications ليظهر للمالك داخل التطبيق
-    try {
-      const notificationRecord = {
-        title: localizedContent.title,
-        body: localizedContent.body,
-        email: normalizedOwnerEmail,
-        user_id: ownerUserId,
-        finder_phone: decryptedFinderPhone,
-        imei: decryptedImei || foundReport.imei,
-        notification_type: 'phone_found',
-        is_read: false,
-        created_at: new Date().toISOString(),
-        data: {
-          type: 'phone_found',
-          imei: decryptedImei || foundReport.imei
-        }
-      };
-
-      const { data: insertedNotification, error: notificationInsertError } = await supabase
-        .from('notifications')
-        .insert([notificationRecord])
-        .select()
-        .single();
-
-      if (notificationInsertError) {
-        console.error('Failed to insert owner notification record:', notificationInsertError);
-        console.error('Notification payload was:', JSON.stringify(notificationRecord));
-      } else {
-        console.log('Owner notification record inserted successfully for owner user_id:', ownerUserId, 'record:', insertedNotification);
-      }
-    } catch (notificationInsertException) {
-      console.error('Error inserting owner notification record:', notificationInsertException);
     }
 
     // 4. إرسال البريد الإلكتروني (كما كان)
