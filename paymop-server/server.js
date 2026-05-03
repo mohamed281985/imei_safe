@@ -3021,6 +3021,51 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
             console.error('Failed to insert notification record (per plan):', notifError);
           } else {
             console.log('Notification record created (server-side, per plan):', notifData && notifData.id ? notifData.id : '<no-id>');
+
+            // ----------------------
+            // Update users_plans counters
+            // ----------------------
+            try {
+              const ownerIdForUsage = resolvedOwnerUserId;
+              if (ownerIdForUsage) {
+                // fetch existing usage row (if any)
+                const { data: usageRow, error: usageErr } = await supabase
+                  .from('users_plans')
+                  .select('used_notify_in_app, used_notify_email, used_notify_push')
+                  .eq('user_id', ownerIdForUsage)
+                  .maybeSingle();
+
+                if (usageErr && usageErr.code === 'PGRST116') {
+                  // row missing -> insert with initial counters based on what we just sent
+                  const insertObj = {
+                    user_id: ownerIdForUsage,
+                    used_notify_in_app: notifyInApp ? 1 : 0,
+                    used_notify_email: notifyEmail ? 1 : 0,
+                    used_notify_push: notifyPush ? 1 : 0
+                  };
+                  const { error: insertUsageErr } = await supabase.from('users_plans').insert(insertObj);
+                  if (insertUsageErr) console.error('Failed to insert users_plans notify counters:', insertUsageErr);
+                } else {
+                  // update existing row by adding 1 where applicable
+                  const updates = {};
+                  if (notifyInApp) updates.used_notify_in_app = (usageRow?.used_notify_in_app || 0) + 1;
+                  if (notifyEmail) updates.used_notify_email = (usageRow?.used_notify_email || 0) + 1;
+                  if (notifyPush) updates.used_notify_push = (usageRow?.used_notify_push || 0) + 1;
+
+                  if (Object.keys(updates).length > 0) {
+                    const { error: updErr } = await supabase
+                      .from('users_plans')
+                      .update(updates)
+                      .eq('user_id', ownerIdForUsage);
+                    if (updErr) console.error('Failed to update users_plans notify counters:', updErr);
+                  }
+                }
+              } else {
+                console.log('Skipping users_plans update: owner user id not resolved');
+              }
+            } catch (usageUpdateEx) {
+              console.error('Exception while updating users_plans notify counters:', usageUpdateEx);
+            }
           }
         } catch (insertErr) {
           console.error('Exception inserting notification record (per plan):', insertErr);
