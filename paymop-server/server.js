@@ -2858,17 +2858,17 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
     const localizedContent = notificationsByLang[normalizedLang] || notificationsByLang.ar;
 
     let ownerFcmToken = foundReport.fcm_token;
-    if (!ownerFcmToken && foundReport.user_id) {
+    if (!ownerFcmToken && ownerUserId) {
       try {
         const { data: userData, error: userError } = await supabase
           .from('users')
           .select('fcm_token')
-          .eq('id', foundReport.user_id)
+          .eq('id', ownerUserId)
           .maybeSingle();
 
         if (userData && !userError && userData.fcm_token) {
           ownerFcmToken = userData.fcm_token;
-          console.log('Using owner FCM token fallback from users table for owner id:', foundReport.user_id);
+          console.log('Using owner FCM token fallback from users table for owner id:', ownerUserId);
         }
       } catch (fcmLookupError) {
         console.error('Error looking up owner FCM token fallback:', fcmLookupError);
@@ -2922,7 +2922,7 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
       if (notificationInsertError) {
         console.error('Failed to insert owner notification record:', notificationInsertError);
       } else {
-        console.log('Owner notification record inserted successfully for owner user_id:', foundReport.user_id);
+        console.log('Owner notification record inserted successfully for owner user_id:', ownerUserId);
       }
     } catch (notificationInsertException) {
       console.error('Error inserting owner notification record:', notificationInsertException);

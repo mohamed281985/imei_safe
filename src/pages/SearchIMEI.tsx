@@ -211,7 +211,6 @@ const WelcomeSearch: React.FC = () => {
           const notificationPayload = {
             title: 'تم العثور على هاتفك!',
             body: `مبروك! تم العثور على هاتفك. للتواصل مع الشخص الذي وجده، يرجى الاتصال على الرقم: ${finderPhone}.`,
-            user_id: user.id,
             finder_phone: finderPhone,
             imei: imeiForNotification,
             email: ownerEmailForNotification,
