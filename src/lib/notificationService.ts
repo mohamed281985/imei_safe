@@ -32,11 +32,29 @@ export const createNotification = async (payload: NotificationPayload) => {
       titleWithImei = `${payload.title} (IMEI: ${payload.imei})`;
     }
 
+    let resolvedUserId = payload.user_id || null;
+    try {
+      const normalizedEmail = payload.email.trim().toLowerCase();
+      const { data: userRow, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .ilike('email', normalizedEmail)
+        .maybeSingle();
+
+      if (!userError && userRow?.id) {
+        resolvedUserId = userRow.id;
+      }
+    } catch (userLookupError) {
+      console.error('Error looking up user_id by email in createNotification:', userLookupError);
+    }
+
     // إنشاء الإشعار
     const result = await supabase
       .from('notifications')
       .insert({
         ...payload,
+        email: payload.email.trim().toLowerCase(),
+        user_id: resolvedUserId,
         title: titleWithImei,
         is_read: payload.is_read || false,
         created_at: payload.created_at || new Date().toISOString()
