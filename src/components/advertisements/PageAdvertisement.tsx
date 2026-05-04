@@ -22,7 +22,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useLanguage } from '@/contexts/LanguageContext';
 
-interface ads_payment {
+interface PublishAd {
   id: number;
   image_url: string;
   is_active: boolean;
@@ -40,7 +40,7 @@ interface PageAdvertisementProps {
 
 const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
   const { t } = useLanguage();
-  const [ads, setAds] = useState<ads_payment[]>([]);
+  const [ads, setAds] = useState<PublishAd[]>([]);
   const [currentAdIndex, setCurrentAdIndex] = useState(0);
   const [showLocalAd, setShowLocalAd] = useState(true);
 
@@ -51,7 +51,7 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
     // 1. محاولة تحميل الإعلانات من ذاكرة التخزين المؤقت أولاً
     const cachedAdsRaw = localStorage.getItem(cacheKey);
     if (cachedAdsRaw) {
-      const cachedAds: ads_payment[] = JSON.parse(cachedAdsRaw);
+      const cachedAds: PublishAd[] = JSON.parse(cachedAdsRaw);
       const now = new Date();
       const validCachedAds = cachedAds.filter(ad => ad.expires_at && new Date(ad.expires_at) > now);
       if (validCachedAds.length > 0) {
@@ -80,19 +80,19 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
 
   const fetchAds = async (coords: { latitude: number; longitude: number } | null) => {
     const cacheKey = `page-ads-${pageName}`;
+    const now = new Date();
+    const nowIso = now.toISOString();
+    // Support rows where expires_at is NULL (means no expiry) OR expires_at > now
     const { data } = await supabase
-      .from('ads_payment')
+      .from('publish_ad')
       .select('*')
-      .gt('expires_at', new Date().toISOString()) // <-- إضافة شرط للتحقق من تاريخ الانتهاء
-      .eq('is_active', true) // <-- إضافة شرط لجلب الإعلانات النشطة فقط
+      .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+      .eq('is_active', true)
       .eq('is_paid', true)
-      .eq('type', 'publish')
-      .eq('payment_status', 'paid') // التأكد من أن الدفع مكتمل
       .order('upload_date', { ascending: false });
 
-    // فلترة إضافية للتأكد من عدم عرض الإعلانات المنتهية
-    const now = new Date();
-    const activeAds = data ? data.filter(ad => ad.expires_at && new Date(ad.expires_at) > now) : [];
+    // فلترة إضافية للتأكد من عدم عرض الإعلانات المنتهية (treat null as not-expired)
+    const activeAds = data ? data.filter(ad => !ad.expires_at || new Date(ad.expires_at) > now) : [];
 
     if (!activeAds || activeAds.length === 0) {
       setShowLocalAd(true);
