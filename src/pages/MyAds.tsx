@@ -132,10 +132,9 @@ const MyAds: React.FC = () => {
       try {
         // جلب الإعلانات العامة (publish)
         const { data: publishAds, error: publishError } = await supabase
-          .from('ads_payment')
+          .from('publish_ad')
           .select('*')
           .eq('user_id', user.id)
-          .eq('type', 'publish')
           .eq('payment_status', 'paid') // التأكد من أن الدفع مكتمل
           .eq('is_paid', true);
         if (publishError) {

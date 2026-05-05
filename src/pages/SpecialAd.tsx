@@ -62,6 +62,17 @@ const requestSignature = async (payload: { merchantOrderId: string; amount: numb
 
 const SpecialAd = () => {
   useScrollToTop();
+  const paymentIntervalRef = useRef<number | null>(null);
+
+  // Cleanup any outstanding payment polling interval on unmount
+  useEffect(() => {
+    return () => {
+      if (paymentIntervalRef.current) {
+        clearInterval(paymentIntervalRef.current);
+        paymentIntervalRef.current = null;
+      }
+    };
+  }, []);
   // حالة خطأ أبعاد الصورة
   const [imageDimensionError, setImageDimensionError] = useState<string | null>(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
@@ -647,6 +658,84 @@ const SpecialAd = () => {
         redirect_url_success: `https://imei-safe.me/paymob/redirect-success`,
         redirect_url_failed: `https://imei-safe.me/paymob/redirect-failed`
       };
+      // إذا كان هذا تحديثاً لإعلان موجود ومُدفوع بالفعل بنفس المبلغ، فلا نفتح بايموب
+      if (isUpdateMode && adId) {
+        try {
+          const { data: currentAd, error: currentAdError } = await supabase
+            .from('ads_payment')
+            .select('*')
+            .eq('id', adId)
+            .single();
+
+          if (!currentAdError && currentAd) {
+            // تحقق من الملكية
+            if (currentAd.user_id !== user.id) {
+              toast({ title: 'خطأ', description: 'ليس لديك الصلاحية لتعديل هذا الإعلان', variant: 'destructive' });
+              setIsLoading(false);
+              return;
+            }
+
+            const currentAmount = Number(currentAd.amount || 0);
+            const newAmount = Number(adPrice || 0);
+
+            // إذا الإعلان مدفوع بالفعل والمبلغ لم يتغير، نقوم بتحديث الحقول بدون عملية دفع
+            if ((currentAd.is_paid === true || currentAd.payment_status === 'paid') && currentAmount === newAmount) {
+              const expiresAt = (() => { const d = new Date(); d.setDate(d.getDate() + parseInt(duration, 10)); return d.toISOString(); })();
+              const { error: updateError } = await supabase
+                .from('ads_payment')
+                .update({
+                  store_name: storeName,
+                  image_url: imageUrl,
+                  website_url: websiteUrl,
+                  latitude: coords?.latitude,
+                  longitude: coords?.longitude,
+                  phone: phoneNumber,
+                  upload_date: new Date().toISOString(),
+                  expires_at: expiresAt,
+                  duration_days: parseInt(duration, 10)
+                })
+                .eq('id', adId);
+
+              if (updateError) {
+                throw updateError;
+              }
+
+                // حاول مزامنة التغيير في جدول `publish_ad` أيضاً (إن وجد)
+                try {
+                  const { error: pubUpdateError } = await supabase
+                    .from('publish_ad')
+                    .update({
+                      store_name: storeName,
+                      image_url: imageUrl,
+                      website_url: websiteUrl,
+                      latitude: coords?.latitude,
+                      longitude: coords?.longitude,
+                      phone: phoneNumber,
+                      upload_date: new Date().toISOString(),
+                      expires_at: expiresAt,
+                      duration_days: parseInt(duration, 10)
+                    })
+                    .eq('id', adId);
+                  if (pubUpdateError) {
+                    console.warn('publish_ad update warning:', pubUpdateError);
+                    toast({ title: 'تحذير (مزامنة)', description: 'تعذر مزامنة التحديث إلى publish_ad: ' + (pubUpdateError?.message || pubUpdateError?.details || 'تفاصيل في الكونسول'), variant: 'default' });
+                  }
+                } catch (err) {
+                  console.warn('Failed to update publish_ad (non-fatal):', err);
+                }
+
+              toast({ title: 'تم التحديث', description: 'تم تحديث الإعلان دون حاجة إلى دفع جديد', variant: 'default' });
+              await refreshAds();
+              setIsLoading(false);
+              setTimeout(() => navigate('/myads'), 1000);
+              return;
+            }
+          }
+        } catch (err) {
+          console.error('Error checking current ad before update:', err);
+          // في حال فشل التحقق، نستمر بمسار الدفع الاعتيادي لعدم فقدان التغييرات
+        }
+      }
       // أرفق طابع زمني واطلب توقيعًا من الخادم قبل إرسال بيانات الدفع للتحديث
       const timestampUpdate = Date.now();
       let signatureUpdate = '';
@@ -675,9 +764,14 @@ const SpecialAd = () => {
       // بدء التحقق من حالة الدفع مع حد أقصى لعدد المحاولات
       let retryCount = 0;
       const MAX_RETRIES = 20; // يمكنك تعديل هذا الرقم حسب الحاجة
-      const checkPaymentStatus = setInterval(async () => {
+      const intervalId = window.setInterval(async () => {
+        // store interval id so we can clear it on unmount/navigation
+        if (!paymentIntervalRef.current) paymentIntervalRef.current = intervalId;
         if (retryCount >= MAX_RETRIES) {
-          clearInterval(checkPaymentStatus);
+          if (paymentIntervalRef.current) {
+            clearInterval(paymentIntervalRef.current);
+            paymentIntervalRef.current = null;
+          }
           toast({ title: 'خطأ', description: 'انتهت مدة الانتظار للتحقق من الدفع', variant: 'destructive' });
           return;
         }
@@ -697,7 +791,10 @@ const SpecialAd = () => {
 
           // إذا تم الدفع بنجاح
           if (ad && ad.payment_status === 'paid') {
-            clearInterval(checkPaymentStatus);
+            if (paymentIntervalRef.current) {
+              clearInterval(paymentIntervalRef.current);
+              paymentIntervalRef.current = null;
+            }
 
             // تحديث حالة الإعلان في الواجهة
             toast({
@@ -737,14 +834,61 @@ const SpecialAd = () => {
       if (adId) {
         setIsLoading(true);
         try {
-          const { data: ad, error } = await supabase
-            .from('ads_payment')
-            .select('*')
-            .eq('id', adId)
-            .single();
+          // Try server-side endpoint first (returns decrypted fields)
+          const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '';
+          const api = (path: string) => (API_BASE ? `${API_BASE}${path}` : path);
 
-          // التأكد من أن الإعلان من نوع special
-          if (ad && ad.type !== 'special' && ad.type !== 'special_update') {
+          let fetched = null;
+          try {
+            let token: string | undefined;
+            try {
+              const sessionRes: any = await supabase.auth.getSession();
+              token = sessionRes?.data?.session?.access_token;
+            } catch (e) {
+              try {
+                // @ts-ignore
+                const sess = await supabase.auth.session();
+                // @ts-ignore
+                token = sess?.access_token;
+              } catch (e2) {
+                token = undefined;
+              }
+            }
+
+            const resp = await fetch(api(`/api/ad/${adId}`), {
+              method: 'GET',
+              headers: token ? { Authorization: `Bearer ${token}` } : {}
+            });
+            const result = await resp.json().catch(() => null);
+            if (resp.ok && result?.ad) {
+              fetched = result.ad;
+            }
+          } catch (err) {
+            console.warn('Server fetch for ad failed, will try publish_ad table:', err);
+          }
+
+          // Fallback: read directly from publish_ad table (may contain encrypted phone/website)
+          let ad: any = fetched;
+          if (!ad) {
+            try {
+              const { data: pubAd, error: pubErr } = await supabase
+                .from('publish_ad')
+                .select('*')
+                .eq('id', adId)
+                .single();
+              if (pubErr) {
+                console.error('Error loading ad from publish_ad:', pubErr);
+                throw pubErr;
+              }
+              ad = pubAd;
+            } catch (err) {
+              console.error('Error loading ad from publish_ad fallback:', err);
+              throw err;
+            }
+          }
+
+          // Validate ad type if present
+          if (ad && ad.type && ad.type !== 'special' && ad.type !== 'special_update') {
             toast({
               title: 'خطأ',
               description: 'الإعلان المحدد ليس من نوع الإعلانات المميزة',
@@ -753,12 +897,7 @@ const SpecialAd = () => {
             return;
           }
 
-          if (error) {
-            console.error('Error loading ad:', error);
-            throw error;
-          }
-
-          console.log('Ad data loaded:', ad);
+          console.log('Ad data loaded (source publish_ad or server):', ad);
 
           if (ad) {
             setIsEditing(true);
@@ -768,13 +907,11 @@ const SpecialAd = () => {
             setWebsiteUrl(ad.website_url || '');
             setDuration(ad.duration_days?.toString() || '7');
 
-            // تحميل صورة الإعلان
             if (ad.image_url) {
               setAdImagePreview(ad.image_url);
               console.log('Set ad image preview:', ad.image_url);
             }
 
-            // جلب الأسعار ثم تعيين السعر الصحيح للإعلان المحمل
             const adPrices = await fetchAdPrices();
             if (adPrices && adPrices[ad.duration_days]) {
               setAdPrice(adPrices[ad.duration_days]);

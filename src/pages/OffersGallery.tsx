@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useScrollToTop } from '@/hooks/useScrollToTop';
@@ -22,6 +22,17 @@ const OffersGallery = () => {
     const location = useLocation();
     const { t } = useLanguage();
     const navigate = useNavigate();
+    const paymentMonitorRef = useRef<number | null>(null);
+
+    // cleanup payment monitor interval on unmount
+    useEffect(() => {
+        return () => {
+            if (paymentMonitorRef.current) {
+                clearInterval(paymentMonitorRef.current);
+                paymentMonitorRef.current = null;
+            }
+        };
+    }, []);
 
     useEffect(() => {
         const fetchImage = async () => {
@@ -406,7 +417,8 @@ const OffersGallery = () => {
 
             // دالة لمراقبة حالة الدفع وتحديث transaction عند نجاح الدفع
             const monitorPaymentStatus = async (paymentId: string) => {
-                const checkInterval = setInterval(async () => {
+                const id = window.setInterval(async () => {
+                    if (!paymentMonitorRef.current) paymentMonitorRef.current = id;
                     try {
                         const { data: paymentRecord } = await supabase
                             .from('ads_payment')
@@ -417,8 +429,11 @@ const OffersGallery = () => {
                         console.log('فحص حالة الدفع:', paymentRecord);
 
                         // إذا تم تحديث payment_status إلى paid
-                        if (paymentRecord?.payment_status === 'paid') {
-                            clearInterval(checkInterval);
+                            if (paymentRecord?.payment_status === 'paid') {
+                            if (paymentMonitorRef.current) {
+                                clearInterval(paymentMonitorRef.current);
+                                paymentMonitorRef.current = null;
+                            }
 
                             // تحديث transaction إلى bonus_add إذا لزم الأمر
                             if (!paymentRecord.transaction || paymentRecord.transaction !== 'bonus_add') {

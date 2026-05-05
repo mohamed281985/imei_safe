@@ -179,18 +179,38 @@ const PublishAd: React.FC = () => {
             headers: token ? { Authorization: `Bearer ${token}` } : {}
           });
           const result = await resp.json().catch(() => null);
-          if (!resp.ok) {
-            const message = result?.error || result?.message || resp.statusText || 'Failed to load ad';
-            throw new Error(message);
-          }
-          const data = result?.ad;
-          if (!data) {
-            toast({ title: t('error'), description: t('error_fetching_ad_details'), variant: 'destructive' });
-            navigate('/myads');
-            return;
+
+          let data = null;
+          if (resp.ok && result?.ad) {
+            data = result.ad;
+          } else {
+            console.warn('Server returned no ad or non-OK status, falling back to publish_ad table', { status: resp.status, body: result });
           }
 
-          // Populate form with existing ad data (phone is decrypted by server)
+          // Fallback to read from publish_ad table if server does not return ad
+          if (!data) {
+            try {
+              const { data: pubAd, error: pubErr } = await supabase
+                .from('publish_ad')
+                .select('*')
+                .eq('id', id)
+                .single();
+              if (pubErr) {
+                console.error('Error loading ad from publish_ad fallback:', pubErr);
+                toast({ title: t('error'), description: t('error_fetching_ad_details'), variant: 'destructive' });
+                navigate('/myads');
+                return;
+              }
+              data = pubAd;
+            } catch (pubErr) {
+              console.error('Exception loading publish_ad fallback:', pubErr);
+              toast({ title: t('error'), description: t('error_fetching_ad_details'), variant: 'destructive' });
+              navigate('/myads');
+              return;
+            }
+          }
+
+          // Populate form with existing ad data (server returns decrypted fields; publish_ad may contain raw/encrypted values)
           setStoreName(data.store_name || '');
           setWebsiteUrl(data.website_url || '');
           setPhoneNumber(data.phone || '');
@@ -203,7 +223,7 @@ const PublishAd: React.FC = () => {
             setAdPrice(fetchedPrices[durationDays]);
           }
         } catch (err) {
-          console.error('Error fetching ad via server:', err);
+          console.error('Error fetching ad via server or fallback:', err);
           toast({ title: t('error'), description: t('error_fetching_ad_details'), variant: 'destructive' });
           navigate('/myads');
         } finally {
