@@ -5081,6 +5081,113 @@ app.post('/api/verify-and-resolve-report', verifyJwtToken, async (req, res) => {
   }
 });
 
+// Endpoint: تغيير رقم الهاتف للمستخدم (يتطلب تحقق بالـ last6 وكلمة المرور)
+app.post('/api/change-phone', verifyJwtToken, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, error: 'Unauthorized' });
+
+    const { newPhone, last6, password } = req.body || {};
+    if (!newPhone || !last6 || !password) return res.status(400).json({ success: false, error: 'newPhone, last6 and password are required' });
+
+    // جلب صف التطبيق للمستخدم
+    const { data: userRow, error: userErr } = await supabase.from('users').select('*').eq('id', userId).maybeSingle();
+    if (userErr) {
+      console.error('/api/change-phone users fetch error', userErr);
+      return sendError(res, 500, 'Failed to fetch user data', userErr);
+    }
+    if (!userRow) return res.status(404).json({ success: false, error: 'User record not found' });
+
+    // التحقق من last6
+    const storedLast6Raw = decryptField(userRow.id_last6) || '';
+    const storedLast6Digits = String(storedLast6Raw).replace(/\D/g, '');
+    const providedLast6 = String(last6 || '').replace(/\D/g, '');
+    if (!providedLast6 || providedLast6.length !== 6) {
+      return res.status(400).json({ success: false, error: 'Invalid last6 value' });
+    }
+    if (!storedLast6Digits || !storedLast6Digits.endsWith(providedLast6) && storedLast6Digits !== providedLast6) {
+      // لا يطابق آخر 6 أرقام
+      return res.status(403).json({ success: false, error: 'Last6 verification failed' });
+    }
+
+    // تحقق من كلمة المرور عن طريق إعادة التوثيق عبر Supabase Auth
+    const email = (req.user && req.user.email) ? req.user.email : (userRow.email || null);
+    if (!email) return res.status(400).json({ success: false, error: 'User email not available for password verification' });
+
+    // استدعاء نقطة الدخول الخاصة بـ Supabase Auth للتحقق من كلمة المرور
+    const authUrlBase = SUPABASE_URL ? SUPABASE_URL.replace(/\/$/, '') : null;
+    if (!authUrlBase || !SUPABASE_KEY) return sendError(res, 500, 'Server not configured for auth operations');
+
+    const verifyResp = await fetch(`${authUrlBase}/auth/v1/token?grant_type=password`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`
+      },
+      body: JSON.stringify({ email, password })
+    });
+
+    if (!verifyResp.ok) {
+      const txt = await verifyResp.text();
+      console.warn('/api/change-phone password verification failed', verifyResp.status, txt);
+      return res.status(401).json({ success: false, error: 'Invalid password' });
+    }
+
+    // تشفير رقم الهاتف الجديد
+    const encPhone = encryptObject(newPhone);
+    const encPhoneJson = encPhone ? JSON.stringify(encPhone) : null;
+
+    // تحديث جدول users
+    const { data: updatedUser, error: updateUserErr } = await supabase.from('users').update({ phone: encPhoneJson }).eq('id', userId).select();
+    if (updateUserErr) {
+      console.error('/api/change-phone update users error', updateUserErr);
+      return sendError(res, 500, 'Failed to update user phone', updateUserErr);
+    }
+
+    // تحديث جدول businesses إن وجد
+    const { data: businessRow, error: businessErr } = await supabase.from('businesses').select('id').eq('user_id', userId).maybeSingle();
+    if (businessErr) console.warn('/api/change-phone fetch business error', businessErr);
+    if (businessRow) {
+      const { error: updateBusinessErr } = await supabase.from('businesses').update({ phone: encPhoneJson }).eq('user_id', userId);
+      if (updateBusinessErr) console.error('/api/change-phone update businesses error', updateBusinessErr);
+    }
+
+    // تحديث phone_reports حيث user_id = current user
+    try {
+      const { error: updateReportsErr } = await supabase.from('phone_reports').update({ phone_number: encPhoneJson }).eq('user_id', userId);
+      if (updateReportsErr) console.error('/api/change-phone update phone_reports error', updateReportsErr);
+    } catch (e) {
+      console.error('/api/change-phone update phone_reports exception', e);
+    }
+
+    // تحديث registered_phones حيث user_id = current user
+    try {
+      const { error: updateRegErr } = await supabase.from('registered_phones').update({ phone_number: encPhoneJson }).eq('user_id', userId);
+      if (updateRegErr) console.error('/api/change-phone update registered_phones error', updateRegErr);
+    } catch (e) {
+      console.error('/api/change-phone update registered_phones exception', e);
+    }
+
+    // سجل عملية التدقيق
+    await logAudit({
+      userId,
+      action: 'change_phone',
+      resourceType: 'user_profile',
+      resourceId: userId,
+      oldValues: { phone: decryptField(userRow.phone) },
+      newValues: { phone: newPhone },
+      ip: req.ip,
+      userAgent: req.headers['user-agent']
+    });
+
+    return res.json({ success: true, message: 'Phone updated' });
+  } catch (err) {
+    console.error('/api/change-phone error', err);
+    return sendError(res, 500, 'Server error', err);
+  }
+});
+
 // نقطة نهاية لإعادة تعيين كلمة مرور الهاتف المسجل
 app.post('/api/reset-phone-password', verifyJwtToken, async (req, res) => {
   const { imei, currentPassword, newPassword } = req.body;

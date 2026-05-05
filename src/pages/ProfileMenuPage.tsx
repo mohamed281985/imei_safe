@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { User, PlusSquare, Search, Sparkles, LogOut, MessageSquare, Key, Globe, Fingerprint, Gift } from 'lucide-react';
+import { User, PlusSquare, Search, Sparkles, LogOut, MessageSquare, Key, Globe, Fingerprint, Gift, Phone } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -65,6 +65,11 @@ const ProfileMenuPage: React.FC = () => {
     });
     const [isProcessing, setIsProcessing] = useState(false);
     const [showLanguageModal, setShowLanguageModal] = useState(false);
+    const [showChangePhoneModal, setShowChangePhoneModal] = useState(false);
+    const [newPhone, setNewPhone] = useState('');
+    const [verificationLast6, setVerificationLast6] = useState('');
+    const [verificationPassword, setVerificationPassword] = useState('');
+    const [isUpdatingPhone, setIsUpdatingPhone] = useState(false);
     const [isBiometricEnabled, setIsBiometricEnabled] = useState(false);
     const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://imei-safe.me';
 
@@ -391,6 +396,70 @@ const ProfileMenuPage: React.FC = () => {
         }
     };
 
+    const handleUpdatePhone = async () => {
+        const phoneVal = newPhone?.trim();
+        const last6 = verificationLast6?.trim();
+        const pwd = verificationPassword;
+
+        if (!phoneVal || phoneVal.length < 6) {
+            toast({ title: t('error'), description: t('invalid_phone_number') || 'Invalid phone number', variant: 'destructive' });
+            return;
+        }
+        if (!last6 || last6.length !== 6) {
+            toast({ title: t('error'), description: 'الرجاء إدخال آخر 6 أرقام صحيحة', variant: 'destructive' });
+            return;
+        }
+        if (!pwd || pwd.length < 6) {
+            toast({ title: t('error'), description: 'الرجاء إدخال كلمة المرور الحالية', variant: 'destructive' });
+            return;
+        }
+
+        setIsUpdatingPhone(true);
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const token = session?.access_token;
+
+            if (!token) {
+                throw new Error('غير مصرح. الرجاء تسجيل الدخول مرة أخرى');
+            }
+
+            const resp = await fetch(`${API_BASE_URL}/api/change-phone`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    newPhone: phoneVal,
+                    last6,
+                    password: pwd
+                })
+            });
+
+            const raw = await resp.text();
+            let payload: any = {};
+            if (raw) {
+                try { payload = JSON.parse(raw); } catch { payload = {}; }
+            }
+
+            if (!resp.ok) {
+                throw new Error(payload?.error || payload?.message || `فشل تحديث رقم الهاتف (${resp.status})`);
+            }
+
+            // نجاح: الخادم يجب أن يتحقق ويشفّر ويحدّث الجداول المطلوبة
+            toast({ title: t('success'), description: t('phone_updated_successfully') || 'تم تحديث رقم الهاتف' });
+            setShowChangePhoneModal(false);
+            setVerificationLast6('');
+            setVerificationPassword('');
+        } catch (err: any) {
+            console.error('Failed to update phone via server:', err);
+            toast({ title: t('error'), description: err?.message || t('phone_update_failed') || 'فشل تحديث رقم الهاتف', variant: 'destructive' });
+        } finally {
+            setIsUpdatingPhone(false);
+        }
+    };
+
     return (
         <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-[#289c8e] to-[#1a7468] px-3 pt-6 pb-[30px]">
             <div className="w-full max-w-md bg-white/95 backdrop-blur-sm rounded-2xl shadow-2xl border border-[#289c8e]/30 p-6">
@@ -526,6 +595,22 @@ const ProfileMenuPage: React.FC = () => {
                         </span>
                     </button>
 
+                    {/* زر تغيير رقم الهاتف */}
+                    <button
+                        onClick={() => {
+                            // try to prefill with current user phone from metadata
+                            const current = (user as any)?.phoneNumber || (user as any)?.user_metadata?.phoneNumber || '';
+                            setNewPhone(current);
+                            setShowChangePhoneModal(true);
+                        }}
+                        className="flex items-center gap-4 px-5 py-3 rounded-xl shadow-md bg-cyan-500/10 hover:bg-[#289c8e]/20 hover:scale-[1.03] transition-transform duration-200 w-full"
+                    >
+                        <div className="flex items-center justify-center w-12 h-12 rounded-full bg-white/10 shadow-inner">
+                            <Phone className="w-7 h-7 text-cyan-500" />
+                        </div>
+                        <span className="text-lg font-semibold text-gray-800">{t('change_phone_number')}</span>
+                    </button>
+
                     {/* زر تسجيل الخروج */}
                     <button
                         onClick={handleLogout}
@@ -594,6 +679,58 @@ const ProfileMenuPage: React.FC = () => {
                     </DialogContent>
                 </Dialog>
             )}
+            {/* Modal لتغيير رقم الهاتف */}
+            <Dialog open={showChangePhoneModal} onOpenChange={setShowChangePhoneModal}>
+                <DialogContent className="bg-white/90 backdrop-blur-lg text-gray-800 w-[90%] sm:max-w-md border-2 border-orange-400 shadow-2xl rounded-2xl">
+                        <DialogHeader className="text-center">
+                            <DialogTitle className="text-2xl font-bold text-gray-900 text-center">{t('change_phone_number')}</DialogTitle>
+                            <DialogDescription className="text-gray-600 text-center">{t('enter_new_phone')}</DialogDescription>
+                        </DialogHeader>
+
+                    <div className="space-y-4 pt-4">
+                        <div>
+                            <label className="block text-gray-700 mb-2">{t('phone_number')}</label>
+                            <Input
+                                type="tel"
+                                value={newPhone}
+                                onChange={(e) => setNewPhone(e.target.value)}
+                                className="input-field w-full"
+                                placeholder={t('phone_placeholder')}
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-gray-700 mb-2">آخر 6 أرقام للبطاقة</label>
+                            <Input
+                                type="text"
+                                value={verificationLast6}
+                                onChange={(e) => setVerificationLast6(e.target.value.replace(/\D/g, ''))}
+                                className="input-field w-full"
+                                placeholder="123456"
+                                maxLength={6}
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-gray-700 mb-2">كلمة المرور الحالية</label>
+                            <Input
+                                type="password"
+                                value={verificationPassword}
+                                onChange={(e) => setVerificationPassword(e.target.value)}
+                                className="input-field w-full"
+                                placeholder={t('enter_password')}
+                            />
+                        </div>
+                    </div>
+
+                    <DialogFooter className="gap-3">
+                        <Button onClick={() => setShowChangePhoneModal(false)} variant="outline" className="border-imei-cyan/30 text-gray-700">
+                            {t('cancel')}
+                        </Button>
+                        <Button onClick={handleUpdatePhone} disabled={isUpdatingPhone} className="bg-imei-cyan hover:bg-imei-cyan-dark text-white">
+                            {isUpdatingPhone ? t('processing') : t('update_phone')}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             {/* Modal لتغيير اللغة */}
             <Dialog open={showLanguageModal} onOpenChange={setShowLanguageModal}>

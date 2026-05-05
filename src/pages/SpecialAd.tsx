@@ -1072,7 +1072,7 @@ const SpecialAd = () => {
           </div>
         )}
 
-        <Card className="max-w-4xl mx-auto border-[#289c8e]/20" style={{ backgroundColor: '#289c8e' }}>
+        <Card className="max-w-4xl mx-auto border-[#289c8e]/20 bg-transparent" style={{ backgroundColor: 'transparent' }}>
           <CardHeader>
             <CardTitle className="text-[#289c8e]">{t('ad_details')}</CardTitle>
           </CardHeader>

@@ -702,7 +702,7 @@ const PublishAd: React.FC = () => {
           </div>
         )}
 
-        <Card className="max-w-4xl mx-auto border-[#289c8e]/20" style={{ backgroundColor: '#289c8e' }}>
+        <Card className="max-w-4xl mx-auto border-[#289c8e]/20 bg-transparent" style={{ backgroundColor: 'transparent' }}>
           <CardHeader>
             {/* Empty header */}
           </CardHeader>
@@ -921,7 +921,7 @@ const PublishAd: React.FC = () => {
               </div>
 
               {/* Submit Button */}
-              <Button type="submit" className="w-full glowing-button-orange mb-6" disabled={isLoading}>
+              <Button type="submit" className="w-full bg-emerald-600 text-white hover:bg-emerald-700 mb-6" disabled={isLoading}>
                 {isLoading ? (isUpdateMode ? t('updating') : t('publishing')) : (
                   <>
                     <Send className="mr-2 h-4 w-4 text-white" />

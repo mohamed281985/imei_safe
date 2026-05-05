@@ -64,12 +64,11 @@ const MyAds: React.FC = () => {
   const [myAds, setMyAds] = useState<Ad[]>([]);
   const [loadingAds, setLoadingAds] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmVisible, setConfirmVisible] = useState(false);
+  const [confirmAdId, setConfirmAdId] = useState<string | null>(null);
+  const [confirmAdType, setConfirmAdType] = useState<'normal' | 'special' | 'publish' | null>(null);
 
   const handleDelete = async (adId: string, adType: 'normal' | 'special' | 'publish') => {
-    if (!window.confirm(t('delete_confirmation') || 'هل أنت متأكد من حذف هذا الإعلان؟')) {
-      return;
-    }
-
     setDeletingId(adId);
     try {
       const tableName = 'ads_payment';
@@ -117,6 +116,7 @@ const MyAds: React.FC = () => {
       });
     } finally {
       setDeletingId(null);
+      setConfirmVisible(false);
     }
   };
 
@@ -225,17 +225,28 @@ const MyAds: React.FC = () => {
       <div className="container mx-auto px-4 py-8">
         <h1 className="text-2xl font-bold text-center mb-8">{t('my_ads') || 'إعلاناتي'}</h1>
         {loadingAds ? (
-          <div className="text-center text-gray-400">{t('loading') || 'جاري التحميل...'}</div>
+          <div className="grid md:grid-cols-2 gap-6">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="rounded-xl p-4 border border-gray-200 bg-white/5 animate-pulse">
+                <div className="w-full h-40 rounded mb-2 bg-gray-200 dark:bg-gray-700" />
+                <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4 mb-2" />
+                <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-1/2" />
+              </div>
+            ))}
+          </div>
         ) : myAds.length === 0 ? (
-          <div className="text-center text-gray-400">{t('no_ads_found') || 'لا توجد إعلانات بعد.'}</div>
+          <div className="text-center">
+            <p className="text-gray-500 mb-4">{t('no_ads_found') || 'لا توجد إعلانات بعد.'}</p>
+            <Button className="mx-auto" onClick={() => navigate('/publish-ad')}>{t('publish_ad') || 'انشر إعلان'}</Button>
+          </div>
         ) : (
           <div className="grid md:grid-cols-2 gap-6">
             {myAds.map((ad) => (
               <div
                 key={`${ad.adType}-${ad.id}`}
-                className={`relative bg-imei-darker rounded-xl p-4 border flex flex-col gap-2 transition-all duration-300 ${ad.adType === 'special'
-                  ? 'border-yellow-500/50 bg-gradient-to-br from-yellow-900/20 via-imei-darker to-imei-darker shadow-lg shadow-yellow-500/10'
-                  : 'border-imei-cyan/20'
+                className={`relative rounded-xl p-4 border flex flex-col gap-2 transition-all duration-300 ${ad.adType === 'special'
+                  ? 'border-yellow-500/50 bg-transparent shadow-lg shadow-yellow-500/10'
+                  : 'border-imei-cyan/20 bg-transparent'
                   }`}
               >
                 {/* شعار انتهاء الإعلان بأسلوب ملصق مطلوب */}
@@ -278,7 +289,7 @@ const MyAds: React.FC = () => {
                           borderWidth: '4px', //
                         }}
                       >
-                        تم الانتهاء
+                        {t('ad_ended') || 'تم الانتهاء'}
                       </div>
                     );
                   }
@@ -287,8 +298,8 @@ const MyAds: React.FC = () => {
                 <div className="relative">
                   <img
                     src={ad.image_url}
-                    alt="ad"
-                    className="w-full h-40 object-contain rounded mb-2 bg-black/10"
+                    alt={sanitizeServerValue(ad.store_name) || 'ad'}
+                    className="w-full h-40 object-cover rounded mb-2 bg-transparent"
                   />
                 </div>
                 <div className="flex flex-col gap-1">
@@ -330,9 +341,10 @@ const MyAds: React.FC = () => {
                 <div className="flex gap-2 mt-2">
                   <Button
                     size="sm"
-                    variant="outline"
-                    className="flex-1 flex items-center gap-1 border-imei-cyan text-imei-cyan hover:bg-imei-cyan/10"
+                    variant="ghost"
+                    className="flex-1 flex items-center gap-1 bg-emerald-600 text-white hover:bg-emerald-700"
                     onClick={() => handleEdit(ad.id, ad.adType)}
+                    aria-label={`${t('edit') || 'تعديل'} ${sanitizeServerValue(ad.store_name)}`}
                   >
                     <Edit className="w-4 h-4" /> {t('edit') || 'تعديل'}
                   </Button>
@@ -342,9 +354,12 @@ const MyAds: React.FC = () => {
                     className="flex-1 flex items-center gap-1"
                     disabled={deletingId === ad.id}
                     onClick={() => {
-                      console.log('زر الحذف: نوع الإعلان', ad.adType, 'بيانات الإعلان:', ad);
-                      handleDelete(ad.id, ad.adType);
+                      console.log('تأكيد حذف: نوع الإعلان', ad.adType, 'بيانات الإعلان:', ad);
+                      setConfirmAdId(ad.id);
+                      setConfirmAdType(ad.adType);
+                      setConfirmVisible(true);
                     }}
+                    aria-label={`${t('delete') || 'حذف'} ${sanitizeServerValue(ad.store_name)}`}
                   >
                     <Trash2 className="w-4 h-4" />
                     {deletingId === ad.id
@@ -357,6 +372,25 @@ const MyAds: React.FC = () => {
           </div>
         )}
       </div>
+      {/* Confirmation Modal */}
+      {confirmVisible && confirmAdId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white dark:bg-gray-900 rounded-lg p-6 w-[90%] max-w-md">
+            <h3 className="text-lg font-semibold mb-2">{t('delete_confirmation') || 'هل أنت متأكد من حذف هذا الإعلان؟'}</h3>
+            <p className="text-sm text-gray-600 mb-4">{t('delete_confirmation_desc') || 'لا يمكن التراجع عن هذا الإجراء.'}</p>
+            <div className="flex gap-3 justify-end">
+              <Button variant="ghost" onClick={() => setConfirmVisible(false)}>{t('cancel') || 'إلغاء'}</Button>
+              <Button
+                variant="destructive"
+                onClick={() => confirmAdId && confirmAdType && handleDelete(confirmAdId, confirmAdType)}
+                disabled={deletingId === confirmAdId}
+              >
+                {deletingId === confirmAdId ? (t('deleting') || 'جاري الحذف...') : (t('delete') || 'حذف')}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </PageContainer>
   );
 };
