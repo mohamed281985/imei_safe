@@ -16,6 +16,9 @@ export interface ads_payment {
   longitude?: number;
 }
 
+// Compatibility alias: some files import `publish_ad` type
+export type publish_ad = ads_payment;
+
 interface AdContextType {
   ads: ads_payment[];
   deleteAd: (adId: string, isSpecialAd: boolean) => Promise<void>;
@@ -37,13 +40,13 @@ export function AdProvider({ children }: { children: React.ReactNode }) {
 
   const refreshAds = async () => {
     try {
-      // جلب الإعلانات العادية
+      // جلب الإعلانات من جدول `ads_payment` (مصدر واحد موحّد للإعلانات)
       const { data: normalAds, error: normalError } = await supabase
         .from('ads_payment')
         .select('*')
         .eq('is_active', true);
 
-      // جلب الإعلانات المميزة المدفوعة فقط
+      // جلب الإعلانات المميزة المدفوعة فقط من `ads_payment`
       const { data: specialAds, error: specialError } = await supabase
         .from('ads_payment')
         .select('*')
@@ -69,12 +72,15 @@ export function AdProvider({ children }: { children: React.ReactNode }) {
   const deleteAd = async (adId: string, isSpecialAd: boolean) => {
     try {
       const table = isSpecialAd ? 'ads_payment' : 'ads_payment';
-      const { error } = await supabase
+      const { data: delData, error } = await supabase
         .from(table)
         .delete()
-        .eq('id', adId);
+        .eq('id', adId)
+        .select()
+        .maybeSingle();
 
       if (error) throw error;
+      console.log('AdContext.deleteAd deleted:', delData);
 
       // تحديث حالة الإعلانات محلياً
       setAds(currentAds => currentAds.filter(ad => ad.id !== adId));

@@ -22,11 +22,11 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useLanguage } from '@/contexts/LanguageContext';
 
-interface PublishAd {
+interface publish_ad {
   id: number;
   image_url: string;
-  is_active: boolean;
-  page: string;
+  is_active?: boolean;
+  page?: string;
   website_url?: string;
   latitude?: number;
   longitude?: number;
@@ -40,9 +40,12 @@ interface PageAdvertisementProps {
 
 const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
   const { t } = useLanguage();
-  const [ads, setAds] = useState<PublishAd[]>([]);
+  const [ads, setAds] = useState<publish_ad[]>([]);
   const [currentAdIndex, setCurrentAdIndex] = useState(0);
   const [showLocalAd, setShowLocalAd] = useState(true);
+
+  // cache of already preloaded image URLs to avoid duplicate requests
+  const preloadedImageUrls = new Set<string>();
 
   const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || 'https://imei-safe.me';
 
@@ -51,7 +54,7 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
     // 1. محاولة تحميل الإعلانات من ذاكرة التخزين المؤقت أولاً
     const cachedAdsRaw = localStorage.getItem(cacheKey);
     if (cachedAdsRaw) {
-      const cachedAds: PublishAd[] = JSON.parse(cachedAdsRaw);
+      const cachedAds: publish_ad[] = JSON.parse(cachedAdsRaw);
       const now = new Date();
       const validCachedAds = cachedAds.filter(ad => ad.expires_at && new Date(ad.expires_at) > now);
       if (validCachedAds.length > 0) {
@@ -80,19 +83,18 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
 
   const fetchAds = async (coords: { latitude: number; longitude: number } | null) => {
     const cacheKey = `page-ads-${pageName}`;
-    const now = new Date();
-    const nowIso = now.toISOString();
-    // Support rows where expires_at is NULL (means no expiry) OR expires_at > now
     const { data } = await supabase
       .from('publish_ad')
-      .select('*')
-      .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
-      .eq('is_active', true)
+      .select('id,image_url,website_url,latitude,longitude,expires_at')
+      .gt('expires_at', new Date().toISOString()) // <-- إضافة شرط للتحقق من تاريخ الانتهاء
+      .eq('is_active', true) // <-- إضافة شرط لجلب الإعلانات النشطة فقط
       .eq('is_paid', true)
+      .eq('payment_status', 'paid') // التأكد من أن الدفع مكتمل
       .order('upload_date', { ascending: false });
 
-    // فلترة إضافية للتأكد من عدم عرض الإعلانات المنتهية (treat null as not-expired)
-    const activeAds = data ? data.filter(ad => !ad.expires_at || new Date(ad.expires_at) > now) : [];
+    // فلترة إضافية للتأكد من عدم عرض الإعلانات المنتهية
+    const now = new Date();
+    const activeAds = data ? data.filter(ad => ad.expires_at && new Date(ad.expires_at) > now) : [];
 
     if (!activeAds || activeAds.length === 0) {
       setShowLocalAd(true);
@@ -106,10 +108,10 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
 
     if (coords) {
       const nearbyAds = activeAds
-        .filter(ad => ad.latitude && ad.longitude)
+        .filter(ad => ad.latitude != null && ad.longitude != null)
         .map(ad => ({
           ...ad,
-          distance: getDistanceFromLatLonInKm(coords.latitude, coords.longitude, ad.latitude!, ad.longitude!)
+          distance: getDistanceFromLatLonInKm(coords.latitude, coords.longitude, Number(ad.latitude), Number(ad.longitude))
         }))
         .sort((a, b) => a.distance - b.distance);
 
@@ -128,46 +130,54 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
     }
 
     if (fetchedAds && fetchedAds.length > 0) {
-      setAds(fetchedAds);
+      // normalize fields: trim image_url and parse lat/lon to numbers
+      const normalized = fetchedAds.map(ad => ({
+        id: ad.id,
+        image_url: (ad.image_url || '').toString().trim(),
+        website_url: ad.website_url || undefined,
+        latitude: ad.latitude != null ? Number(ad.latitude) : undefined,
+        longitude: ad.longitude != null ? Number(ad.longitude) : undefined,
+        expires_at: ad.expires_at || undefined
+      }));
+
+      setAds(normalized as publish_ad[]);
       setShowLocalAd(false);
-      localStorage.setItem(cacheKey, JSON.stringify(fetchedAds));
+      try {
+        localStorage.setItem(cacheKey, JSON.stringify(normalized));
+      } catch (e) {
+        console.warn('Failed to write ads cache', e);
+      }
     }
   };
 
-  // دالة لتحميل الصور مسبقاً
+  // دالة لتحميل الصور مسبقاً مع تجنّب الازدواجية
   const preloadImages = (imageUrls: string[]) => {
     imageUrls.forEach(url => {
-      if (url) {
-        const img = new Image();
-        img.src = url;
-      }
+      if (!url) return;
+      const u = url.toString().trim();
+      if (!u || preloadedImageUrls.has(u)) return;
+      const img = new Image();
+      img.onload = () => preloadedImageUrls.add(u);
+      img.onerror = () => preloadedImageUrls.add(u);
+      img.src = u;
     });
   };
 
+  // preload images when the ads list changes (once)
   useEffect(() => {
-    if (!ads || ads.length <= 1) return;
-
-    // تحميل جميع الصور مسبقاً عند تغيير الإعلانات
+    if (!ads || ads.length === 0) return;
     const imageUrls = ads.map(ad => ad.image_url).filter(Boolean);
     preloadImages(imageUrls);
+  }, [ads]);
 
+  // carousel timer: depend only on ads.length to avoid recreating the timer every tick
+  useEffect(() => {
+    if (!ads || ads.length <= 1) return;
     const timer = setInterval(() => {
-      setCurrentAdIndex((prevIndex) => {
-        if (!ads || ads.length === 0) return 0;
-        const nextIndex = (prevIndex + 1) % ads.length;
-        
-        // تحميل الصورة التالية مسبقاً
-        if (ads[nextIndex]?.image_url) {
-          const img = new Image();
-          img.src = ads[nextIndex].image_url;
-        }
-        
-        return nextIndex;
-      });
+      setCurrentAdIndex(prevIndex => (prevIndex + 1) % ads.length);
     }, 2000);
-
     return () => clearInterval(timer);
-  }, [ads.length, currentAdIndex, ads]);
+  }, [ads.length]);
 
   const openAdRedirect = async (id: number) => {
     const baseUrl = API_BASE_URL.replace(/\/+$/, '');

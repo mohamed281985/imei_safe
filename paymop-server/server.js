@@ -6188,6 +6188,50 @@ app.get('/api/ad/:id', verifyJwtToken, async (req, res) => {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
+    // Prefer reading from `publish_ad` first (server-side service role), then fallback to `ads_payment`.
+    // This ensures edits return the same source that is shown publicly.
+    try {
+      const { data: pubData, error: pubErr } = await supabase
+        .from('publish_ad')
+        .select('*')
+        .eq('id', id)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (pubErr) {
+        if (process.env.NODE_ENV !== 'production') console.warn('/api/ad/:id publish_ad lookup error:', pubErr);
+      } else if (pubData) {
+        const outPub = {
+          id: pubData.id,
+          amount: pubData.amount ?? null,
+          type: pubData.type ?? null,
+          payment_status: pubData.payment_status ?? null,
+          is_paid: pubData.is_paid ?? null,
+          payment_date: pubData.payment_date ?? null,
+          duration_days: pubData.duration_days ?? null,
+          expires_at: pubData.expires_at ?? null,
+          image_url: pubData.image_url ?? null,
+          store_name: pubData.store_name ?? null,
+          created_at: pubData.created_at ?? null,
+          updated_at: pubData.updated_at ?? null,
+          phone: pubData.phone ?? null,
+          email: pubData.email ?? null,
+          owner_name: pubData.owner_name ?? null,
+          website_url: pubData.website_url ?? null
+        };
+        try { outPub.store_name = decryptField(outPub.store_name); } catch (e) { outPub.store_name = null; }
+        try { outPub.phone = decryptField(outPub.phone); } catch (e) { outPub.phone = null; }
+        try { outPub.email = decryptField(outPub.email); } catch (e) { outPub.email = null; }
+        try { outPub.owner_name = decryptField(outPub.owner_name); } catch (e) { outPub.owner_name = null; }
+        try { outPub.website_url = decryptField(outPub.website_url); } catch (e) { outPub.website_url = null; }
+
+        return res.json({ ok: true, ad: outPub });
+      }
+    } catch (e) {
+      console.error('/api/ad/:id publish_ad lookup exception:', e);
+      // fallthrough to ads_payment lookup
+    }
+
     const { data, error } = await supabase
       .from('ads_payment')
       .select('*')
@@ -6201,7 +6245,7 @@ app.get('/api/ad/:id', verifyJwtToken, async (req, res) => {
     }
     if (!data) return res.status(404).json({ error: 'Not found' });
 
-    // Return only a strict whitelist of fields for the owner ad record.
+    // Return only a strict whitelist of fields for the owner ad record from ads_payment.
     const out = {
       id: data.id,
       amount: data.amount ?? null,
