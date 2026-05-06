@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { User, PlusSquare, Search, Sparkles, LogOut, MessageSquare, Key, Globe, Fingerprint, Gift, Phone } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useScrollToTop } from '@/hooks/useScrollToTop';
+import CountryCodeSelector from '@/components/CountryCodeSelector';
 
 // إبقاء نفس عناصر القائمة الأصلية
 const menuItems = [
@@ -67,16 +68,23 @@ const ProfileMenuPage: React.FC = () => {
     const [showLanguageModal, setShowLanguageModal] = useState(false);
     const [showChangePhoneModal, setShowChangePhoneModal] = useState(false);
     const [newPhone, setNewPhone] = useState('');
+    // countryCode stores digits only (e.g. '20')
+    const [countryCode, setCountryCode] = useState('+');
     const [verificationLast6, setVerificationLast6] = useState('');
     const [verificationPassword, setVerificationPassword] = useState('');
     const [isUpdatingPhone, setIsUpdatingPhone] = useState(false);
     const [isBiometricEnabled, setIsBiometricEnabled] = useState(false);
+    const phoneNameRef = useRef(`phone_${Math.random().toString(36).slice(2,9)}`);
+    const last6NameRef = useRef(`last6_${Math.random().toString(36).slice(2,9)}`);
+    const pwdNameRef = useRef(`pwd_${Math.random().toString(36).slice(2,9)}`);
     const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://imei-safe.me';
+
+    // derived display for country code input (show leading +)
+    const displayedCountryCode = countryCode ? (String(countryCode).startsWith('+') ? String(countryCode) : `+${String(countryCode).replace(/^0+/, '')}`) : '+20';
 
     // إعلان المتغيرات الخاصة بالجهاز
     const [phoneInfo, setPhoneInfo] = useState<{ name: string, capabilities: string[] } | null>(null);
     const [supportNumber, setSupportNumber] = useState('');
-    const [countryCode, setCountryCode] = useState('+');
     const [rewardsInfo, setRewardsInfo] = useState({ count: 0, totalValue: 0, claimedCount: 0 });
 
     // تحديد معلومات الجهاز باستخدام مكتبات خارجية
@@ -228,6 +236,14 @@ const ProfileMenuPage: React.FC = () => {
             'biometricAuthToken'
         );
     }, []);
+    // Clear sensitive fields whenever the change-phone modal opens
+    useEffect(() => {
+        if (showChangePhoneModal) {
+            setNewPhone('');
+            setVerificationLast6('');
+            setVerificationPassword('');
+        }
+    }, [showChangePhoneModal]);
     // معالجة تسجيل الخروج
     const handleLogout = () => {
         logout();
@@ -401,16 +417,37 @@ const ProfileMenuPage: React.FC = () => {
         const last6 = verificationLast6?.trim();
         const pwd = verificationPassword;
 
-        if (!phoneVal || phoneVal.length < 6) {
+            // normalize phone to E.164 using countryCode state (countryCode may be like '20' or '+20')
+            function normalizePhone(raw: string, ccRaw: string) {
+                if (!raw) return '';
+                const trimmed = String(raw).trim();
+                // keep digits
+                let digits = trimmed.replace(/\D/g, '');
+                // if raw started with +, preserve full digits as E.164
+                if (trimmed.startsWith('+')) return '+' + digits;
+                // normalize country code
+                let cc = String(ccRaw || '').toString();
+                cc = cc.replace(/\D/g, '').replace(/^0+/, '');
+                if (!cc) cc = '20';
+                // keep the leading zero in the national number (important for countries like Egypt)
+                // only remove trunk zero if it's followed by another zero (e.g., 00 -> 0)
+                if (digits.startsWith('00')) {
+                    digits = digits.replace(/^0+/, '0');
+                }
+                return '+' + cc + digits;
+            }
+            const normalizedPhone = normalizePhone(phoneVal || '', countryCode || '20');
+
+        if (!phoneVal || normalizedPhone.length < 7) {
             toast({ title: t('error'), description: t('invalid_phone_number') || 'Invalid phone number', variant: 'destructive' });
             return;
         }
         if (!last6 || last6.length !== 6) {
-            toast({ title: t('error'), description: 'الرجاء إدخال آخر 6 أرقام صحيحة', variant: 'destructive' });
+            toast({ title: t('error'), description: t('enter_last6') || 'Please enter the last 6 digits', variant: 'destructive' });
             return;
         }
         if (!pwd || pwd.length < 6) {
-            toast({ title: t('error'), description: 'الرجاء إدخال كلمة المرور الحالية', variant: 'destructive' });
+            toast({ title: t('error'), description: t('enter_current_password') || 'Please enter your current password', variant: 'destructive' });
             return;
         }
 
@@ -423,18 +460,31 @@ const ProfileMenuPage: React.FC = () => {
                 throw new Error('غير مصرح. الرجاء تسجيل الدخول مرة أخرى');
             }
 
+            // جلب CSRF token من الخادم
+            const csrfResp = await fetch(`${API_BASE_URL}/api/csrf-token`, { method: 'GET', credentials: 'include' });
+            const csrfRaw = await csrfResp.text();
+            let csrfPayload: any = {};
+            if (csrfRaw) {
+                try { csrfPayload = JSON.parse(csrfRaw); } catch { csrfPayload = {}; }
+            }
+            const csrfToken = csrfPayload?.csrfToken;
+            if (!csrfResp.ok || !csrfToken) {
+                throw new Error(t('invalid_csrf') || 'Invalid or missing CSRF token');
+            }
+
             const resp = await fetch(`${API_BASE_URL}/api/change-phone`, {
                 method: 'POST',
                 credentials: 'include',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
+                    'Authorization': `Bearer ${token}`,
+                    'X-CSRF-Token': csrfToken
                 },
                 body: JSON.stringify({
-                    newPhone: phoneVal,
-                    last6,
-                    password: pwd
-                })
+                        newPhone: normalizedPhone,
+                        last6,
+                        password: pwd
+                    })
             });
 
             const raw = await resp.text();
@@ -454,7 +504,7 @@ const ProfileMenuPage: React.FC = () => {
             setVerificationPassword('');
         } catch (err: any) {
             console.error('Failed to update phone via server:', err);
-            toast({ title: t('error'), description: err?.message || t('phone_update_failed') || 'فشل تحديث رقم الهاتف', variant: 'destructive' });
+            toast({ title: t('error'), description: t('phone_update_failed') || 'فشل تحديث رقم الهاتف', variant: 'destructive' });
         } finally {
             setIsUpdatingPhone(false);
         }
@@ -598,11 +648,12 @@ const ProfileMenuPage: React.FC = () => {
                     {/* زر تغيير رقم الهاتف */}
                     <button
                         onClick={() => {
-                            // try to prefill with current user phone from metadata
-                            const current = (user as any)?.phoneNumber || (user as any)?.user_metadata?.phoneNumber || '';
-                            setNewPhone(current);
-                            setShowChangePhoneModal(true);
-                        }}
+                                // Open modal with empty fields (do not prefill sensitive data)
+                                setNewPhone('');
+                                setVerificationLast6('');
+                                setVerificationPassword('');
+                                setShowChangePhoneModal(true);
+                            }}
                         className="flex items-center gap-4 px-5 py-3 rounded-xl shadow-md bg-cyan-500/10 hover:bg-[#289c8e]/20 hover:scale-[1.03] transition-transform duration-200 w-full"
                     >
                         <div className="flex items-center justify-center w-12 h-12 rounded-full bg-white/10 shadow-inner">
@@ -690,16 +741,25 @@ const ProfileMenuPage: React.FC = () => {
                     <div className="space-y-4 pt-4">
                         <div>
                             <label className="block text-gray-700 mb-2">{t('phone_number')}</label>
-                            <Input
-                                type="tel"
-                                value={newPhone}
-                                onChange={(e) => setNewPhone(e.target.value)}
-                                className="input-field w-full"
-                                placeholder={t('phone_placeholder')}
-                            />
+                            <div className="flex gap-2">
+                                <CountryCodeSelector
+                                    value={displayedCountryCode}
+                                    onChange={(code) => setCountryCode(code)}
+                                />
+                                <Input
+                                    type="tel"
+                                    value={newPhone}
+                                    onChange={(e) => setNewPhone(e.target.value)}
+                                    className="input-field flex-1"
+                                    placeholder={t('phone_placeholder') || '10 1234 5678'}
+                                    name={phoneNameRef.current}
+                                    autoComplete="tel"
+                                    inputMode="tel"
+                                />
+                            </div>
                         </div>
                         <div>
-                            <label className="block text-gray-700 mb-2">آخر 6 أرقام للبطاقة</label>
+                            <label className="block text-gray-700 mb-2">{t('id_last_6_from_card') || 'Last 6 Digits'}</label>
                             <Input
                                 type="text"
                                 value={verificationLast6}
@@ -707,22 +767,27 @@ const ProfileMenuPage: React.FC = () => {
                                 className="input-field w-full"
                                 placeholder="123456"
                                 maxLength={6}
+                                name={last6NameRef.current}
+                                autoComplete="off"
+                                inputMode="numeric"
                             />
                         </div>
                         <div>
-                            <label className="block text-gray-700 mb-2">كلمة المرور الحالية</label>
+                            <label className="block text-gray-700 mb-2">{t('current_login_password') || 'Current login password'}</label>
                             <Input
                                 type="password"
                                 value={verificationPassword}
                                 onChange={(e) => setVerificationPassword(e.target.value)}
                                 className="input-field w-full"
                                 placeholder={t('enter_password')}
+                                name={pwdNameRef.current}
+                                autoComplete="new-password"
                             />
                         </div>
                     </div>
 
                     <DialogFooter className="gap-3">
-                        <Button onClick={() => setShowChangePhoneModal(false)} variant="outline" className="border-imei-cyan/30 text-gray-700">
+                        <Button onClick={() => setShowChangePhoneModal(false)} variant="outline" className="border-orange-500 text-orange-600 hover:bg-orange-50 hover:border-orange-600">
                             {t('cancel')}
                         </Button>
                         <Button onClick={handleUpdatePhone} disabled={isUpdatingPhone} className="bg-imei-cyan hover:bg-imei-cyan-dark text-white">

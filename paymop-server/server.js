@@ -6922,6 +6922,58 @@ app.post('/api/validate-buyer-data', verifyJwtToken, async (req, res) => {
   }
 });
 
+// نقطة نهاية لفك تشفير رقم الهاتف من جدول publish_ad
+app.get('/api/ad-phone-decrypted/:id', verifyJwtToken, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const adId = req.params.id;
+    if (!adId) {
+      return res.status(400).json({ error: 'Ad ID is required' });
+    }
+
+    // جلب الإعلان من جدول publish_ad
+    const { data: ad, error: fetchError } = await supabase
+      .from('publish_ad')
+      .select('*')
+      .eq('id', adId)
+      .maybeSingle();
+
+    if (fetchError) {
+      console.error('Error fetching ad from publish_ad:', fetchError);
+      return res.status(500).json({ error: 'Database error' });
+    }
+
+    if (!ad) {
+      return res.status(404).json({ error: 'Ad not found' });
+    }
+
+    // فك تشفير رقم الهاتف
+    const decryptedPhone = decryptField(ad.phone);
+
+    // فك تشفير باقي الحقول الحساسة
+    const decryptedData = {
+      id: ad.id,
+      store_name: ad.store_name,
+      phone: decryptedPhone,
+      website_url: decryptField(ad.website_url),
+      image_url: ad.image_url,
+      duration_days: ad.duration_days,
+      expires_at: ad.expires_at,
+      is_paid: ad.is_paid,
+      payment_status: ad.payment_status
+    };
+
+    return res.json({ success: true, ad: decryptedData });
+  } catch (err) {
+    console.error('Error in /api/ad-phone-decrypted/:id:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // نقطة نهاية لجلب معلومات الهاتف المقنعة (للإبلاغ عن فقدان)
 app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
   try {

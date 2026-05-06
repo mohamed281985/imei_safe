@@ -43,6 +43,31 @@ const ProductDetails = () => {
   const { t } = useLanguage();
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
+  const [decryptedPhone, setDecryptedPhone] = useState<string>('');
+
+  // دالة لجلب رقم الهاتف مفكشف من الخادم
+  const fetchDecryptedPhone = async (adId: string) => {
+    try {
+      const token = localStorage.getItem('access_token');
+      if (!token) return;
+
+      const response = await fetch(`http://localhost:3000/api/ad-phone-decrypted/${adId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.ad?.phone) {
+          setDecryptedPhone(data.ad.phone);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching decrypted phone:', error);
+    }
+  };
 
   useEffect(() => {
     const fetchProduct = async () => {
@@ -79,6 +104,8 @@ const ProductDetails = () => {
             images: accessoryData.accessory_images || [],
             type: 'accessory'
           });
+          // جلب رقم الهاتف مفكشف
+          fetchDecryptedPhone(id);
         } else {
           console.error('خطأ في جلب بيانات المنتج:', accessoryError);
           setProduct(null);
@@ -210,7 +237,7 @@ const ProductDetails = () => {
 
         <div style={{display: 'flex', gap: '12px', marginTop: '18px', marginBottom: "18px"}}>
           <a
-            href={`https://wa.me/${(product.seller_phone || product.contact_methods?.phone || '').replace(/^\+/, '')}`}
+            href={`https://wa.me/${decryptedPhone.replace(/^\+/, '')}`}
             target="_blank"
             rel="noopener noreferrer"
             style={{

@@ -71,7 +71,8 @@ const MyAds: React.FC = () => {
   const handleDelete = async (adId: string, adType: 'normal' | 'special' | 'publish') => {
     setDeletingId(adId);
     try {
-      const tableName = 'ads_payment';
+      // تحديد الجدول المناسب بناءً على نوع الإعلان
+      const tableName = adType === 'publish' ? 'publish_ad' : 'ads_payment';
       console.log(`محاولة حذف الإعلان ID: ${adId} من جدول: ${tableName}`);
 
       const { error } = await supabase
@@ -85,9 +86,8 @@ const MyAds: React.FC = () => {
         throw new Error(`فشل حذف الإعلان من ${tableName}`);
       }
 
-      // إذا كان الإعلان مميزًا، قد نرغب في حذفه من كلا الجدولين إذا كان موجودًا
-      if (adType === 'special') {
-        // محاولة الحذف الاحترازي مع التحقق من الملكية
+      // إذا كان الإعلان من نوع publish، حاول حذفه أيضًا من ads_payment إذا كان موجودًا
+      if (adType === 'publish') {
         await supabase.from('ads_payment').delete().eq('id', adId).eq('user_id', user?.id);
       }
 
@@ -222,32 +222,32 @@ const MyAds: React.FC = () => {
 
   return (
     <PageContainer>
-      <div className="container mx-auto px-4 py-8">
-        <h1 className="text-2xl font-bold text-center mb-8">{t('my_ads') || 'إعلاناتي'}</h1>
+      <div className="container mx-auto px-4 py-8" dir="rtl">
+        <h1 className="text-3xl font-bold text-center mb-8" style={{ color: '#1e3a8a' }}>{t('my_ads') || 'إعلاناتي'}</h1>
         {loadingAds ? (
           <div className="grid md:grid-cols-2 gap-6">
             {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="rounded-xl p-4 border border-gray-200 bg-white/5 animate-pulse">
-                <div className="w-full h-40 rounded mb-2 bg-gray-200 dark:bg-gray-700" />
-                <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4 mb-2" />
-                <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-1/2" />
+              <div key={i} className="rounded-xl p-4 border border-white/10 bg-white/5 backdrop-blur-sm animate-pulse">
+                <div className="w-full h-48 rounded mb-2 bg-white/10" />
+                <div className="h-4 bg-white/10 rounded w-3/4 mb-2" />
+                <div className="h-3 bg-white/10 rounded w-1/2" />
               </div>
             ))}
           </div>
         ) : myAds.length === 0 ? (
           <div className="text-center">
-            <p className="text-gray-500 mb-4">{t('no_ads_found') || 'لا توجد إعلانات بعد.'}</p>
-            <Button className="mx-auto" onClick={() => navigate('/publish-ad')}>{t('publish_ad') || 'انشر إعلان'}</Button>
+            <p className="text-gray-200 mb-4">{t('no_ads_found') || 'لا توجد إعلانات بعد.'}</p>
+            <Button className="mx-auto bg-imei-cyan text-white px-6 py-2 rounded-lg" onClick={() => navigate('/publish-ad')}>{t('publish_ad') || 'انشر إعلان'}</Button>
           </div>
         ) : (
           <div className="grid md:grid-cols-2 gap-6">
             {myAds.map((ad) => (
               <div
                 key={`${ad.adType}-${ad.id}`}
-                className={`relative rounded-xl p-4 border flex flex-col gap-2 transition-all duration-300 ${ad.adType === 'special'
-                  ? 'border-yellow-500/50 bg-transparent shadow-lg shadow-yellow-500/10'
-                  : 'border-imei-cyan/20 bg-transparent'
-                  }`}
+                className={`relative rounded-xl p-4 border-4 flex flex-col gap-2 transition-all duration-300 bg-white/5 backdrop-blur-sm ${ad.adType === 'special'
+                  ? 'border-yellow-400/60 bg-gradient-to-r from-yellow-50/10 to-yellow-100/5 shadow-lg shadow-yellow-500/10'
+                  : 'border-imei-cyan/30 bg-white/5'}
+                  `}
               >
                 {/* شعار انتهاء الإعلان بأسلوب ملصق مطلوب */}
                 {ad.adType === 'special' && ad.expires_at && new Date(ad.expires_at) > new Date() && (
@@ -295,31 +295,30 @@ const MyAds: React.FC = () => {
                   }
                   return null;
                 })()}
-                <div className="relative">
+                <div className="relative overflow-hidden rounded-lg">
                   <img
                     src={ad.image_url}
                     alt={sanitizeServerValue(ad.store_name) || 'ad'}
-                    className="w-full h-40 object-cover rounded mb-2 bg-transparent"
+                    className="w-full h-48 object-cover rounded-md mb-2 border border-white/10 shadow-sm"
                   />
                 </div>
-                <div className="flex flex-col gap-1">
-                  <span className="text-white font-semibold">
+                <div className="flex flex-col gap-1 leading-relaxed">
+                  <span className="text-[#289c8e] font-extrabold text-xl tracking-tight">
                     {sanitizeServerValue(ad.store_name) || t('ad')}
                     {ad.adType === 'special' && (
-                      <span className="ml-2 text-yellow-500 text-xs">{t('special') || 'إعلان مميز'}</span>
+                      <span className="ml-2 text-yellow-400 text-xs font-bold">{t('special') || 'إعلان مميز'}</span>
                     )}
                   </span>
                   {/* مدة الإعلان وتاريخ الانتهاء */}
-                  <span className="text-xs text-imei-cyan">
-                    {t('ad_duration') || 'مدة الإعلان'}: {ad.duration_days || '-'} {t('days') || 'يوم'}
+                  <span className="text-sm text-black font-medium">
+                    {t('ad_duration') || 'مدة الإعلان'}: <span className="font-bold">{ad.duration_days || '-'}</span> {t('days') || 'يوم'}
                   </span>
-                  <span className="text-xs text-red-400">
+                  <span className="text-sm font-medium" style={{ color: '#ef4444' }}>
                     {t('expires_at') || 'تاريخ الانتهاء'}:
                     {ad.expires_at
                       ? (() => {
                         const dateObj = new Date(ad.expires_at);
                         if (!isNaN(dateObj.getTime())) {
-                          // عرض التاريخ والوقت حسب توقيت المستخدم المحلي
                           return ` ${dateObj.toLocaleDateString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit' })} - ${dateObj.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })}`;
                         }
                         return ` ${ad.expires_at}`;
@@ -331,18 +330,18 @@ const MyAds: React.FC = () => {
                       href={normalizeWebsiteUrl(ad.website_url || '')}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-imei-cyan text-xs underline"
+                      className="text-[#289c8e] text-xs underline font-semibold hover:text-cyan-400 transition-colors"
                     >
                       {normalizeWebsiteUrl(ad.website_url || '')}
                     </a>
                   )}
-                  <span className="text-xs text-gray-400">{ad.upload_date?.slice(0, 10)}</span>
+                  <span className="text-xs text-black/70 font-light">{ad.upload_date?.slice(0, 10)}</span>
                 </div>
                 <div className="flex gap-2 mt-2">
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="flex-1 flex items-center gap-1 bg-emerald-600 text-white hover:bg-emerald-700"
+                    className="flex-1 flex items-center gap-2 bg-imei-cyan text-white hover:brightness-95"
                     onClick={() => handleEdit(ad.id, ad.adType)}
                     aria-label={`${t('edit') || 'تعديل'} ${sanitizeServerValue(ad.store_name)}`}
                   >
@@ -351,7 +350,7 @@ const MyAds: React.FC = () => {
                   <Button
                     size="sm"
                     variant="destructive"
-                    className="flex-1 flex items-center gap-1"
+                    className="flex-1 flex items-center gap-2 bg-red-600 text-white hover:bg-red-700"
                     disabled={deletingId === ad.id}
                     onClick={() => {
                       console.log('تأكيد حذف: نوع الإعلان', ad.adType, 'بيانات الإعلان:', ad);
@@ -376,14 +375,21 @@ const MyAds: React.FC = () => {
       {confirmVisible && confirmAdId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white dark:bg-gray-900 rounded-lg p-6 w-[90%] max-w-md">
-            <h3 className="text-lg font-semibold mb-2">{t('delete_confirmation') || 'هل أنت متأكد من حذف هذا الإعلان؟'}</h3>
+            <h3 className="text-lg font-semibold mb-2 text-imei-cyan">{t('delete_confirmation') || 'هل أنت متأكد من حذف هذا الإعلان؟'}</h3>
             <p className="text-sm text-gray-600 mb-4">{t('delete_confirmation_desc') || 'لا يمكن التراجع عن هذا الإجراء.'}</p>
             <div className="flex gap-3 justify-end">
-              <Button variant="ghost" onClick={() => setConfirmVisible(false)}>{t('cancel') || 'إلغاء'}</Button>
+              <Button 
+                variant="ghost" 
+                onClick={() => setConfirmVisible(false)}
+                className="bg-gray-200 text-gray-800 hover:bg-gray-300"
+              >
+                {t('cancel') || 'إلغاء'}
+              </Button>
               <Button
                 variant="destructive"
                 onClick={() => confirmAdId && confirmAdType && handleDelete(confirmAdId, confirmAdType)}
                 disabled={deletingId === confirmAdId}
+                className="bg-red-600 text-white hover:bg-red-700"
               >
                 {deletingId === confirmAdId ? (t('deleting') || 'جاري الحذف...') : (t('delete') || 'حذف')}
               </Button>
