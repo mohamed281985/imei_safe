@@ -6421,7 +6421,7 @@ const normalizeRedirectUrl = (url) => {
         const query = new URLSearchParams(queryString || '');
         const text = query.get('text');
         const textParam = text ? `&text=${encodeURIComponent(text)}` : '';
-        return `https://api.whatsapp.com/send?phone=${encodeURIComponent(messageId)}${textParam}`;
+        return `https://api.whatsapp.com/send?phone=${messageId.replace(/\D/g, '')}${textParam}`;
       }
       return `https://chat.whatsapp.com/${encodeURIComponent(messageId)}`;
     }
@@ -6438,7 +6438,8 @@ const normalizeRedirectUrl = (url) => {
     try {
       const urlObj = new URL(normalized);
       if (/^wa\.me$/i.test(urlObj.hostname)) {
-        return `https://wa.me${urlObj.pathname}${urlObj.search}`;
+        const cleanPath = urlObj.pathname.replace(/\D/g, '');
+        return `https://wa.me/${cleanPath}${urlObj.search}`;
       }
       if (/^api\.whatsapp\.com$/i.test(urlObj.hostname) || /^chat\.whatsapp\.com$/i.test(urlObj.hostname) || /^web\.whatsapp\.com$/i.test(urlObj.hostname)) {
         if (/^\/message\//i.test(urlObj.pathname)) {

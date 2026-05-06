@@ -128,7 +128,7 @@ const AppNavbar: React.FC = () => {
 
     // فتح رابط واتساب مع رقم الدعم الفني مع رمز الدولة
     const fullNumber = countryCode ? `${countryCode}${supportNumber}` : supportNumber;
-    const whatsappUrl = `https://wa.me/${fullNumber}`;
+    const whatsappUrl = `https://wa.me/${fullNumber.replace(/\D/g, '')}`;
     window.open(whatsappUrl, '_blank');
   };
 
