@@ -4592,7 +4592,7 @@ app.get('/api/store-phone/:productId', verifyJwtToken, async (req, res) => {
     console.log('[store-phone] Looking for product with ID:', productId);
     const { data: phoneData, error: phoneError } = await supabase
       .from('phones')
-      .select('contact_methods, seller_phone')
+      .select('contact_methods')
       .eq('id', productId)
       .maybeSingle();
 
@@ -4635,15 +4635,11 @@ app.get('/api/store-phone/:productId', verifyJwtToken, async (req, res) => {
           phoneNumber = decryptField(phoneData.contact_methods.phone);
         }
       }
-      // إذا لم يوجد في contact_methods، جرب seller_phone
-      if (!phoneNumber && phoneData.seller_phone) {
-        phoneNumber = decryptField(phoneData.seller_phone);
-      }
     } else {
       console.log('[store-phone] Looking in accessories table for ID:', productId);
       const { data: accessoryData, error: accessoryError } = await supabase
         .from('accessories')
-        .select('contact_methods, seller_phone')
+        .select('contact_methods')
         .eq('id', productId)
         .maybeSingle();
 
@@ -4683,10 +4679,6 @@ app.get('/api/store-phone/:productId', verifyJwtToken, async (req, res) => {
             // في حالة الخطأ، استخدم decryptField العادية
             phoneNumber = decryptField(accessoryData.contact_methods.phone);
           }
-        }
-        // إذا لم يوجد في contact_methods، جرب seller_phone
-        if (!phoneNumber && accessoryData.seller_phone) {
-          phoneNumber = decryptField(accessoryData.seller_phone);
         }
       }
     }
