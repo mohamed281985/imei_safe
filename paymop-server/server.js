@@ -4600,7 +4600,31 @@ app.get('/api/store-phone/:productId', verifyJwtToken, async (req, res) => {
     if (phoneData && !phoneError) {
       // فك تشفير رقم الهاتف من contact_methods.phone إذا كان موجوداً
       if (phoneData.contact_methods && phoneData.contact_methods.phone) {
-        phoneNumber = decryptField(phoneData.contact_methods.phone);
+        // معالجة حالة التشفير المزدوج: contact_methods.phone قد يكون JSON داخل JSON
+        try {
+          // إذا كانت القيمة نصاً، حاول تحليلها كـ JSON
+          if (typeof phoneData.contact_methods.phone === 'string') {
+            const parsedContact = JSON.parse(phoneData.contact_methods.phone);
+            // إذا كان parsedContact كائناً يحتوي على خاصية phone، حاول تحليلها أيضاً
+            if (parsedContact && typeof parsedContact === 'object' && parsedContact.phone) {
+              // إذا كانت phone أيضاً نصاً، حاول تحليلها كـ JSON
+              if (typeof parsedContact.phone === 'string') {
+                const parsedPhone = JSON.parse(parsedContact.phone);
+                // إذا كان parsedPhone يحتوي على البيانات المشفرة، فك تشفيرها
+                if (parsedPhone && parsedPhone.encryptedData && parsedPhone.iv && parsedPhone.authTag) {
+                  phoneNumber = normalizeDecrypted(decryptAES(parsedPhone.encryptedData, parsedPhone.iv, parsedPhone.authTag));
+                }
+              }
+            }
+          }
+          // إذا فشلت كل المحاولات، استخدم decryptField العادية
+          if (!phoneNumber) {
+            phoneNumber = decryptField(phoneData.contact_methods.phone);
+          }
+        } catch (e) {
+          // في حالة الخطأ، استخدم decryptField العادية
+          phoneNumber = decryptField(phoneData.contact_methods.phone);
+        }
       }
       // إذا لم يوجد في contact_methods، جرب seller_phone
       if (!phoneNumber && phoneData.seller_phone) {
@@ -4616,7 +4640,31 @@ app.get('/api/store-phone/:productId', verifyJwtToken, async (req, res) => {
       if (accessoryData && !accessoryError) {
         // فك تشفير رقم الهاتف من contact_methods.phone إذا كان موجوداً
         if (accessoryData.contact_methods && accessoryData.contact_methods.phone) {
-          phoneNumber = decryptField(accessoryData.contact_methods.phone);
+          // معالجة حالة التشفير المزدوج: contact_methods.phone قد يكون JSON داخل JSON
+          try {
+            // إذا كانت القيمة نصاً، حاول تحليلها كـ JSON
+            if (typeof accessoryData.contact_methods.phone === 'string') {
+              const parsedContact = JSON.parse(accessoryData.contact_methods.phone);
+              // إذا كان parsedContact كائناً يحتوي على خاصية phone، حاول تحليلها أيضاً
+              if (parsedContact && typeof parsedContact === 'object' && parsedContact.phone) {
+                // إذا كانت phone أيضاً نصاً، حاول تحليلها كـ JSON
+                if (typeof parsedContact.phone === 'string') {
+                  const parsedPhone = JSON.parse(parsedContact.phone);
+                  // إذا كان parsedPhone يحتوي على البيانات المشفرة، فك تشفيرها
+                  if (parsedPhone && parsedPhone.encryptedData && parsedPhone.iv && parsedPhone.authTag) {
+                    phoneNumber = normalizeDecrypted(decryptAES(parsedPhone.encryptedData, parsedPhone.iv, parsedPhone.authTag));
+                  }
+                }
+              }
+            }
+            // إذا فشلت كل المحاولات، استخدم decryptField العادية
+            if (!phoneNumber) {
+              phoneNumber = decryptField(accessoryData.contact_methods.phone);
+            }
+          } catch (e) {
+            // في حالة الخطأ، استخدم decryptField العادية
+            phoneNumber = decryptField(accessoryData.contact_methods.phone);
+          }
         }
         // إذا لم يوجد في contact_methods، جرب seller_phone
         if (!phoneNumber && accessoryData.seller_phone) {
