@@ -107,7 +107,7 @@ const ProductDetails = () => {
       if (phoneError && (phoneError.code === 'PGRST116' || phoneError.code === '22P02')) {
         const { data: accessoryData, error: accessoryError } = await supabase
           .from('accessories')
-          .select('*, accessory_images(image_path, main_image, order)')
+          .select('*, contact_methods, accessory_images(image_path, main_image, order)')
           .eq('id', id)
           .single();
 
@@ -246,8 +246,7 @@ const ProductDetails = () => {
           </div>
         </div>
 
-        {product.contact_methods?.phone ? (
-          <div style={{display: 'flex', gap: '12px', marginTop: '18px', marginBottom: "18px"}}>
+        <div style={{display: 'flex', gap: '12px', marginTop: '18px', marginBottom: "18px"}}>
             <button
               onClick={handleContactNow}
               disabled={loadingPhone}
@@ -270,11 +269,6 @@ const ProductDetails = () => {
               {loadingPhone ? t('loading') : t('contact_now')}
             </button>
           </div>
-        ) : (
-          <div style={{display: 'flex', gap: '12px', marginTop: '18px', marginBottom: "18px", color: '#666', fontSize: '0.9rem'}}>
-            {t('no_contact_info')}
-          </div>
-        )}
       </div>
     </div>
   );
