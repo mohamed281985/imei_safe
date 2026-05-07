@@ -4658,12 +4658,22 @@ app.get('/api/store-phone/:productId', verifyJwtToken, async (req, res) => {
           try {
             // إذا كانت القيمة نصاً، حاول تحليلها كـ JSON
             if (typeof accessoryData.contact_methods.phone === 'string') {
-              const parsedContact = JSON.parse(accessoryData.contact_methods.phone);
-              // إذا كان parsedContact كائناً يحتوي على خاصية phone، حاول تحليلها أيضاً
-              if (parsedContact && typeof parsedContact === 'object' && parsedContact.phone) {
+              let parsedContact = accessoryData.contact_methods.phone;
+              // التعامل مع HTML entities مثل &quot;
+              if (parsedContact.includes('&quot;')) {
+                parsedContact = parsedContact.replace(/&quot;/g, '"');
+              }
+              const parsedContactObj = JSON.parse(parsedContact);
+              // إذا كان parsedContactObj كائناً يحتوي على خاصية phone، حاول تحليلها أيضاً
+              if (parsedContactObj && typeof parsedContactObj === 'object' && parsedContactObj.phone) {
                 // إذا كانت phone أيضاً نصاً، حاول تحليلها كـ JSON
-                if (typeof parsedContact.phone === 'string') {
-                  const parsedPhone = JSON.parse(parsedContact.phone);
+                if (typeof parsedContactObj.phone === 'string') {
+                  let parsedPhoneStr = parsedContactObj.phone;
+                  // التعامل مع HTML entities مثل &quot;
+                  if (parsedPhoneStr.includes('&quot;')) {
+                    parsedPhoneStr = parsedPhoneStr.replace(/&quot;/g, '"');
+                  }
+                  const parsedPhone = JSON.parse(parsedPhoneStr);
                   // إذا كان parsedPhone يحتوي على البيانات المشفرة، فك تشفيرها
                   if (parsedPhone && parsedPhone.encryptedData && parsedPhone.iv && parsedPhone.authTag) {
                     phoneNumber = normalizeDecrypted(decryptAES(parsedPhone.encryptedData, parsedPhone.iv, parsedPhone.authTag));
@@ -4683,9 +4693,52 @@ app.get('/api/store-phone/:productId', verifyJwtToken, async (req, res) => {
       }
     }
 
+    // إذا لم يتم العثور على رقم الهاتف في المنتج، جلبه من جدول المستخدمين
     if (!phoneNumber) {
-      console.error('[store-phone] Phone number not found for product ID:', productId);
-      return res.status(404).json({ error: 'Phone number not found' });
+      console.log('[store-phone] Phone not found in product, trying to fetch from user table');
+
+      // جلب بيانات المنتج للحصول على معرف البائع
+      let sellerId = null;
+      const { data: productData, error: productError } = await supabase
+        .from('phones')
+        .select('seller_id')
+        .eq('id', productId)
+        .maybeSingle();
+
+      if (!productError && productData && productData.seller_id) {
+        sellerId = productData.seller_id;
+      } else {
+        // إذا لم يُوجد في phones، جلب من accessories
+        const { data: accessoryData, error: accessoryError } = await supabase
+          .from('accessories')
+          .select('seller_id')
+          .eq('id', productId)
+          .maybeSingle();
+
+        if (!accessoryError && accessoryData && accessoryData.seller_id) {
+          sellerId = accessoryData.seller_id;
+        }
+      }
+
+      if (sellerId) {
+        // جلب رقم الهاتف من جدول المستخدمين
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('phone')
+          .eq('id', sellerId)
+          .maybeSingle();
+
+        if (!userError && userData && userData.phone) {
+          // فك تشفير رقم الهاتف
+          phoneNumber = decryptField(userData.phone);
+          console.log('[store-phone] Found phone in users table:', phoneNumber);
+        }
+      }
+
+      if (!phoneNumber) {
+        console.error('[store-phone] Phone number not found for product ID:', productId);
+        return res.status(404).json({ error: 'Phone number not found' });
+      }
     }
 
     // فك تشفير رقم الهاتف إذا لم يتم فك تشفيره بالفعل
@@ -4698,7 +4751,16 @@ app.get('/api/store-phone/:productId', verifyJwtToken, async (req, res) => {
     }
 
     // تنظيف الرقم من أي رموز غير رقمية
-    const cleanPhone = decryptedPhone.replace(/\D/g, '');
+    let cleanPhone = decryptedPhone.replace(/\D/g, '');
+
+    // إضافة رمز الدولة الافتراضي إذا لم يكن موجوداً
+    // نفترض +20 لمصر إذا كان الرقم يبدأ بـ 0 أو 1 (أرقام مصرية)
+    if (cleanPhone.length > 0 && !cleanPhone.startsWith('+')) {
+      // إذا كان الرقم يبدأ بـ 0 أو 1، نعتبره رقماً مصرياً
+      if (cleanPhone.startsWith('0') || cleanPhone.startsWith('1')) {
+        cleanPhone = '+20' + cleanPhone;
+      }
+    }
 
     // إرجاع الرقم وفك تشفيره
     return res.json({
