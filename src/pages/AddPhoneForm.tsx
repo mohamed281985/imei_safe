@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 import axiosInstance from '@/services/axiosInterceptor';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { Upload, X, Loader2, Star, Zap, MapPin, Clock, Eye, Gift, CalendarDays } from 'lucide-react';
+import { Upload, X, Loader2, Star, Zap, MapPin, Clock, Eye, Gift, CalendarDays, Store, Phone, MapPinned, ShieldCheck, Smartphone, Database, Palette, FileText, ImagePlus, ChevronRight, ChevronLeft, CheckCircle2, Wallet, Hash } from 'lucide-react';
 
 import { useGeolocated } from 'react-geolocated';
 import { useToast } from '@/hooks/use-toast';
@@ -37,7 +37,10 @@ const AddPhoneForm: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth(); // Make sure useAuth is imported from the correct path
   const { toast } = useToast();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+  const isRtl = language === 'ar';
+  const iconSidePos = isRtl ? 'right-3' : 'left-3';
+  const iconSidePad = isRtl ? 'pr-12' : 'pl-12';
   const [loading, setLoading] = useState(false);
   const [images, setImages] = useState<File[]>([]);
   const [imagesPreviews, setImagesPreviews] = useState<string[]>([]);
@@ -59,6 +62,8 @@ const AddPhoneForm: React.FC = () => {
     userDecisionTimeout: 5000,
   });
   const [imeiStatus, setImeiStatus] = useState<'' | 'verified' | 'reported'>('');
+  const [currentStep, setCurrentStep] = useState(0);
+  const DRAFT_KEY = 'add-phone-form-draft-v2';
 
   // Fetch promotion prices
   useEffect(() => {
@@ -214,10 +219,49 @@ const AddPhoneForm: React.FC = () => {
     store_name: ''
   });
 
+  // استرجاع المسودة المحفوظة تلقائياً
+  useEffect(() => {
+    try {
+      const savedDraft = localStorage.getItem(DRAFT_KEY);
+      if (!savedDraft) return;
+      const parsed = JSON.parse(savedDraft);
+
+      if (parsed?.formData) {
+        setFormData(prev => ({
+          ...prev,
+          ...parsed.formData,
+          specs: { ...prev.specs, ...(parsed.formData.specs || {}) },
+          contact_methods: {
+            ...prev.contact_methods,
+            ...(parsed.formData.contact_methods || {}),
+          },
+        }));
+      }
+
+      if (typeof parsed?.currentStep === 'number') {
+        setCurrentStep(Math.min(Math.max(parsed.currentStep, 0), 3));
+      }
+    } catch (e) {
+      console.warn('Could not restore form draft', e);
+    }
+  }, []);
+
+  // حفظ تلقائي للمسودة أثناء الإدخال
+  useEffect(() => {
+    const payload = {
+      formData,
+      currentStep,
+      savedAt: Date.now(),
+    };
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(payload));
+  }, [formData, currentStep]);
+
+  const clearDraft = () => localStorage.removeItem(DRAFT_KEY);
+
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length + images.length > 10) {
-      setError('يمكنك رفع 10 صور كحد أقصى');
+      setError(t('max_images_limit_10'));
       return;
     }
 
@@ -244,7 +288,7 @@ const AddPhoneForm: React.FC = () => {
     
     // التحقق من حالة IMEI قبل الإرسال
     if (imeiStatus === 'reported') {
-      setError('لا يمكن نشر إعلان لهاتف مبلغ عنه بأنه مفقود أو مسروق');
+      setError(t('cannot_publish_reported_phone'));
       return;
     }
 
@@ -254,7 +298,7 @@ const AddPhoneForm: React.FC = () => {
       setError('');
       // Validate required fields and images before creating
       if (!formData.title || !formData.phone_type || !formData.price || !formData.imei || images.length === 0) {
-        setError('الرجاء إكمال جميع الحقول المطلوبة ورفع صورة واحدة على الأقل');
+        setError(t('complete_required_fields_and_upload_image'));
         setLoading(false);
         return;
       }
@@ -381,9 +425,9 @@ const AddPhoneForm: React.FC = () => {
 
         // عرض رسالة نجاح للمستخدم
         toast({
-          title: "تم نشر الإعلان بنجاح!",
-          description: `تم خصم ${amountToDeduct} ج.م من رصيد البونux الخاص بك.`,
-          variant: "default"
+          title: t('ad_published_successfully'),
+          description: t('bonus_deducted', { amount: String(amountToDeduct) }),
+          variant: 'default'
         });
       } else if (normalPrice > 0) {
         // إذا لم يكن هناك رصيد بونux كافٍ، سجل الدفعة كدفع عادي
@@ -405,14 +449,15 @@ const AddPhoneForm: React.FC = () => {
 
         // عرض رسالة للمستخدم بوجوب سداد الرسوم
         toast({
-          title: "تم نشر الإعلان بنجاح!",
-          description: `يرجى سداد رسوم النشر البالغة ${normalPrice} ج.م لإكمال عملية النشر.`,
-          variant: "default"
+          title: t('ad_published_successfully'),
+          description: t('please_pay_fee', { price: String(normalPrice) }),
+          variant: 'default'
         });
       }
 
       // تم بنجاح
       setPhoneIdToFeature(phoneData.id); // Save the new phone ID to feature it later
+      clearDraft();
       navigate('/seller-dashboard');
 
     } catch (err) {
@@ -426,7 +471,7 @@ const AddPhoneForm: React.FC = () => {
         console.warn('Cleanup failed for phone after create failure', cleanupErr);
       }
 
-      setError('حدث خطأ أثناء إضافة الهاتف. الرجاء المحاولة مرة أخرى.');
+      setError(t('error_adding_phone_try_again'));
     } finally {
       setLoading(false);
     }
@@ -434,12 +479,12 @@ const AddPhoneForm: React.FC = () => {
 
   const handleConfirmFeature = async (createdPhoneId: string) => {
     if (!user || !createdPhoneId || promotionPrice === null) {
-      toast({ title: "خطأ", description: "لا يمكن {t('feature_ad')}. البيانات غير مكتملة.", variant: "destructive" });
+      toast({ title: t('error'), description: t('cannot_feature_ad_incomplete_data'), variant: 'destructive' });
       return;
     }
 
     if (bonusBalance < (promotionPrice || 0)) {
-      toast({ title: "رصيد غير كافٍ", description: "رصيد البونص لديك غير كافٍ لإتمام هذه العملية.", variant: "destructive" });
+      toast({ title: t('access_denied'), description: t('not_enough_bonus_to_proceed'), variant: 'destructive' });
       // Here you would typically redirect to a payment page
       return;
     }
@@ -455,7 +500,7 @@ const AddPhoneForm: React.FC = () => {
         .single();
 
       if (imageError || !imageData) {
-        throw new Error("لم يتم العثور على الصورة الرئيسية للإعلان.");
+        throw new Error(t('main_image_not_found'));
       }
 
       const mainImageUrl = imageData.image_path;
@@ -496,17 +541,18 @@ const AddPhoneForm: React.FC = () => {
       setBonusBalance(newBonus);
       setIsFeatureModalOpen(false);
       toast({
-        title: "تم {t('feature_ad')} بنجاح!",
-        description: `تم خصم ${promotionPrice} ج.م من رصيد البونص.`,
-        variant: "default"
+        title: t('ad_published_from_bonus'),
+        description: t('bonus_deducted', { amount: String(promotionPrice) }),
+        variant: 'default'
       });
 
       // Optionally, navigate away or refresh data
+      clearDraft();
       navigate('/seller-dashboard');
 
     } catch (error: any) {
       console.error("Error featuring ad with bonus:", error);
-      toast({ title: "خطأ", description: error.message || "فشل {t('feature_ad')}.", variant: "destructive" });
+      toast({ title: t('error'), description: error.message || t('error_occurred'), variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -515,11 +561,11 @@ const AddPhoneForm: React.FC = () => {
   const handleSubmitAndFeature = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) {
-      toast({ title: "خطأ", description: "يجب تسجيل الدخول أولاً.", variant: "destructive" });
+      toast({ title: t('error'), description: t('must_be_logged_in'), variant: 'destructive' });
       return;
     }
     if (imeiStatus === 'reported') {
-      setError('لا يمكن نشر إعلان لهاتف مبلغ عنه بأنه مفقود أو مسروق');
+      setError(t('cannot_publish_reported_phone'));
       return;
     }
 
@@ -527,7 +573,7 @@ const AddPhoneForm: React.FC = () => {
     try {
       // Validate required fields and images before creating
       if (!formData.title || !formData.phone_type || !formData.price || !formData.imei || images.length === 0) {
-        setError('الرجاء إكمال جميع الحقول المطلوبة ورفع صورة واحدة على الأقل');
+        setError(t('complete_required_fields_and_upload_image'));
         setLoading(false);
         return;
       }
@@ -574,7 +620,7 @@ const AddPhoneForm: React.FC = () => {
 
       // 3. Now that the phone is created, apply the feature promotion directly
       if (!user || !phoneData.id || promotionPrice === null) {
-        throw new Error("لا يمكن {t('feature_ad')}. البيانات غير مكتملة.");
+        throw new Error(t('cannot_feature_ad_incomplete_data'));
       }
   
       if (bonusBalance < (promotionPrice || 0)) {
@@ -597,7 +643,7 @@ const AddPhoneForm: React.FC = () => {
         }
       });
       if (!bonusResp?.data?.ok) {
-        throw new Error(bonusResp?.data?.error || "فشل خصم البونص أو إنشاء سجل الدفع");
+        throw new Error(bonusResp?.data?.error || t('bonus_deduction_failed'));
       }
   
       // 3.3. Update the 'type' in the 'phones' table to 'promotions'
@@ -612,10 +658,11 @@ const AddPhoneForm: React.FC = () => {
       window.dispatchEvent(new CustomEvent('bonusUpdated'));
       setIsFeatureModalOpen(false);
       toast({
-        title: `تم نشر و${t('feature_ad')} بنجاح!`,
-        description: `تم خصم ${promotionPrice} ج.م من رصيد البونص.`,
-        variant: "default"
+        title: t('ad_published_and_featured_successfully'),
+        description: t('bonus_deducted', { amount: String(promotionPrice) }),
+        variant: 'default'
       });
+      clearDraft();
       navigate('/seller-dashboard');
 
     } catch (err: any) {
@@ -629,7 +676,7 @@ const AddPhoneForm: React.FC = () => {
         console.warn('Cleanup failed for phone after feature flow failure', cleanupErr);
       }
 
-      setError(err.message || `حدث خطأ أثناء نشر و${t('feature_ad')}.`);
+      setError(err.message || t('error_publishing_and_featuring_ad'));
     } finally {
       setLoading(false);
     }
@@ -697,10 +744,10 @@ const AddPhoneForm: React.FC = () => {
       if (info.found) {
         if (info.hasActiveReport === true) {
           setImeiStatus('reported');
-          setError('هذا الهاتف مسجل في النظام بأنه مفقود أو مسروق ولا يمكن بيعه');
+          setError(t('reported_phone_cannot_sell_detail'));
         } else if (info.isRegistered === false) {
           setImeiStatus('reported');
-          setError('هذا الهاتف مسجل في النظام بأنه مفقود أو مسروق ولا يمكن بيعه');
+          setError(t('reported_phone_cannot_sell_detail'));
         } else {
           const ownerVisible = info.isOwner === true || info.masked === false;
           if (ownerVisible) {
@@ -728,7 +775,7 @@ const AddPhoneForm: React.FC = () => {
     } catch (e) {
       console.error('Error fetching IMEI info:', e);
       setImeiStatus('');
-      setError('حدث خطأ أثناء التحقق من رقم IMEI، حاول مرة أخرى');
+      setError(t('error_checking_imei_try_again'));
     } finally {
       setImeiChecking(false);
     }
@@ -750,513 +797,394 @@ const AddPhoneForm: React.FC = () => {
     if (digits.length === 15) await verifyImei(digits);
   };
 
+  const steps = [
+    { title: t('add_phone_step_basic_info'), icon: Store },
+    { title: t('add_phone_step_phone_info'), icon: Smartphone },
+    { title: t('add_phone_step_specs'), icon: Database },
+    { title: t('add_phone_step_images_preview'), icon: ImagePlus },
+  ];
+  const totalSteps = steps.length;
+  const atLastStep = currentStep === totalSteps - 1;
+  const fieldClass =
+    'w-full rounded-2xl border border-blue-300/50 bg-white px-4 py-3 text-sm text-slate-800 shadow-[0_2px_10px_rgba(37,99,235,0.08)] outline-none transition-all duration-300 placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-200/60 focus:shadow-[0_6px_18px_rgba(37,99,235,0.18)]';
+  const cardClass =
+    'rounded-3xl border border-white/70 bg-white/70 backdrop-blur-xl p-5 sm:p-6 shadow-[0_10px_30px_rgba(15,23,42,0.08)] transition-all duration-500';
+  const mapEmbedUrl = coords
+    ? `https://www.openstreetmap.org/export/embed.html?bbox=${coords.longitude - 0.01}%2C${coords.latitude - 0.01}%2C${coords.longitude + 0.01}%2C${coords.latitude + 0.01}&layer=mapnik&marker=${coords.latitude}%2C${coords.longitude}`
+    : '';
+
+  const nextStep = () => {
+    setCurrentStep(prev => Math.min(prev + 1, totalSteps - 1));
+  };
+
+  const prevStep = () => {
+    setCurrentStep(prev => Math.max(prev - 1, 0));
+  };
+
   return (
     <>
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-4xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden">
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-6 sm:p-8">
-          <h1 className="text-2xl sm:text-3xl font-bold text-white">{t('add_new_phone')}</h1>
-          <p className="mt-2 text-blue-100">{t('add_phone_description')}</p>
-        </div>
-        <div className="p-6 sm:p-8">
-
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg mb-6 flex items-start shadow-sm">
-          <X className="h-5 w-5 text-red-500 ml-2 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="font-medium">{t('error_occurred')}</p>
-            <p className="text-sm">{error}</p>
+      <div dir={isRtl ? 'rtl' : 'ltr'} className="min-h-screen bg-[#f4f8ff] px-4 py-5 sm:py-8">
+        <div className="mx-auto w-full max-w-3xl">
+          <div className="mb-5 rounded-3xl border border-white/70 bg-blue-600 p-5 text-white shadow-[0_12px_30px_rgba(37,99,235,0.35)]">
+            <h1 className="text-xl font-bold sm:text-2xl">{t('add_new_phone')}</h1>
+            <p className="mt-1 text-sm text-blue-100">{t('add_phone_subtitle')}</p>
           </div>
-        </div>
-      )}
 
-   
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* معلومات أساسية */}
-        <div className="mb-8">
-          <div className="flex items-center mb-4">
-            <div className="h-8 w-1 bg-blue-600 rounded-full mr-3"></div>
-            <h2 className="text-xl font-bold text-gray-900">{t('basic_information')}</h2>
-          </div>
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-              <div className="relative">
-                <label className="flex items-center text-sm font-semibold text-gray-700 mb-2">
-                  <svg className="w-5 h-5 ml-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                  </svg>
-                  {t('store_name')}
-                </label>
-                <div className="mt-1 relative rounded-lg shadow-sm overflow-hidden">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <svg className="h-5 w-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                    </svg>
-                  </div>
-                  <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-indigo-600 opacity-10"></div>
-                  <input
-                    type="text"
-                    name="store_name"
-                    value={formData.store_name}
-                    readOnly
-                    className="block w-full pl-10 pr-3 py-4 border-2 border-blue-200 bg-white text-black rounded-lg font-bold text-center text-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-base transition-all"
-                    placeholder={t('will_be_auto_fetched')}
-                    style={{ minHeight: "56px" }}
-                  />
-                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-md">
-                      <svg className="-ml-0.5 mr-1.5 h-2 w-2 text-white" fill="currentColor" viewBox="0 0 8 8">
-                        <circle cx={4} cy={4} r={3} />
-                      </svg>
-                      {t('automatic')}
-                    </span>
-                  </div>
-                </div>
-                <p className="mt-2 text-xs text-gray-500 flex items-center justify-center">
-                  <svg className="w-4 h-4 ml-1 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  {t('store_name_auto_fetched')}
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  {t('ad_title')}*
-                </label>
-                <input
-                  type="text"
-                  name="title"
-                  required
-                  value={formData.title}
-                  onChange={handleInputChange}
-                  readOnly={isReported}
-                  className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-base p-3 transition-all text-black font-semibold"
-                  placeholder={t('write_attractive_ad_title')}
-                />
-              </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                {t('phone_type') || t('brand')}*
-              </label>
-              <input
-                type="text"
-                name="phone_type"
-                required
-                value={formData.phone_type}
-                onChange={handleInputChange}
-                readOnly={isReported}
-                className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-base p-3 transition-all text-black font-semibold"
-                placeholder={t('brand_example')}
+          <div className="mb-5 rounded-3xl border border-white/70 bg-white/70 p-4 backdrop-blur-xl shadow-[0_8px_24px_rgba(15,23,42,0.07)]">
+            <div className="mb-3 h-1.5 rounded-full bg-slate-200">
+              <div
+                className="h-1.5 rounded-full bg-blue-600 transition-all duration-500"
+                style={{ width: `${(currentStep / (totalSteps - 1)) * 100}%` }}
               />
             </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                {t('model')}*
-              </label>
-              <input
-                type="text"
-                name="model"
-                required
-                value={formData.model}
-                onChange={handleInputChange}
-                readOnly={isReported}
-                className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-base p-3 transition-all text-black font-semibold"
-                placeholder={t('model_example')}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                {t('price_currency')}*
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <span className="text-gray-500 sm:text-sm">{t('currency')}</span>
-                </div>
-                <input
-                  type="number"
-                  name="price"
-                  required
-                  min="0"
-                  value={formData.price}
-                  onChange={handleInputChange}
-                  readOnly={isReported}
-                  className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-base p-3 pl-12 transition-all text-black font-semibold"
-                  placeholder="0"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                {t('condition')}*
-              </label>
-              <select
-                name="condition"
-                required
-                value={formData.condition}
-                onChange={handleInputChange}
-                disabled={isReported}
-                className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-base p-3 transition-all text-black font-semibold"
-              >
-                <option value="new">{t('new')}</option>
-                <option value="used">{t('used')}</option>
-                <option value="refurbished">{t('refurbished')}</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                {t('warranty_months_label')}
-              </label>
-              <input
-                type="number"
-                name="warranty_months"
-                min="0"
-                value={formData.warranty_months}
-                onChange={handleInputChange}
-                readOnly={isReported}
-                className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-base p-3 transition-all text-black font-semibold"
-                placeholder="0"
-              />
-            </div>
-          </div>
-
-            <div className="mt-6 md:col-span-2">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                {t('description')}*
-              </label>
-              <textarea
-                name="description"
-                required
-                rows={4}
-                value={formData.description}
-                onChange={handleInputChange}
-                readOnly={isReported}
-                className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-base p-3 transition-all text-black font-semibold"
-                placeholder={t('detailed_phone_description')}
-              />
-            </div>
-          
-        </div>
-
-        {/* المواصفات */}
-        <div className="mb-8">
-          <div className="flex items-center mb-4">
-            <div className="h-8 w-1 bg-blue-600 rounded-full mr-3"></div>
-            <h2 className="text-xl font-bold text-gray-900">{t('specifications')}</h2>
-          </div>
-          <div className="bg-gray-50 rounded-xl p-6 shadow-sm">
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-              <div className="relative">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  {t('memory_ram')}
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                    <span className="text-gray-500 sm:text-sm">{t('gb')}</span>
-                  </div>
-                  <input
-                    type="text"
-                    name="specs.ram"
-                    value={formData.specs.ram || ''}
-                    onChange={handleInputChange}
-                    readOnly={isReported}
-                    placeholder={t('ram_example')}
-                    className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-base p-3 pr-10 transition-all text-black font-semibold"
-                  />
-                </div>
-              </div>
-
-              <div className="relative">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  {t('storage')}
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                    <span className="text-gray-500 sm:text-sm">{t('gb')}</span>
-                  </div>
-                  <input
-                    type="text"
-                    name="specs.storage"
-                    value={formData.specs.storage || ''}
-                    onChange={handleInputChange}
-                    readOnly={isReported}
-                    placeholder={t('storage_example')}
-                    className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-base p-3 pr-10 transition-all text-black font-semibold"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  {t('color')}
-                </label>
-                <input
-                  type="text"
-                  name="specs.color"
-                  value={formData.specs.color || ''}
-                  onChange={handleInputChange}
-                  readOnly={isReported}
-                  placeholder={t('color_example')}
-                  className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-base p-3 transition-all text-black font-semibold"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* معلومات الاتصال والموقع */}
-        <div className="mb-8">
-          <div className="flex items-center mb-4">
-            <div className="h-8 w-1 bg-blue-600 rounded-full mr-3"></div>
-            <h2 className="text-xl font-bold text-gray-900">{t('contact_and_location_info')}</h2>
-          </div>
-          <div className="bg-gray-50 rounded-xl p-6 shadow-sm">
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  {t('phone_number')}
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                    <span className="text-gray-500 sm:text-sm">{t('country_code')}</span>
-                  </div>
-                  <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-indigo-600 opacity-10"></div>
-                  <input
-                    type="tel"
-                    name="contact_methods.phone"
-                    value={formData.contact_methods.phone || ''}
-                    readOnly
-                    className="mt-1 block w-full rounded-lg border-2 border-blue-200 bg-white text-black font-bold text-center text-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-base transition-all p-3 pr-12"
-                    placeholder={t('will_be_auto_fetched')}
-                    dir="ltr"
-                    style={{ minHeight: "56px" }}
-                  />
-
-                </div>
-                <p className="mt-2 text-xs text-gray-500 flex items-center justify-center">
-                  <svg className="w-4 h-4 ml-1 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  {t('phone_number_auto_fetched')}
-                </p>
-              </div>
-
-
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  {t('city')}
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <svg className="h-5 w-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                  </div>
-                  <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-indigo-600 opacity-10"></div>
-                  <input
-                    type="text"
-                    name="city"
-                    value={formData.city}
-                    readOnly
-                    className="mt-1 block w-full rounded-lg border-2 border-blue-200 bg-white text-black font-bold text-center text-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-base transition-all p-3 pl-10"
-                    placeholder={t('will_be_auto_fetched')}
-                    style={{ minHeight: "56px" }}
-                  />
-                   <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-md">
-                      <svg className="-ml-0.5 mr-1.5 h-2 w-2 text-white" fill="currentColor" viewBox="0 0 8 8">
-                        <circle cx={4} cy={4} r={3} />
-                      </svg>
-                      {t('automatic')}
-                    </span>
-                  </div>
-                </div>
-                 <p className="mt-2 text-xs text-gray-500 flex items-center justify-center">
-                  <svg className="w-4 h-4 ml-1 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                  {t('city_auto_fetched')}
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  {t('imei')}*
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    name="imei"
-                    required
-                    value={formData.imei}
-                    onChange={handleInputChange}
-                    inputMode="numeric"
-                    maxLength={15}
-                    onPaste={handleImeiPaste}
-                    onKeyDown={handleImeiKeyDown}
-                    pattern="[0-9]{15}"
-                    title="الرجاء إدخال رقم IMEI مكون من 15 رقم"
-                    className={`mt-1 block w-full rounded-lg shadow-sm text-base p-3 transition-all text-black font-semibold ${
-                      imeiStatus === 'verified' ? 'border-green-500 focus:border-green-500 focus:ring-green-500' : 
-                      imeiStatus === 'reported' ? 'border-red-500 focus:border-red-500 focus:ring-red-500' : 
-                      'border-gray-300 focus:border-blue-500 focus:ring-blue-500'
+            <div className="grid grid-cols-4 gap-2">
+              {steps.map((step, index) => {
+                const Icon = step.icon;
+                const active = index === currentStep;
+                const done = index < currentStep;
+                return (
+                  <button
+                    key={step.title}
+                    type="button"
+                    onClick={() => setCurrentStep(index)}
+                    className={`group rounded-2xl border px-2 py-3 text-center transition-all duration-300 ${
+                      active
+                        ? 'border-blue-500 bg-blue-600 text-white shadow-lg shadow-blue-200'
+                        : done
+                        ? 'border-orange-300 bg-orange-100 text-orange-800 shadow-sm'
+                        : 'border-slate-300 bg-slate-100 text-slate-700'
                     }`}
-                    placeholder={t('imei_example')}
-                    dir="ltr"
-                  />
-                  {imeiChecking && (
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />
+                  >
+                    <div className="mx-auto mb-1 flex h-10 w-10 items-center justify-center rounded-full bg-white/35">
+                      {done ? <CheckCircle2 className="h-5 w-5 text-orange-500" /> : <Icon className={`h-5 w-5 ${active ? 'text-orange-200' : 'text-orange-500'}`} />}
                     </div>
-                  )}
-                  {imeiStatus === 'verified' && (
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <svg className="h-5 w-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                  )}
-                  {imeiStatus === 'reported' && (
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <svg className="h-5 w-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                  )}
-                  <div className="mt-1 text-xs text-gray-500">{t('imei_location_hint')}</div>
-                  {imeiStatus === 'verified' && (
-                    <div className="mt-2 text-xs text-green-600 flex items-center">
-                      <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      {t('verified_phone_safe_to_sell')}
-                    </div>
-                  )}
-                  {imeiStatus === 'reported' && (
-                    <div className="mt-2 text-xs text-red-600 flex items-center">
-                      <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      {t('reported_phone_cannot_sell')}
-                    </div>
-                  )}
+                    <p className="text-[10px] font-semibold leading-tight sm:text-[11px]">{step.title}</p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {error && (
+            <div className="mb-4 flex items-start rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-red-700 shadow-sm">
+              <X className="ml-2 mt-0.5 h-4 w-4 shrink-0" />
+              <p className="text-sm">{error}</p>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className={`${cardClass} ${currentStep === 0 ? 'opacity-100 translate-y-0' : 'hidden opacity-0 -translate-y-1'}`}>
+              <div className="mb-4 flex items-center gap-2 text-slate-800">
+                <Store className="h-5 w-5 text-orange-500" />
+                <h2 className="text-lg font-bold">{t('add_phone_section_basic_info')}</h2>
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                    <Store className="h-4 w-4 text-orange-500" />
+                    {t('store_name')}
+                  </label>
+                  <div className="relative">
+                    <Store className={`pointer-events-none absolute ${iconSidePos} top-3.5 h-4 w-4 text-orange-500`} />
+                    <input name="store_name" value={formData.store_name} readOnly className={`${fieldClass} ${iconSidePad}`} placeholder={t('auto_filled')} />
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                    <Phone className="h-4 w-4 text-orange-500" />
+                    {t('phone_number')}
+                  </label>
+                  <div className="relative">
+                    <Phone className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-orange-500" />
+                    <input name="contact_methods.phone" value={formData.contact_methods.phone || ''} readOnly dir="ltr" className={`${fieldClass} pl-12`} placeholder={t('auto_filled')} />
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                    <MapPin className="h-4 w-4 text-orange-500" />
+                    {t('city')}
+                  </label>
+                  <div className="relative">
+                    <MapPin className={`pointer-events-none absolute ${iconSidePos} top-3.5 h-4 w-4 text-orange-500`} />
+                    <input name="city" value={formData.city} readOnly className={`${fieldClass} ${iconSidePad}`} placeholder={t('auto_filled')} />
+                  </div>
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                    <MapPinned className="h-4 w-4 text-orange-500" />
+                    {t('map_location')}
+                  </label>
+                  <div className="overflow-hidden rounded-2xl border border-blue-300/50 bg-white shadow-[0_2px_10px_rgba(37,99,235,0.08)]">
+                    {coords ? (
+                      <iframe
+                        title={t('current_location_map')}
+                        src={mapEmbedUrl}
+                        className="h-48 w-full"
+                        loading="lazy"
+                        referrerPolicy="no-referrer-when-downgrade"
+                      />
+                    ) : (
+                      <div className="flex h-48 items-center justify-center text-sm font-medium text-slate-500">
+                        {t('loading_map_location')}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        </div>
 
-        {/* الصور */}
-        <div className="mb-8">
-          <div className="flex items-center mb-4">
-            <div className="h-8 w-1 bg-blue-600 rounded-full mr-3"></div>
-            <h2 className="text-xl font-bold text-gray-900">{t('phone_images')}</h2>
-          </div>
-          <div className="bg-gray-50 rounded-xl p-6 shadow-sm">
-            <div className="mb-4">
-              <p className="text-sm text-gray-600 mb-2">{t('add_high_quality_images')}</p>
+            <div className={`${cardClass} ${currentStep === 1 ? 'opacity-100 translate-y-0' : 'hidden opacity-0 -translate-y-1'}`}>
+              <div className="mb-4 flex items-center gap-2 text-slate-800">
+                <Smartphone className="h-5 w-5 text-orange-500" />
+                <h2 className="text-lg font-bold">{t('add_phone_section_phone_info')}</h2>
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                    <Hash className="h-4 w-4 text-orange-500" />
+                    {t('imei')}*
+                  </label>
+                  <div className="relative">
+                    <Hash className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-orange-500" />
+                    <input
+                      type="text"
+                      name="imei"
+                      required
+                      value={formData.imei}
+                      onChange={handleInputChange}
+                      inputMode="numeric"
+                      maxLength={15}
+                      onPaste={handleImeiPaste}
+                      onKeyDown={handleImeiKeyDown}
+                      pattern="[0-9]{15}"
+                      title={t('imei_15_digits_title')}
+                      className={`${fieldClass} pl-10 ${imeiStatus === 'verified' ? 'border-orange-300 ring-1 ring-orange-200' : imeiStatus === 'reported' ? 'border-red-300 ring-1 ring-red-200' : ''}`}
+                      placeholder={t('imei_example')}
+                      dir="ltr"
+                    />
+                    {imeiChecking && <Loader2 className="absolute right-3 top-3.5 h-4 w-4 animate-spin text-orange-500" />}
+                  </div>
+                  {imeiStatus === 'verified' && <p className="mt-1 text-xs text-orange-600">{t('verified_phone_safe_to_sell')}</p>}
+                  {imeiStatus === 'reported' && <p className="mt-1 text-xs text-red-600">{t('reported_phone_cannot_sell')}</p>}
+                </div>
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                    <Smartphone className="h-4 w-4 text-orange-500" />
+                    {t('phone_type') || t('brand')}*
+                  </label>
+                  <div className="relative">
+                    <Smartphone className={`pointer-events-none absolute ${iconSidePos} top-3.5 h-4 w-4 text-orange-500`} />
+                    <input type="text" name="phone_type" required value={formData.phone_type} onChange={handleInputChange} readOnly={isReported} className={`${fieldClass} ${iconSidePad}`} placeholder={t('brand_example')} />
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                    <Database className="h-4 w-4 text-orange-500" />
+                    {t('model')}*
+                  </label>
+                  <div className="relative">
+                    <Database className={`pointer-events-none absolute ${iconSidePos} top-3.5 h-4 w-4 text-orange-500`} />
+                    <input type="text" name="model" required value={formData.model} onChange={handleInputChange} readOnly={isReported} className={`${fieldClass} ${iconSidePad}`} placeholder={t('model_example')} />
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                    <Wallet className="h-4 w-4 text-orange-500" />
+                    {t('price_currency')}*
+                  </label>
+                  <div className="relative">
+                    <Wallet className={`pointer-events-none absolute ${iconSidePos} top-3.5 h-4 w-4 text-orange-500`} />
+                    <input type="number" name="price" required min="0" value={formData.price} onChange={handleInputChange} readOnly={isReported} className={`${fieldClass} ${iconSidePad}`} placeholder="0" />
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                    <CheckCircle2 className="h-4 w-4 text-orange-500" />
+                    {t('condition')}*
+                  </label>
+                  <select name="condition" required value={formData.condition} onChange={handleInputChange} disabled={isReported} className={fieldClass}>
+                    <option value="new">{t('new')}</option>
+                    <option value="used">{t('used')}</option>
+                    <option value="refurbished">{t('refurbished')}</option>
+                  </select>
+                </div>
+              </div>
             </div>
-            
-            {imagesPreviews.length > 0 && (
-              <div className="grid grid-cols-2 gap-4 md:grid-cols-4 mb-6">
-                {imagesPreviews.map((preview, index) => (
-                  <div key={index} className="relative group overflow-hidden rounded-lg shadow-md transition-all hover:shadow-lg">
-                    <div className="aspect-square relative">
-                      <img
-                        src={preview}
-                        alt={`Preview ${index + 1}`}
-                        className="h-full w-full object-cover transition-transform group-hover:scale-105"
-                      />
+
+            <div className={`${cardClass} ${currentStep === 2 ? 'opacity-100 translate-y-0' : 'hidden opacity-0 -translate-y-1'}`}>
+              <div className="mb-4 flex items-center gap-2 text-slate-800">
+                <Palette className="h-5 w-5 text-orange-500" />
+                <h2 className="text-lg font-bold">{t('add_phone_section_specs')}</h2>
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                    <Database className="h-4 w-4 text-orange-500" />
+                    {t('memory_ram')}
+                  </label>
+                  <div className="relative">
+                    <Database className={`pointer-events-none absolute ${iconSidePos} top-3.5 h-4 w-4 text-orange-500`} />
+                    <input type="text" name="specs.ram" value={formData.specs.ram || ''} onChange={handleInputChange} readOnly={isReported} className={`${fieldClass} ${iconSidePad}`} placeholder={t('ram_example')} />
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                    <Database className="h-4 w-4 text-orange-500" />
+                    {t('storage')}
+                  </label>
+                  <div className="relative">
+                    <Database className={`pointer-events-none absolute ${iconSidePos} top-3.5 h-4 w-4 text-orange-500`} />
+                    <input type="text" name="specs.storage" value={formData.specs.storage || ''} onChange={handleInputChange} readOnly={isReported} className={`${fieldClass} ${iconSidePad}`} placeholder={t('storage_example')} />
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                    <Palette className="h-4 w-4 text-orange-500" />
+                    {t('color')}
+                  </label>
+                  <div className="relative">
+                    <Palette className={`pointer-events-none absolute ${iconSidePos} top-3.5 h-4 w-4 text-orange-500`} />
+                    <input type="text" name="specs.color" value={formData.specs.color || ''} onChange={handleInputChange} readOnly={isReported} className={`${fieldClass} ${iconSidePad}`} placeholder={t('color_example')} />
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                    <CalendarDays className="h-4 w-4 text-orange-500" />
+                    {t('warranty_months_label')}
+                  </label>
+                  <div className="relative">
+                    <CalendarDays className={`pointer-events-none absolute ${iconSidePos} top-3.5 h-4 w-4 text-orange-500`} />
+                    <input type="number" name="warranty_months" min="0" value={formData.warranty_months} onChange={handleInputChange} readOnly={isReported} className={`${fieldClass} ${iconSidePad}`} placeholder="0" />
+                  </div>
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                    <FileText className="h-4 w-4 text-orange-500" />
+                    {t('ad_title')}*
+                  </label>
+                  <div className="relative">
+                    <FileText className={`pointer-events-none absolute ${iconSidePos} top-3.5 h-4 w-4 text-orange-500`} />
+                    <input
+                      type="text"
+                      name="title"
+                      required
+                      value={formData.title}
+                      onChange={handleInputChange}
+                      readOnly={isReported}
+                      className={`${fieldClass} ${iconSidePad}`}
+                      placeholder={t('write_attractive_ad_title')}
+                    />
+                  </div>
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                    <FileText className="h-4 w-4 text-orange-500" />
+                    {t('description')}*
+                  </label>
+                  <div className="relative">
+                    <FileText className={`pointer-events-none absolute ${iconSidePos} top-3.5 h-4 w-4 text-orange-500`} />
+                    <textarea name="description" required rows={4} value={formData.description} onChange={handleInputChange} readOnly={isReported} className={`${fieldClass} ${iconSidePad}`} placeholder={t('detailed_phone_description')} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className={`${cardClass} ${currentStep === 3 ? 'opacity-100 translate-y-0' : 'hidden opacity-0 -translate-y-1'}`}>
+              <div className="mb-4 flex items-center gap-2 text-slate-800">
+                <ImagePlus className="h-5 w-5 text-orange-500" />
+                <h2 className="text-lg font-bold">{t('add_phone_section_images_preview')}</h2>
+              </div>
+
+              <div className="mb-4 rounded-2xl border border-dashed border-blue-200 bg-blue-50/50 p-4 text-center">
+                <Upload className="mx-auto mb-2 h-6 w-6 text-orange-500" />
+                <label htmlFor="images" className="cursor-pointer text-sm font-semibold text-blue-700">{t('upload_images')}</label>
+                <input
+                  id="images"
+                  name="images"
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  className="sr-only"
+                  onChange={handleImageChange}
+                  required={!isReported && images.length === 0}
+                  disabled={isReported}
+                />
+                <p className="mt-1 text-xs text-slate-500">{t('add_phone_images_hint')}</p>
+              </div>
+
+              {imagesPreviews.length > 0 && (
+                <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {imagesPreviews.map((preview, index) => (
+                    <div key={index} className="group relative overflow-hidden rounded-2xl border border-white/60 bg-white shadow-sm">
+                      <img src={preview} alt={`Preview ${index + 1}`} className="h-28 w-full object-cover transition-transform duration-300 group-hover:scale-105" />
                       <button
                         type="button"
                         onClick={() => removeImage(index)}
                         disabled={isReported}
-                        className={`absolute top-2 right-2 bg-red-500 text-white rounded-full p-1.5 hover:bg-red-600 transition-all opacity-0 group-hover:opacity-100 shadow-lg ${isReported ? 'opacity-40 cursor-not-allowed' : ''}`}
+                        className="absolute left-2 top-2 rounded-full bg-black/60 p-1 text-white transition hover:bg-black"
                       >
-                        <X className="h-4 w-4" />
+                        <X className="h-3 w-3" />
                       </button>
-                      {index === 0 && (
-                        <span className="absolute bottom-2 right-2 bg-blue-600 text-white text-xs px-2 py-1 rounded-full shadow-md">
-                          {t('main_image')}
-                        </span>
-                      )}
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
 
-            <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 hover:border-blue-400 transition-colors bg-white">
-              <div className="text-center">
-                <div className="mx-auto h-16 w-16 rounded-full bg-blue-100 flex items-center justify-center mb-4">
-                  <Upload className="h-8 w-8 text-blue-600" />
+              <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+                <h3 className="mb-3 text-sm font-bold text-slate-800">{t('final_ad_preview')}</h3>
+                <div className="space-y-1 text-sm text-slate-600">
+                  <p><span className="font-semibold text-slate-800">{t('preview_title_label')}:</span> {formData.title || t('not_available')}</p>
+                  <p><span className="font-semibold text-slate-800">{t('preview_store_label')}:</span> {formData.store_name || t('not_available')}</p>
+                  <p><span className="font-semibold text-slate-800">{t('preview_phone_label')}:</span> {[formData.phone_type, formData.model].filter(Boolean).join(' ') || t('not_available')}</p>
+                  <p><span className="font-semibold text-slate-800">{t('preview_price_label')}:</span> {formData.price ? `${formData.price} ${t('currency')}` : t('not_available')}</p>
+                  <p><span className="font-semibold text-slate-800">{t('preview_location_label')}:</span> {formData.city || t('not_available')}</p>
                 </div>
-                <div className="flex text-sm text-gray-600 justify-center mb-2">
-                  <label
-                    htmlFor="images"
-                    className="relative cursor-pointer font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none"
-                  >
-                    <span>{t('choose_images')}</span>
-                    <input
-                      id="images"
-                      name="images"
-                      type="file"
-                      multiple
-                      accept="image/*"
-                      className="sr-only"
-                      onChange={handleImageChange}
-                      required={!isReported && images.length === 0}
-                      disabled={isReported}
-                    />
-                  </label>
-                  <span className="mr-1">{t('or_drag_here')}</span>
-                </div>
-                <p className="text-xs text-gray-500">
-                  {t('image_upload_specs')}
-                </p>
               </div>
             </div>
-          </div>
-        </div>
 
-        {/* زر الإرسال */}
-        <div className="flex justify-center items-center mt-4 sm:mt-6 space-x-2 sm:space-x-4 space-x-reverse flex-wrap gap-2">
-          <button
-            type="button" // Or change to submit if it has a separate logic
-            disabled={loading || isReported}
-            className="inline-flex items-center px-4 sm:px-6 py-2 sm:py-2.5 mb-4 border border-transparent text-sm sm:text-base font-semibold rounded-lg sm:rounded-xl shadow-lg text-white bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-600 hover:to-amber-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 disabled:opacity-50 transition-all transform hover:scale-105"
-            onClick={() => setIsFeatureModalOpen(true)}
-          >
-            {loading ? (
-              <Loader2 className="animate-spin h-5 w-5 ml-2" />
-            ) : (
-              t('feature_ad')
-            )}
-          </button>
+            <div className="flex items-center justify-between rounded-2xl border border-white/70 bg-white/70 p-3 backdrop-blur-xl shadow-sm">
+              <button
+                type="button"
+                onClick={prevStep}
+                disabled={currentStep === 0}
+                className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <ChevronRight className="h-4 w-4" />
+                {t('previous')}
+              </button>
 
-          <button
-            type="submit"
-            disabled={loading || isReported}
-            className="inline-flex items-center px-4 sm:px-6 py-2 sm:py-2.5 mb-4 border border-transparent text-sm sm:text-base font-semibold rounded-lg sm:rounded-xl shadow-lg text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 transition-all transform hover:scale-105"
-          >
-            {loading ? (
-              <>
-                <Loader2 className="animate-spin h-5 w-5 ml-2" />
-                {t('publishing')}
-              </>
-            ) : (
-              t('publish_ad_now')
-            )}
-          </button>
-        </div>
-      </form>
+              {!atLastStep ? (
+                <button
+                  type="button"
+                  onClick={nextStep}
+                  className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-l from-blue-600 to-blue-500 px-5 py-2 text-sm font-bold text-white shadow-[0_10px_20px_rgba(37,99,235,0.35)] transition hover:from-blue-700 hover:to-blue-600"
+                >
+                  {t('next')}
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={loading || isReported}
+                    className="inline-flex items-center rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-orange-200 transition hover:bg-orange-600 disabled:opacity-50"
+                    onClick={() => setIsFeatureModalOpen(true)}
+                  >
+                    {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : t('feature_ad')}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading || isReported}
+                    className="inline-flex items-center rounded-xl bg-blue-600 px-5 py-2 text-sm font-bold text-white shadow-lg shadow-blue-200 transition hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : t('publish_ad')}
+                  </button>
+                </div>
+              )}
+            </div>
+          </form>
         </div>
       </div>
-    </div>
 
     {/* نافذة الترقية عند عدم وجود رصيد بونص كافٍ */}
     {showUpgradePrompt && (
@@ -1297,7 +1225,7 @@ const AddPhoneForm: React.FC = () => {
                 <h3 className="font-bold text-lg pt-2">{t('what_you_get')}</h3>
                 <ul className="space-y-3">
                   <li className="flex items-start">
-                    <Star className="w-5 h-5 text-yellow-500 ml-3 flex-shrink-0 mt-0.5" />
+                    <Star className="w-5 h-5 text-orange-500 ml-3 flex-shrink-0 mt-0.5" />
                     <span><span className="font-semibold">{t('ad_at_top')}</span> {t('first_seen_by_buyer')}</span>
                   </li>
                   <li className="flex items-start">
@@ -1309,11 +1237,11 @@ const AddPhoneForm: React.FC = () => {
                     <span><span className="font-semibold">{t('seven_days_validity')}</span> {t('full_week_featured')}</span>
                   </li>
                   <li className="flex items-start">
-                    <Eye className="w-5 h-5 text-green-500 ml-3 flex-shrink-0 mt-0.5" />
+                    <Eye className="w-5 h-5 text-blue-500 ml-3 flex-shrink-0 mt-0.5" />
                     <span><span className="font-semibold">{t('more_views_attention')}</span> {t('attract_serious_buyers')}</span>
                   </li>
                   <li className="flex items-start">
-                    <Zap className="w-5 h-5 text-purple-500 ml-3 flex-shrink-0 mt-0.5" />
+                    <Zap className="w-5 h-5 text-orange-500 ml-3 flex-shrink-0 mt-0.5" />
                     <span><span className="font-semibold">{t('increase_selling_speed')}</span> {t('dont_miss_opportunity')}</span>
                   </li>
                 </ul>
@@ -1323,7 +1251,7 @@ const AddPhoneForm: React.FC = () => {
                 <div className="flex items-center justify-center gap-2">
                   <Gift className="w-5 h-5 text-blue-600" />
                   <span className="text-sm font-medium text-gray-700">{t('current_bonus_balance')}</span>
-                  <span className="text-lg font-bold text-blue-600">{Math.floor(bonusBalance).toLocaleString()} ج.م</span>
+                  <span className="text-lg font-bold text-blue-600">{Math.floor(bonusBalance).toLocaleString()} {t('currency')}</span>
                 </div>
               </div>
 
@@ -1331,13 +1259,13 @@ const AddPhoneForm: React.FC = () => {
                 <h3 className="font-bold text-lg">{t('select_feature_duration')}</h3>
                 <div className="grid grid-cols-2 gap-3">
                   {availableDurations.map((days) => (
-                    <label key={days} htmlFor={`promo_${days}`} className={`relative flex flex-col items-center justify-center rounded-lg border-2 p-3 cursor-pointer transition-all ${selectedDuration === days ? 'border-yellow-500 bg-yellow-50 ring-2 ring-yellow-200' : 'border-gray-200 bg-white'}`}>
+                    <label key={days} htmlFor={`promo_${days}`} className={`relative flex flex-col items-center justify-center rounded-lg border-2 p-3 cursor-pointer transition-all ${selectedDuration === days ? 'border-orange-500 bg-orange-50 ring-2 ring-orange-200' : 'border-gray-200 bg-white'}`}>
                       <input type="radio" id={`promo_${days}`} name="promotion_duration" value={days} checked={selectedDuration === days} onChange={(e) => setSelectedDuration(e.target.value)} className="sr-only" />
                       <div className="flex items-center gap-2">
                         <CalendarDays className="w-5 h-5 text-gray-600" />
                         <span className="text-base font-bold text-gray-800">{days} {t('days')}</span>
                       </div>
-                      <span className="text-sm font-semibold text-yellow-600 mt-1">{promotionPrices[days] || 0} ج.م</span>
+                      <span className="text-sm font-semibold text-orange-600 mt-1">{promotionPrices[days] || 0} {t('currency')}</span>
                     </label>
                   ))}
                 </div>
@@ -1356,7 +1284,7 @@ const AddPhoneForm: React.FC = () => {
               <button
                 onClick={handleSubmitAndFeature}
                 disabled={loading || isReported}
-                className="w-full inline-flex items-center justify-center px-8 py-4 border border-transparent text-lg font-bold rounded-xl shadow-lg text-white bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-600 hover:to-amber-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 disabled:opacity-50 transition-all transform hover:scale-105"
+                className="w-full inline-flex items-center justify-center px-8 py-4 border border-transparent text-lg font-bold rounded-xl shadow-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 transition-all transform hover:scale-105"
               >
                 {loading ? <Loader2 className="animate-spin h-6 w-6" /> : t('feature_now_with_bonus')}
               </button>

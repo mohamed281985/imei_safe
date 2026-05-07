@@ -47,7 +47,7 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
   // cache of already preloaded image URLs to avoid duplicate requests
   const preloadedImageUrls = new Set<string>();
 
-  const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || 'https://imei-safe.me';
+  const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || (import.meta.env.PROD ? 'https://imei-safe.me' : '');
 
   useEffect(() => {
     const cacheKey = `page-ads-${pageName}`;
@@ -92,37 +92,14 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
       .eq('payment_status', 'paid') // التأكد من أن الدفع مكتمل
       .order('upload_date', { ascending: false });
 
-    // فك تشفير website_url لكل إعلان
-    const decryptedAds = data ? await Promise.all(
-      data.map(async (ad) => {
-        let decryptedWebsiteUrl = ad.website_url;
-
-        // إذا كان website_url مشفر، حاول فك تشفيره
-        if (ad.website_url && typeof ad.website_url === 'string' && 
-            (ad.website_url.includes('{') || ad.website_url.includes('encryptedData'))) {
-          try {
-            const response = await fetch(`${API_BASE_URL}/api/ad-website-decrypted/${ad.id}`);
-            const result = await response.json();
-            if (result.success && result.website_url) {
-              decryptedWebsiteUrl = result.website_url;
-            }
-          } catch (error) {
-            console.error('Error decrypting website_url:', error);
-          }
-        }
-
-        return {
-          ...ad,
-          website_url: decryptedWebsiteUrl
-        };
-      })
-    ) : [];
+    // نمرر البيانات كما هي دون فك تشفير مسبق لكل الإعلانات لتحسين الأداء
+    const processedAds = data || [];
 
     // فلترة إضافية للتأكد من عدم عرض الإعلانات المنتهية
     const now = new Date();
-    const activeAds = decryptedAds ? decryptedAds.filter(ad => ad.expires_at && new Date(ad.expires_at) > now) : [];
+    const activeAds = processedAds.filter(ad => ad.expires_at && new Date(ad.expires_at) > now);
 
-    if (!activeAds || activeAds.length === 0) {
+    if (activeAds.length === 0) {
       setShowLocalAd(true);
       setAds([]);
       localStorage.setItem(cacheKey, JSON.stringify([]));
@@ -206,18 +183,39 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
   }, [ads.length]);
 
   const openAdRedirect = async (ad: publish_ad) => {
-    // استخدام website_url مباشرة إذا كان موجوداً
-    if (ad.website_url) {
-      window.open(ad.website_url, '_blank', 'noopener,noreferrer');
-      return;
+    // التحقق مما إذا كان website_url مشفراً أو يبدو كمعرف (قصير جداً) أو غير موجود
+    const isEncrypted = ad.website_url && typeof ad.website_url === 'string' && 
+                        (ad.website_url.includes('{') || ad.website_url.includes('encryptedData'));
+    
+    const isInvalidUrl = !ad.website_url || (typeof ad.website_url === 'string' && ad.website_url.length < 8);
+
+    if (isEncrypted || isInvalidUrl) {
+      try {
+        // طلب فك التشفير أو الحصول على الرابط الصحيح من السيرفر
+        const response = await fetch(`${API_BASE_URL}/api/ad-website-decrypted/${ad.id}`);
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success && result.website_url) {
+            window.open(result.website_url, '_blank', 'noopener,noreferrer');
+            return;
+          }
+        }
+      } catch (error) {
+        console.error('Error getting ad link from server:', error);
+      }
+      
+      // في حالة الفشل، نحاول استخدام نقطة نهاية التوجيه التلقائي
+      const baseUrl = API_BASE_URL.replace(/\/+$/, '');
+      const apiUrl = `${baseUrl}/api/ad-redirect/${ad.id}`;
+      window.open(apiUrl, '_blank', 'noopener,noreferrer');
+    } else {
+      // إذا كان الرابط نصاً عادياً ويبدو صالحاً، فتحه مباشرة
+      let finalUrl = ad.website_url;
+      if (!finalUrl.startsWith('http') && !finalUrl.startsWith('whatsapp') && !finalUrl.startsWith('wa.me')) {
+        finalUrl = `https://${finalUrl}`;
+      }
+      window.open(finalUrl, '_blank', 'noopener,noreferrer');
     }
-
-    // إذا لم يكن website_url موجوداً، استخدام API redirect
-    const baseUrl = API_BASE_URL.replace(/\/+$/, '');
-    const apiUrl = `${baseUrl}/api/ad-redirect/${ad.id}`;
-
-    // فتح الرابط مباشرة دون استخدام fetch لتجنب مشاكل CORS
-    window.open(apiUrl, '_blank', 'noopener,noreferrer');
   };
 
   if (showLocalAd) {
