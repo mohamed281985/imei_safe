@@ -26,7 +26,6 @@ interface Product {
   store_name?: string;
   city?: string;
   is_verified?: boolean;
-  seller_phone?: string;
   contact_methods?: {
     phone?: string;
   };
@@ -39,15 +38,44 @@ interface Product {
 }
 
 const ProductDetails = () => {
-  const { id } = useParams();
-  const { t } = useLanguage();
-  const [product, setProduct] = useState<Product | null>(null);
-  const [loading, setLoading] = useState(true);
+    const { id } = useParams();
+    const { t } = useLanguage();
+    const [product, setProduct] = useState<Product | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [loadingPhone, setLoadingPhone] = useState(false);
+
+  const handleContactNow = async () => {
+    if (!product) return;
+
+    setLoadingPhone(true);
+    try {
+      const { data, error } = await supabase
+        .from(product.type === 'phone' ? 'phones' : 'accessories')
+        .select('contact_methods')
+        .eq('id', product.id)
+        .single();
+
+      if (error) throw error;
+
+      const phoneNumber = data?.contact_methods?.phone;
+      if (phoneNumber) {
+        const cleanPhone = phoneNumber.replace(/\D/g, '');
+        window.open(`https://wa.me/${cleanPhone}`, '_blank');
+      } else {
+        alert(t('no_contact_info'));
+      }
+    } catch (error) {
+      console.error('Error fetching phone number:', error);
+      alert(t('error_fetching_contact'));
+    } finally {
+      setLoadingPhone(false);
+    }
+  };
 
   useEffect(() => {
     const fetchProduct = async () => {
       setLoading(true);
-      
+
       // Try fetching from phones first
       const { data: phoneData, error: phoneError } = await supabase
         .from('phones')
@@ -208,34 +236,38 @@ const ProductDetails = () => {
           </div>
         </div>
 
-        <div style={{display: 'flex', gap: '12px', marginTop: '18px', marginBottom: "18px"}}>
-          <a
-            href={`https://wa.me/${(product.seller_phone || product.contact_methods?.phone || '').replace(/\D/g, '')}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              background: '#0F9D58',
-              color: '#fff',
-              border: 'none',
-              borderRadius: '12px',
-              padding: '12px 28px',
-              fontSize: '1.1rem',
-              fontWeight: 'bold',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              cursor: 'pointer',
-              textDecoration: 'none',
-              boxShadow: '0 2px 8px rgba(37,211,102,0.15)'
-            }}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 32 32" fill="currentColor"><path d="M16 3C9.373 3 4 8.373 4 15c0 2.637.86 5.09 2.484 7.16L4 29l7.09-2.484A12.94 12.94 0 0 0 16 27c6.627 0 12-5.373 12-12S22.627 3 16 3zm0 22c-2.13 0-4.21-.627-5.98-1.813l-.426-.267-4.21 1.477 1.44-4.13-.277-.44C6.627 19.21 6 17.13 6 15c0-5.523 4.477-10 10-10s10 4.477 10 10-4.477 10-10 10zm5.09-7.09c-.277-.14-1.64-.813-1.893-.91-.253-.093-.437-.14-.62.14-.183.28-.71.91-.87 1.1-.16.187-.32.21-.597.07-.277-.14-1.17-.43-2.23-1.37-.823-.733-1.38-1.64-1.54-1.917-.16-.28-.017-.43.12-.57.123-.12.28-.32.42-.48.14-.16.187-.28.28-.467.093-.187.047-.35-.023-.49-.07-.14-.62-1.497-.85-2.05-.223-.537-.45-.463-.62-.47-.16-.007-.35-.01-.54-.01-.187 0-.49.07-.75.35-.26.28-.99.97-.99 2.37s1.015 2.75 1.157 2.94c.14.187 2 3.06 4.85 4.17.68.293 1.21.467 1.62.597.68.217 1.3.187 1.79.113.547-.08 1.64-.67 1.87-1.32.23-.65.23-1.21.16-1.32-.07-.11-.253-.18-.53-.32z"/></svg>
-            {t('contact_now')}
-          </a>
-        </div>
+        {product.contact_methods?.phone ? (
+          <div style={{display: 'flex', gap: '12px', marginTop: '18px', marginBottom: "18px"}}>
+            <button
+              onClick={handleContactNow}
+              disabled={loadingPhone}
+              style={{
+                background: loadingPhone ? '#999' : '#0F9D58',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '12px',
+                padding: '12px 28px',
+                fontSize: '1.1rem',
+                fontWeight: 'bold',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                cursor: loadingPhone ? 'not-allowed' : 'pointer',
+                boxShadow: '0 2px 8px rgba(37,211,102,0.15)'
+              }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 32 32" fill="currentColor"><path d="M16 3C9.373 3 4 8.373 4 15c0 2.637.86 5.09 2.484 7.16L4 29l7.09-2.484A12.94 12.94 0 0 0 16 27c6.627 0 12-5.373 12-12S22.627 3 16 3zm0 22c-2.13 0-4.21-.627-5.98-1.813l-.426-.267-4.21 1.477 1.44-4.13-.277-.44C6.627 19.21 6 17.13 6 15c0-5.523 4.477-10 10-10s10 4.477 10 10-4.477 10-10 10zm5.09-7.09c-.277-.14-1.64-.813-1.893-.91-.253-.093-.437-.14-.62.14-.183.28-.71.91-.87 1.1-.16.187-.32.21-.597.07-.277-.14-1.17-.43-2.23-1.37-.823-.733-1.38-1.64-1.54-1.917-.16-.28-.017-.43.12-.57.123-.12.28-.32.42-.48.14-.16.187-.28.28-.467.093-.187.047-.35-.023-.49-.07-.14-.62-1.497-.85-2.05-.223-.537-.45-.463-.62-.47-.16-.007-.35-.01-.54-.01-.187 0-.49.07-.75.35-.26.28-.99.97-.99 2.37s1.015 2.75 1.157 2.94c.14.187 2 3.06 4.85 4.17.68.293 1.21.467 1.62.597.68.217 1.3.187 1.79.113.547-.08 1.64-.67 1.87-1.32.23-.65.23-1.21.16-1.32-.07-.11-.253-.18-.53-.32z"/></svg>
+              {loadingPhone ? t('loading') : t('contact_now')}
+            </button>
+          </div>
+        ) : (
+          <div style={{display: 'flex', gap: '12px', marginTop: '18px', marginBottom: "18px", color: '#666', fontSize: '0.9rem'}}>
+            {t('no_contact_info')}
+          </div>
+        )}
       </div>
     </div>
   );
-};
+}
 
 export default ProductDetails;

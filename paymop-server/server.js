@@ -4575,6 +4575,66 @@ app.get("/api/health", (req, res) => {
   });
 });
 
+// نقطة نهاية لجلب رقم هاتف المحل وفك تشفيره
+app.get('/api/store-phone/:productId', verifyJwtToken, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const productId = req.params.productId;
+    if (!productId) {
+      return res.status(400).json({ error: 'Product ID is required' });
+    }
+
+    // جلب رقم الهاتف من جدول phones
+    const { data: phoneData, error: phoneError } = await supabase
+      .from('phones')
+      .select('contact_methods, seller_phone')
+      .eq('id', productId)
+      .maybeSingle();
+
+    // إذا لم يُوجد في phones، جلب من accessories
+    let phoneNumber = null;
+    if (phoneData && !phoneError) {
+      phoneNumber = phoneData.contact_methods?.phone || phoneData.seller_phone;
+    } else {
+      const { data: accessoryData, error: accessoryError } = await supabase
+        .from('accessories')
+        .select('contact_methods, seller_phone')
+        .eq('id', productId)
+        .maybeSingle();
+
+      if (accessoryData && !accessoryError) {
+        phoneNumber = accessoryData.contact_methods?.phone || accessoryData.seller_phone;
+      }
+    }
+
+    if (!phoneNumber) {
+      return res.status(404).json({ error: 'Phone number not found' });
+    }
+
+    // فك تشفير رقم الهاتف
+    const decryptedPhone = decryptField(phoneNumber);
+    if (!decryptedPhone) {
+      return res.status(500).json({ error: 'Failed to decrypt phone number' });
+    }
+
+    // تنظيف الرقم من أي رموز غير رقمية
+    const cleanPhone = decryptedPhone.replace(/\D/g, '');
+
+    // إرجاع الرقم وفك تشفيره
+    return res.json({
+      success: true,
+      phone: cleanPhone
+    });
+  } catch (error) {
+    console.error('Error in /api/store-phone/:productId:', error);
+    return res.status(500).json({ error: 'Server error', details: error.message });
+  }
+});
+
 // نقطة نهاية لجلب نوع الإعلان وسعره
 app.get("/api/offer-details", async (req, res) => {
   try {
