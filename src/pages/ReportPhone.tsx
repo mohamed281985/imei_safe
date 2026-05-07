@@ -9,7 +9,7 @@ import imageCompression from 'browser-image-compression';
 import PageContainer from '../components/PageContainer';
 import AppNavbar from '../components/AppNavbar';
 import BackButton from '../components/BackButton';
-import { Camera, FileText, CreditCard, User, Upload, AlertTriangle, CheckCircle } from 'lucide-react'; // إضافة AlertTriangle
+import { Camera, FileText, CreditCard, User, Upload, AlertTriangle, CheckCircle, Smartphone, Phone, Hash, MapPin, Clock, KeyRound } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Camera as CapacitorCamera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Button } from "@/components/ui/button";
@@ -173,7 +173,7 @@ const ReportPhone: React.FC = () => {
     return cleanupImageUrls;
   }, []);
   const { t } = useLanguage();
-  const REGISTERED_IN_SYSTEM = 'مسجل بالنظام';
+  const REGISTERED_IN_SYSTEM = '__REGISTERED_IN_SYSTEM__';
   const registeredInSystemLabel = t('registered_in_system');
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -406,14 +406,14 @@ const ReportPhone: React.FC = () => {
     if (file) {
       // التحقق من نوع الملف (MIME Type)
       if (!file.type.startsWith('image/')) {
-        toast({ title: t('error'), description: 'نوع الملف غير صالح. يرجى رفع صورة.', variant: 'destructive' });
+        toast({ title: t('error'), description: t('invalid_file_type'), variant: 'destructive' });
         return;
       }
 
       // التحقق من التوقيع السحري (Magic Bytes)
       const isValidImage = await validateImageFile(file);
       if (!isValidImage) {
-        toast({ title: t('error'), description: 'الملف المختار ليس صورة صالحة.', variant: 'destructive' });
+        toast({ title: t('error'), description: t('invalid_image_file'), variant: 'destructive' });
         return;
       }
 
@@ -627,7 +627,6 @@ const ReportPhone: React.FC = () => {
         // New case: active report exists and belongs to current user
         if (result.found && (
           result.isOwnReport === true ||
-          result.hasActiveReport === true ||
           result.reporter_user_id === user?.id ||
           result.user_id === user?.id ||
           result.reporterId === user?.id
@@ -836,7 +835,7 @@ const ReportPhone: React.FC = () => {
       };
 
       let receiptImageToSend: string | null = null;
-      if (formData.ownerName === 'مسجل بالنظام') {
+      if (formData.ownerName === REGISTERED_IN_SYSTEM) {
         // إذا كان الهاتف مسجل بالنظام، جلب صورة الفاتورة من نتيجة الاستعلام أو من جدول registered_phones
         let url = resultRef.current && resultRef.current.receipt_image_url;
         if (!url) {
@@ -940,7 +939,7 @@ const ReportPhone: React.FC = () => {
       const resp = await axiosInstance.post('/api/report-lost-phone', payload);
       const result = resp?.data;
       if (!result.success) {
-        throw new Error(result.error || 'فشل إرسال البلاغ');
+        throw new Error(result.error || t('failed_to_submit_report'));
       }
 
       toast({ title: t('success'), description: t('report_submitted_successfully') });
@@ -1055,10 +1054,14 @@ const ReportPhone: React.FC = () => {
                     </h3>
                   </div>
                   <div className="space-y-3">
-                    <label htmlFor="imei" className="block text-slate-800 font-medium">
+                    <label htmlFor="imei" className="flex items-center gap-2 text-slate-800 font-medium">
+                      <Hash className="h-4 w-4 text-[#0a4d8c]" />
                       {t('imei_number')}
                     </label>
                     <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Smartphone className="h-4 w-4 text-gray-500" />
+                      </div>
                       <Input
                         type="text"
                         id="imei"
@@ -1066,15 +1069,15 @@ const ReportPhone: React.FC = () => {
                         value={formData.imei}
                         onChange={handleChange}
                         placeholder={t('enter_imei')}
-                        disabled={isReadOnly || isLoading || isSubmitting}
-                        className={`input-field w-full bg-[#c0dee5] text-gray-800 ${isImeiValid ? '!pl-12 border-green-500' : ''}`}
+                        disabled={isReadOnly || isSubmitting}
+                        className={`input-field w-full bg-[#c0dee5] text-gray-800 !pl-12 ${isImeiValid ? '!pr-12 border-green-500' : ''}`}
                         maxLength={15}
                         pattern="[0-9]*"
                         inputMode="numeric"
                         required
                       />
                       {isImeiValid && (
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
                           <CheckCircle className="h-5 w-5 text-green-500" />
                         </div>
                       )}
@@ -1083,20 +1086,26 @@ const ReportPhone: React.FC = () => {
                   </div>
 
                   <div className="space-y-3">
-                    <label htmlFor="phone_type" className="block text-slate-800 font-medium">
+                    <label htmlFor="phone_type" className="flex items-center gap-2 text-slate-800 font-medium">
+                      <Smartphone className="h-4 w-4 text-[#0a4d8c]" />
                       {t('phone_type')}
                     </label>
-                    <Input
-                      type="text"
-                      id="phone_type"
-                      name="phone_type"
-                      value={formData.phone_type}
-                      onChange={handleChange}
-                      placeholder={formData.phone_type === 'مسجل بالنظام' ? 'مسجل بالنظام' : t('phone_type_placeholder')}
-                      disabled={isReadOnly || isLoading || isSubmitting || formData.phone_type === 'مسجل بالنظام'}
-                      className="input-field w-full bg-[#c0dee5] text-gray-800"
-                      required
-                    />
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <FileText className="h-4 w-4 text-gray-500" />
+                      </div>
+                      <Input
+                        type="text"
+                        id="phone_type"
+                        name="phone_type"
+                        value={formData.phone_type === REGISTERED_IN_SYSTEM ? registeredInSystemLabel : formData.phone_type}
+                        onChange={handleChange}
+                        placeholder={formData.phone_type === REGISTERED_IN_SYSTEM ? registeredInSystemLabel : t('phone_type_placeholder')}
+                        disabled={isReadOnly || isSubmitting || formData.phone_type === REGISTERED_IN_SYSTEM}
+                        className="input-field w-full bg-[#c0dee5] text-gray-800 !pl-12"
+                        required
+                      />
+                    </div>
                   </div>
                 </div>
               )}
@@ -1110,91 +1119,109 @@ const ReportPhone: React.FC = () => {
                     </h3>
                   </div>
                   <div className="space-y-3">
-                    <label htmlFor="ownerName" className="block text-slate-800 font-medium">
+                    <label htmlFor="ownerName" className="flex items-center gap-2 text-slate-800 font-medium">
+                      <User className="h-4 w-4 text-[#0a4d8c]" />
                       {t('owner_name')}
                     </label>
-                    <Input
-                      type="text"
-                      id="ownerName"
-                      name="ownerName"
-                      value={formData.ownerName}
-                      onChange={handleChange}
-                      placeholder={
-                        formData.ownerName && /^[*]+$/.test(formData.ownerName)
-                          ? 'مسجل بالنظام'
-                          : t('owner_name')
-                      }
-                      disabled={isReadOnly || fieldReadOnlyState.ownerName || isLoading || isSubmitting || formData.ownerName === 'مسجل بالنظام'}
-                      className={`input-field w-full bg-[#c0dee5] text-gray-800 ${/^[*]+$/.test(formData.ownerName) || formData.ownerName.length < 2 ? 'text-gray-400 italic' : ''}`}
-                      style={(() => {
-                        if (/^[*]+$/.test(formData.ownerName) || formData.ownerName.length < 2) {
-                          return { letterSpacing: '0.2em' };
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <User className="h-4 w-4 text-gray-500" />
+                      </div>
+                      <Input
+                        type="text"
+                        id="ownerName"
+                        name="ownerName"
+                        value={formData.ownerName === REGISTERED_IN_SYSTEM ? registeredInSystemLabel : formData.ownerName}
+                        onChange={handleChange}
+                        placeholder={
+                          formData.ownerName === REGISTERED_IN_SYSTEM
+                            ? registeredInSystemLabel
+                            : (formData.ownerName && /^[*]+$/.test(formData.ownerName) ? registeredInSystemLabel : t('owner_name'))
                         }
-                        return /[a-zA-Z0-9]/.test(formData.ownerName) ? { direction: 'ltr', textAlign: 'left' } : { direction: 'rtl', textAlign: 'right' };
-                      })()}
-                    />
+                        disabled={isReadOnly || fieldReadOnlyState.ownerName || isSubmitting || formData.ownerName === REGISTERED_IN_SYSTEM}
+                        className={`input-field w-full bg-[#c0dee5] text-gray-800 !pl-12 ${/^[*]+$/.test(formData.ownerName) || formData.ownerName.length < 2 ? 'text-gray-400 italic' : ''}`}
+                        style={(() => {
+                          if (/^[*]+$/.test(formData.ownerName) || formData.ownerName.length < 2) {
+                            return { letterSpacing: '0.2em' };
+                          }
+                          return /[a-zA-Z0-9]/.test(formData.ownerName) ? { direction: 'ltr', textAlign: 'left' } : { direction: 'rtl', textAlign: 'right' };
+                        })()}
+                      />
+                    </div>
                   </div>
 
                   <div className="space-y-3">
-                    <label htmlFor="idLast6" className="block text-slate-800 font-medium">
+                    <label htmlFor="idLast6" className="flex items-center gap-2 text-slate-800 font-medium">
+                      <CreditCard className="h-4 w-4 text-[#0a4d8c]" />
                       {t('id_last_6_digits')}
                     </label>
-                    <Input
-                      type="text"
-                      id="idLast6"
-                      name="idLast6"
-                      value={formData.idLast6}
-                      onChange={handleChange}
-                      className={`input-field w-full bg-[#c0dee5] text-gray-800 ${/^[*]+$/.test(formData.idLast6) || formData.idLast6.length < 2 ? 'text-gray-400 italic' : ''}`}
-                      style={(() => {
-                        if (/^[*]+$/.test(formData.idLast6) || formData.idLast6.length < 2) {
-                          return { letterSpacing: '0.2em' };
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <CreditCard className="h-4 w-4 text-gray-500" />
+                      </div>
+                      <Input
+                        type="text"
+                        id="idLast6"
+                        name="idLast6"
+                        value={formData.idLast6 === REGISTERED_IN_SYSTEM ? registeredInSystemLabel : formData.idLast6}
+                        onChange={handleChange}
+                        className={`input-field w-full bg-[#c0dee5] text-gray-800 !pl-12 ${/^[*]+$/.test(formData.idLast6) || formData.idLast6.length < 2 ? 'text-gray-400 italic' : ''}`}
+                        style={(() => {
+                          if (/^[*]+$/.test(formData.idLast6) || formData.idLast6.length < 2) {
+                            return { letterSpacing: '0.2em' };
+                          }
+                          return /[a-zA-Z0-9]/.test(formData.idLast6) ? { direction: 'ltr', textAlign: 'left' } : { direction: 'rtl', textAlign: 'right' };
+                        })()}
+                        maxLength={6}
+                        pattern="[0-9]{6}"
+                        inputMode="numeric"
+                        required
+                        placeholder={
+                          formData.idLast6 === REGISTERED_IN_SYSTEM
+                            ? registeredInSystemLabel
+                            : (formData.idLast6 && /^[*]+$/.test(formData.idLast6) ? registeredInSystemLabel : t('id_last_6_digits_placeholder'))
                         }
-                        return /[a-zA-Z0-9]/.test(formData.idLast6) ? { direction: 'ltr', textAlign: 'left' } : { direction: 'rtl', textAlign: 'right' };
-                      })()}
-                      maxLength={6}
-                      pattern="[0-9]{6}"
-                      inputMode="numeric"
-                      required
-                      placeholder={
-                        formData.idLast6 && /^[*]+$/.test(formData.idLast6)
-                          ? 'مسجل بالنظام'
-                          : t('id_last_6_digits_placeholder')
-                      }
-                      disabled={isImeiRegistered || isReadOnly || isLoading || isSubmitting || formData.idLast6 === 'مسجل بالنظام'}
-                    />
+                        disabled={isImeiRegistered || isReadOnly || isSubmitting || formData.idLast6 === REGISTERED_IN_SYSTEM}
+                      />
+                    </div>
                   </div>
 
                   <div className="space-y-3">
-                    <label htmlFor="phoneNumber" className="block text-slate-800 font-medium">
+                    <label htmlFor="phoneNumber" className="flex items-center gap-2 text-slate-800 font-medium">
+                      <Phone className="h-4 w-4 text-[#0a4d8c]" />
                       {t('phone_number')}
                     </label>
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                       <CountryCodeSelector
                         value={countryCode}
                         onChange={setCountryCode}
-                        disabled={fieldReadOnlyState.phoneNumber || isReadOnly || isLoading || isSubmitting || formData.phoneNumber === 'مسجل بالنظام'}
+                        disabled={fieldReadOnlyState.phoneNumber || isReadOnly || isSubmitting || formData.phoneNumber === REGISTERED_IN_SYSTEM}
                       />
-                      <Input
-                        id="phoneNumber"
-                        name="phoneNumber"
-                        type="tel"
-                        value={formData.phoneNumber}
-                        onChange={handleChange}
-                        disabled={fieldReadOnlyState.phoneNumber || isReadOnly || isLoading || isSubmitting}
-                        className={`input-field w-full bg-[#c0dee5] text-gray-800 ${/^[*]+$/.test(formData.phoneNumber) || formData.phoneNumber.length < 2 ? 'text-gray-400 italic' : ''}`}
-                        style={(() => {
-                          if (/^[*]+$/.test(formData.phoneNumber) || formData.phoneNumber.length < 2) {
-                            return { letterSpacing: '0.2em' };
+                      <div className="relative w-full">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <Phone className="h-4 w-4 text-gray-500" />
+                        </div>
+                        <Input
+                          id="phoneNumber"
+                          name="phoneNumber"
+                          type="tel"
+                          value={formData.phoneNumber === REGISTERED_IN_SYSTEM ? registeredInSystemLabel : formData.phoneNumber}
+                          onChange={handleChange}
+                          disabled={fieldReadOnlyState.phoneNumber || isReadOnly || isSubmitting || formData.phoneNumber === REGISTERED_IN_SYSTEM}
+                          className={`input-field w-full bg-[#c0dee5] text-gray-800 !pl-12 ${/^[*]+$/.test(formData.phoneNumber) || formData.phoneNumber.length < 2 ? 'text-gray-400 italic' : ''}`}
+                          style={(() => {
+                            if (/^[*]+$/.test(formData.phoneNumber) || formData.phoneNumber.length < 2) {
+                              return { letterSpacing: '0.2em' };
+                            }
+                            return /[a-zA-Z0-9]/.test(formData.phoneNumber) ? { direction: 'ltr', textAlign: 'left' } : { direction: 'rtl', textAlign: 'right' };
+                          })()}
+                          placeholder={
+                            formData.phoneNumber === REGISTERED_IN_SYSTEM
+                              ? registeredInSystemLabel
+                              : (formData.phoneNumber && /^[*]+$/.test(formData.phoneNumber) ? registeredInSystemLabel : t('phone_placeholder'))
                           }
-                          return /[a-zA-Z0-9]/.test(formData.phoneNumber) ? { direction: 'ltr', textAlign: 'left' } : { direction: 'rtl', textAlign: 'right' };
-                        })()}
-                        placeholder={
-                          formData.phoneNumber && /^[*]+$/.test(formData.phoneNumber)
-                            ? 'مسجل بالنظام'
-                            : t('phone_placeholder')
-                        }
-                      />
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1209,32 +1236,44 @@ const ReportPhone: React.FC = () => {
                     </h3>
                   </div>
                   <div className="space-y-3">
-                    <label htmlFor="lossLocation" className="block text-slate-800 font-medium">
+                    <label htmlFor="lossLocation" className="flex items-center gap-2 text-slate-800 font-medium">
+                      <MapPin className="h-4 w-4 text-[#0a4d8c]" />
                       {t('loss_location')}
                     </label>
-                    <Input
-                      id="lossLocation"
-                      name="lossLocation"
-                      type="text"
-                      value={formData.lossLocation}
-                      onChange={handleChange}
-                      disabled={fieldReadOnlyState.lossLocation || isReadOnly || isLoading || isSubmitting}
-                      className="input-field w-full bg-[#c0dee5] text-gray-800"
-                    />
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <MapPin className="h-4 w-4 text-gray-500" />
+                      </div>
+                      <Input
+                        id="lossLocation"
+                        name="lossLocation"
+                        type="text"
+                        value={formData.lossLocation}
+                        onChange={handleChange}
+                        disabled={fieldReadOnlyState.lossLocation || isReadOnly || isSubmitting}
+                        className="input-field w-full bg-[#c0dee5] text-gray-800 !pl-12"
+                      />
+                    </div>
                   </div>
                   <div className="space-y-3">
-                    <label htmlFor="lossTime" className="block text-slate-800 font-medium">
+                    <label htmlFor="lossTime" className="flex items-center gap-2 text-slate-800 font-medium">
+                      <Clock className="h-4 w-4 text-[#0a4d8c]" />
                       {t('loss_time')}
                     </label>
-                    <Input
-                      id="lossTime"
-                      name="lossTime"
-                      type="datetime-local"
-                      value={formData.lossTime}
-                      onChange={handleChange}
-                      disabled={fieldReadOnlyState.lossTime || isReadOnly || isLoading || isSubmitting}
-                      className="input-field w-full bg-[#c0dee5] text-gray-800"
-                    />
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Clock className="h-4 w-4 text-gray-500" />
+                      </div>
+                      <Input
+                        id="lossTime"
+                        name="lossTime"
+                        type="datetime-local"
+                        value={formData.lossTime}
+                        onChange={handleChange}
+                        disabled={fieldReadOnlyState.lossTime || isReadOnly || isSubmitting}
+                        className="input-field w-full bg-[#c0dee5] text-gray-800 !pl-12"
+                      />
+                    </div>
                   </div>
                 </div>
               )}
@@ -1249,23 +1288,29 @@ const ReportPhone: React.FC = () => {
                   </div>
                   {isImeiRegistered && (
                     <div className="space-y-3">
-                      <label htmlFor="password" className="block text-slate-800 font-medium">
+                      <label htmlFor="password" className="flex items-center gap-2 text-slate-800 font-medium">
+                        <KeyRound className="h-4 w-4 text-[#0a4d8c]" />
                         {t('password')}
                       </label>
-                      <Input
-                        id="password"
-                        name="password"
-                        type="password"
-                        value={formData.password}
-                        onChange={handleChange}
-                        disabled={isReadOnly || isLoading || isSubmitting}
-                        className="input-field w-full bg-[#c0dee5] text-gray-800"
-                      />
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <KeyRound className="h-4 w-4 text-gray-500" />
+                        </div>
+                        <Input
+                          id="password"
+                          name="password"
+                          type="password"
+                          value={formData.password}
+                          onChange={handleChange}
+                          disabled={isReadOnly || isSubmitting}
+                          className="input-field w-full bg-[#c0dee5] text-gray-800 !pl-12"
+                        />
+                      </div>
                       <Button
                         type="button"
                         className="inline-flex items-center justify-center rounded-lg bg-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-300"
                         onClick={handleForgotPassword}
-                        disabled={isReadOnly || isLoading || isSubmitting}
+                        disabled={isReadOnly || isSubmitting}
                       >
                         {t('forgot_password')}
                       </Button>
@@ -1307,7 +1352,7 @@ const ReportPhone: React.FC = () => {
                   disabled={isLoading || isSubmitting}
                   className="flex-1 rounded-xl border border-slate-300 bg-slate-100 px-2 py-4 text-slate-700 font-bold transition hover:bg-slate-200 shadow-md"
                 >
-                  {t('previous') || 'الرجوع'}
+                  {t('previous')}
                 </Button>
               )}
               <Button
@@ -1315,7 +1360,7 @@ const ReportPhone: React.FC = () => {
                 disabled={isLoading || isSubmitting || isReadOnly}
                 className="flex-1 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-500 px-2 py-4 text-white font-bold shadow-lg transition hover:from-blue-700 hover:to-cyan-600"
               >
-                {currentStep < 4 ? t('next') || 'التالي' : t('submit_report')}
+                {currentStep < 4 ? t('next') : t('submit_report')}
               </Button>
             </div>
           </div>
@@ -1331,28 +1376,40 @@ const ReportPhone: React.FC = () => {
             </DialogHeader>
             <div className="grid gap-4 py-4 px-6">
               <div className="flex flex-col gap-2">
-                <label htmlFor="modalPassword" className="text-right text-gray-800 font-medium">
+                <label htmlFor="modalPassword" className="flex items-center gap-2 text-right text-gray-800 font-medium">
+                  <KeyRound className="h-4 w-4 text-[#0a4d8c]" />
                   {t('password')}
                 </label>
-                <Input
-                  id="modalPassword"
-                  type="password"
-                  value={modalPassword}
-                  onChange={(e) => setModalPassword(e.target.value)}
-                  className="input-field w-full bg-[#c0dee5] text-gray-800 border-imei-cyan focus:border-blue-500"
-                />
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <KeyRound className="h-4 w-4 text-gray-500" />
+                  </div>
+                  <Input
+                    id="modalPassword"
+                    type="password"
+                    value={modalPassword}
+                    onChange={(e) => setModalPassword(e.target.value)}
+                    className="input-field w-full bg-[#c0dee5] text-gray-800 border-imei-cyan focus:border-blue-500 !pl-12"
+                  />
+                </div>
               </div>
               <div className="flex flex-col gap-2">
-                <label htmlFor="modalConfirmPassword" className="text-right text-gray-800 font-medium">
+                <label htmlFor="modalConfirmPassword" className="flex items-center gap-2 text-right text-gray-800 font-medium">
+                  <KeyRound className="h-4 w-4 text-[#0a4d8c]" />
                   {t('confirm_password')}
                 </label>
-                <Input
-                  id="modalConfirmPassword"
-                  type="password"
-                  value={modalConfirmPassword}
-                  onChange={(e) => setModalConfirmPassword(e.target.value)}
-                  className="input-field w-full bg-[#c0dee5] text-gray-800 border-imei-cyan focus:border-blue-500"
-                />
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <KeyRound className="h-4 w-4 text-gray-500" />
+                  </div>
+                  <Input
+                    id="modalConfirmPassword"
+                    type="password"
+                    value={modalConfirmPassword}
+                    onChange={(e) => setModalConfirmPassword(e.target.value)}
+                    className="input-field w-full bg-[#c0dee5] text-gray-800 border-imei-cyan focus:border-blue-500 !pl-12"
+                  />
+                </div>
               </div>
             </div>
             <DialogFooter>

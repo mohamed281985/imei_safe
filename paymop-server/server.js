@@ -6610,6 +6610,11 @@ const normalizeRedirectUrl = (url) => {
   let normalized = String(url).trim();
   if (!normalized) return null;
 
+  // If it's a plain phone number (e.g. "01012345678" or "+2010...")
+  if (/^(\+?[0-9]{8,15})$/.test(normalized)) {
+    return `https://wa.me/${normalized.replace(/\D/g, '')}`;
+  }
+
   const normalizeWhatsappPath = (path) => {
     const [pathOnly, queryString] = path.split('?');
     if (/^message\//i.test(pathOnly)) {
@@ -6670,7 +6675,7 @@ app.get('/api/ad-redirect/:id', async (req, res) => {
 
     const { data, error } = await supabase
       .from('ads_payment')
-      .select('id, type, is_active, is_paid, payment_status, expires_at, website_url')
+      .select('id, type, is_active, is_paid, payment_status, expires_at, website_url, phone')
       .eq('id', id)
       .maybeSingle();
 
@@ -6686,9 +6691,16 @@ app.get('/api/ad-redirect/:id', async (req, res) => {
       return res.status(404).json({ error: 'Ad expired' });
     }
 
-    const url = decryptField(data.website_url);
+    let url = decryptField(data.website_url);
+    const phone = decryptField(data.phone);
+
+    // If website_url is invalid, too short (like an ID), or missing, fall back to phone number
+    if (!url || typeof url !== 'string' || url.length < 8) {
+      url = phone;
+    }
+
     if (!url || typeof url !== 'string') {
-      return res.status(404).json({ error: 'Invalid ad URL' });
+      return res.status(404).json({ error: 'Invalid ad URL or phone' });
     }
 
     const redirectUrl = normalizeRedirectUrl(url);
@@ -7181,15 +7193,25 @@ app.get('/api/ad-website-decrypted/:id', async (req, res) => {
       return res.status(400).json({ error: 'Ad ID is required' });
     }
 
-    // جلب الإعلان من جدول publish_ad مع التحقق من الحالة
-    const { data: ad, error: fetchError } = await supabase
+    // جلب الإعلان من جدول publish_ad أولاً
+    let { data: ad, error: fetchError } = await supabase
       .from('publish_ad')
-      .select('id, website_url, is_active, is_paid, payment_status, expires_at')
+      .select('id, website_url, phone, is_active, is_paid, payment_status, expires_at')
       .eq('id', adId)
       .maybeSingle();
 
+    // إذا لم يوجد في publish_ad، جربه في ads_payment
+    if (!ad) {
+      const { data: adPay, error: payErr } = await supabase
+        .from('ads_payment')
+        .select('id, website_url, phone, is_active, is_paid, payment_status, expires_at')
+        .eq('id', adId)
+        .maybeSingle();
+      ad = adPay;
+    }
+
     if (fetchError) {
-      console.error('Error fetching ad from publish_ad:', fetchError);
+      console.error('Error fetching ad for decryption:', fetchError);
       return res.status(500).json({ error: 'Database error' });
     }
 
@@ -7207,10 +7229,22 @@ app.get('/api/ad-website-decrypted/:id', async (req, res) => {
       return res.status(404).json({ error: 'Ad expired' });
     }
 
-    // فك تشفير website_url فقط
-    const decryptedWebsiteUrl = decryptField(ad.website_url);
+    // فك تشفير البيانات
+    let decryptedWebsiteUrl = decryptField(ad.website_url);
+    const decryptedPhone = decryptField(ad.phone);
 
-    return res.json({ success: true, website_url: decryptedWebsiteUrl });
+    // إذا كان رابط الموقع غير صالح أو قصيراً جداً (مثل ID)، نستخدم رقم الهاتف بدلاً منه
+    if (!decryptedWebsiteUrl || typeof decryptedWebsiteUrl !== 'string' || decryptedWebsiteUrl.length < 8) {
+       decryptedWebsiteUrl = decryptedPhone;
+    }
+
+    // إذا كان الناتج رقم هاتف، نقوم بتنسيقه كرابط واتساب
+    let finalUrl = decryptedWebsiteUrl;
+    if (finalUrl && /^\+?[0-9]{8,15}$/.test(finalUrl.trim())) {
+      finalUrl = `https://wa.me/${finalUrl.trim().replace(/\D/g, '')}`;
+    }
+
+    return res.json({ success: true, website_url: finalUrl });
   } catch (err) {
     console.error('Error in /api/ad-website-decrypted/:id:', err);
     return res.status(500).json({ error: 'Server error' });

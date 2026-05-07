@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import axiosInstance from '@/services/axiosInterceptor';
 import { useAuth } from '@/contexts/AuthContext';
-import { Upload, X, Loader2, Star, Zap, MapPin, Clock, Eye, Gift, CalendarDays } from 'lucide-react';
+import { Upload, X, Loader2, Star, Zap, MapPin, Clock, Eye, Gift, CalendarDays, Store, Phone, MapPinned, Smartphone, Database, Palette, FileText, ImagePlus, ChevronRight, ChevronLeft, CheckCircle2, Wallet, ShieldCheck } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 import { useGeolocated } from 'react-geolocated';
@@ -48,6 +48,8 @@ const AddAccessoriesForm: React.FC = () => {
     },
     userDecisionTimeout: 5000,
   });
+  const [currentStep, setCurrentStep] = useState(0);
+  const DRAFT_KEY = 'add-accessory-form-draft-v2';
 
   // Fetch promotion prices
     // Fetch promotion prices
@@ -194,10 +196,48 @@ const AddAccessoriesForm: React.FC = () => {
     store_name: ''
   });
 
+  // استرجاع المسودة المحفوظة تلقائياً
+  useEffect(() => {
+    try {
+      const savedDraft = localStorage.getItem(DRAFT_KEY);
+      if (!savedDraft) return;
+      const parsed = JSON.parse(savedDraft);
+
+      if (parsed?.formData) {
+        setFormData(prev => ({
+          ...prev,
+          ...parsed.formData,
+          contact_methods: {
+            ...prev.contact_methods,
+            ...(parsed.formData.contact_methods || {}),
+          },
+        }));
+      }
+
+      if (typeof parsed?.currentStep === 'number') {
+        setCurrentStep(Math.min(Math.max(parsed.currentStep, 0), 3));
+      }
+    } catch (e) {
+      console.warn('Could not restore accessory form draft', e);
+    }
+  }, []);
+
+  // حفظ تلقائي للمسودة أثناء الإدخال
+  useEffect(() => {
+    const payload = {
+      formData,
+      currentStep,
+      savedAt: Date.now(),
+    };
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(payload));
+  }, [formData, currentStep]);
+
+  const clearDraft = () => localStorage.removeItem(DRAFT_KEY);
+
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length + images.length > 10) {
-      setError('يمكنك رفع 10 صور كحد أقصى');
+      setError(t('max_images_limit_10'));
       return;
     }
 
@@ -228,7 +268,7 @@ const AddAccessoriesForm: React.FC = () => {
 
       // Validate required fields and images before creating
       if (!formData.title || !formData.category || !formData.price || images.length === 0) {
-        setError('الرجاء إكمال جميع الحقول المطلوبة ورفع صورة واحدة على الأقل');
+        setError(t('complete_required_fields_and_upload_image'));
         setLoading(false);
         return;
       }
@@ -317,7 +357,7 @@ const AddAccessoriesForm: React.FC = () => {
             image_url: null
           }
         });
-        if (!bonusResp?.data?.ok) throw new Error(bonusResp?.data?.error || 'فشل خصم البونص');
+        if (!bonusResp?.data?.ok) throw new Error(bonusResp?.data?.error || t('bonus_deduction_failed'));
 
         const remainingBonus = typeof bonusResp?.data?.remainingBonus === 'number'
           ? bonusResp.data.remainingBonus
@@ -357,6 +397,7 @@ const AddAccessoriesForm: React.FC = () => {
       const { error: publishErr2 } = await supabase.from('accessories').update({ status: 'pending' }).eq('id', accessoryData.id);
       if (publishErr2) console.warn('failed to set accessory pending', publishErr2);
 
+      clearDraft();
       navigate('/seller-dashboard');
 
     } catch (err) {
@@ -379,7 +420,7 @@ const AddAccessoriesForm: React.FC = () => {
 
     // Validate required fields and images before creating
     if (!formData.title || !formData.category || !formData.price || images.length === 0) {
-      setError('الرجاء إكمال جميع الحقول المطلوبة ورفع صورة واحدة على الأقل');
+      setError(t('complete_required_fields_and_upload_image'));
       setLoading(false);
       return;
     }
@@ -462,7 +503,7 @@ const AddAccessoriesForm: React.FC = () => {
         }
       });
       if (!bonusResp?.data?.ok) {
-        throw new Error(bonusResp?.data?.error || "فشل خصم البونص أو إنشاء سجل الدفع");
+        throw new Error(bonusResp?.data?.error || t('bonus_deduction_or_payment_record_failed'));
       }
 
       // 3.3. Update the 'type' in the 'accessories' table to 'promotions'
@@ -485,6 +526,7 @@ const AddAccessoriesForm: React.FC = () => {
         description: t('bonus_deducted_for_feature', { amount: promotionPrice.toString() }),
         variant: "default"
       });
+      clearDraft();
       navigate('/seller-dashboard');
 
     } catch (err: any) {
@@ -516,397 +558,283 @@ const AddAccessoriesForm: React.FC = () => {
     }
   };
 
+  const steps = [
+    { title: t('accessory_step_basic'), icon: Store },
+    { title: t('accessory_step_info'), icon: Smartphone },
+    { title: t('accessory_step_description'), icon: FileText },
+    { title: t('accessory_step_images_preview'), icon: ImagePlus },
+  ];
+  const totalSteps = steps.length;
+  const atLastStep = currentStep === totalSteps - 1;
+  const fieldClass =
+    'w-full rounded-2xl border border-blue-300/50 bg-white px-4 py-3 text-sm text-slate-800 shadow-[0_2px_10px_rgba(37,99,235,0.08)] outline-none transition-all duration-300 placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-200/60 focus:shadow-[0_6px_18px_rgba(37,99,235,0.18)]';
+  const cardClass =
+    'rounded-3xl border border-white/70 bg-white/70 backdrop-blur-xl p-5 sm:p-6 shadow-[0_10px_30px_rgba(15,23,42,0.08)] transition-all duration-500';
+  const mapEmbedUrl = coords
+    ? `https://www.openstreetmap.org/export/embed.html?bbox=${coords.longitude - 0.01}%2C${coords.latitude - 0.01}%2C${coords.longitude + 0.01}%2C${coords.latitude + 0.01}&layer=mapnik&marker=${coords.latitude}%2C${coords.longitude}`
+    : '';
+
+  const nextStep = () => {
+    setCurrentStep(prev => Math.min(prev + 1, totalSteps - 1));
+  };
+
+  const prevStep = () => {
+    setCurrentStep(prev => Math.max(prev - 1, 0));
+  };
+
   return (
     <>
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-4xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden">
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-6 sm:p-8">
-          <h1 className="text-2xl sm:text-3xl font-bold text-white">{t('add_new_accessory')}</h1>
-          <p className="mt-2 text-blue-100">{t('add_accessory_easily')}</p>
-        </div>
-        <div className="p-6 sm:p-8">
-
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg mb-6 flex items-start shadow-sm">
-          <X className="h-5 w-5 text-red-500 ml-2 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="font-medium">{t('error_occurred')}</p>
-            <p className="text-sm">{error}</p>
-          </div>
-        </div>
-      )}
-
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* معلومات أساسية */}
-        <div className="mb-8">
-          <div className="flex items-center mb-4">
-            <div className="h-8 w-1 bg-blue-600 rounded-full mr-3"></div>
-            <h2 className="text-xl font-bold text-gray-900">{t('basic_information')}</h2>
-          </div>
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-              <div className="relative">
-                <label className="flex items-center text-sm font-semibold text-gray-700 mb-2">
-                  <svg className="w-5 h-5 ml-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                  </svg>
-                  {t('store_name')}
-                </label>
-                <div className="mt-1 relative rounded-lg shadow-sm overflow-hidden">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <svg className="h-5 w-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                    </svg>
-                  </div>
-                  <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-indigo-600 opacity-10"></div>
-                  <input
-                    type="text"
-                    name="store_name"
-                    value={formData.store_name}
-                    readOnly
-                    className="block w-full pl-10 pr-3 py-4 border-2 border-blue-200 bg-white text-black rounded-lg font-bold text-center text-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-base transition-all"
-                    placeholder={t('fetched_automatically')}
-                    style={{ minHeight: "56px" }}
-                  />
-                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-md">
-                      <svg className="-ml-0.5 mr-1.5 h-2 w-2 text-white" fill="currentColor" viewBox="0 0 8 8">
-                        <circle cx={4} cy={4} r={3} />
-                      </svg>
-                      {t('automatic')}
-                    </span>
-                  </div>
-                </div>
-                <p className="mt-2 text-xs text-gray-500 flex items-center justify-center">
-                  <svg className="w-4 h-4 ml-1 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  {t('store_name_fetched_automatically')}
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  {t('ad_title_required')}
-                </label>
-                <input
-                  type="text"
-                  name="title"
-                  required
-                  value={formData.title}
-                  onChange={handleInputChange}
-                  className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-base p-3 transition-all text-black font-semibold"
-                  placeholder={t('ad_title_placeholder')}
-                />
-              </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                {t('category_required')}
-              </label>
-              <input
-                type="text"
-                name="category"
-                required
-                value={formData.category}
-                onChange={handleInputChange}
-                className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-base p-3 transition-all text-black font-semibold"
-                placeholder={t('category_placeholder')}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                {t('brand_optional')}
-              </label>
-              <input
-                type="text"
-                name="brand"
-                value={formData.brand}
-                onChange={handleInputChange}
-                className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-base p-3 transition-all text-black font-semibold"
-                placeholder={t('brand_placeholder')}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                {t('price_egp_required')}
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <span className="text-gray-500 sm:text-sm">{t('currency_short')}</span>
-                </div>
-                <input
-                  type="number"
-                  name="price"
-                  required
-                  min="0"
-                  value={formData.price}
-                  onChange={handleInputChange}
-                  className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-base p-3 pl-12 transition-all text-black font-semibold"
-                  placeholder={t('price_placeholder')}
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                {t('condition_required')}
-              </label>
-              <select
-                name="condition"
-                required
-                value={formData.condition}
-                onChange={handleInputChange}
-                className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-base p-3 transition-all text-black font-semibold"
-              >
-                <option value="new">{t('new')}</option>
-                <option value="used">{t('used')}</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                {t('warranty_months_label')}
-              </label>
-              <input
-                type="number"
-                name="warranty_months"
-                min="0"
-                value={formData.warranty_months}
-                onChange={handleInputChange}
-                className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-base p-3 transition-all text-black font-semibold"
-                placeholder={t('warranty_placeholder')}
-              />
-            </div>
+      <div dir="rtl" className="min-h-screen bg-[#f4f8ff] px-4 py-5 sm:py-8">
+        <div className="mx-auto w-full max-w-3xl">
+          <div className="mb-5 rounded-3xl border border-white/70 bg-blue-600 p-5 text-white shadow-[0_12px_30px_rgba(37,99,235,0.35)]">
+            <h1 className="text-xl font-bold sm:text-2xl">{t('add_new_accessory')}</h1>
+            <p className="mt-1 text-sm text-blue-100">{t('add_accessory_wizard_subtitle')}</p>
           </div>
 
-            <div className="mt-6 md:col-span-2">
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                {t('description_required')}
-              </label>
-              <textarea
-                name="description"
-                required
-                rows={4}
-                value={formData.description}
-                onChange={handleInputChange}
-                className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-base p-3 transition-all text-black font-semibold"
-                placeholder={t('description_placeholder_accessory')}
-              />
+          <div className="mb-5 rounded-3xl border border-white/70 bg-white/70 p-4 backdrop-blur-xl shadow-[0_8px_24px_rgba(15,23,42,0.07)]">
+            <div className="mb-3 h-1.5 rounded-full bg-slate-200">
+              <div className="h-1.5 rounded-full bg-blue-600 transition-all duration-500" style={{ width: `${(currentStep / (totalSteps - 1)) * 100}%` }} />
             </div>
-          
-        </div>
-
-        {/* التوافق */}
-        <div className="mb-8">
-          <div className="flex items-center mb-4">
-            <div className="h-8 w-1 bg-blue-600 rounded-full mr-3"></div>
-            <h2 className="text-xl font-bold text-gray-900">{t('compatibility')}</h2>
-          </div>
-          <div className="bg-gray-50 rounded-xl p-6 shadow-sm">
-            <div className="grid grid-cols-1 gap-6">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  {t('compatible_devices_optional')}
-                </label>
-                <input
-                  type="text"
-                  name="compatibility"
-                  value={formData.compatibility}
-                  onChange={handleInputChange}
-                  placeholder={t('compatibility_placeholder')}
-                  className="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-base p-3 transition-all text-black font-semibold"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* معلومات الاتصال والموقع */}
-        <div className="mb-8">
-          <div className="flex items-center mb-4">
-            <div className="h-8 w-1 bg-blue-600 rounded-full mr-3"></div>
-            <h2 className="text-xl font-bold text-gray-900">{t('contact_and_location_info')}</h2>
-          </div>
-          <div className="bg-gray-50 rounded-xl p-6 shadow-sm">
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  {t('phone_number')}
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                    <span className="text-gray-500 sm:text-sm">{t('country_code')}</span>
-                  </div>
-                  <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-indigo-600 opacity-10"></div>
-                  <input
-                    type="tel"
-                    name="contact_methods.phone"
-                    value={formData.contact_methods.phone || ''}
-                    readOnly
-                    className="mt-1 block w-full rounded-lg border-2 border-blue-200 bg-white text-black font-bold text-center text-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-base transition-all p-3 pr-12"
-                    placeholder={t('fetched_automatically')}
-                    dir="ltr"
-                    style={{ minHeight: "56px" }}
-                  />
-
-                </div>
-                <p className="mt-2 text-xs text-gray-500 flex items-center justify-center">
-                  <svg className="w-4 h-4 ml-1 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  {t('phone_fetched_automatically')}
-                </p>
-              </div>
-
-
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  {t('city')}
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <svg className="h-5 w-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                  </div>
-                  <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-indigo-600 opacity-10"></div>
-                  <input
-                    type="text"
-                    name="city"
-                    value={formData.city}
-                    readOnly
-                    className="mt-1 block w-full rounded-lg border-2 border-blue-200 bg-white text-black font-bold text-center text-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-base transition-all p-3 pl-10"
-                    placeholder={t('fetched_automatically')}
-                    style={{ minHeight: "56px" }}
-                  />
-                   <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-md">
-                      <svg className="-ml-0.5 mr-1.5 h-2 w-2 text-white" fill="currentColor" viewBox="0 0 8 8">
-                        <circle cx={4} cy={4} r={3} />
-                      </svg>
-                      {t('automatic')}
-                    </span>
-                  </div>
-                </div>
-                 <p className="mt-2 text-xs text-gray-500 flex items-center justify-center">
-                  <svg className="w-4 h-4 ml-1 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                  {t('city_fetched_automatically')}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* الصور */}
-        <div className="mb-8">
-          <div className="flex items-center mb-4">
-            <div className="h-8 w-1 bg-blue-600 rounded-full mr-3"></div>
-            <h2 className="text-xl font-bold text-gray-900">{t('accessory_images')}</h2>
-          </div>
-          <div className="bg-gray-50 rounded-xl p-6 shadow-sm">
-            <div className="mb-4">
-              <p className="text-sm text-gray-600 mb-2">{t('add_high_quality_images_accessory')}</p>
-            </div>
-            
-            {imagesPreviews.length > 0 && (
-              <div className="grid grid-cols-2 gap-4 md:grid-cols-4 mb-6">
-                {imagesPreviews.map((preview, index) => (
-                  <div key={index} className="relative group overflow-hidden rounded-lg shadow-md transition-all hover:shadow-lg">
-                    <div className="aspect-square relative">
-                      <img
-                        src={preview}
-                        alt={`Preview ${index + 1}`}
-                        className="h-full w-full object-cover transition-transform group-hover:scale-105"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => removeImage(index)}
-                        className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1.5 hover:bg-red-600 transition-all opacity-0 group-hover:opacity-100 shadow-lg"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                      {index === 0 && (
-                        <span className="absolute bottom-2 right-2 bg-blue-600 text-white text-xs px-2 py-1 rounded-full shadow-md">
-                          {t('main_image')}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 hover:border-blue-400 transition-colors bg-white">
-              <div className="text-center">
-                <div className="mx-auto h-16 w-16 rounded-full bg-blue-100 flex items-center justify-center mb-4">
-                  <Upload className="h-8 w-8 text-blue-600" />
-                </div>
-                <div className="flex text-sm text-gray-600 justify-center mb-2">
-                  <label
-                    htmlFor="images"
-                    className="relative cursor-pointer font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none"
+            <div className="grid grid-cols-4 gap-2">
+              {steps.map((step, index) => {
+                const Icon = step.icon;
+                const active = index === currentStep;
+                const done = index < currentStep;
+                return (
+                  <button
+                    key={step.title}
+                    type="button"
+                    onClick={() => setCurrentStep(index)}
+                    className={`group rounded-2xl border px-2 py-3 text-center transition-all duration-300 ${
+                      active
+                        ? 'border-blue-500 bg-blue-600 text-white shadow-lg shadow-blue-200'
+                        : done
+                        ? 'border-orange-300 bg-orange-100 text-orange-800 shadow-sm'
+                        : 'border-slate-300 bg-slate-100 text-slate-700'
+                    }`}
                   >
-                    <span>{t('choose_images')}</span>
-                    <input
-                      id="images"
-                      name="images"
-                      type="file"
-                      multiple
-                      accept="image/*"
-                      className="sr-only"
-                      onChange={handleImageChange}
-                      required={images.length === 0}
-                    />
-                  </label>
-                  <span className="mr-1">{t('or_drag_here')}</span>
-                </div>
-                <p className="text-xs text-gray-500">
-                  {t('image_upload_info')}
-                </p>
-              </div>
+                    <div className="mx-auto mb-1 flex h-10 w-10 items-center justify-center rounded-full bg-white/35">
+                      {done ? <CheckCircle2 className="h-5 w-5 text-orange-500" /> : <Icon className={`h-5 w-5 ${active ? 'text-orange-200' : 'text-orange-500'}`} />}
+                    </div>
+                    <p className="text-[10px] font-semibold leading-tight sm:text-[11px]">{step.title}</p>
+                  </button>
+                );
+              })}
             </div>
           </div>
-        </div>
 
-        {/* زر الإرسال */}
-        <div className="flex justify-center items-center mt-4 sm:mt-6 space-x-2 sm:space-x-4 space-x-reverse flex-wrap gap-2">
-          <button
-            type="button"
-            disabled={loading || images.length === 0}
-            className="inline-flex items-center px-4 sm:px-6 py-2 sm:py-2.5 mb-4 border border-transparent text-sm sm:text-base font-semibold rounded-lg sm:rounded-xl shadow-lg text-white bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-600 hover:to-amber-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 disabled:opacity-50 transition-all transform hover:scale-105"
-            onClick={() => setIsFeatureModalOpen(true)} //
-          >
-            {loading ? (
-              <Loader2 className="animate-spin h-5 w-5 ml-2" />
-            ) : (
-              t('feature_ad')
-            )}
-          </button>
+          {error && (
+            <div className="mb-4 flex items-start rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-red-700 shadow-sm">
+              <X className="ml-2 mt-0.5 h-4 w-4 shrink-0" />
+              <p className="text-sm">{error}</p>
+            </div>
+          )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="inline-flex items-center px-4 sm:px-6 py-2 sm:py-2.5 mb-4 border border-transparent text-sm sm:text-base font-semibold rounded-lg sm:rounded-xl shadow-lg text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 transition-all transform hover:scale-105"
-          >
-            {loading ? (
-              <>
-                <Loader2 className="animate-spin h-5 w-5 ml-2" />
-                {t('publishing')}...
-              </>
-            ) : (
-              t('publish_ad_now')
-            )}
-          </button>
-        </div>
-      </form>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className={`${cardClass} ${currentStep === 0 ? 'opacity-100 translate-y-0' : 'hidden opacity-0 -translate-y-1'}`}>
+              <div className="mb-4 flex items-center gap-2 text-slate-800">
+                <Store className="h-5 w-5 text-orange-500" />
+                <h2 className="text-lg font-bold">{`1. ${t('accessory_step_basic')}`}</h2>
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                    <Store className="h-4 w-4 text-orange-500" />
+                    {t('store_name')}
+                  </label>
+                  <input name="store_name" value={formData.store_name} readOnly className={fieldClass} placeholder={t('fetched_automatically')} />
+                </div>
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                    <Phone className="h-4 w-4 text-orange-500" />
+                    {t('phone_number')}
+                  </label>
+                  <div className="relative">
+                    <Phone className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-orange-500" />
+                    <input name="contact_methods.phone" value={formData.contact_methods.phone || ''} readOnly dir="ltr" className={`${fieldClass} pl-10`} placeholder={t('fetched_automatically')} />
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                    <MapPin className="h-4 w-4 text-orange-500" />
+                    {t('city')}
+                  </label>
+                  <input name="city" value={formData.city} readOnly className={fieldClass} placeholder={t('fetched_automatically')} />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                    <MapPinned className="h-4 w-4 text-orange-500" />
+                    {t('store_location_on_map')}
+                  </label>
+                  <div className="overflow-hidden rounded-2xl border border-blue-300/50 bg-white shadow-[0_2px_10px_rgba(37,99,235,0.08)]">
+                    {coords ? (
+                      <iframe title={t('current_location_map')} src={mapEmbedUrl} className="h-48 w-full" loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
+                    ) : (
+                      <div className="flex h-48 items-center justify-center text-sm font-medium text-slate-500">{t('loading_map_location')}</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className={`${cardClass} ${currentStep === 1 ? 'opacity-100 translate-y-0' : 'hidden opacity-0 -translate-y-1'}`}>
+              <div className="mb-4 flex items-center gap-2 text-slate-800">
+                <Smartphone className="h-5 w-5 text-orange-500" />
+                <h2 className="text-lg font-bold">{`2. ${t('accessory_step_info')}`}</h2>
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                    <Database className="h-4 w-4 text-orange-500" />
+                    {t('category_required')}
+                  </label>
+                  <input type="text" name="category" required value={formData.category} onChange={handleInputChange} className={fieldClass} placeholder={t('category_placeholder')} />
+                </div>
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                    <Palette className="h-4 w-4 text-orange-500" />
+                    {t('brand_optional')}
+                  </label>
+                  <input type="text" name="brand" value={formData.brand} onChange={handleInputChange} className={fieldClass} placeholder={t('brand_placeholder')} />
+                </div>
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                    <ShieldCheck className="h-4 w-4 text-orange-500" />
+                    {t('compatible_devices_optional')}
+                  </label>
+                  <input type="text" name="compatibility" value={formData.compatibility} onChange={handleInputChange} className={fieldClass} placeholder={t('compatibility_placeholder')} />
+                </div>
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                    <Wallet className="h-4 w-4 text-orange-500" />
+                    {t('price_egp_required')}
+                  </label>
+                  <input type="number" name="price" required min="0" value={formData.price} onChange={handleInputChange} className={fieldClass} placeholder={t('price_placeholder')} />
+                </div>
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                    <CheckCircle2 className="h-4 w-4 text-orange-500" />
+                    {t('condition_required')}
+                  </label>
+                  <select name="condition" required value={formData.condition} onChange={handleInputChange} className={fieldClass}>
+                    <option value="new">{t('new')}</option>
+                    <option value="used">{t('used')}</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                    <CalendarDays className="h-4 w-4 text-orange-500" />
+                    {t('warranty_months_label')}
+                  </label>
+                  <input type="number" name="warranty_months" min="0" value={formData.warranty_months} onChange={handleInputChange} className={fieldClass} placeholder={t('warranty_placeholder')} />
+                </div>
+              </div>
+            </div>
+
+            <div className={`${cardClass} ${currentStep === 2 ? 'opacity-100 translate-y-0' : 'hidden opacity-0 -translate-y-1'}`}>
+              <div className="mb-4 flex items-center gap-2 text-slate-800">
+                <FileText className="h-5 w-5 text-orange-500" />
+                <h2 className="text-lg font-bold">{`3. ${t('accessory_step_description')}`}</h2>
+              </div>
+              <div className="grid grid-cols-1 gap-4">
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                    <FileText className="h-4 w-4 text-orange-500" />
+                    {t('ad_title_required')}
+                  </label>
+                  <input type="text" name="title" required value={formData.title} onChange={handleInputChange} className={fieldClass} placeholder={t('ad_title_placeholder')} />
+                </div>
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                    <FileText className="h-4 w-4 text-orange-500" />
+                    {t('description_required')}
+                  </label>
+                  <textarea name="description" required rows={4} value={formData.description} onChange={handleInputChange} className={fieldClass} placeholder={t('description_placeholder_accessory')} />
+                </div>
+              </div>
+            </div>
+
+            <div className={`${cardClass} ${currentStep === 3 ? 'opacity-100 translate-y-0' : 'hidden opacity-0 -translate-y-1'}`}>
+              <div className="mb-4 flex items-center gap-2 text-slate-800">
+                <ImagePlus className="h-5 w-5 text-orange-500" />
+                <h2 className="text-lg font-bold">{`4. ${t('accessory_step_images_preview')}`}</h2>
+              </div>
+
+              <div className="mb-4 rounded-2xl border border-dashed border-blue-200 bg-blue-50/50 p-4 text-center">
+                <Upload className="mx-auto mb-2 h-6 w-6 text-orange-500" />
+                <label htmlFor="images" className="cursor-pointer text-sm font-semibold text-blue-700">{t('choose_images')}</label>
+                <input id="images" name="images" type="file" multiple accept="image/*" className="sr-only" onChange={handleImageChange} required={images.length === 0} />
+                <p className="mt-1 text-xs text-slate-500">{t('image_upload_info')}</p>
+              </div>
+
+              {imagesPreviews.length > 0 && (
+                <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {imagesPreviews.map((preview, index) => (
+                    <div key={index} className="group relative overflow-hidden rounded-2xl border border-white/60 bg-white shadow-sm">
+                      <img src={preview} alt={`Preview ${index + 1}`} className="h-28 w-full object-cover transition-transform duration-300 group-hover:scale-105" />
+                      <button type="button" onClick={() => removeImage(index)} className="absolute left-2 top-2 rounded-full bg-black/60 p-1 text-white transition hover:bg-black">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+                <h3 className="mb-3 text-sm font-bold text-slate-800">{t('final_ad_preview')}</h3>
+                <div className="space-y-1 text-sm text-slate-600">
+                  <p><span className="font-semibold text-slate-800">{t('preview_title_label')}:</span> {formData.title || '—'}</p>
+                  <p><span className="font-semibold text-slate-800">{t('preview_store_label')}:</span> {formData.store_name || '—'}</p>
+                  <p><span className="font-semibold text-slate-800">{t('preview_category_label')}:</span> {formData.category || '—'}</p>
+                  <p><span className="font-semibold text-slate-800">{t('preview_price_label')}:</span> {formData.price ? `${formData.price} ${t('currency_short')}` : '—'}</p>
+                  <p><span className="font-semibold text-slate-800">{t('preview_location_label')}:</span> {formData.city || '—'}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between rounded-2xl border border-white/70 bg-white/70 p-3 backdrop-blur-xl shadow-sm">
+              <button
+                type="button"
+                onClick={prevStep}
+                disabled={currentStep === 0}
+                className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <ChevronRight className="h-4 w-4" />
+                {t('previous')}
+              </button>
+
+              {!atLastStep ? (
+                <button
+                  type="button"
+                  onClick={nextStep}
+                  className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-l from-blue-600 to-blue-500 px-5 py-2 text-sm font-bold text-white shadow-[0_10px_20px_rgba(37,99,235,0.35)] transition hover:from-blue-700 hover:to-blue-600"
+                >
+                  {t('next')}
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={loading || images.length === 0}
+                    className="inline-flex items-center rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-orange-200 transition hover:bg-orange-600 disabled:opacity-50"
+                    onClick={() => setIsFeatureModalOpen(true)}
+                  >
+                    {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : t('feature_ad')}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="inline-flex items-center rounded-xl bg-blue-600 px-5 py-2 text-sm font-bold text-white shadow-lg shadow-blue-200 transition hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : t('publish_ad_now')}
+                  </button>
+                </div>
+              )}
+            </div>
+          </form>
         </div>
       </div>
-    </div>
-
     {/* نافذة الترقية عند عدم وجود رصيد بونص كافٍ */}
     {showUpgradePrompt && (
       <div className="fixed inset-0 bg-gray-600/60 backdrop-blur-lg z-[100] flex flex-col items-center justify-center p-4">
@@ -943,7 +871,7 @@ const AddAccessoriesForm: React.FC = () => {
                 <h3 className="font-bold text-lg pt-2">{t('what_you_get')}</h3>
                 <ul className="space-y-3">
                   <li className="flex items-start">
-                    <Star className="w-5 h-5 text-yellow-500 ml-3 flex-shrink-0 mt-0.5" />
+                    <Star className="w-5 h-5 text-orange-500 ml-3 flex-shrink-0 mt-0.5" />
                     <span><span className="font-semibold">{t('ad_at_top')}</span> {t('first_seen_by_buyer')}</span>
                   </li>
                   <li className="flex items-start">
@@ -955,11 +883,11 @@ const AddAccessoriesForm: React.FC = () => {
                     <span><span className="font-semibold">{t('seven_days_validity')}</span> {t('full_week_featured')}</span>
                   </li>
                   <li className="flex items-start">
-                    <Eye className="w-5 h-5 text-green-500 ml-3 flex-shrink-0 mt-0.5" />
+                    <Eye className="w-5 h-5 text-blue-500 ml-3 flex-shrink-0 mt-0.5" />
                     <span><span className="font-semibold">{t('more_views_attention')}</span> {t('attract_serious_buyers')}</span>
                   </li>
                   <li className="flex items-start">
-                    <Zap className="w-5 h-5 text-purple-500 ml-3 flex-shrink-0 mt-0.5" />
+                    <Zap className="w-5 h-5 text-orange-500 ml-3 flex-shrink-0 mt-0.5" />
                     <span><span className="font-semibold">{t('increase_selling_speed')}</span> {t('dont_miss_opportunity')}</span>
                   </li>
                 </ul>
@@ -969,7 +897,7 @@ const AddAccessoriesForm: React.FC = () => {
                 <div className="flex items-center justify-center gap-2">
                   <Gift className="w-5 h-5 text-blue-600" />
                   <span className="text-sm font-medium text-gray-700">{t('current_bonus_balance')}</span>
-                  <span className="text-lg font-bold text-blue-600">{Math.floor(bonusBalance).toLocaleString()} ج.م</span>
+                  <span className="text-lg font-bold text-blue-600">{Math.floor(bonusBalance).toLocaleString()} {t('currency_short')}</span>
                 </div>
               </div>
 
@@ -977,13 +905,13 @@ const AddAccessoriesForm: React.FC = () => {
                 <h3 className="font-bold text-lg">{t('select_feature_duration')}</h3>
                 <div className="grid grid-cols-2 gap-3">
                   {availableDurations.map((days) => (
-                    <label key={days} htmlFor={`promo_${days}`} className={`relative flex flex-col items-center justify-center rounded-lg border-2 p-3 cursor-pointer transition-all ${selectedDuration === days ? 'border-yellow-500 bg-yellow-50 ring-2 ring-yellow-200' : 'border-gray-200 bg-white'}`}>
+                    <label key={days} htmlFor={`promo_${days}`} className={`relative flex flex-col items-center justify-center rounded-lg border-2 p-3 cursor-pointer transition-all ${selectedDuration === days ? 'border-orange-500 bg-orange-50 ring-2 ring-orange-200' : 'border-gray-200 bg-white'}`}>
                       <input type="radio" id={`promo_${days}`} name="promotion_duration" value={days} checked={selectedDuration === days} onChange={(e) => setSelectedDuration(e.target.value)} className="sr-only" />
                       <div className="flex items-center gap-2">
                         <CalendarDays className="w-5 h-5 text-gray-600" />
                         <span className="text-base font-bold text-gray-800">{days} {t('days')}</span>
                       </div>
-                      <span className="text-sm font-semibold text-yellow-600 mt-1">{promotionPrices[days] || 0} ج.م</span>
+                      <span className="text-sm font-semibold text-orange-600 mt-1">{promotionPrices[days] || 0} {t('currency_short')}</span>
                     </label>
                   ))}
                 </div>
@@ -1002,7 +930,7 @@ const AddAccessoriesForm: React.FC = () => {
               <button
                 onClick={handleSubmitAndFeature}
                 disabled={loading}
-                className="w-full inline-flex items-center justify-center px-8 py-4 border border-transparent text-lg font-bold rounded-xl shadow-lg text-white bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-600 hover:to-amber-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 disabled:opacity-50 transition-all transform hover:scale-105"
+                className="w-full inline-flex items-center justify-center px-8 py-4 border border-transparent text-lg font-bold rounded-xl shadow-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 transition-all transform hover:scale-105"
               >
                 {loading ? <Loader2 className="animate-spin h-6 w-6" /> : t('feature_now_with_bonus')}
               </button>

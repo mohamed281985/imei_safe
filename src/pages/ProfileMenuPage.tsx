@@ -77,7 +77,7 @@ const ProfileMenuPage: React.FC = () => {
     const phoneNameRef = useRef(`phone_${Math.random().toString(36).slice(2,9)}`);
     const last6NameRef = useRef(`last6_${Math.random().toString(36).slice(2,9)}`);
     const pwdNameRef = useRef(`pwd_${Math.random().toString(36).slice(2,9)}`);
-    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://imei-safe.me';
+    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? 'https://imei-safe.me' : '');
 
     // derived display for country code input (show leading +)
     const displayedCountryCode = countryCode ? (String(countryCode).startsWith('+') ? String(countryCode) : `+${String(countryCode).replace(/^0+/, '')}`) : '+20';
