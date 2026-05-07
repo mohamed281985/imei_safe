@@ -7173,6 +7173,50 @@ app.get('/api/ad-phone-decrypted/:id', verifyJwtToken, async (req, res) => {
   }
 });
 
+// نقطة نهاية لفك تشفير website_url للإعلانات النشطة المدفوعة (بدون توكن)
+app.get('/api/ad-website-decrypted/:id', async (req, res) => {
+  try {
+    const adId = req.params.id;
+    if (!adId) {
+      return res.status(400).json({ error: 'Ad ID is required' });
+    }
+
+    // جلب الإعلان من جدول publish_ad مع التحقق من الحالة
+    const { data: ad, error: fetchError } = await supabase
+      .from('publish_ad')
+      .select('id, website_url, is_active, is_paid, payment_status, expires_at')
+      .eq('id', adId)
+      .maybeSingle();
+
+    if (fetchError) {
+      console.error('Error fetching ad from publish_ad:', fetchError);
+      return res.status(500).json({ error: 'Database error' });
+    }
+
+    if (!ad) {
+      return res.status(404).json({ error: 'Ad not found' });
+    }
+
+    // التحقق من أن الإعلان نشط ومدفوع
+    if (!ad.is_active || !ad.is_paid || ad.payment_status !== 'paid') {
+      return res.status(404).json({ error: 'Ad not available' });
+    }
+
+    // التحقق من أن الإعلان لم ينتهِ
+    if (ad.expires_at && new Date(ad.expires_at) <= new Date()) {
+      return res.status(404).json({ error: 'Ad expired' });
+    }
+
+    // فك تشفير website_url فقط
+    const decryptedWebsiteUrl = decryptField(ad.website_url);
+
+    return res.json({ success: true, website_url: decryptedWebsiteUrl });
+  } catch (err) {
+    console.error('Error in /api/ad-website-decrypted/:id:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // نقطة نهاية لجلب معلومات الهاتف المقنعة (للإبلاغ عن فقدان)
 app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
   try {
