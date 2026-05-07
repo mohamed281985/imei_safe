@@ -4598,7 +4598,14 @@ app.get('/api/store-phone/:productId', verifyJwtToken, async (req, res) => {
     // إذا لم يُوجد في phones، جلب من accessories
     let phoneNumber = null;
     if (phoneData && !phoneError) {
-      phoneNumber = phoneData.contact_methods?.phone || phoneData.seller_phone;
+      // فك تشفير رقم الهاتف من contact_methods.phone إذا كان موجوداً
+      if (phoneData.contact_methods && phoneData.contact_methods.phone) {
+        phoneNumber = decryptField(phoneData.contact_methods.phone);
+      }
+      // إذا لم يوجد في contact_methods، جرب seller_phone
+      if (!phoneNumber && phoneData.seller_phone) {
+        phoneNumber = decryptField(phoneData.seller_phone);
+      }
     } else {
       const { data: accessoryData, error: accessoryError } = await supabase
         .from('accessories')
@@ -4607,7 +4614,14 @@ app.get('/api/store-phone/:productId', verifyJwtToken, async (req, res) => {
         .maybeSingle();
 
       if (accessoryData && !accessoryError) {
-        phoneNumber = accessoryData.contact_methods?.phone || accessoryData.seller_phone;
+        // فك تشفير رقم الهاتف من contact_methods.phone إذا كان موجوداً
+        if (accessoryData.contact_methods && accessoryData.contact_methods.phone) {
+          phoneNumber = decryptField(accessoryData.contact_methods.phone);
+        }
+        // إذا لم يوجد في contact_methods، جرب seller_phone
+        if (!phoneNumber && accessoryData.seller_phone) {
+          phoneNumber = decryptField(accessoryData.seller_phone);
+        }
       }
     }
 
@@ -4615,8 +4629,8 @@ app.get('/api/store-phone/:productId', verifyJwtToken, async (req, res) => {
       return res.status(404).json({ error: 'Phone number not found' });
     }
 
-    // فك تشفير رقم الهاتف
-    const decryptedPhone = decryptField(phoneNumber);
+    // فك تشفير رقم الهاتف إذا لم يتم فك تشفيره بالفعل
+    const decryptedPhone = typeof phoneNumber === 'string' ? phoneNumber : decryptField(phoneNumber);
     if (!decryptedPhone) {
       return res.status(500).json({ error: 'Failed to decrypt phone number' });
     }
