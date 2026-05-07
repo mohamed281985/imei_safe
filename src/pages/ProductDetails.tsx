@@ -49,18 +49,28 @@ const ProductDetails = () => {
 
     setLoadingPhone(true);
     try {
-      const { data, error } = await supabase
-        .from(product.type === 'phone' ? 'phones' : 'accessories')
-        .select('contact_methods')
-        .eq('id', product.id)
-        .single();
+      // الحصول على التوكن من التخزين
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
 
-      if (error) throw error;
+      if (!token) {
+        alert(t('please_login'));
+        setLoadingPhone(false);
+        return;
+      }
 
-      const phoneNumber = data?.contact_methods?.phone;
-      if (phoneNumber) {
-        const cleanPhone = phoneNumber.replace(/\D/g, '');
-        window.open(`https://wa.me/${cleanPhone}`, '_blank');
+      // الاتصال بنقطة النهاية الجديدة من السيرفر
+      const response = await fetch(`https://imei-safe.me/api/store-phone/${product.id}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const data = await response.json();
+
+      if (data.success && data.phone) {
+        window.open(`https://wa.me/${data.phone}`, '_blank');
       } else {
         alert(t('no_contact_info'));
       }
