@@ -4589,11 +4589,20 @@ app.get('/api/store-phone/:productId', verifyJwtToken, async (req, res) => {
     }
 
     // جلب رقم الهاتف من جدول phones
+    console.log('[store-phone] Looking for product with ID:', productId);
     const { data: phoneData, error: phoneError } = await supabase
       .from('phones')
       .select('contact_methods, seller_phone')
       .eq('id', productId)
       .maybeSingle();
+
+    if (phoneError) {
+      console.error('[store-phone] Error fetching from phones table:', phoneError);
+    } else if (phoneData) {
+      console.log('[store-phone] Found in phones table, contact_methods:', JSON.stringify(phoneData.contact_methods));
+    } else {
+      console.log('[store-phone] Not found in phones table');
+    }
 
     // إذا لم يُوجد في phones، جلب من accessories
     let phoneNumber = null;
@@ -4631,11 +4640,20 @@ app.get('/api/store-phone/:productId', verifyJwtToken, async (req, res) => {
         phoneNumber = decryptField(phoneData.seller_phone);
       }
     } else {
+      console.log('[store-phone] Looking in accessories table for ID:', productId);
       const { data: accessoryData, error: accessoryError } = await supabase
         .from('accessories')
         .select('contact_methods, seller_phone')
         .eq('id', productId)
         .maybeSingle();
+
+      if (accessoryError) {
+        console.error('[store-phone] Error fetching from accessories table:', accessoryError);
+      } else if (accessoryData) {
+        console.log('[store-phone] Found in accessories table, contact_methods:', JSON.stringify(accessoryData.contact_methods));
+      } else {
+        console.log('[store-phone] Not found in accessories table');
+      }
 
       if (accessoryData && !accessoryError) {
         // فك تشفير رقم الهاتف من contact_methods.phone إذا كان موجوداً
@@ -4674,12 +4692,16 @@ app.get('/api/store-phone/:productId', verifyJwtToken, async (req, res) => {
     }
 
     if (!phoneNumber) {
+      console.error('[store-phone] Phone number not found for product ID:', productId);
       return res.status(404).json({ error: 'Phone number not found' });
     }
 
     // فك تشفير رقم الهاتف إذا لم يتم فك تشفيره بالفعل
+    console.log('[store-phone] Phone number before final decryption:', typeof phoneNumber, phoneNumber);
     const decryptedPhone = typeof phoneNumber === 'string' ? phoneNumber : decryptField(phoneNumber);
+    console.log('[store-phone] Phone number after decryption:', decryptedPhone);
     if (!decryptedPhone) {
+      console.error('[store-phone] Failed to decrypt phone number');
       return res.status(500).json({ error: 'Failed to decrypt phone number' });
     }
 
