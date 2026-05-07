@@ -3,6 +3,8 @@ import { useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useLanguage } from '../contexts/LanguageContext';
 import './ProductDetails.css';
+import { FaRegHeart, FaShareAlt, FaWhatsapp, FaRegCheckCircle } from 'react-icons/fa';
+import { MdStorage, MdOutlineMemory, MdLocationOn, MdShield } from 'react-icons/md';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import 'swiper/css';
 import 'swiper/css/navigation';
@@ -156,119 +158,257 @@ const ProductDetails = () => {
     return (a.order || 99) - (b.order || 99);
   });
 
+
+  // RTL & Glassmorphism Container
   return (
-    <div className="product-details-glass-bg">
-      <div className="product-details-card">
-        <Swiper
-          spaceBetween={10}
-          slidesPerView={1}
-          navigation
-          className="product-details-main-swiper"
-          style={{ marginBottom: '16px', width: '100%', maxWidth: '350px', borderRadius: '16px' }}
-        >
-          {sortedImages.map((img, index) => (
-            <SwiperSlide key={index}>
-              <img
-                src={img.image_path}
-                alt={t('phone_image')}
-                style={{ width: '100%', height: '250px', objectFit: 'cover', borderRadius: '16px', boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)' }}
-              />
-            </SwiperSlide>
-          ))}
-        </Swiper>
-
-        <h2 className="product-details-title">{product.title}</h2>
-        <span className="product-details-status">
-          {product.condition === 'used' ? t('used') : t('new')}
-        </span>
-
-        <div style={{display: 'flex', flexDirection: 'column', gap: '16px', alignItems: 'center'}}>
-          <div className="product-details-price" style={{fontSize: '1.5rem', fontWeight: 'bold', textAlign: 'center', margin: '0 auto'}}>
-            {product.price?.toLocaleString('en-US')} {t('currency_short')}
-          </div>
-
-          <div className="product-details-seller" style={{textAlign: 'right', width: '100%'}}>
-            <span style={{fontWeight: 'bold'}}>{t('seller')}:</span> {product.store_name || t('private_seller')}
-          </div>
-
-          {product.type === 'phone' || product.type === 'accessory' ? (
-            <div className="product-details-info">
-              {product.specs?.storage && (
-                <div>
-                  <span>{t('storage')}:</span> {product.specs.storage}
-                </div>
-              )}
-              {product.specs?.ram && (
-                <div>
-                  <span>{t('memory_ram')}:</span> {`RAM ${product.specs.ram} ${t('gb')}`}
-                </div>
-              )}
-              {product.specs?.color && (
-                <div>
-                  <span>{t('color')}:</span> {product.specs.color}
-                </div>
-              )}
-              {product.city && (
-                <div>
-                  <span>{t('city')}:</span> {product.city}
-                </div>
-              )}
-              {product.warranty_months !== undefined && (
-                <div>
-                  <span>{t('warranty_period')}:</span> {product.warranty_months > 0 ? `${product.warranty_months} ${t('warranty_period')}` : t('no_warranty')}
-                </div>
-              )}
-              {product.is_verified && (
-                <div className="text-green-600 font-bold">
-                  <span>{t('status')}:</span> {t('verified')}
-                </div>
-              )}
-              {product.category && (
-                <div>
-                  <span>{t('category')}:</span> {product.category}
-                </div>
-              )}
-              {product.compatibility && (
-                <div>
-                  <span>{t('compatibility')}:</span> {product.compatibility}
-                </div>
-              )}
-            </div>
-          ) : null}
-
-          <div className="product-details-details" style={{margin: '16px 0'}}>
-            <span style={{color: '#222', fontWeight: 'bold', fontSize: '1.15rem', display: 'block', marginBottom: '8px'}}>
-              {t('phone_details')}
-            </span>
-            <div style={{background: 'rgba(67,230,133,0.10)', borderRadius: '10px', padding: '14px', border: '1px solid #43e685', color: '#333', fontSize: '1rem', fontWeight: '500', width: '320px', minHeight: '80px', maxHeight: '200px', overflowY: 'auto', wordWrap: 'break-word'}}>
-              {product.description || t('no_description')}
-            </div>
-          </div>
+    <div dir="rtl" style={{
+      minHeight: '100vh',
+      background: 'linear-gradient(135deg, #F5F9FF 60%, #DFF4FF 100%)',
+      padding: '0',
+      fontFamily: 'Tajawal, Cairo, sans-serif',
+      display: 'flex', justifyContent: 'center', alignItems: 'flex-start',
+      boxSizing: 'border-box'
+    }}>
+      <div style={{
+        width: '100%',
+        maxWidth: 430,
+        margin: '32px 0',
+        borderRadius: 28,
+        background: 'rgba(255,255,255,0.65)',
+        boxShadow: '0 8px 32px 0 rgba(10,132,255,0.10)',
+        padding: '0',
+        overflow: 'hidden',
+        border: '1.5px solid rgba(10,132,255,0.07)'
+      }}>
+        {/* Top Image Slider */}
+        <div style={{
+          padding: 0,
+          background: 'linear-gradient(135deg, #DFF4FF 80%, #F5F9FF 100%)',
+          borderBottomLeftRadius: 32,
+          borderBottomRightRadius: 32,
+          boxShadow: '0 4px 24px 0 rgba(10,132,255,0.10)',
+          position: 'relative',
+        }}>
+          <Swiper
+            spaceBetween={10}
+            slidesPerView={1}
+            navigation
+            style={{ width: '100%', maxWidth: 430, borderRadius: 0 }}
+          >
+            {sortedImages.map((img, index) => (
+              <SwiperSlide key={index}>
+                <img
+                  src={img.image_path}
+                  alt={t('phone_image')}
+                  style={{ width: '100%', height: 270, objectFit: 'contain', borderRadius: 0, boxShadow: '0 4px 24px rgba(10,132,255,0.10)' }}
+                />
+              </SwiperSlide>
+            ))}
+          </Swiper>
+          {/* Favorite Heart Floating Button */}
+          <button style={{
+            position: 'absolute',
+            top: 18,
+            left: 18,
+            zIndex: 2,
+            background: '#fff',
+            border: 'none',
+            borderRadius: '50%',
+            width: 48,
+            height: 48,
+            boxShadow: '0 2px 8px rgba(10,132,255,0.10)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer',
+            transition: 'box-shadow 0.2s'
+          }} aria-label="المفضلة">
+            <FaRegHeart size={26} color="#0A84FF" />
+          </button>
         </div>
 
-        <div style={{display: 'flex', gap: '12px', marginTop: '18px', marginBottom: "18px"}}>
+        {/* Product Info */}
+
+        <div style={{padding: '32px 18px 0 18px'}}>
+          <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', marginBottom: 18, marginTop: 2}}>
+            <h2 style={{
+              fontSize: 32,
+              fontWeight: 900,
+              color: '#181C32',
+              margin: 0,
+              marginBottom: 18,
+              letterSpacing: '-1.2px',
+              lineHeight: 1.18,
+              textShadow: '0 2px 8px rgba(10,132,255,0.07)',
+              textAlign: 'center',
+              width: '100%'
+            }}>{product.title}</h2>
+            {/* عرض الموديل فقط إذا كان معرفاً وصحيحاً */}
+            {product.model && product.model !== 'unknown_model' && (
+              <h4 className="text-base font-medium text-gray-700 truncate leading-tight mb-1 px-2" style={{
+                fontSize: 18,
+                fontWeight: 600,
+                color: '#555',
+                margin: 0,
+                marginBottom: 6,
+                textAlign: 'center',
+                letterSpacing: '-0.5px',
+                lineHeight: 1.2
+              }}>{product.model}</h4>
+            )}
+            <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0, width: '100%'}}>
+              <span style={{
+                fontSize: 16,
+                fontWeight: 700,
+                background: '#E6F7FF',
+                color: '#0A84FF',
+                borderRadius: 18,
+                padding: '4px 22px',
+                letterSpacing: 0.5,
+                boxShadow: '0 1px 4px rgba(10,132,255,0.06)',
+                marginBottom: 7,
+                textAlign: 'center',
+                display: 'inline-block'
+              }}>
+                {product.condition === 'used' ? 'مستعمل' : 'جديد'}
+              </span>
+              <span style={{
+                fontSize: 28,
+                fontWeight: 900,
+                color: '#12B76A',
+                marginBottom: 0,
+                letterSpacing: '-1px',
+                textShadow: '0 2px 8px rgba(18,183,106,0.08)',
+                marginTop: 7,
+                textAlign: 'center',
+                display: 'inline-block'
+              }}>
+                {product.price?.toLocaleString('ar-EG')} <span style={{fontSize: 18, fontWeight: 700, color: '#0A84FF', marginRight: 2}}>ج.م</span>
+              </span>
+            </div>
+          </div>
+
+          {/* Specs Card */}
+          <div style={{
+            background: 'rgba(255,255,255,0.92)',
+            borderRadius: 24,
+            boxShadow: '0 2px 16px 0 rgba(10,132,255,0.08)',
+            padding: '22px 18px 12px 18px',
+            margin: '28px 0 0 0',
+            display: 'flex', flexDirection: 'column', gap: 0,
+            border: '1.5px solid #E6F7FF'
+          }}>
+            <div style={{display: 'flex', alignItems: 'center', gap: 18, marginBottom: 12}}>
+              <div style={{display: 'flex', alignItems: 'center', gap: 7, flex: 1}}>
+                <MdStorage size={22} color="#0A84FF" />
+                <span style={{fontSize: 15, color: '#222', fontWeight: 600}}>{product.specs?.storage || '--'}<span style={{fontSize: 13, color: '#888', marginRight: 3}}> تخزين</span></span>
+              </div>
+              <div style={{width: 1, height: 28, background: '#E6F7FF'}} />
+              <div style={{display: 'flex', alignItems: 'center', gap: 7, flex: 1}}>
+                <MdOutlineMemory size={22} color="#0A84FF" />
+                <span style={{fontSize: 15, color: '#222', fontWeight: 600}}>{product.specs?.ram || '--'}<span style={{fontSize: 13, color: '#888', marginRight: 3}}> رام</span></span>
+              </div>
+            </div>
+            <div style={{display: 'flex', alignItems: 'center', gap: 18, marginBottom: 12}}>
+              <div style={{display: 'flex', alignItems: 'center', gap: 7, flex: 1}}>
+                <MdLocationOn size={22} color="#0A84FF" />
+                <span style={{fontSize: 15, color: '#222', fontWeight: 600}}>{product.city || '--'}</span>
+              </div>
+              <div style={{width: 1, height: 28, background: '#E6F7FF'}} />
+              <div style={{display: 'flex', alignItems: 'center', gap: 7, flex: 1}}>
+                <MdShield size={22} color="#0A84FF" />
+                <span style={{fontSize: 15, color: '#222', fontWeight: 600}}>{product.warranty_months && product.warranty_months > 0 ? `${product.warranty_months} شهر` : 'بدون ضمان'}</span>
+              </div>
+            </div>
+            <div style={{display: 'flex', alignItems: 'center', gap: 7, marginTop: 2}}>
+              <FaRegCheckCircle size={20} color="#12B76A" />
+              <span style={{fontSize: 15, color: '#12B76A', fontWeight: 700}}>موثوق</span>
+            </div>
+          </div>
+
+          {/* Details Section */}
+          <div style={{margin: '38px 0 0 0'}}>
+            <div style={{
+              fontSize: 20,
+              fontWeight: 900,
+              color: '#0A84FF',
+              marginBottom: 14,
+              letterSpacing: '-0.5px',
+              textShadow: '0 1px 4px rgba(10,132,255,0.07)'
+            }}>تفاصيل إضافية</div>
+            <div style={{
+              background: 'rgba(251, 251, 252, 1)',
+              border: '1.5px solid #E6F7FF',
+              borderRadius: 20,
+              padding: '22px 18px',
+              color: '#0e0d0dff',
+              fontSize: 17,
+              fontWeight: 600,
+              minHeight: 80,
+              maxHeight: 200,
+              overflowY: 'auto',
+              wordWrap: 'break-word',
+              lineHeight: 2.1,
+              boxShadow: '0 4px 24px rgba(241, 241, 243, 0.9), 0 1.5px 8px rgba(10,132,255,0.04)'
+            }}>
+              {product.description || 'لا توجد تفاصيل إضافية'}
+            </div>
+          </div>
+
+          {/* Bottom Actions */}
+          <div style={{display: 'flex', gap: 12, margin: '38px 0 24px 0', alignItems: 'center', justifyContent: 'center'}}>
             <button
               onClick={handleContactNow}
               disabled={loadingPhone}
               style={{
-                background: loadingPhone ? '#999' : '#0F9D58',
+                flex: 1,
+                background: loadingPhone ? '#A7EFC5' : 'linear-gradient(90deg, #12B76A 60%, #43e685 100%)',
                 color: '#fff',
                 border: 'none',
-                borderRadius: '12px',
-                padding: '12px 28px',
-                fontSize: '1.1rem',
-                fontWeight: 'bold',
+                borderRadius: 18,
+                padding: '12px 0',
+                fontSize: 20,
+                fontWeight: 800,
                 display: 'flex',
                 alignItems: 'center',
-                gap: '8px',
+                justifyContent: 'center',
+                gap: 12,
                 cursor: loadingPhone ? 'not-allowed' : 'pointer',
-                boxShadow: '0 2px 8px rgba(37,211,102,0.15)'
+                boxShadow: '0 2px 12px rgba(18,183,106,0.10)',
+                transition: 'background 0.2s'
               }}
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 32 32" fill="currentColor"><path d="M16 3C9.373 3 4 8.373 4 15c0 2.637.86 5.09 2.484 7.16L4 29l7.09-2.484A12.94 12.94 0 0 0 16 27c6.627 0 12-5.373 12-12S22.627 3 16 3zm0 22c-2.13 0-4.21-.627-5.98-1.813l-.426-.267-4.21 1.477 1.44-4.13-.277-.44C6.627 19.21 6 17.13 6 15c0-5.523 4.477-10 10-10s10 4.477 10 10-4.477 10-10 10zm5.09-7.09c-.277-.14-1.64-.813-1.893-.91-.253-.093-.437-.14-.62.14-.183.28-.71.91-.87 1.1-.16.187-.32.21-.597.07-.277-.14-1.17-.43-2.23-1.37-.823-.733-1.38-1.64-1.54-1.917-.16-.28-.017-.43.12-.57.123-.12.28-.32.42-.48.14-.16.187-.28.28-.467.093-.187.047-.35-.023-.49-.07-.14-.62-1.497-.85-2.05-.223-.537-.45-.463-.62-.47-.16-.007-.35-.01-.54-.01-.187 0-.49.07-.75.35-.26.28-.99.97-.99 2.37s1.015 2.75 1.157 2.94c.14.187 2 3.06 4.85 4.17.68.293 1.21.467 1.62.597.68.217 1.3.187 1.79.113.547-.08 1.64-.67 1.87-1.32.23-.65.23-1.21.16-1.32-.07-.11-.253-.18-.53-.32z"/></svg>
-              {loadingPhone ? t('loading') : t('contact_now')}
+              <FaWhatsapp size={26} color="#fff" />
+              {loadingPhone ? t('loading') : 'اتصل الآن'}
+            </button>
+            <button
+              style={{
+                background: '#fff',
+                border: 'none',
+                borderRadius: 14,
+                width: 54,
+                height: 54,
+                boxShadow: '0 2px 8px rgba(10,132,255,0.10)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer',
+                fontWeight: 700,
+                fontSize: 15,
+                gap: 7
+              }}
+              onClick={() => {
+                if (navigator.share) {
+                  navigator.share({
+                    title: product.title,
+                    url: window.location.href
+                  });
+                } else {
+                  window.prompt('انسخ الرابط:', window.location.href);
+                }
+              }}
+              aria-label="مشاركة"
+            >
+              <FaShareAlt size={22} color="#0A84FF" />
             </button>
           </div>
+        </div>
       </div>
     </div>
   );

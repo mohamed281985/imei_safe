@@ -92,9 +92,35 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
       .eq('payment_status', 'paid') // التأكد من أن الدفع مكتمل
       .order('upload_date', { ascending: false });
 
+    // فك تشفير website_url لكل إعلان
+    const decryptedAds = data ? await Promise.all(
+      data.map(async (ad) => {
+        let decryptedWebsiteUrl = ad.website_url;
+
+        // إذا كان website_url مشفر، حاول فك تشفيره
+        if (ad.website_url && typeof ad.website_url === 'string' && 
+            (ad.website_url.includes('{') || ad.website_url.includes('encryptedData'))) {
+          try {
+            const response = await fetch(`${API_BASE_URL}/api/ad-website-decrypted/${ad.id}`);
+            const result = await response.json();
+            if (result.success && result.website_url) {
+              decryptedWebsiteUrl = result.website_url;
+            }
+          } catch (error) {
+            console.error('Error decrypting website_url:', error);
+          }
+        }
+
+        return {
+          ...ad,
+          website_url: decryptedWebsiteUrl
+        };
+      })
+    ) : [];
+
     // فلترة إضافية للتأكد من عدم عرض الإعلانات المنتهية
     const now = new Date();
-    const activeAds = data ? data.filter(ad => ad.expires_at && new Date(ad.expires_at) > now) : [];
+    const activeAds = decryptedAds ? decryptedAds.filter(ad => ad.expires_at && new Date(ad.expires_at) > now) : [];
 
     if (!activeAds || activeAds.length === 0) {
       setShowLocalAd(true);
@@ -179,28 +205,19 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
     return () => clearInterval(timer);
   }, [ads.length]);
 
-  const openAdRedirect = async (id: number) => {
-    const baseUrl = API_BASE_URL.replace(/\/+$/, '');
-    const apiUrl = `${baseUrl}/api/ad-redirect/${id}`;
-
-    try {
-      const response = await fetch(apiUrl, { method: 'GET', redirect: 'follow' });
-      const finalUrl = response.url || apiUrl;
-
-      const browserPlugin = (window as any)?.Capacitor?.Plugins?.Browser;
-      if (browserPlugin?.openExternal) {
-        await browserPlugin.openExternal({ url: finalUrl });
-        return;
-      }
-      if (browserPlugin?.open) {
-        await browserPlugin.open({ url: finalUrl, toolbarColor: '#000000' });
-        return;
-      }
-      window.open(finalUrl, '_blank', 'noopener,noreferrer');
-    } catch (error) {
-      console.error('Failed to fetch/open ad redirect URL:', error);
-      window.open(apiUrl, '_blank', 'noopener,noreferrer');
+  const openAdRedirect = async (ad: publish_ad) => {
+    // استخدام website_url مباشرة إذا كان موجوداً
+    if (ad.website_url) {
+      window.open(ad.website_url, '_blank', 'noopener,noreferrer');
+      return;
     }
+
+    // إذا لم يكن website_url موجوداً، استخدام API redirect
+    const baseUrl = API_BASE_URL.replace(/\/+$/, '');
+    const apiUrl = `${baseUrl}/api/ad-redirect/${ad.id}`;
+
+    // فتح الرابط مباشرة دون استخدام fetch لتجنب مشاكل CORS
+    window.open(apiUrl, '_blank', 'noopener,noreferrer');
   };
 
   if (showLocalAd) {
@@ -220,19 +237,12 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
         <>
           <div className="rounded-lg overflow-hidden shadow-md w-full aspect-video relative bg-gray-100 mb-3">
             {ads[currentAdIndex]?.website_url ? (
-              <a
-                href={`${API_BASE_URL}/api/ad-redirect/${ads[currentAdIndex].id}`}
-                title={t('click_to_visit_ad_link')}
-                className="block w-full h-full relative"
-                onClick={(e) => {
-                  e.preventDefault();
-                  openAdRedirect(ads[currentAdIndex].id);
-                }}
-              >
+              <>
                 <img
                   src={ads[currentAdIndex]?.image_url}
                   alt={t('advertisement')}
                   className="w-full h-full object-cover absolute inset-0 cursor-pointer"
+                  onClick={() => openAdRedirect(ads[currentAdIndex])}
                 />
                 <div
                   className="absolute bottom-2 left-2 bg-orange-500 text-black text-xs font-bold px-3 py-1 rounded shadow-lg z-20"
@@ -240,7 +250,7 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
                 >
                   {t('click_to_contact')}
                 </div>
-              </a>
+              </>
             ) : (
               <img
                 src={ads[currentAdIndex]?.image_url}

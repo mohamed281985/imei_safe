@@ -341,9 +341,11 @@ const PhonesForSale: React.FC = () => {
                     <h3 className="text-lg font-bold text-gray-800 truncate leading-tight mb-0.5 px-2">
                       {brand}
                     </h3>
-                    <h4 className="text-base font-medium text-gray-700 truncate leading-tight mb-1 px-2">
-                      {model}
-                    </h4>
+                    {model && model !== 'unknown_model' && (
+                      <h4 className="text-base font-medium text-gray-700 truncate leading-tight mb-1 px-2">
+                        {model}
+                      </h4>
+                    )}
 
                     {/* Specs Line */}
                     <div className="flex items-center gap-1.5 text-xs text-gray-500 truncate font-bold">
