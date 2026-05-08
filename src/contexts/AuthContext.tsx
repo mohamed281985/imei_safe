@@ -54,6 +54,49 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [lastActivity, setLastActivity] = useState<number>(Date.now());
   const { t } = useTranslation();
 
+  // دالة مساعدة لتحديث توكن البصمة في SecureStorage
+  const updateBiometricToken = useCallback(async (refreshToken: string | undefined) => {
+    if (!refreshToken || !(window as any).SecureStorage) return;
+
+    try {
+      const ss = new (window as any).SecureStorage(
+        () => { console.log('SecureStorage: Instance created for update.'); },
+        (error: any) => { console.error('SecureStorage: Instance creation failed for update:', error); },
+        'my_app_storage'
+      );
+      ss.set(
+        () => { console.log('SecureStorage: Biometric token updated successfully.'); },
+        (error: any) => { console.error('SecureStorage: Failed to update biometric token.', error); },
+        'biometricAuthToken',
+        refreshToken
+      );
+    } catch (e) {
+      console.warn('Exception while updating biometric token:', e);
+    }
+  }, []);
+
+  // إضافة مستمع لتغيرات حالة المصادقة للحفاظ على مزامنة توكن البصمة
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log(`Supabase Auth Event: ${event}`);
+      
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        if (session?.refresh_token) {
+          await updateBiometricToken(session.refresh_token);
+        }
+      }
+      
+      if (event === 'SIGNED_OUT') {
+        // لا نحذف التوكن عند الخروج للسماح بالدخول بالبصمة لاحقاً
+        // إلا إذا كان المستخدم قد اختار صراحةً إلغاء تفعيل البصمة (يتم ذلك في ProfileMenuPage)
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [updateBiometricToken]);
+
   // دالة لتحديث عدد الإشعارات غير المقروؤة
   const refreshNotifications = useCallback(async () => {
     if (user) {
@@ -114,16 +157,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsFirstLogin(false); // ⭐ إعادة تعيين الحالة عند الخروج
     setLastActivity(Date.now());
 
-    // إذا كان هناك توكن بصمة مفعل، لا نريد إبطال التوكن على الخادم لأن ذلك سيمنع البصمة من العمل بعد الخروج.
+    // إذا كان هناك توكن بصمة مفعل، نقوم بتسجيل الخروج محلياً فقط للحفاظ على صلاحية التوكن على السيرفر.
     const biometricStored = await isBiometricTokenStored();
-    if (!biometricStored) {
-      try {
+    try {
+      if (biometricStored) {
+        // خروج محلي فقط: يمسح الجلسة من ذاكرة التطبيق ولكنه لا يبطل التوكن في السيرفر.
+        await supabase.auth.signOut({ scope: 'local' });
+        console.log('Biometric token present; performed local-only signOut.');
+      } else {
+        // خروج كامل: يبطل الجلسة في السيرفر ويمسحها محلياً.
         await supabase.auth.signOut();
-      } catch (err) {
-        console.error('Supabase signOut failed:', err);
+        console.log('No biometric token; performed full global signOut.');
       }
-    } else {
-      console.log('Biometric token present; skipping Supabase signOut to preserve biometric login.');
+    } catch (err) {
+      console.error('Supabase signOut failed:', err);
     }
   }, []); // الاعتماديات فارغة لأن دوال الحالة (setters) مستقرة
 
@@ -346,44 +393,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           module.registerFCMToken();
         });
 
-        // يتم إضافة تأخير بسيط لضمان أن كائن الجلسة من Supabase قد تم تحديثه بالكامل وأصبح متاحًا قبل محاولة قراءة refresh_token منه.
-        setTimeout(async () => {
-          // حفظ التوكن في SecureStorage بعد تسجيل الدخول العادي
-          try {
-            // يتم استخدام SecureStorage بدلاً من localStorage لأنه يوفر تخزيناً آمناً ومشفراً
-            // على مستوى نظام التشغيل (Keychain في iOS و Keystore في Android)،
-            // وهو أمر ضروري لحفظ رموز المصادقة الحساسة.
-            if ((window as any).SecureStorage) {
-              const { data: { session } } = await supabase.auth.getSession();
-              const refreshToken = session?.refresh_token;
-              if (refreshToken) {
-                const ss = new (window as any).SecureStorage(
-                  () => { console.log('SecureStorage: Instance created for SET.'); },
-                  (error: any) => {
-                    console.error('SecureStorage: Instance creation failed for SET:', error);
-                  },
-                  'my_app_storage'
-                );
-                ss.set(
-                  () => {
-                    console.log('SecureStorage: Refresh token set successfully.');
-                    toast({ title: 'تمكين البصمة', description: 'تم تفعيل تسجيل الدخول بالبصمة بنجاح. يمكنك الآن استخدامه بعد إغلاق التطبيق.' });
-                  },
-                  (setError: any) => {
-                    console.error('SecureStorage: Failed to set token.', setError);
-                    toast({ title: 'خطأ في تفعيل البصمة', description: 'فشل حفظ بيانات الدخول بالبصمة. قد تحتاج إلى إعداد قفل شاشة على جهازك.', variant: 'destructive', duration: 7000 });
-                  },
-                  'biometricAuthToken',
-                  refreshToken
-                );
-              }
-            }
-          } catch (e) {
-            console.warn('An exception occurred while trying to use SecureStorage for biometric token:', e);
-          }
-        }, 500); // 500 مللي ثانية (نصف ثانية) تأخير
-        
-        // لا حاجة لتخزين المستخدم في localStorage لأن Supabase يدير الجلسة
+        // تم نقل منطق حفظ التوكن إلى مستمع onAuthStateChange لضمان التحديث المستمر
         
         toast({
           title: 'تم تسجيل الدخول بنجاح',
@@ -555,22 +565,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return false;
       }
 
-      // 2. [مهم] تحديث الـ refresh_token في SecureStorage للاستخدام المستقبلي
-      // عند تحديث الجلسة، يصدر Supabase رمزًا جديدًا. يجب حفظه ليتمكن المستخدم من تسجيل الدخول بالبصمة مرة أخرى.
-      const newRefreshToken = sessionData.session?.refresh_token;
-      if (newRefreshToken && (window as any).SecureStorage) {
-        try {
-          const ss = new (window as any).SecureStorage(() => {}, () => {}, 'my_app_storage');
-          ss.set(
-            () => { console.log('SecureStorage: Refreshed biometric token updated successfully.'); },
-            (setError: any) => { console.error('SecureStorage: Failed to update refreshed token.', setError); },
-            'biometricAuthToken',
-            newRefreshToken
-          );
-        } catch (e) {
-          console.warn('Could not update the biometric token in SecureStorage after refresh.', e);
-        }
-      }
+      // 2. [مهم] تم نقل تحديث الـ refresh_token إلى مستمع onAuthStateChange
+      // عند تحديث الجلسة، يصدر Supabase رمزًا جديدًا. يتم حفظه تلقائيًا الآن.
 
       // 3. جلب بيانات المستخدم من الجلسة النشطة الآن
       const session = sessionData.session;
