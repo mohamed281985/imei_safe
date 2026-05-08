@@ -3614,15 +3614,22 @@ app.post('/paymob/publish-from-bonus', paymentLimiter, rateLimitMiddleware({ win
     try {
       const { error: updateErr } = await supabase
         .from('ads_payment')
-        .update({ bonus_offer: newBonusValue, payment_date: new Date().toISOString(), is_paid: true, payment_status: 'paid', transaction: 'bonus_add', Actual_bonus: lastBonus.bonus_offer })
+        .update({ 
+          bonus_offer: newBonusValue, 
+          payment_date: new Date().toISOString(), 
+          is_paid: true, 
+          payment_status: 'paid', 
+          transaction: 'bonus_add', 
+          Actual_bonus: lastBonus.bonus_offer 
+        })
         .eq('id', lastBonus.id);
       if (updateErr) {
         console.error('Failed to update bonus row:', updateErr);
-        return res.status(500).json({ error: 'Could not deduct bonus' });
+        return res.status(500).json({ error: 'Could not deduct bonus', details: updateErr.message });
       }
     } catch (e) {
       console.error('Exception updating bonus row:', e);
-      return res.status(500).json({ error: 'Server error' });
+      return res.status(500).json({ error: 'Server error during bonus deduction' });
     }
 
     // تشفير الحقول الحساسة قبل حفظ الإعلان في ads_payment
@@ -3636,28 +3643,47 @@ app.post('/paymob/publish-from-bonus', paymentLimiter, rateLimitMiddleware({ win
 
     // Insert ad as paid using bonus
     try {
+      const durationDays = Number(adData.duration_days || 0);
       const adInsert = {
-        ...adDataToStore,
+        store_name: adDataToStore.store_name || null,
+        image_url: adDataToStore.image_url || null,
+        whatsapp: adDataToStore.whatsapp || false,
+        duration_days: durationDays,
+        latitude: adDataToStore.latitude || null,
+        longitude: adDataToStore.longitude || null,
+        phone: adDataToStore.phone || null,
+        website_url: adDataToStore.website_url || null,
         user_id: userId,
         is_paid: true,
+        is_active: true,
         payment_status: 'paid',
         transaction: 'ad_payment',
         amount: expectedAmount,
+        type: adData.type || 'publish',
         upload_date: new Date().toISOString(),
-        expires_at: (() => { const d = new Date(); d.setDate(d.getDate() + (adData.duration_days || 0)); return d.toISOString(); })(),
+        expires_at: (() => { 
+          const d = new Date(); 
+          d.setDate(d.getDate() + durationDays); 
+          return d.toISOString(); 
+        })(),
       };
+
       const { data: insertedAd, error: insertAdError } = await supabase
         .from('ads_payment')
         .insert([adInsert])
         .select('id')
         .single();
+
       if (insertAdError) {
         console.error('Error inserting ad using bonus:', insertAdError);
-        // attempt to revert bonus update? Log and return error
-        return res.status(500).json({ error: 'Failed to create ad' });
+        return res.status(500).json({ error: 'Failed to create ad in ads_payment', details: insertAdError.message });
       }
 
-      // Informational: trigger server-side event (no window in backend) by updating a small field or returning info
+      if (!insertedAd) {
+        console.error('No data returned after ad insertion');
+        return res.status(500).json({ error: 'Failed to retrieve inserted ad ID' });
+      }
+
       console.log(`Ad published using bonus for user ${userId}, ad id: ${insertedAd.id}`);
         // Also insert into `publish_ad` table if it exists (best-effort)
         try {
@@ -3667,8 +3693,8 @@ app.post('/paymob/publish-from-bonus', paymentLimiter, rateLimitMiddleware({ win
             user_id: userId,
             store_name: adInsert.store_name || null,
             image_url: adInsert.image_url || null,
-            website_url: adInsert.website_url ? encryptFieldForStorage(adInsert.website_url) : null,
-            phone: adInsert.phone ? encryptFieldForStorage(adInsert.phone) : null,
+            website_url: adInsert.website_url,
+            phone: adInsert.phone,
             latitude: adInsert.latitude || null,
             longitude: adInsert.longitude || null,
             duration_days: adInsert.duration_days || null,
@@ -3680,11 +3706,9 @@ app.post('/paymob/publish-from-bonus', paymentLimiter, rateLimitMiddleware({ win
           };
           const { data: pubData, error: pubErr } = await supabase.from('publish_ad').insert(publishRow).select().maybeSingle();
           if (pubErr) {
-            try { console.warn('publish_ad insert skipped or failed (table may not exist or RLS/constraint):', JSON.stringify(pubErr)); } catch (_) { console.warn('publish_ad insert error (non-serializable):', pubErr); }
-            try { console.warn('Attempted publish_ad row:', JSON.stringify(publishRow)); } catch (_) { console.warn('Attempted publish_ad row (non-serializable)'); }
+            console.warn('publish_ad insert failed:', pubErr);
           } else {
-            console.log('Inserted row into publish_ad:', pubData && pubData.id ? pubData.id : '<no-id>');
-            try { console.log('publish_ad returned row:', JSON.stringify(pubData)); } catch (_) {}
+            console.log('Inserted row into publish_ad:', pubData?.id || '<no-id>');
           }
         } catch (e) {
           console.warn('Exception while inserting into publish_ad (ignored):', e?.message || e);
@@ -3692,7 +3716,7 @@ app.post('/paymob/publish-from-bonus', paymentLimiter, rateLimitMiddleware({ win
       return res.json({ ok: true, adId: insertedAd.id, deducted: expectedAmount, remainingBonus: newBonusValue });
     } catch (e) {
       console.error('Exception inserting ad using bonus:', e);
-      return res.status(500).json({ error: 'Server error' });
+      return res.status(500).json({ error: 'Server error during ad insertion', details: e.message });
     }
   } catch (e) {
     console.error('Error in /paymob/publish-from-bonus:', e);
