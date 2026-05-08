@@ -3614,22 +3614,15 @@ app.post('/paymob/publish-from-bonus', paymentLimiter, rateLimitMiddleware({ win
     try {
       const { error: updateErr } = await supabase
         .from('ads_payment')
-        .update({ 
-          bonus_offer: newBonusValue, 
-          payment_date: new Date().toISOString(), 
-          is_paid: true, 
-          payment_status: 'paid', 
-          transaction: 'bonus_add', 
-          Actual_bonus: lastBonus.bonus_offer 
-        })
+        .update({ bonus_offer: newBonusValue, payment_date: new Date().toISOString(), is_paid: true, payment_status: 'paid', transaction: 'bonus_add', Actual_bonus: lastBonus.bonus_offer })
         .eq('id', lastBonus.id);
       if (updateErr) {
         console.error('Failed to update bonus row:', updateErr);
-        return res.status(500).json({ error: 'Could not deduct bonus', details: updateErr.message });
+        return res.status(500).json({ error: 'Could not deduct bonus' });
       }
     } catch (e) {
       console.error('Exception updating bonus row:', e);
-      return res.status(500).json({ error: 'Server error during bonus deduction' });
+      return res.status(500).json({ error: 'Server error' });
     }
 
     // تشفير الحقول الحساسة قبل حفظ الإعلان في ads_payment
@@ -3643,47 +3636,28 @@ app.post('/paymob/publish-from-bonus', paymentLimiter, rateLimitMiddleware({ win
 
     // Insert ad as paid using bonus
     try {
-      const durationDays = Number(adData.duration_days || 0);
       const adInsert = {
-        store_name: adDataToStore.store_name || null,
-        image_url: adDataToStore.image_url || null,
-        whatsapp: adDataToStore.whatsapp || false,
-        duration_days: durationDays,
-        latitude: adDataToStore.latitude || null,
-        longitude: adDataToStore.longitude || null,
-        phone: adDataToStore.phone || null,
-        website_url: adDataToStore.website_url || null,
+        ...adDataToStore,
         user_id: userId,
         is_paid: true,
-        is_active: true,
         payment_status: 'paid',
         transaction: 'ad_payment',
         amount: expectedAmount,
-        type: adData.type || 'publish',
         upload_date: new Date().toISOString(),
-        expires_at: (() => { 
-          const d = new Date(); 
-          d.setDate(d.getDate() + durationDays); 
-          return d.toISOString(); 
-        })(),
+        expires_at: (() => { const d = new Date(); d.setDate(d.getDate() + (adData.duration_days || 0)); return d.toISOString(); })(),
       };
-
       const { data: insertedAd, error: insertAdError } = await supabase
         .from('ads_payment')
         .insert([adInsert])
         .select('id')
         .single();
-
       if (insertAdError) {
         console.error('Error inserting ad using bonus:', insertAdError);
-        return res.status(500).json({ error: 'Failed to create ad in ads_payment', details: insertAdError.message });
+        // attempt to revert bonus update? Log and return error
+        return res.status(500).json({ error: 'Failed to create ad' });
       }
 
-      if (!insertedAd) {
-        console.error('No data returned after ad insertion');
-        return res.status(500).json({ error: 'Failed to retrieve inserted ad ID' });
-      }
-
+      // Informational: trigger server-side event (no window in backend) by updating a small field or returning info
       console.log(`Ad published using bonus for user ${userId}, ad id: ${insertedAd.id}`);
         // Also insert into `publish_ad` table if it exists (best-effort)
         try {
@@ -3693,8 +3667,8 @@ app.post('/paymob/publish-from-bonus', paymentLimiter, rateLimitMiddleware({ win
             user_id: userId,
             store_name: adInsert.store_name || null,
             image_url: adInsert.image_url || null,
-            website_url: adInsert.website_url,
-            phone: adInsert.phone,
+            website_url: adInsert.website_url ? encryptFieldForStorage(adInsert.website_url) : null,
+            phone: adInsert.phone ? encryptFieldForStorage(adInsert.phone) : null,
             latitude: adInsert.latitude || null,
             longitude: adInsert.longitude || null,
             duration_days: adInsert.duration_days || null,
@@ -3706,9 +3680,11 @@ app.post('/paymob/publish-from-bonus', paymentLimiter, rateLimitMiddleware({ win
           };
           const { data: pubData, error: pubErr } = await supabase.from('publish_ad').insert(publishRow).select().maybeSingle();
           if (pubErr) {
-            console.warn('publish_ad insert failed:', pubErr);
+            try { console.warn('publish_ad insert skipped or failed (table may not exist or RLS/constraint):', JSON.stringify(pubErr)); } catch (_) { console.warn('publish_ad insert error (non-serializable):', pubErr); }
+            try { console.warn('Attempted publish_ad row:', JSON.stringify(publishRow)); } catch (_) { console.warn('Attempted publish_ad row (non-serializable)'); }
           } else {
-            console.log('Inserted row into publish_ad:', pubData?.id || '<no-id>');
+            console.log('Inserted row into publish_ad:', pubData && pubData.id ? pubData.id : '<no-id>');
+            try { console.log('publish_ad returned row:', JSON.stringify(pubData)); } catch (_) {}
           }
         } catch (e) {
           console.warn('Exception while inserting into publish_ad (ignored):', e?.message || e);
@@ -3716,7 +3692,7 @@ app.post('/paymob/publish-from-bonus', paymentLimiter, rateLimitMiddleware({ win
       return res.json({ ok: true, adId: insertedAd.id, deducted: expectedAmount, remainingBonus: newBonusValue });
     } catch (e) {
       console.error('Exception inserting ad using bonus:', e);
-      return res.status(500).json({ error: 'Server error during ad insertion', details: e.message });
+      return res.status(500).json({ error: 'Server error' });
     }
   } catch (e) {
     console.error('Error in /paymob/publish-from-bonus:', e);
@@ -6699,7 +6675,7 @@ app.get('/api/ad-redirect/:id', async (req, res) => {
 
     const { data, error } = await supabase
       .from('ads_payment')
-      .select('id, type, is_active, is_paid, payment_status, expires_at, website_url, phone, whatsapp')
+      .select('id, type, is_active, is_paid, payment_status, expires_at, website_url, phone')
       .eq('id', id)
       .maybeSingle();
 
@@ -6718,22 +6694,9 @@ app.get('/api/ad-redirect/:id', async (req, res) => {
     let url = decryptField(data.website_url);
     const phone = decryptField(data.phone);
 
-    // منطق التفضيل: إذا كان whatsapp مفعل، نستخدم رقم الهاتف مباشرة لفتح الواتساب
-    if (data.whatsapp) {
-      if (phone) {
-        url = phone;
-      }
-    } else {
-      // منطق التفضيل القديم: إذا كان الرابط هو رابط QR للواتساب أو رابط غير مباشر، نفضل استخدام رقم الهاتف مباشرة
-      const isIndirectWhatsapp = url && typeof url === 'string' && 
-                                 (url.includes('api.whatsapp.com/qr') || 
-                                  url.includes('wa.me/qr') ||
-                                  url.includes('chat.whatsapp.com'));
-
-      // If website_url is invalid, too short (like an ID), missing, or indirect whatsapp, fall back to phone number
-      if (!url || typeof url !== 'string' || url.length < 8 || isIndirectWhatsapp) {
-        url = phone;
-      }
+    // If website_url is invalid, too short (like an ID), or missing, fall back to phone number
+    if (!url || typeof url !== 'string' || url.length < 8) {
+      url = phone;
     }
 
     if (!url || typeof url !== 'string') {
@@ -7233,7 +7196,7 @@ app.get('/api/ad-website-decrypted/:id', async (req, res) => {
     // جلب الإعلان من جدول publish_ad أولاً
     let { data: ad, error: fetchError } = await supabase
       .from('publish_ad')
-      .select('id, website_url, phone, is_active, is_paid, payment_status, expires_at, whatsapp')
+      .select('id, website_url, phone, is_active, is_paid, payment_status, expires_at')
       .eq('id', adId)
       .maybeSingle();
 
@@ -7241,7 +7204,7 @@ app.get('/api/ad-website-decrypted/:id', async (req, res) => {
     if (!ad) {
       const { data: adPay, error: payErr } = await supabase
         .from('ads_payment')
-        .select('id, website_url, phone, is_active, is_paid, payment_status, expires_at, whatsapp')
+        .select('id, website_url, phone, is_active, is_paid, payment_status, expires_at')
         .eq('id', adId)
         .maybeSingle();
       ad = adPay;
@@ -7270,24 +7233,16 @@ app.get('/api/ad-website-decrypted/:id', async (req, res) => {
     let decryptedWebsiteUrl = decryptField(ad.website_url);
     const decryptedPhone = decryptField(ad.phone);
 
-    // منطق التفضيل: إذا كان whatsapp مفعل، نستخدم رقم الهاتف مباشرة لفتح الواتساب
-    if (ad.whatsapp) {
-      if (decryptedPhone) {
-        decryptedWebsiteUrl = decryptedPhone;
-      }
-    } else {
-      // منطق التفضيل القديم: إذا كان الرابط هو رابط QR للواتساب أو رابط غير مباشر، نفضل استخدام رقم الهاتف مباشرة
-      const isIndirectWhatsapp = decryptedWebsiteUrl && typeof decryptedWebsiteUrl === 'string' && 
-                                 (decryptedWebsiteUrl.includes('api.whatsapp.com/qr') || 
-                                  decryptedWebsiteUrl.includes('wa.me/qr') ||
-                                  decryptedWebsiteUrl.includes('chat.whatsapp.com'));
+    // منطق التفضيل: إذا كان الرابط هو رابط QR للواتساب أو رابط غير مباشر، نفضل استخدام رقم الهاتف مباشرة
+    const isIndirectWhatsapp = decryptedWebsiteUrl && typeof decryptedWebsiteUrl === 'string' && 
+                               (decryptedWebsiteUrl.includes('api.whatsapp.com/qr') || 
+                                decryptedWebsiteUrl.includes('chat.whatsapp.com'));
 
-      // إذا كان رابط الموقع غير صالح، قصيراً جداً، أو رابط واتساب غير مباشر، نستخدم رقم الهاتف بدلاً منه
-      if (!decryptedWebsiteUrl || typeof decryptedWebsiteUrl !== 'string' || decryptedWebsiteUrl.length < 8 || isIndirectWhatsapp) {
-         if (decryptedPhone) {
-           decryptedWebsiteUrl = decryptedPhone;
-         }
-      }
+    // إذا كان رابط الموقع غير صالح، قصيراً جداً، أو رابط واتساب غير مباشر، نستخدم رقم الهاتف بدلاً منه
+    if (!decryptedWebsiteUrl || typeof decryptedWebsiteUrl !== 'string' || decryptedWebsiteUrl.length < 8 || isIndirectWhatsapp) {
+       if (decryptedPhone) {
+         decryptedWebsiteUrl = decryptedPhone;
+       }
     }
 
     // إذا كان الناتج رقم هاتف، نقوم بتنسيقه كرابط واتساب مباشر
