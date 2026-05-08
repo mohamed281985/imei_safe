@@ -84,7 +84,7 @@ const OffersGallery = () => {
                     .from('ads_offar')
                     .select('mainimage_url')
                     .eq('id', idNum)
-                    .single();
+                    .maybeSingle();
                     
                 if (!error && data && data.mainimage_url) {
                     setImageUrl(data.mainimage_url);
@@ -144,7 +144,7 @@ const OffersGallery = () => {
                 .from('ads_offar')
                 .select('*')
                 .eq('id', offerIdNum)
-                .single();
+                .maybeSingle();
             if (offerError || !offerData) throw new Error(t('error_fetching_offer_data'));
 
             // جلب نوع الإعلان وسعره مباشرة من Supabase
@@ -154,7 +154,7 @@ const OffersGallery = () => {
                 .from('ads_offar')
                 .select('*')
                 .eq('id', offerIdNum)
-                .single();
+                .maybeSingle();
 
             console.log(t('offer_data_retrieved'));
             if (import.meta.env.MODE !== 'production') console.debug(offerDataWithAmount);
@@ -209,9 +209,9 @@ const OffersGallery = () => {
                 .from('businesses')
                 .select('store_name, phone')
                 .eq('user_id', user.id)
-                .single();
+                .maybeSingle();
 
-            if (businessError && businessError.code !== 'PGRST116') { // PGRST116: no rows found
+            if (businessError) { 
                 throw new Error(t('error_fetching_business_data') + ': ' + businessError.message);
             }
 
@@ -357,11 +357,16 @@ const OffersGallery = () => {
                 try {
                     if (paymentIdFromServer) {
                         // التحقق من قيمة transaction و payment_status قبل التحديث
-                        const { data: paymentData } = await supabase
+                        const { data: paymentData, error: fetchError } = await supabase
                             .from('ads_payment')
                             .select('transaction, payment_status')
                             .eq('id', paymentIdFromServer)
-                            .single();
+                            .maybeSingle();
+
+                        if (fetchError) {
+                            console.error('Error fetching payment data:', fetchError);
+                            return;
+                        }
 
                         console.log('بيانات السجل:', paymentData);
 
@@ -384,14 +389,18 @@ const OffersGallery = () => {
                     }
 
                     // fallback: البحث عن آخر سجل مدفوع
-                    const { data: lastPayment } = await supabase
+                    const { data: lastPayment, error: fallbackError } = await supabase
                         .from('ads_payment')
                         .select('id, transaction, payment_status')
                         .eq('user_id', user.id)
                         .eq('payment_status', 'paid')
                         .order('payment_date', { ascending: false })
                         .limit(1)
-                        .single();
+                        .maybeSingle();
+
+                    if (fallbackError) {
+                        console.error('Error fetching last payment:', fallbackError);
+                    }
 
                     console.log('آخر سجل مدفوع:', lastPayment);
 
@@ -420,16 +429,22 @@ const OffersGallery = () => {
                 const id = window.setInterval(async () => {
                     if (!paymentMonitorRef.current) paymentMonitorRef.current = id;
                     try {
-                        const { data: paymentRecord } = await supabase
+                        const { data: paymentRecord, error: fetchError } = await supabase
                             .from('ads_payment')
-                            .select('payment_status, transaction')
+                            .select('payment_status, transaction, user_id')
                             .eq('id', paymentId)
-                            .single();
+                            .maybeSingle();
+
+                        if (fetchError) {
+                            console.error('Error fetching payment record:', fetchError);
+                            // إذا كان الخطأ 406، فهذا يعني غالباً أن السجل غير موجود أو RLS تمنع الوصول
+                            return;
+                        }
 
                         console.log('فحص حالة الدفع:', paymentRecord);
 
                         // إذا تم تحديث payment_status إلى paid
-                            if (paymentRecord?.payment_status === 'paid') {
+                        if (paymentRecord?.payment_status === 'paid') {
                             if (paymentMonitorRef.current) {
                                 clearInterval(paymentMonitorRef.current);
                                 paymentMonitorRef.current = null;

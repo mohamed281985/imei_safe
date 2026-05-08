@@ -618,7 +618,6 @@ export default {
   "enter_store_name": "أدخل اسم المحل أو النشاط التجاري",
   "ad_duration": "مدة الإعلان",
   "days": "أيام",
-  "website_url": "رابط الموقع الإلكتروني", // Kept for other potential uses
   "whatsapp_link": "رابط واتساب",
   "publishing": "جاري النشر...",
   "ad_published_successfully": "تم نشر إعلانك بنجاح!",

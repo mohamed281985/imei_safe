@@ -542,15 +542,13 @@ const PublishAd: React.FC = () => {
             // الرصيد الظاهر في الواجهة قد لا يطابق تحقق السيرفر؛ أكمل لمسار الدفع العادي
             setBonusBalance(0);
           } else {
-            const errorDetail = err?.response?.data?.details || '';
-            const errorMessage = serverError || err.message || t('bonus_deduction_error_desc');
-            
             toast({
               title: t('error'),
-              description: errorDetail ? `${errorMessage} (${errorDetail})` : errorMessage,
+              description: serverError || err.message || t('bonus_deduction_error_desc'),
               variant: 'destructive'
             });
             setIsLoading(false);
+            goToMyAdsAfterDelay();
             return;
           }
         }
