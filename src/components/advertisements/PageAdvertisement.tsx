@@ -22,11 +22,11 @@ import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useLanguage } from '@/contexts/LanguageContext';
 
-interface publish_ad {
+interface ads_payment {
   id: number;
   image_url: string;
-  is_active?: boolean;
-  page?: string;
+  is_active: boolean;
+  page: string;
   website_url?: string;
   latitude?: number;
   longitude?: number;
@@ -40,21 +40,18 @@ interface PageAdvertisementProps {
 
 const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
   const { t } = useLanguage();
-  const [ads, setAds] = useState<publish_ad[]>([]);
+  const [ads, setAds] = useState<ads_payment[]>([]);
   const [currentAdIndex, setCurrentAdIndex] = useState(0);
   const [showLocalAd, setShowLocalAd] = useState(true);
 
-  // cache of already preloaded image URLs to avoid duplicate requests
-  const preloadedImageUrls = new Set<string>();
-
-  const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || (import.meta.env.PROD ? 'https://imei-safe.me' : '');
+  const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || 'https://imei-safe.me';
 
   useEffect(() => {
     const cacheKey = `page-ads-${pageName}`;
     // 1. محاولة تحميل الإعلانات من ذاكرة التخزين المؤقت أولاً
     const cachedAdsRaw = localStorage.getItem(cacheKey);
     if (cachedAdsRaw) {
-      const cachedAds: publish_ad[] = JSON.parse(cachedAdsRaw);
+      const cachedAds: ads_payment[] = JSON.parse(cachedAdsRaw);
       const now = new Date();
       const validCachedAds = cachedAds.filter(ad => ad.expires_at && new Date(ad.expires_at) > now);
       if (validCachedAds.length > 0) {
@@ -84,22 +81,20 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
   const fetchAds = async (coords: { latitude: number; longitude: number } | null) => {
     const cacheKey = `page-ads-${pageName}`;
     const { data } = await supabase
-      .from('publish_ad')
-      .select('id,image_url,website_url,latitude,longitude,expires_at')
+      .from('ads_payment')
+      .select('*')
       .gt('expires_at', new Date().toISOString()) // <-- إضافة شرط للتحقق من تاريخ الانتهاء
       .eq('is_active', true) // <-- إضافة شرط لجلب الإعلانات النشطة فقط
       .eq('is_paid', true)
+      .eq('type', 'publish')
       .eq('payment_status', 'paid') // التأكد من أن الدفع مكتمل
       .order('upload_date', { ascending: false });
 
-    // نمرر البيانات كما هي دون فك تشفير مسبق لكل الإعلانات لتحسين الأداء
-    const processedAds = data || [];
-
     // فلترة إضافية للتأكد من عدم عرض الإعلانات المنتهية
     const now = new Date();
-    const activeAds = processedAds.filter(ad => ad.expires_at && new Date(ad.expires_at) > now);
+    const activeAds = data ? data.filter(ad => ad.expires_at && new Date(ad.expires_at) > now) : [];
 
-    if (activeAds.length === 0) {
+    if (!activeAds || activeAds.length === 0) {
       setShowLocalAd(true);
       setAds([]);
       localStorage.setItem(cacheKey, JSON.stringify([]));
@@ -111,10 +106,10 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
 
     if (coords) {
       const nearbyAds = activeAds
-        .filter(ad => ad.latitude != null && ad.longitude != null)
+        .filter(ad => ad.latitude && ad.longitude)
         .map(ad => ({
           ...ad,
-          distance: getDistanceFromLatLonInKm(coords.latitude, coords.longitude, Number(ad.latitude), Number(ad.longitude))
+          distance: getDistanceFromLatLonInKm(coords.latitude, coords.longitude, ad.latitude!, ad.longitude!)
         }))
         .sort((a, b) => a.distance - b.distance);
 
@@ -133,88 +128,68 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
     }
 
     if (fetchedAds && fetchedAds.length > 0) {
-      // normalize fields: trim image_url and parse lat/lon to numbers
-      const normalized = fetchedAds.map(ad => ({
-        id: ad.id,
-        image_url: (ad.image_url || '').toString().trim(),
-        website_url: ad.website_url || undefined,
-        latitude: ad.latitude != null ? Number(ad.latitude) : undefined,
-        longitude: ad.longitude != null ? Number(ad.longitude) : undefined,
-        expires_at: ad.expires_at || undefined
-      }));
-
-      setAds(normalized as publish_ad[]);
+      setAds(fetchedAds);
       setShowLocalAd(false);
-      try {
-        localStorage.setItem(cacheKey, JSON.stringify(normalized));
-      } catch (e) {
-        console.warn('Failed to write ads cache', e);
-      }
+      localStorage.setItem(cacheKey, JSON.stringify(fetchedAds));
     }
   };
 
-  // دالة لتحميل الصور مسبقاً مع تجنّب الازدواجية
+  // دالة لتحميل الصور مسبقاً
   const preloadImages = (imageUrls: string[]) => {
     imageUrls.forEach(url => {
-      if (!url) return;
-      const u = url.toString().trim();
-      if (!u || preloadedImageUrls.has(u)) return;
-      const img = new Image();
-      img.onload = () => preloadedImageUrls.add(u);
-      img.onerror = () => preloadedImageUrls.add(u);
-      img.src = u;
+      if (url) {
+        const img = new Image();
+        img.src = url;
+      }
     });
   };
 
-  // preload images when the ads list changes (once)
-  useEffect(() => {
-    if (!ads || ads.length === 0) return;
-    const imageUrls = ads.map(ad => ad.image_url).filter(Boolean);
-    preloadImages(imageUrls);
-  }, [ads]);
-
-  // carousel timer: depend only on ads.length to avoid recreating the timer every tick
   useEffect(() => {
     if (!ads || ads.length <= 1) return;
+
+    // تحميل جميع الصور مسبقاً عند تغيير الإعلانات
+    const imageUrls = ads.map(ad => ad.image_url).filter(Boolean);
+    preloadImages(imageUrls);
+
     const timer = setInterval(() => {
-      setCurrentAdIndex(prevIndex => (prevIndex + 1) % ads.length);
-    }, 2000);
-    return () => clearInterval(timer);
-  }, [ads.length]);
-
-  const openAdRedirect = async (ad: publish_ad) => {
-    // التحقق مما إذا كان website_url مشفراً أو يبدو كمعرف (قصير جداً) أو غير موجود
-    const isEncrypted = ad.website_url && typeof ad.website_url === 'string' && 
-                        (ad.website_url.includes('{') || ad.website_url.includes('encryptedData'));
-    
-    const isInvalidUrl = !ad.website_url || (typeof ad.website_url === 'string' && ad.website_url.length < 8);
-
-    if (isEncrypted || isInvalidUrl) {
-      try {
-        // طلب فك التشفير أو الحصول على الرابط الصحيح من السيرفر
-        const response = await fetch(`${API_BASE_URL}/api/ad-website-decrypted/${ad.id}`);
-        if (response.ok) {
-          const result = await response.json();
-          if (result.success && result.website_url) {
-            window.open(result.website_url, '_blank', 'noopener,noreferrer');
-            return;
-          }
+      setCurrentAdIndex((prevIndex) => {
+        if (!ads || ads.length === 0) return 0;
+        const nextIndex = (prevIndex + 1) % ads.length;
+        
+        // تحميل الصورة التالية مسبقاً
+        if (ads[nextIndex]?.image_url) {
+          const img = new Image();
+          img.src = ads[nextIndex].image_url;
         }
-      } catch (error) {
-        console.error('Error getting ad link from server:', error);
+        
+        return nextIndex;
+      });
+    }, 2000);
+
+    return () => clearInterval(timer);
+  }, [ads.length, currentAdIndex, ads]);
+
+  const openAdRedirect = async (id: number) => {
+    const baseUrl = API_BASE_URL.replace(/\/+$/, '');
+    const apiUrl = `${baseUrl}/api/ad-redirect/${id}`;
+
+    try {
+      const response = await fetch(apiUrl, { method: 'GET', redirect: 'follow' });
+      const finalUrl = response.url || apiUrl;
+
+      const browserPlugin = (window as any)?.Capacitor?.Plugins?.Browser;
+      if (browserPlugin?.openExternal) {
+        await browserPlugin.openExternal({ url: finalUrl });
+        return;
       }
-      
-      // في حالة الفشل، نحاول استخدام نقطة نهاية التوجيه التلقائي
-      const baseUrl = API_BASE_URL.replace(/\/+$/, '');
-      const apiUrl = `${baseUrl}/api/ad-redirect/${ad.id}`;
-      window.open(apiUrl, '_blank', 'noopener,noreferrer');
-    } else {
-      // إذا كان الرابط نصاً عادياً ويبدو صالحاً، فتحه مباشرة
-      let finalUrl = ad.website_url;
-      if (!finalUrl.startsWith('http') && !finalUrl.startsWith('whatsapp') && !finalUrl.startsWith('wa.me')) {
-        finalUrl = `https://${finalUrl}`;
+      if (browserPlugin?.open) {
+        await browserPlugin.open({ url: finalUrl, toolbarColor: '#000000' });
+        return;
       }
       window.open(finalUrl, '_blank', 'noopener,noreferrer');
+    } catch (error) {
+      console.error('Failed to fetch/open ad redirect URL:', error);
+      window.open(apiUrl, '_blank', 'noopener,noreferrer');
     }
   };
 
@@ -235,12 +210,19 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
         <>
           <div className="rounded-lg overflow-hidden shadow-md w-full aspect-video relative bg-gray-100 mb-3">
             {ads[currentAdIndex]?.website_url ? (
-              <>
+              <a
+                href={`${API_BASE_URL}/api/ad-redirect/${ads[currentAdIndex].id}`}
+                title={t('click_to_visit_ad_link')}
+                className="block w-full h-full relative"
+                onClick={(e) => {
+                  e.preventDefault();
+                  openAdRedirect(ads[currentAdIndex].id);
+                }}
+              >
                 <img
                   src={ads[currentAdIndex]?.image_url}
                   alt={t('advertisement')}
                   className="w-full h-full object-cover absolute inset-0 cursor-pointer"
-                  onClick={() => openAdRedirect(ads[currentAdIndex])}
                 />
                 <div
                   className="absolute bottom-2 left-2 bg-orange-500 text-black text-xs font-bold px-3 py-1 rounded shadow-lg z-20"
@@ -248,7 +230,7 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
                 >
                   {t('click_to_contact')}
                 </div>
-              </>
+              </a>
             ) : (
               <img
                 src={ads[currentAdIndex]?.image_url}
