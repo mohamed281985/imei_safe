@@ -27,7 +27,7 @@ interface ads_payment {
   image_url: string;
   is_active: boolean;
   page: string;
-  website_url?: string;
+  whatsapp?: boolean;
   latitude?: number;
   longitude?: number;
   shop_location?: string;
@@ -238,11 +238,9 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
       {ads && ads.length > 0 && currentAdIndex < ads.length && (
         <>
           <div className="rounded-lg overflow-hidden shadow-md w-full aspect-video relative bg-gray-100 mb-3">
-            {ads[currentAdIndex]?.website_url ? (
-              <a
-                href={`${API_BASE_URL}/api/ad-redirect/${ads[currentAdIndex].id}`}
-                title={t('click_to_visit_ad_link')}
-                className="block w-full h-full relative"
+            {ads[currentAdIndex]?.whatsapp ? (
+              <div
+                className="block w-full h-full relative cursor-pointer"
                 onClick={(e) => {
                   e.preventDefault();
                   openAdRedirect(ads[currentAdIndex].id);
@@ -251,7 +249,7 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
                 <img
                   src={ads[currentAdIndex]?.image_url}
                   alt={t('advertisement')}
-                  className="w-full h-full object-cover absolute inset-0 cursor-pointer"
+                  className="w-full h-full object-cover absolute inset-0"
                 />
                 <div
                   className="absolute bottom-2 left-2 bg-orange-500 text-black text-xs font-bold px-3 py-1 rounded shadow-lg z-20"
@@ -259,7 +257,7 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
                 >
                   {t('click_to_contact')}
                 </div>
-              </a>
+              </div>
             ) : (
               <img
                 src={ads[currentAdIndex]?.image_url}
