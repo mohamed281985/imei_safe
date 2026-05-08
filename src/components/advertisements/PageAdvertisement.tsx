@@ -171,24 +171,53 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
 
   const openAdRedirect = async (id: number) => {
     const baseUrl = API_BASE_URL.replace(/\/+$/, '');
-    const apiUrl = `${baseUrl}/api/ad-redirect/${id}`;
-
+    
     try {
-      const response = await fetch(apiUrl, { method: 'GET', redirect: 'follow' });
-      const finalUrl = response.url || apiUrl;
+      // الحصول على التوكن من التخزين للمصادقة
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
 
-      const browserPlugin = (window as any)?.Capacitor?.Plugins?.Browser;
-      if (browserPlugin?.openExternal) {
-        await browserPlugin.openExternal({ url: finalUrl });
+      if (!token) {
+        // إذا لم يكن مسجلاً للدخول، نستخدم التوجيه التقليدي
+        const apiUrl = `${baseUrl}/api/ad-redirect/${id}`;
+        window.open(apiUrl, '_blank', 'noopener,noreferrer');
         return;
       }
-      if (browserPlugin?.open) {
-        await browserPlugin.open({ url: finalUrl, toolbarColor: '#000000' });
-        return;
+
+      // الاتصال بنقطة النهاية لجلب رقم الهاتف المشفر (مثل منطق ProductDetails)
+      const response = await fetch(`${baseUrl}/api/ad-website-decrypted/${id}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const data = await response.json();
+
+      if (data.success && data.website_url) {
+        let finalUrl = data.website_url;
+        
+        // التأكد من أن الرابط هو رابط واتساب إذا كان رقم هاتف
+        if (/^\+?[0-9]{8,15}$/.test(finalUrl.trim())) {
+          finalUrl = `https://wa.me/${finalUrl.trim().replace(/\D/g, '')}`;
+        }
+
+        const browserPlugin = (window as any)?.Capacitor?.Plugins?.Browser;
+        if (browserPlugin?.openExternal) {
+          await browserPlugin.openExternal({ url: finalUrl });
+        } else if (browserPlugin?.open) {
+          await browserPlugin.open({ url: finalUrl, toolbarColor: '#000000' });
+        } else {
+          window.open(finalUrl, '_blank', 'noopener,noreferrer');
+        }
+      } else {
+        // في حال فشل جلب الرابط المشفر، نستخدم التوجيه التقليدي كخيار بديل
+        const apiUrl = `${baseUrl}/api/ad-redirect/${id}`;
+        window.open(apiUrl, '_blank', 'noopener,noreferrer');
       }
-      window.open(finalUrl, '_blank', 'noopener,noreferrer');
     } catch (error) {
       console.error('Failed to fetch/open ad redirect URL:', error);
+      const apiUrl = `${baseUrl}/api/ad-redirect/${id}`;
       window.open(apiUrl, '_blank', 'noopener,noreferrer');
     }
   };
