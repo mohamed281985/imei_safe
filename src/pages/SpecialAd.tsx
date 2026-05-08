@@ -106,8 +106,6 @@ const SpecialAd = () => {
   const [adImagePreview, setAdImagePreview] = useState<string | null>(null);
   const [storeName, setStoreName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
-  const [websiteUrl, setWebsiteUrl] = useState('');
-  const [websiteUrlError, setWebsiteUrlError] = useState<string | null>(null);
   const [duration, setDuration] = useState('7'); // Default duration
   const [adPrice, setAdPrice] = useState<number | null>(null);
   const [prices, setPrices] = useState<Record<string, number>>({});
@@ -289,11 +287,6 @@ const SpecialAd = () => {
     }
 
     // البحث عن أحدث بونص متاح للمستخدم الحالي
-    // تحقق صارم من رابط الموقع لتجنب بروتوكولات ضارة
-    if (websiteUrl && !validateUrl(websiteUrl.trim())) {
-      toast({ title: t('error'), description: 'رابط الموقع غير صالح', variant: 'destructive' });
-      return;
-    }
     let bonusAmount = 0;
     let lastBonusId: string | null = null;
     let adData: any = null;
@@ -306,9 +299,9 @@ const SpecialAd = () => {
           .eq('transaction', 'bonus_add')
           .order('payment_date', { ascending: false })
           .limit(1)
-          .single();
+          .maybeSingle();
 
-        if (bonusError && bonusError.code !== 'PGRST116') {
+        if (bonusError) {
           console.error('Error fetching last bonus:', bonusError);
         }
 
@@ -514,7 +507,7 @@ const SpecialAd = () => {
             .from('businesses')
             .select('store_name')
             .eq('user_id', user.id)
-            .single();
+            .maybeSingle();
 
           const businessName = business?.store_name || 'محل غير محدد';
           setStoreName(businessName);
@@ -547,7 +540,7 @@ const SpecialAd = () => {
           .from('businesses')
           .select('store_name')
           .eq('user_id', user.id)
-          .single();
+          .maybeSingle();
 
         const businessName = business?.store_name || 'محل غير محدد';
         setStoreName(businessName);
@@ -582,7 +575,7 @@ const SpecialAd = () => {
           .from('ads_payment')
           .select('*')
           .eq('id', adId)
-          .single();
+          .maybeSingle();
         if (fetchError || !existingAd) {
           toast({ title: 'خطأ', description: 'لم يتم العثور على الإعلان المميز للتحديث', variant: 'destructive' });
           return;
@@ -633,7 +626,6 @@ const SpecialAd = () => {
         user_id: user.id,
         store_name: storeName,
         image_url: imageUrl,
-        website_url: websiteUrl,
         latitude: coords?.latitude,
         longitude: coords?.longitude,
         phone: phoneNumber,
@@ -665,7 +657,7 @@ const SpecialAd = () => {
             .from('ads_payment')
             .select('*')
             .eq('id', adId)
-            .single();
+            .maybeSingle();
 
           if (!currentAdError && currentAd) {
             // تحقق من الملكية
@@ -686,7 +678,6 @@ const SpecialAd = () => {
                 .update({
                   store_name: storeName,
                   image_url: imageUrl,
-                  website_url: websiteUrl,
                   latitude: coords?.latitude,
                   longitude: coords?.longitude,
                   phone: phoneNumber,
@@ -707,7 +698,6 @@ const SpecialAd = () => {
                     .update({
                       store_name: storeName,
                       image_url: imageUrl,
-                      website_url: websiteUrl,
                       latitude: coords?.latitude,
                       longitude: coords?.longitude,
                       phone: phoneNumber,
@@ -782,7 +772,7 @@ const SpecialAd = () => {
             .from('ads_payment')
             .select('payment_status, type, amount, id, store_name')
             .eq('id', newAdId)
-            .single();
+            .maybeSingle();
 
           if (error) {
             console.error('Error checking payment status:', error);
@@ -875,7 +865,7 @@ const SpecialAd = () => {
                 .from('publish_ad')
                 .select('*')
                 .eq('id', adId)
-                .single();
+                .maybeSingle();
               if (pubErr) {
                 console.error('Error loading ad from publish_ad:', pubErr);
                 throw pubErr;
@@ -904,7 +894,6 @@ const SpecialAd = () => {
             setExistingAdId(adId);
             setStoreName(ad.store_name || '');
             setPhoneNumber(ad.phone || '');
-            setWebsiteUrl(ad.website_url || '');
             setDuration(ad.duration_days?.toString() || '7');
 
             if (ad.image_url) {
@@ -946,7 +935,7 @@ const SpecialAd = () => {
               .from('businesses')
               .select('*')
               .eq('user_id', user.id)
-              .single();
+              .maybeSingle();
 
             if (business) {
               setStoreName(business.store_name || 'محل غير محدد');
@@ -983,7 +972,7 @@ const SpecialAd = () => {
             .from('ads_payment')
             .select('payment_status')
             .eq('id', adId)
-            .single();
+            .maybeSingle();
 
           // فقط قم بالتحديث إذا لم يتم تحديثه بالفعل
           if (ad && ad.payment_status !== 'paid') {
@@ -1133,9 +1122,6 @@ const SpecialAd = () => {
                           src={adImagePreview}
                           alt="Special Ad Preview"
                           className="absolute top-0 left-0 w-full h-full object-contain cursor-pointer"
-                          onClick={() => {
-                            if (websiteUrl) window.open(websiteUrl, '_blank');
-                          }}
                         />
                         {/* طبقة تدرج واقعية */}
                         <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/70 pointer-events-none"></div>
@@ -1270,28 +1256,6 @@ const SpecialAd = () => {
                 ) : (
                   <p className="text-sm text-gray-400 mt-2">{t('getting_location')}</p>
                 )}
-              </div>
-
-              {/* WhatsApp Link */}
-              <div>
-                <Label htmlFor="websiteUrl" className="text-gray-800">{t('whatsapp_link')} ({t('optional')})</Label>
-                <div className="relative mt-2">
-                  <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                  <Input
-                    id="websiteUrl"
-                    type="url"
-                    value={websiteUrl}
-                    onChange={(e) => { setWebsiteUrl(e.target.value); if (websiteUrlError) setWebsiteUrlError(null); }}
-                    onBlur={() => {
-                      const v = websiteUrl.trim();
-                      if (v && !validateUrl(v)) setWebsiteUrlError('رابط الموقع غير صالح');
-                      else setWebsiteUrlError(null);
-                    }}
-                    placeholder="https://wa.me/..."
-                    className="pl-10 border-[#289c8e] focus-visible:ring-[#289c8e]"
-                  />
-                  {websiteUrlError && <p className="text-sm text-red-400 mt-1">{websiteUrlError}</p>}
-                </div>
               </div>
 
               {/* Submit Button */}

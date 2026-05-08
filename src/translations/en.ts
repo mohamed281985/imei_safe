@@ -607,7 +607,6 @@ export default {
   "enter_store_name": "Enter store or business name",
   "ad_duration": "Ad Duration",
   "days": "Days",
-  "website_url": "Website URL",
   "whatsapp_link": "WhatsApp Link",
   "publishing": "Publishing...",
   "ad_published_successfully": "Your ad published successfully!",

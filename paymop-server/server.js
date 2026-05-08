@@ -3478,9 +3478,6 @@ app.post("/paymob/create-payment", paymentLimiter, rateLimitMiddleware({ windowM
       if (Object.prototype.hasOwnProperty.call(adDataToStore, 'phone')) {
         adDataToStore.phone = encryptFieldForStorage(adDataToStore.phone);
       }
-      if (Object.prototype.hasOwnProperty.call(adDataToStore, 'website_url')) {
-        adDataToStore.website_url = encryptFieldForStorage(adDataToStore.website_url);
-      }
     }
 
     // 5. حفظ بيانات الإعلان في قاعدة البيانات
@@ -3614,7 +3611,7 @@ app.post('/paymob/publish-from-bonus', paymentLimiter, rateLimitMiddleware({ win
     try {
       const { error: updateErr } = await supabase
         .from('ads_payment')
-        .update({ bonus_offer: newBonusValue, payment_date: new Date().toISOString(), is_paid: true, payment_status: 'paid', transaction: 'bonus_add', Actual_bonus: lastBonus.bonus_offer })
+        .update({ bonus_offer: newBonusValue, payment_date: new Date().toISOString(), is_paid: true, payment_status: 'paid', transaction: 'bonus_add' })
         .eq('id', lastBonus.id);
       if (updateErr) {
         console.error('Failed to update bonus row:', updateErr);
@@ -3629,9 +3626,6 @@ app.post('/paymob/publish-from-bonus', paymentLimiter, rateLimitMiddleware({ win
     const adDataToStore = { ...adData };
     if (Object.prototype.hasOwnProperty.call(adDataToStore, 'phone')) {
       adDataToStore.phone = encryptFieldForStorage(adDataToStore.phone);
-    }
-    if (Object.prototype.hasOwnProperty.call(adDataToStore, 'website_url')) {
-      adDataToStore.website_url = encryptFieldForStorage(adDataToStore.website_url);
     }
 
     // Insert ad as paid using bonus
@@ -3667,7 +3661,6 @@ app.post('/paymob/publish-from-bonus', paymentLimiter, rateLimitMiddleware({ win
             user_id: userId,
             store_name: adInsert.store_name || null,
             image_url: adInsert.image_url || null,
-            website_url: adInsert.website_url ? encryptFieldForStorage(adInsert.website_url) : null,
             phone: adInsert.phone ? encryptFieldForStorage(adInsert.phone) : null,
             latitude: adInsert.latitude || null,
             longitude: adInsert.longitude || null,
@@ -4029,7 +4022,6 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
               user_id: paymentData.user_id,
               store_name: paymentData.store_name || null,
               image_url: paymentData.image_url || null,
-              website_url: paymentData.website_url ? encryptFieldForStorage(paymentData.website_url) : null,
               phone: paymentData.phone ? encryptFieldForStorage(paymentData.phone) : null,
               latitude: paymentData.latitude || null,
               longitude: paymentData.longitude || null,
@@ -6521,14 +6513,12 @@ app.get('/api/ad/:id', verifyJwtToken, async (req, res) => {
           updated_at: pubData.updated_at ?? null,
           phone: pubData.phone ?? null,
           email: pubData.email ?? null,
-          owner_name: pubData.owner_name ?? null,
-          website_url: pubData.website_url ?? null
+          owner_name: pubData.owner_name ?? null
         };
         try { outPub.store_name = decryptField(outPub.store_name); } catch (e) { outPub.store_name = null; }
         try { outPub.phone = decryptField(outPub.phone); } catch (e) { outPub.phone = null; }
         try { outPub.email = decryptField(outPub.email); } catch (e) { outPub.email = null; }
         try { outPub.owner_name = decryptField(outPub.owner_name); } catch (e) { outPub.owner_name = null; }
-        try { outPub.website_url = decryptField(outPub.website_url); } catch (e) { outPub.website_url = null; }
 
         return res.json({ ok: true, ad: outPub });
       }
@@ -6569,8 +6559,7 @@ app.get('/api/ad/:id', verifyJwtToken, async (req, res) => {
       updated_at: data.updated_at ?? null,
       phone: data.phone ?? null,
       email: data.email ?? null,
-      owner_name: data.owner_name ?? null,
-      website_url: data.website_url ?? null
+      owner_name: data.owner_name ?? null
     };
     try {
       out.store_name = decryptField(out.store_name);
@@ -6591,11 +6580,6 @@ app.get('/api/ad/:id', verifyJwtToken, async (req, res) => {
       out.owner_name = decryptField(out.owner_name);
     } catch (e) {
       out.owner_name = null;
-    }
-    try {
-      out.website_url = decryptField(out.website_url);
-    } catch (e) {
-      out.website_url = null;
     }
 
     return res.json({ ok: true, ad: out });
@@ -6675,7 +6659,7 @@ app.get('/api/ad-redirect/:id', async (req, res) => {
 
     const { data, error } = await supabase
       .from('ads_payment')
-      .select('id, type, is_active, is_paid, payment_status, expires_at, website_url, phone')
+      .select('id, type, is_active, is_paid, payment_status, expires_at, phone')
       .eq('id', id)
       .maybeSingle();
 
@@ -6691,16 +6675,11 @@ app.get('/api/ad-redirect/:id', async (req, res) => {
       return res.status(404).json({ error: 'Ad expired' });
     }
 
-    let url = decryptField(data.website_url);
     const phone = decryptField(data.phone);
-
-    // If website_url is invalid, too short (like an ID), or missing, fall back to phone number
-    if (!url || typeof url !== 'string' || url.length < 8) {
-      url = phone;
-    }
+    let url = phone;
 
     if (!url || typeof url !== 'string') {
-      return res.status(404).json({ error: 'Invalid ad URL or phone' });
+      return res.status(404).json({ error: 'Invalid ad phone' });
     }
 
     const redirectUrl = normalizeRedirectUrl(url);
@@ -7170,7 +7149,6 @@ app.get('/api/ad-phone-decrypted/:id', verifyJwtToken, async (req, res) => {
       id: ad.id,
       store_name: ad.store_name,
       phone: decryptedPhone,
-      website_url: decryptField(ad.website_url),
       image_url: ad.image_url,
       duration_days: ad.duration_days,
       expires_at: ad.expires_at,
@@ -7185,7 +7163,7 @@ app.get('/api/ad-phone-decrypted/:id', verifyJwtToken, async (req, res) => {
   }
 });
 
-// نقطة نهاية لفك تشفير website_url للإعلانات النشطة المدفوعة (بدون توكن)
+// نقطة نهاية لفك تشفير رقم الهاتف للإعلانات النشطة المدفوعة (بدون توكن)
 app.get('/api/ad-website-decrypted/:id', async (req, res) => {
   try {
     const adId = req.params.id;
@@ -7196,7 +7174,7 @@ app.get('/api/ad-website-decrypted/:id', async (req, res) => {
     // جلب الإعلان من جدول publish_ad أولاً
     let { data: ad, error: fetchError } = await supabase
       .from('publish_ad')
-      .select('id, website_url, phone, is_active, is_paid, payment_status, expires_at')
+      .select('id, phone, is_active, is_paid, payment_status, expires_at')
       .eq('id', adId)
       .maybeSingle();
 
@@ -7204,7 +7182,7 @@ app.get('/api/ad-website-decrypted/:id', async (req, res) => {
     if (!ad) {
       const { data: adPay, error: payErr } = await supabase
         .from('ads_payment')
-        .select('id, website_url, phone, is_active, is_paid, payment_status, expires_at')
+        .select('id, phone, is_active, is_paid, payment_status, expires_at')
         .eq('id', adId)
         .maybeSingle();
       ad = adPay;
@@ -7230,23 +7208,10 @@ app.get('/api/ad-website-decrypted/:id', async (req, res) => {
     }
 
     // فك تشفير البيانات
-    let decryptedWebsiteUrl = decryptField(ad.website_url);
     const decryptedPhone = decryptField(ad.phone);
 
-    // منطق التفضيل: إذا كان الرابط هو رابط QR للواتساب أو رابط غير مباشر، نفضل استخدام رقم الهاتف مباشرة
-    const isIndirectWhatsapp = decryptedWebsiteUrl && typeof decryptedWebsiteUrl === 'string' && 
-                               (decryptedWebsiteUrl.includes('api.whatsapp.com/qr') || 
-                                decryptedWebsiteUrl.includes('chat.whatsapp.com'));
-
-    // إذا كان رابط الموقع غير صالح، قصيراً جداً، أو رابط واتساب غير مباشر، نستخدم رقم الهاتف بدلاً منه
-    if (!decryptedWebsiteUrl || typeof decryptedWebsiteUrl !== 'string' || decryptedWebsiteUrl.length < 8 || isIndirectWhatsapp) {
-       if (decryptedPhone) {
-         decryptedWebsiteUrl = decryptedPhone;
-       }
-    }
-
     // إذا كان الناتج رقم هاتف، نقوم بتنسيقه كرابط واتساب مباشر
-    let finalUrl = decryptedWebsiteUrl;
+    let finalUrl = decryptedPhone;
     if (finalUrl && /^\+?[0-9]{8,15}$/.test(String(finalUrl).trim())) {
       finalUrl = `https://wa.me/${String(finalUrl).trim().replace(/\D/g, '')}`;
     }
