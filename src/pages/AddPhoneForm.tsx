@@ -9,6 +9,27 @@ import { Upload, X, Loader2, Star, Zap, MapPin, Clock, Eye, Gift, CalendarDays, 
 import { useGeolocated } from 'react-geolocated';
 import { useToast } from '@/hooks/use-toast';
 import AdsOfferSlider from '@/components/advertisements/AdsOfferSlider';
+import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
+
+// Fix for Leaflet marker icons in React
+// @ts-ignore
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon-2x.png',
+  iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
+});
+
+// Component to update map view when coordinates change
+const MapUpdater: React.FC<{ center: [number, number] }> = ({ center }) => {
+  const map = useMap();
+  useEffect(() => {
+    map.setView(center, map.getZoom());
+  }, [center, map]);
+  return null;
+};
 interface PhoneFormData {
   title: string;
   phone_type: string;
@@ -809,9 +830,6 @@ const AddPhoneForm: React.FC = () => {
     'w-full rounded-2xl border border-blue-300/50 bg-white px-4 py-3 text-sm text-slate-800 shadow-[0_2px_10px_rgba(37,99,235,0.08)] outline-none transition-all duration-300 placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-200/60 focus:shadow-[0_6px_18px_rgba(37,99,235,0.18)]';
   const cardClass =
     'rounded-3xl border border-white/70 bg-white/70 backdrop-blur-xl p-5 sm:p-6 shadow-[0_10px_30px_rgba(15,23,42,0.08)] transition-all duration-500';
-  const mapEmbedUrl = coords
-    ? `https://www.openstreetmap.org/export/embed.html?bbox=${coords.longitude - 0.01}%2C${coords.latitude - 0.01}%2C${coords.longitude + 0.01}%2C${coords.latitude + 0.01}&layer=mapnik&marker=${coords.latitude}%2C${coords.longitude}`
-    : '';
 
   const nextStep = () => {
     setCurrentStep(prev => Math.min(prev + 1, totalSteps - 1));
@@ -916,13 +934,21 @@ const AddPhoneForm: React.FC = () => {
                   </label>
                   <div className="overflow-hidden rounded-2xl border border-blue-300/50 bg-white shadow-[0_2px_10px_rgba(37,99,235,0.08)]">
                     {coords ? (
-                      <iframe
-                        title={t('current_location_map')}
-                        src={mapEmbedUrl}
-                        className="h-48 w-full"
-                        loading="lazy"
-                        referrerPolicy="no-referrer-when-downgrade"
-                      />
+                      <div className="h-48 w-full">
+                        <MapContainer
+                          center={[coords.latitude, coords.longitude]}
+                          zoom={13}
+                          scrollWheelZoom={false}
+                          className="h-full w-full"
+                          attributionControl={false}
+                        >
+                          <TileLayer
+                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                          />
+                          <Marker position={[coords.latitude, coords.longitude]} />
+                          <MapUpdater center={[coords.latitude, coords.longitude]} />
+                        </MapContainer>
+                      </div>
                     ) : (
                       <div className="flex h-48 items-center justify-center text-sm font-medium text-slate-500">
                         {t('loading_map_location')}

@@ -1,13 +1,43 @@
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useLanguage } from '../contexts/LanguageContext';
 import './ProductDetails.css';
-import { FaRegHeart, FaShareAlt, FaWhatsapp, FaRegCheckCircle } from 'react-icons/fa';
-import { MdStorage, MdOutlineMemory, MdLocationOn, MdShield } from 'react-icons/md';
+import { 
+  Heart, 
+  Share2, 
+  MessageCircle, 
+  ShieldCheck, 
+  MapPin, 
+  Calendar, 
+  Cpu, 
+  HardDrive, 
+  CheckCircle2, 
+  ChevronRight,
+  ChevronLeft,
+  Lock,
+  RotateCcw,
+  Zap,
+  Star
+} from 'lucide-react';
+import { FaWhatsapp } from 'react-icons/fa';
 import { Swiper, SwiperSlide } from 'swiper/react';
+import { Pagination, Navigation } from 'swiper/modules';
+import { MapContainer, TileLayer, Marker } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import 'swiper/css';
+import 'swiper/css/pagination';
 import 'swiper/css/navigation';
+
+// Fix for Leaflet marker icons in React
+// @ts-ignore
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon-2x.png',
+  iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
+});
 
 interface Product {
   id: string;
@@ -37,21 +67,25 @@ interface Product {
     order?: number;
   }>;
   warranty_months?: number;
+  created_at?: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 const ProductDetails = () => {
     const { id } = useParams();
+    const navigate = useNavigate();
     const { t } = useLanguage();
     const [product, setProduct] = useState<Product | null>(null);
     const [loading, setLoading] = useState(true);
     const [loadingPhone, setLoadingPhone] = useState(false);
+    const [isFavorite, setIsFavorite] = useState(false);
 
   const handleContactNow = async () => {
     if (!product) return;
 
     setLoadingPhone(true);
     try {
-      // الحصول على التوكن من التخزين
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
 
@@ -61,7 +95,6 @@ const ProductDetails = () => {
         return;
       }
 
-      // الاتصال بنقطة النهاية الجديدة من السيرفر
       const response = await fetch(`https://imei-safe.me/api/store-phone/${product.id}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -88,7 +121,6 @@ const ProductDetails = () => {
     const fetchProduct = async () => {
       setLoading(true);
 
-      // Try fetching from phones first
       const { data: phoneData, error: phoneError } = await supabase
         .from('phones')
         .select('*, phone_images(image_path, main_image, order)')
@@ -105,7 +137,6 @@ const ProductDetails = () => {
         return;
       }
 
-      // If not found in phones, try accessories
       if (phoneError && (phoneError.code === 'PGRST116' || phoneError.code === '22P02')) {
         const { data: accessoryData, error: accessoryError } = await supabase
           .from('accessories')
@@ -138,16 +169,22 @@ const ProductDetails = () => {
 
   if (loading) {
     return (
-      <div className="product-details-glass-bg">
-        <div className="product-details-card">{t('loading')}</div>
+      <div className="flex h-screen w-full items-center justify-center bg-[#F5F9FF]">
+        <div className="animate-pulse text-xl font-bold text-[#0A84FF]">{t('loading')}...</div>
       </div>
     );
   }
 
   if (!product) {
     return (
-      <div className="product-details-glass-bg">
-        <div className="product-details-card">{t('phone_not_found')}</div>
+      <div className="flex h-screen w-full flex-col items-center justify-center bg-[#F5F9FF] p-6 text-center">
+        <h2 className="mb-4 text-2xl font-bold text-gray-800">{t('phone_not_found')}</h2>
+        <button 
+          onClick={() => navigate(-1)}
+          className="rounded-xl bg-[#0A84FF] px-6 py-2 text-white"
+        >
+          {t('back')}
+        </button>
       </div>
     );
   }
@@ -158,256 +195,246 @@ const ProductDetails = () => {
     return (a.order || 99) - (b.order || 99);
   });
 
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return '--';
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+  };
 
-  // RTL & Glassmorphism Container
   return (
-    <div dir="rtl" style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #F5F9FF 60%, #DFF4FF 100%)',
-      padding: '0',
-      fontFamily: 'Tajawal, Cairo, sans-serif',
-      display: 'flex', justifyContent: 'center', alignItems: 'flex-start',
-      boxSizing: 'border-box'
-    }}>
-      <div style={{
-        width: '100%',
-        maxWidth: 430,
-        margin: '32px 0',
-        borderRadius: 28,
-        background: 'rgba(255,255,255,0.65)',
-        boxShadow: '0 8px 32px 0 rgba(10,132,255,0.10)',
-        padding: '0',
-        overflow: 'hidden',
-        border: '1.5px solid rgba(10,132,255,0.07)'
-      }}>
-        {/* Top Image Slider */}
-        <div style={{
-          padding: 0,
-          background: 'linear-gradient(135deg, #DFF4FF 80%, #F5F9FF 100%)',
-          borderBottomLeftRadius: 32,
-          borderBottomRightRadius: 32,
-          boxShadow: '0 4px 24px 0 rgba(10,132,255,0.10)',
-          position: 'relative',
-        }}>
-          <Swiper
-            spaceBetween={10}
-            slidesPerView={1}
-            navigation
-            style={{ width: '100%', maxWidth: 430, borderRadius: 0 }}
+    <div dir="rtl" className="min-h-screen w-full overflow-x-hidden bg-[#F5F9FF] pb-24 font-['Tajawal','Cairo',sans-serif]">
+      {/* Background Glows */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute -top-[10%] -left-[10%] h-[40%] w-[40%] rounded-full bg-[#0A84FF] opacity-5 blur-[120px]"></div>
+        <div className="absolute top-[20%] -right-[5%] h-[30%] w-[30%] rounded-full bg-[#FF8C00] opacity-[0.03] blur-[100px]"></div>
+        <div className="absolute bottom-[10%] left-[5%] h-[35%] w-[35%] rounded-full bg-[#12B76A] opacity-[0.04] blur-[110px]"></div>
+      </div>
+
+      <div className="relative mx-auto w-full max-w-[500px]">
+        {/* Top Header */}
+        <div className="flex items-center justify-between p-6">
+          <button 
+            onClick={() => navigate(-1)}
+            className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/60 bg-white/40 backdrop-blur-xl shadow-sm"
           >
-            {sortedImages.map((img, index) => (
-              <SwiperSlide key={index}>
-                <img
-                  src={img.image_path}
-                  alt={t('phone_image')}
-                  style={{ width: '100%', height: 270, objectFit: 'contain', borderRadius: 0, boxShadow: '0 4px 24px rgba(10,132,255,0.10)' }}
-                />
-              </SwiperSlide>
-            ))}
-          </Swiper>
-          {/* Favorite Heart Floating Button */}
-          <button style={{
-            position: 'absolute',
-            top: 18,
-            left: 18,
-            zIndex: 2,
-            background: '#fff',
-            border: 'none',
-            borderRadius: '50%',
-            width: 48,
-            height: 48,
-            boxShadow: '0 2px 8px rgba(10,132,255,0.10)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer',
-            transition: 'box-shadow 0.2s'
-          }} aria-label="المفضلة">
-            <FaRegHeart size={26} color="#0A84FF" />
+            <ChevronRight className="h-6 w-6 text-gray-800" />
           </button>
+          <h1 className="text-lg font-bold text-gray-800">تفاصيل المنتج</h1>
+          <div className="w-12"></div> {/* Spacer to center title */}
         </div>
 
-        {/* Product Info */}
+        {/* Hero Image Section */}
+        <div className="px-6 mb-8">
+          <div className="relative overflow-hidden rounded-[32px] bg-gradient-to-b from-white to-[#DFF4FF]/30 p-2 shadow-[0_20px_50px_rgba(10,132,255,0.08)]">
+            {/* Floating Buttons inside Hero */}
+            <div className="absolute top-6 left-6 z-10">
+              <button 
+                onClick={() => setIsFavorite(!isFavorite)}
+                className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/80 backdrop-blur-md shadow-sm transition-transform active:scale-90"
+              >
+                <Heart className={`h-6 w-6 ${isFavorite ? 'fill-red-500 text-red-500' : 'text-[#0A84FF]'}`} />
+              </button>
+            </div>
 
-        <div style={{padding: '32px 18px 0 18px'}}>
-          <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', marginBottom: 18, marginTop: 2}}>
-            <h2 style={{
-              fontSize: 32,
-              fontWeight: 900,
-              color: '#181C32',
-              margin: 0,
-              marginBottom: 18,
-              letterSpacing: '-1.2px',
-              lineHeight: 1.18,
-              textShadow: '0 2px 8px rgba(10,132,255,0.07)',
-              textAlign: 'center',
-              width: '100%'
-            }}>{product.title}</h2>
-            {/* عرض الموديل فقط إذا كان معرفاً وصحيحاً */}
+            <div className="absolute top-6 right-6 z-10">
+              <button 
+                onClick={() => {
+                  if (navigator.share) {
+                    navigator.share({
+                      title: product.title,
+                      url: window.location.href
+                    });
+                  }
+                }}
+                className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/80 backdrop-blur-md shadow-sm transition-transform active:scale-90"
+              >
+                <Share2 className="h-5 w-5 text-gray-800" />
+              </button>
+            </div>
+            
+            <Swiper
+              modules={[Pagination, Navigation]}
+              spaceBetween={0}
+              slidesPerView={1}
+              pagination={{ clickable: true, bulletActiveClass: 'swiper-pagination-bullet-active !bg-[#0A84FF] !w-6' }}
+              className="h-[320px] w-full"
+            >
+              {sortedImages.length > 0 ? (
+                sortedImages.map((img, index) => (
+                  <SwiperSlide key={index} className="flex items-center justify-center">
+                    <img
+                      src={img.image_path}
+                      alt={product.title}
+                      className="h-full w-full object-cover"
+                    />
+                  </SwiperSlide>
+                ))
+              ) : (
+                <SwiperSlide className="flex items-center justify-center">
+                   <div className="h-full w-full bg-gray-100/50 flex items-center justify-center">
+                      <Zap className="h-12 w-12 text-gray-300" />
+                   </div>
+                </SwiperSlide>
+              )}
+            </Swiper>
+            
+            {/* Elegant Platform Shadow */}
+            <div className="absolute bottom-4 left-1/2 h-4 w-4/5 -translate-x-1/2 rounded-[100%] bg-[#0A84FF]/10 blur-xl"></div>
+          </div>
+        </div>
+
+        {/* Product Info Section */}
+        <div className="px-6 space-y-6">
+          <div className="space-y-3 text-right">
+            <div className="flex flex-wrap gap-2">
+              <span className="inline-flex items-center rounded-full bg-[#12B76A]/10 px-4 py-1 text-sm font-bold text-[#12B76A]">
+                <Star className="ml-1 h-4 w-4 fill-[#12B76A]" />
+                {product.condition === 'used' ? 'مستعمل - ممتاز' : 'جديد'}
+              </span>
+              <span className="inline-flex items-center rounded-full bg-[#FF8C00]/10 px-4 py-1 text-sm font-bold text-[#FF8C00]">
+                قابل للتفاوض
+              </span>
+            </div>
+            
+            <h2 className="text-3xl font-black text-gray-900 leading-tight">{product.title}</h2>
+            
             {product.model && product.model !== 'unknown_model' && (
-              <h4 className="text-base font-medium text-gray-700 truncate leading-tight mb-1 px-2" style={{
-                fontSize: 18,
-                fontWeight: 600,
-                color: '#555',
-                margin: 0,
-                marginBottom: 6,
-                textAlign: 'center',
-                letterSpacing: '-0.5px',
-                lineHeight: 1.2
-              }}>{product.model}</h4>
+              <p className="text-lg font-medium text-gray-500">{product.model}</p>
             )}
-            <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0, width: '100%'}}>
-              <span style={{
-                fontSize: 16,
-                fontWeight: 700,
-                background: '#E6F7FF',
-                color: '#0A84FF',
-                borderRadius: 18,
-                padding: '4px 22px',
-                letterSpacing: 0.5,
-                boxShadow: '0 1px 4px rgba(10,132,255,0.06)',
-                marginBottom: 7,
-                textAlign: 'center',
-                display: 'inline-block'
-              }}>
-                {product.condition === 'used' ? 'مستعمل' : 'جديد'}
+
+            <div className="flex items-end gap-2 pt-2">
+              <span className="text-4xl font-black text-[#0A84FF]">
+                {product.price?.toLocaleString('en-US')}
               </span>
-              <span style={{
-                fontSize: 28,
-                fontWeight: 900,
-                color: '#12B76A',
-                marginBottom: 0,
-                letterSpacing: '-1px',
-                textShadow: '0 2px 8px rgba(18,183,106,0.08)',
-                marginTop: 7,
-                textAlign: 'center',
-                display: 'inline-block'
-              }}>
-                {product.price?.toLocaleString('ar-EG')} <span style={{fontSize: 18, fontWeight: 700, color: '#0A84FF', marginRight: 2}}>ج.م</span>
-              </span>
+              <span className="mb-1 text-xl font-bold text-gray-400">ج.م</span>
             </div>
           </div>
 
-          {/* Specs Card */}
-          <div style={{
-            background: 'rgba(255,255,255,0.92)',
-            borderRadius: 24,
-            boxShadow: '0 2px 16px 0 rgba(10,132,255,0.08)',
-            padding: '22px 18px 12px 18px',
-            margin: '28px 0 0 0',
-            display: 'flex', flexDirection: 'column', gap: 0,
-            border: '1.5px solid #E6F7FF'
-          }}>
-            <div style={{display: 'flex', alignItems: 'center', gap: 18, marginBottom: 12}}>
-              <div style={{display: 'flex', alignItems: 'center', gap: 7, flex: 1}}>
-                <MdStorage size={22} color="#0A84FF" />
-                <span style={{fontSize: 15, color: '#222', fontWeight: 600}}>{product.specs?.storage || '--'}<span style={{fontSize: 13, color: '#888', marginRight: 3}}> تخزين</span></span>
+          {/* Specifications Card */}
+          <div className="rounded-[30px] border border-white bg-white/70 p-6 backdrop-blur-xl shadow-[0_15px_35px_rgba(0,0,0,0.03)]">
+            <div className="grid grid-cols-2 gap-y-6">
+              <div className="flex items-center gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#0A84FF]/10 text-[#0A84FF]">
+                  <HardDrive className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-gray-400">التخزين</p>
+                  <p className="text-sm font-black text-gray-800">{product.specs?.storage || '--'}</p>
+                </div>
               </div>
-              <div style={{width: 1, height: 28, background: '#E6F7FF'}} />
-              <div style={{display: 'flex', alignItems: 'center', gap: 7, flex: 1}}>
-                <MdOutlineMemory size={22} color="#0A84FF" />
-                <span style={{fontSize: 15, color: '#222', fontWeight: 600}}>{product.specs?.ram || '--'}<span style={{fontSize: 13, color: '#888', marginRight: 3}}> رام</span></span>
+
+              <div className="flex items-center gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#0A84FF]/10 text-[#0A84FF]">
+                  <Cpu className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-gray-400">الرام</p>
+                  <p className="text-sm font-black text-gray-800">{product.specs?.ram || '--'}</p>
+                </div>
               </div>
-            </div>
-            <div style={{display: 'flex', alignItems: 'center', gap: 18, marginBottom: 12}}>
-              <div style={{display: 'flex', alignItems: 'center', gap: 7, flex: 1}}>
-                <MdLocationOn size={22} color="#0A84FF" />
-                <span style={{fontSize: 15, color: '#222', fontWeight: 600}}>{product.city || '--'}</span>
+
+              <div className="flex items-center gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#0A84FF]/10 text-[#0A84FF]">
+                  <ShieldCheck className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-gray-400">الضمان</p>
+                  <p className="text-sm font-black text-gray-800">{product.warranty_months && product.warranty_months > 0 ? `${product.warranty_months} شهر` : 'بدون ضمان'}</p>
+                </div>
               </div>
-              <div style={{width: 1, height: 28, background: '#E6F7FF'}} />
-              <div style={{display: 'flex', alignItems: 'center', gap: 7, flex: 1}}>
-                <MdShield size={22} color="#0A84FF" />
-                <span style={{fontSize: 15, color: '#222', fontWeight: 600}}>{product.warranty_months && product.warranty_months > 0 ? `${product.warranty_months} شهر` : 'بدون ضمان'}</span>
+
+              <div className="flex items-center gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#0A84FF]/10 text-[#0A84FF]">
+                  <MapPin className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-gray-400">الموقع</p>
+                  <p className="text-sm font-black text-gray-800">{product.city || '--'}</p>
+                </div>
               </div>
-            </div>
-            <div style={{display: 'flex', alignItems: 'center', gap: 7, marginTop: 2}}>
-              <FaRegCheckCircle size={20} color="#12B76A" />
-              <span style={{fontSize: 15, color: '#12B76A', fontWeight: 700}}>موثوق</span>
+
+              <div className="flex items-center gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#0A84FF]/10 text-[#0A84FF]">
+                  <Calendar className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-gray-400">تاريخ النشر</p>
+                  <p className="text-sm font-black text-gray-800">{formatDate(product.created_at)}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#12B76A]/10 text-[#12B76A]">
+                  <CheckCircle2 className="h-6 w-6" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-gray-400">التوثيق</p>
+                  <p className="text-sm font-black text-gray-800">الهاتف موثق ✓</p>
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Details Section */}
-          <div style={{margin: '38px 0 0 0'}}>
-            <div style={{
-              fontSize: 20,
-              fontWeight: 900,
-              color: '#0A84FF',
-              marginBottom: 14,
-              letterSpacing: '-0.5px',
-              textShadow: '0 1px 4px rgba(10,132,255,0.07)'
-            }}>تفاصيل إضافية</div>
-            <div style={{
-              background: 'rgba(251, 251, 252, 1)',
-              border: '1.5px solid #E6F7FF',
-              borderRadius: 20,
-              padding: '22px 18px',
-              color: '#0e0d0dff',
-              fontSize: 17,
-              fontWeight: 600,
-              minHeight: 80,
-              maxHeight: 200,
-              overflowY: 'auto',
-              wordWrap: 'break-word',
-              lineHeight: 2.1,
-              boxShadow: '0 4px 24px rgba(241, 241, 243, 0.9), 0 1.5px 8px rgba(10,132,255,0.04)'
-            }}>
+          {/* Map Section */}
+          {product.latitude && product.longitude && (
+            <div className="space-y-4">
+              <h3 className="text-xl font-black text-gray-900">موقع المنتج</h3>
+              <div className="overflow-hidden rounded-[24px] border border-white bg-white shadow-sm h-[200px] w-full z-0">
+                <MapContainer
+                  center={[product.latitude, product.longitude]}
+                  zoom={13}
+                  scrollWheelZoom={false}
+                  className="h-full w-full"
+                  attributionControl={false}
+                >
+                  <TileLayer
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  />
+                  <Marker position={[product.latitude, product.longitude]} />
+                </MapContainer>
+              </div>
+            </div>
+          )}
+
+          {/* Additional Details */}
+          <div className="space-y-4">
+            <h3 className="text-xl font-black text-gray-900">تفاصيل إضافية</h3>
+            <div className="rounded-[24px] border border-[#0A84FF]/10 bg-[#0A84FF]/[0.02] p-6 leading-relaxed text-gray-700 shadow-inner">
               {product.description || 'لا توجد تفاصيل إضافية'}
             </div>
           </div>
+        </div>
+      </div>
 
-          {/* Bottom Actions */}
-          <div style={{display: 'flex', gap: 12, margin: '38px 0 24px 0', alignItems: 'center', justifyContent: 'center'}}>
-            <button
-              onClick={handleContactNow}
-              disabled={loadingPhone}
-              style={{
-                flex: 1,
-                background: loadingPhone ? '#A7EFC5' : 'linear-gradient(90deg, #12B76A 60%, #43e685 100%)',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 18,
-                padding: '12px 0',
-                fontSize: 20,
-                fontWeight: 800,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 12,
-                cursor: loadingPhone ? 'not-allowed' : 'pointer',
-                boxShadow: '0 2px 12px rgba(18,183,106,0.10)',
-                transition: 'background 0.2s'
-              }}
-            >
-              <FaWhatsapp size={26} color="#fff" />
-              {loadingPhone ? t('loading') : 'اتصل الآن'}
-            </button>
-            <button
-              style={{
-                background: '#fff',
-                border: 'none',
-                borderRadius: 14,
-                width: 54,
-                height: 54,
-                boxShadow: '0 2px 8px rgba(10,132,255,0.10)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                cursor: 'pointer',
-                fontWeight: 700,
-                fontSize: 15,
-                gap: 7
-              }}
-              onClick={() => {
-                if (navigator.share) {
-                  navigator.share({
-                    title: product.title,
-                    url: window.location.href
-                  });
-                } else {
-                  window.prompt('انسخ الرابط:', window.location.href);
-                }
-              }}
-              aria-label="مشاركة"
-            >
-              <FaShareAlt size={22} color="#0A84FF" />
-            </button>
-          </div>
+      {/* Fixed Bottom Actions */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-center px-6 pb-8 pt-4 bg-gradient-to-t from-[#F5F9FF] via-[#F5F9FF]/95 to-transparent backdrop-blur-sm">
+        <div className="flex w-full max-w-[450px] gap-4">
+          <button
+            onClick={handleContactNow}
+            disabled={loadingPhone}
+            className="flex flex-[2] items-center justify-center gap-3 rounded-[20px] bg-gradient-to-r from-[#0A84FF] to-[#005BFF] py-4 text-lg font-black text-white shadow-[0_10px_25px_rgba(10,132,255,0.3)] transition-transform active:scale-95 disabled:opacity-50"
+          >
+            <FaWhatsapp className="h-6 w-6" />
+            {loadingPhone ? 'جاري التحميل...' : 'تواصل الآن'}
+          </button>
+          
+          <button
+            onClick={() => {
+              if (navigator.share) {
+                navigator.share({
+                  title: product.title,
+                  url: window.location.href
+                });
+              }
+            }}
+            className="flex flex-1 items-center justify-center gap-2 rounded-[20px] border border-[#0A84FF]/20 bg-white py-4 text-sm font-black text-[#0A84FF] shadow-sm transition-transform active:scale-95"
+          >
+            <Share2 className="h-5 w-5" />
+            مشاركة
+          </button>
         </div>
       </div>
     </div>

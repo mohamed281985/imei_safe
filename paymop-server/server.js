@@ -7233,15 +7233,22 @@ app.get('/api/ad-website-decrypted/:id', async (req, res) => {
     let decryptedWebsiteUrl = decryptField(ad.website_url);
     const decryptedPhone = decryptField(ad.phone);
 
-    // إذا كان رابط الموقع غير صالح أو قصيراً جداً (مثل ID)، نستخدم رقم الهاتف بدلاً منه
-    if (!decryptedWebsiteUrl || typeof decryptedWebsiteUrl !== 'string' || decryptedWebsiteUrl.length < 8) {
-       decryptedWebsiteUrl = decryptedPhone;
+    // منطق التفضيل: إذا كان الرابط هو رابط QR للواتساب أو رابط غير مباشر، نفضل استخدام رقم الهاتف مباشرة
+    const isIndirectWhatsapp = decryptedWebsiteUrl && typeof decryptedWebsiteUrl === 'string' && 
+                               (decryptedWebsiteUrl.includes('api.whatsapp.com/qr') || 
+                                decryptedWebsiteUrl.includes('chat.whatsapp.com'));
+
+    // إذا كان رابط الموقع غير صالح، قصيراً جداً، أو رابط واتساب غير مباشر، نستخدم رقم الهاتف بدلاً منه
+    if (!decryptedWebsiteUrl || typeof decryptedWebsiteUrl !== 'string' || decryptedWebsiteUrl.length < 8 || isIndirectWhatsapp) {
+       if (decryptedPhone) {
+         decryptedWebsiteUrl = decryptedPhone;
+       }
     }
 
-    // إذا كان الناتج رقم هاتف، نقوم بتنسيقه كرابط واتساب
+    // إذا كان الناتج رقم هاتف، نقوم بتنسيقه كرابط واتساب مباشر
     let finalUrl = decryptedWebsiteUrl;
-    if (finalUrl && /^\+?[0-9]{8,15}$/.test(finalUrl.trim())) {
-      finalUrl = `https://wa.me/${finalUrl.trim().replace(/\D/g, '')}`;
+    if (finalUrl && /^\+?[0-9]{8,15}$/.test(String(finalUrl).trim())) {
+      finalUrl = `https://wa.me/${String(finalUrl).trim().replace(/\D/g, '')}`;
     }
 
     return res.json({ success: true, website_url: finalUrl });
