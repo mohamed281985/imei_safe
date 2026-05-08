@@ -6675,7 +6675,7 @@ app.get('/api/ad-redirect/:id', async (req, res) => {
 
     const { data, error } = await supabase
       .from('ads_payment')
-      .select('id, type, is_active, is_paid, payment_status, expires_at, website_url, phone')
+      .select('id, type, is_active, is_paid, payment_status, expires_at, website_url, phone, whatsapp')
       .eq('id', id)
       .maybeSingle();
 
@@ -6694,9 +6694,22 @@ app.get('/api/ad-redirect/:id', async (req, res) => {
     let url = decryptField(data.website_url);
     const phone = decryptField(data.phone);
 
-    // If website_url is invalid, too short (like an ID), or missing, fall back to phone number
-    if (!url || typeof url !== 'string' || url.length < 8) {
-      url = phone;
+    // منطق التفضيل: إذا كان whatsapp مفعل، نستخدم رقم الهاتف مباشرة لفتح الواتساب
+    if (data.whatsapp) {
+      if (phone) {
+        url = phone;
+      }
+    } else {
+      // منطق التفضيل القديم: إذا كان الرابط هو رابط QR للواتساب أو رابط غير مباشر، نفضل استخدام رقم الهاتف مباشرة
+      const isIndirectWhatsapp = url && typeof url === 'string' && 
+                                 (url.includes('api.whatsapp.com/qr') || 
+                                  url.includes('wa.me/qr') ||
+                                  url.includes('chat.whatsapp.com'));
+
+      // If website_url is invalid, too short (like an ID), missing, or indirect whatsapp, fall back to phone number
+      if (!url || typeof url !== 'string' || url.length < 8 || isIndirectWhatsapp) {
+        url = phone;
+      }
     }
 
     if (!url || typeof url !== 'string') {
@@ -7196,7 +7209,7 @@ app.get('/api/ad-website-decrypted/:id', async (req, res) => {
     // جلب الإعلان من جدول publish_ad أولاً
     let { data: ad, error: fetchError } = await supabase
       .from('publish_ad')
-      .select('id, website_url, phone, is_active, is_paid, payment_status, expires_at')
+      .select('id, website_url, phone, is_active, is_paid, payment_status, expires_at, whatsapp')
       .eq('id', adId)
       .maybeSingle();
 
@@ -7204,7 +7217,7 @@ app.get('/api/ad-website-decrypted/:id', async (req, res) => {
     if (!ad) {
       const { data: adPay, error: payErr } = await supabase
         .from('ads_payment')
-        .select('id, website_url, phone, is_active, is_paid, payment_status, expires_at')
+        .select('id, website_url, phone, is_active, is_paid, payment_status, expires_at, whatsapp')
         .eq('id', adId)
         .maybeSingle();
       ad = adPay;
@@ -7233,16 +7246,24 @@ app.get('/api/ad-website-decrypted/:id', async (req, res) => {
     let decryptedWebsiteUrl = decryptField(ad.website_url);
     const decryptedPhone = decryptField(ad.phone);
 
-    // منطق التفضيل: إذا كان الرابط هو رابط QR للواتساب أو رابط غير مباشر، نفضل استخدام رقم الهاتف مباشرة
-    const isIndirectWhatsapp = decryptedWebsiteUrl && typeof decryptedWebsiteUrl === 'string' && 
-                               (decryptedWebsiteUrl.includes('api.whatsapp.com/qr') || 
-                                decryptedWebsiteUrl.includes('chat.whatsapp.com'));
+    // منطق التفضيل: إذا كان whatsapp مفعل، نستخدم رقم الهاتف مباشرة لفتح الواتساب
+    if (ad.whatsapp) {
+      if (decryptedPhone) {
+        decryptedWebsiteUrl = decryptedPhone;
+      }
+    } else {
+      // منطق التفضيل القديم: إذا كان الرابط هو رابط QR للواتساب أو رابط غير مباشر، نفضل استخدام رقم الهاتف مباشرة
+      const isIndirectWhatsapp = decryptedWebsiteUrl && typeof decryptedWebsiteUrl === 'string' && 
+                                 (decryptedWebsiteUrl.includes('api.whatsapp.com/qr') || 
+                                  decryptedWebsiteUrl.includes('wa.me/qr') ||
+                                  decryptedWebsiteUrl.includes('chat.whatsapp.com'));
 
-    // إذا كان رابط الموقع غير صالح، قصيراً جداً، أو رابط واتساب غير مباشر، نستخدم رقم الهاتف بدلاً منه
-    if (!decryptedWebsiteUrl || typeof decryptedWebsiteUrl !== 'string' || decryptedWebsiteUrl.length < 8 || isIndirectWhatsapp) {
-       if (decryptedPhone) {
-         decryptedWebsiteUrl = decryptedPhone;
-       }
+      // إذا كان رابط الموقع غير صالح، قصيراً جداً، أو رابط واتساب غير مباشر، نستخدم رقم الهاتف بدلاً منه
+      if (!decryptedWebsiteUrl || typeof decryptedWebsiteUrl !== 'string' || decryptedWebsiteUrl.length < 8 || isIndirectWhatsapp) {
+         if (decryptedPhone) {
+           decryptedWebsiteUrl = decryptedPhone;
+         }
+      }
     }
 
     // إذا كان الناتج رقم هاتف، نقوم بتنسيقه كرابط واتساب مباشر

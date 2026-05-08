@@ -50,7 +50,7 @@ const PublishAd: React.FC = () => {
   const [adImagePreview, setAdImagePreview] = useState<string | null>(null);
   const [storeName, setStoreName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
-  const [websiteUrl, setWebsiteUrl] = useState('');
+  const [whatsapp, setWhatsapp] = useState(false);
   const [duration, setDuration] = useState('7'); // Default duration
   const [adPrice, setAdPrice] = useState<number | null>(null);
   const [prices, setPrices] = useState<Record<string, number>>({});
@@ -179,7 +179,7 @@ const PublishAd: React.FC = () => {
 
           // Populate form with existing ad data
           setStoreName(pubAd.store_name || '');
-          setWebsiteUrl(pubAd.website_url || '');
+          setWhatsapp(!!pubAd.whatsapp);
           setPhoneNumber(normalizePhoneNumber(pubAd.phone) || '');
           const durationDays = String(pubAd.duration_days || '7');
           setDuration(durationDays);
@@ -492,7 +492,7 @@ const PublishAd: React.FC = () => {
       const adPayload = {
         store_name: storeName,
         image_url: imageUrl,
-        website_url: websiteUrl,
+        whatsapp: whatsapp,
         duration_days: durationDays,
         latitude: coords?.latitude,
         longitude: coords?.longitude,
@@ -560,7 +560,7 @@ const PublishAd: React.FC = () => {
         user_id: activeUser.id,
         store_name: storeName,
         image_url: imageUrl,
-        website_url: websiteUrl,
+        whatsapp: whatsapp,
         duration_days: duration ? parseInt(duration, 10) : null,
         latitude: coords?.latitude,
         longitude: coords?.longitude,
@@ -758,7 +758,7 @@ const PublishAd: React.FC = () => {
                               <Store className="h-4 w-4 text-imei-cyan" />
                               <span className="text-gray-900 text-sm font-medium">{storeName || t('your_store_name')}</span>
                             </div>
-                            {websiteUrl && (
+                            {whatsapp && (
                               <div className="flex items-center gap-2 mt-1">
                                 <LinkIcon className="h-4 w-4 text-imei-cyan" />
                                 <span className="text-gray-500 text-xs">WhatsApp</span>
@@ -777,7 +777,7 @@ const PublishAd: React.FC = () => {
                               <Store className="h-4 w-4 text-imei-cyan" />
                               <span className="text-gray-900 text-sm font-medium">{storeName || t('your_store_name')}</span>
                             </div>
-                            {websiteUrl && (
+                            {whatsapp && (
                               <div className="flex items-center gap-2 mt-1">
                                 <LinkIcon className="h-4 w-4 text-imei-cyan" />
                                 <span className="text-gray-500 text-xs">WhatsApp</span>
@@ -886,20 +886,23 @@ const PublishAd: React.FC = () => {
                   </div>
                 </div>
 
-                {/* WhatsApp Link */}
-                <div>
-                  <Label htmlFor="websiteUrl" className="text-gray-700">رابط واتساب (اختياري)</Label>
-                  <div className="relative mt-2">
-                    <LinkIcon className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                    <Input
-                      id="websiteUrl"
-                      type="url"
-                      value={websiteUrl}
-                      onChange={(e) => setWebsiteUrl(e.target.value)}
-                      placeholder="https://wa.me/..."
-                      className="pr-10 pl-4 bg-white text-black border-gray-300 focus:border-[#0A84FF] focus:ring-[#0A84FF]"
+                {/* WhatsApp Checkbox */}
+                <div className="p-4 bg-white/40 border border-[#0A84FF]/20 rounded-xl shadow-sm">
+                  <div className="flex items-center space-x-3 space-x-reverse">
+                    <input
+                      id="whatsapp"
+                      type="checkbox"
+                      checked={whatsapp}
+                      onChange={(e) => setWhatsapp(e.target.checked)}
+                      className="h-5 w-5 rounded border-gray-300 text-[#0A84FF] focus:ring-[#0A84FF]"
                     />
+                    <Label htmlFor="whatsapp" className="text-gray-800 font-bold cursor-pointer flex-1">
+                      السماح للعملاء بالتواصل عبر الواتساب
+                    </Label>
                   </div>
+                  <p className="text-xs text-gray-500 mt-2 mr-8">
+                    عند تفعيل هذا الخيار، سيظهر زر "تواصل الآن" في إعلانك لفتح محادثة واتساب مباشرة معك.
+                  </p>
                 </div>
 
                 {/* Submit Button */}
