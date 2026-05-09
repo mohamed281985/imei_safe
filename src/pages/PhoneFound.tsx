@@ -102,8 +102,22 @@ const PhoneFound: React.FC = () => {
 
     const cleanPhone = finderPhone.replace(/\D/g, '');
     console.log('فتح واتساب مع الرقم:', cleanPhone);
-    const whatsappUrl = `https://wa.me/${cleanPhone}`;
-    window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+    const whatsappDeepLink = `whatsapp://send?phone=${cleanPhone}`;
+    const whatsappWebLink = `https://wa.me/${cleanPhone}`;
+
+    const capacitor = (window as any)?.Capacitor;
+    if (capacitor) {
+      try {
+        capacitor.Plugins.Browser.open({ url: whatsappDeepLink });
+      } catch (e) {
+        capacitor.Plugins.Browser.open({ url: whatsappWebLink });
+      }
+    } else {
+      window.location.href = whatsappDeepLink;
+      setTimeout(() => {
+        window.open(whatsappWebLink, '_blank', 'noopener,noreferrer');
+      }, 500);
+    }
   };
 
   return (

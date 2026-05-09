@@ -128,8 +128,23 @@ const AppNavbar: React.FC = () => {
 
     // فتح رابط واتساب مع رقم الدعم الفني مع رمز الدولة
     const fullNumber = countryCode ? `${countryCode}${supportNumber}` : supportNumber;
-    const whatsappUrl = `https://wa.me/${fullNumber.replace(/\D/g, '')}`;
-    window.open(whatsappUrl, '_blank');
+    const cleanPhone = fullNumber.replace(/\D/g, '');
+    const whatsappDeepLink = `whatsapp://send?phone=${cleanPhone}`;
+    const whatsappWebLink = `https://wa.me/${cleanPhone}`;
+
+    const capacitor = (window as any)?.Capacitor;
+    if (capacitor) {
+      try {
+        capacitor.Plugins.Browser.open({ url: whatsappDeepLink });
+      } catch (e) {
+        capacitor.Plugins.Browser.open({ url: whatsappWebLink });
+      }
+    } else {
+      window.location.href = whatsappDeepLink;
+      setTimeout(() => {
+        window.open(whatsappWebLink, '_blank');
+      }, 500);
+    }
   };
 
   // ⭐ جلب وتحديث رصيد البونص

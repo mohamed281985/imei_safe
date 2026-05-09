@@ -16,12 +16,80 @@ import { useScrollToTop } from '../hooks/useScrollToTop';
 const Login: React.FC = () => {
   useScrollToTop();
   const { t } = useLanguage();
-  // طلب صلاحية استقبال الإشعارات عند فتح صفحة تسجيل الدخول
+  const { toast } = useToast();
+  const navigate = useNavigate();
+  const { loginWithBiometricToken } = useAuth();
+
+  // وظيفة لتشغيل البصمة تلقائياً أو عند الضغط على الزر
+  const triggerBiometric = async (isAutoTrigger = false) => {
+    try {
+      const Fingerprint = (window as any).Fingerprint || ((window as any).cordova && (window as any).cordova.plugins && (window as any).cordova.plugins.fingerprint);
+      
+      if (!Fingerprint) {
+        if (!isAutoTrigger) {
+          toast({ title: t('error'), description: t('fingerprint_plugin_not_available'), variant: 'destructive' });
+        }
+        return;
+      }
+
+      // التحقق من وجود توكن قبل إظهار واجهة البصمة
+      if (!(window as any).SecureStorage) return;
+      
+      const ss = new (window as any).SecureStorage(() => {}, () => {}, 'my_app_storage');
+      
+      ss.get(
+        (token: string) => {
+          if (!token) {
+            if (!isAutoTrigger) toast({ title: t('error'), description: t('biometric_token_not_found'), variant: 'destructive' });
+            return;
+          }
+
+          // إذا وجدنا توكن، نظهر واجهة البصمة
+          Fingerprint.show({
+            clientId: "MyApp",
+            clientSecret: "password",
+            disableBackup: true,
+            localizedFallbackTitle: "Use PIN",
+            localizedReason: "Authenticate with fingerprint",
+          }, function(successResult) {
+            (async () => {
+              const success = await loginWithBiometricToken?.(token);
+              if (success) {
+                localStorage.removeItem('auto_logged_out');
+                localStorage.removeItem('manual_logout');
+                navigate('/dashboard', { replace: true });
+              } else {
+                toast({ title: t('error'), description: t('biometric_login_failed'), variant: 'destructive' });
+              }
+            })();
+          }, function(errorResult) {
+            console.debug('Fingerprint authentication failed');
+            if (!isAutoTrigger) toast({ title: t('error'), description: t('authentication_failed'), variant: 'destructive' });
+          });
+        },
+        () => {
+          if (!isAutoTrigger) toast({ title: t('error'), description: t('biometric_not_activated_desc'), variant: 'destructive' });
+        },
+        'biometricAuthToken'
+      );
+    } catch (err) {
+      console.error("Fingerprint auth failed:", err);
+    }
+  };
+
+  // طلب صلاحية استقبال الإشعارات والتحقق من الخروج التلقائي
   useEffect(() => {
     import('@/lib/fcm-capacitor').then(mod => {
       mod.registerFCMToken();
     });
+
+    const autoLoggedOut = localStorage.getItem('auto_logged_out');
+    if (autoLoggedOut === 'true') {
+      // إذا كان خروجاً تلقائياً، نحاول تشغيل البصمة مباشرة
+      setTimeout(() => triggerBiometric(true), 1000); // تأخير بسيط لضمان تحميل الإضافات
+    }
   }, []);
+
   return (
     <PageContainer>
       <div className="flex flex-col items-center justify-center min-h-screen p-2">
@@ -41,7 +109,7 @@ const Login: React.FC = () => {
             </div>
           </CardHeader>
             <CardContent className="space-y-4 p-2">
-              <LoginForm hidePhoneField biometricButton={<BiometricButton />} />
+              <LoginForm hidePhoneField biometricButton={<BiometricButton onTrigger={() => triggerBiometric(false)} />} />
               <AuthLinks />
               <div className="text-center text-base md:text-lg font-bold mt-2">
                 <Link to="/forgot-password" className="text-orange-500 hover:underline">
@@ -57,76 +125,11 @@ const Login: React.FC = () => {
 };
 
 // زر جديد لتجربة window.Fingerprint
-const BiometricButton: React.FC = () => {
-  const { loginWithBiometricToken } = useAuth();
-  const { toast } = useToast();
-  const { t } = useLanguage();
-  const navigate = useNavigate();
-
-  const handleBiometric = async () => {
-    try {
-      const Fingerprint = (window as any).Fingerprint || ((window as any).cordova && (window as any).cordova.plugins && (window as any).cordova.plugins.fingerprint);
-      if (!Fingerprint) {
-        toast({ title: t('error'), description: t('fingerprint_plugin_not_available'), variant: 'destructive' });
-        return;
-      }
-      Fingerprint.show({
-        clientId: "MyApp",
-        clientSecret: "password", // Only for Android
-        disableBackup: true, // Disable PIN/password fallback
-        localizedFallbackTitle: "Use PIN", // iOS
-        localizedReason: "Authenticate with fingerprint", // iOS
-      }, function(successResult) {
-        (async () => {
-          // استخدام SecureStorage بدلاً من CapacitorSecureBiometricStorage
-          if ((window as any).SecureStorage) {
-            const ss = new (window as any).SecureStorage(
-              () => { console.log('SecureStorage: Instance created for GET.'); },
-              (error: any) => {
-                console.error('SecureStorage: Instance creation failed for GET:', error); 
-                toast({ title: t('secure_storage_init_failed_title'), description: t('secure_storage_init_failed_desc'), variant: 'destructive' });
-                return; // لا نتابع إذا فشلت التهيئة
-              },
-              'my_app_storage'
-            );
-            await ss.get(
-              async (token: string) => {
-                console.log('SecureStorage: Retrieved biometric token:', token);
-                if (token) {
-                  const success = await loginWithBiometricToken?.(token);
-                  if (success) {
-                    navigate('/dashboard', { replace: true });
-                  } else {
-                    toast({ title: t('error'), description: t('biometric_login_failed'), variant: 'destructive' });
-                  }
-                } else {
-                  toast({ title: t('error'), description: t('biometric_token_not_found'), variant: 'destructive' });
-                }
-              }, 
-              (error: any) => {
-                console.error('SecureStorage: Failed to get token.', typeof error === 'object' ? JSON.stringify(error) : String(error));
-                toast({ title: t('error'), description: t('biometric_not_activated_desc'), variant: 'destructive', duration: 7000 });
-              },
-              'biometricAuthToken'
-            );
-          } else {
-            toast({ title: t('error'), description: t('secure_storage_not_available'), variant: 'destructive' });
-          }
-        })();
-      }, function(errorResult) {
-        console.debug('Fingerprint authentication failed');
-        toast({ title: t('error'), description: t('authentication_failed'), variant: 'destructive' });
-      });
-    } catch (err) {
-      console.error("Fingerprint auth failed:", err);
-      toast({ title: t('error'), description: t('authentication_failed'), variant: 'destructive' });
-    }
-  };
-
+const BiometricButton: React.FC<{ onTrigger: () => void }> = ({ onTrigger }) => {
   return (
     <Button
       type="button" 
-      onClick={handleBiometric}
+      onClick={onTrigger}
       className="rounded-full w-12 h-12 p-0 flex items-center justify-center bg-orange-500 hover:bg-orange-600 text-white"
     >
       <Fingerprint className="h-10 w-10 text-white" />

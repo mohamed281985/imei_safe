@@ -34,7 +34,6 @@ interface ads_payment {
   image_url: string;
   latitude?: number;
   longitude?: number;
-  website_url?: string;
   expires_at: string;
 }
 interface Accessory {
@@ -661,7 +660,7 @@ const Dashboard: React.FC = () => {
         // ⭐ تعديل: جلب الإعلانات المميزة فقط من جدول ads_payment
         const { data: specialAds, error: specialError } = await supabase
           .from('ads_payment') // الإعلانات المميزة
-          .select('id, image_url, latitude, longitude, website_url, is_paid, expires_at, phone, type')
+          .select('id, image_url, latitude, longitude, is_paid, expires_at, phone, type')
           .eq('is_active', true)
           .eq('is_paid', true)
           .eq('type', 'special') // التأكد من أن النوع هو special

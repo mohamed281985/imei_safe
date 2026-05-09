@@ -10,7 +10,6 @@ import { useScrollToTop } from '@/hooks/useScrollToTop';
 interface Advertisement {
   id: string;
   image_url: string;
-  website_url?: string;
   title?: string;
   description?: string;
 }
@@ -45,7 +44,7 @@ const SpecialAdPage: React.FC = () => {
       // جلب الإعلان من جدول special_ad
       const { data, error } = await supabase
         .from('special_ad')
-        .select('id, image_url, website_url, title, description')
+        .select('id, image_url, title, description')
         .eq('id', id)
         .single();
 
@@ -71,10 +70,7 @@ const SpecialAdPage: React.FC = () => {
   };
 
   const handleAdClick = () => {
-    if (ad?.website_url) {
-      // فتح الرابط في WebView
-      navigate(`/webview?url=${encodeURIComponent(ad.website_url)}`);
-    }
+    // تم إزالة توجيه الرابط الخارجي
   };
 
   if (loading) {

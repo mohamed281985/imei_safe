@@ -95,9 +95,23 @@ export default function AdPopupModal({ isOpen, onClose, userLocation, ads }: AdP
 
   const openWhatsApp = (phone) => {
     if (phone && phone.trim()) {
-      const formattedPhone = phone.replace(/\D/g, '');
-      const url = `https://wa.me/${formattedPhone}`;
-      window.open(url, '_blank');
+      const cleanPhone = phone.replace(/\D/g, '');
+      const whatsappDeepLink = `whatsapp://send?phone=${cleanPhone}`;
+      const whatsappWebLink = `https://wa.me/${cleanPhone}`;
+
+      const capacitor = (window as any)?.Capacitor;
+      if (capacitor) {
+        try {
+          capacitor.Plugins.Browser.open({ url: whatsappDeepLink });
+        } catch (e) {
+          capacitor.Plugins.Browser.open({ url: whatsappWebLink });
+        }
+      } else {
+        window.location.href = whatsappDeepLink;
+        setTimeout(() => {
+          window.open(whatsappWebLink, '_blank');
+        }, 500);
+      }
     } else {
       alert('عذراً، لا يوجد رقم هاتف متاح لهذا المحل');
     }

@@ -6,6 +6,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 import { Device } from '@capacitor/device';
+import { Browser } from '@capacitor/browser';
+import { Capacitor } from '@capacitor/core';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -263,8 +265,22 @@ const ProfileMenuPage: React.FC = () => {
 
         // فتح رابط واتساب مع رقم الدعم الفني مع رمز الدولة
         const fullNumber = countryCode ? `${countryCode}${supportNumber}` : supportNumber;
-        const whatsappUrl = `https://wa.me/${fullNumber.replace(/\D/g, '')}`;
-        window.open(whatsappUrl, '_blank');
+        const cleanPhone = fullNumber.replace(/\D/g, '');
+        const whatsappDeepLink = `whatsapp://send?phone=${cleanPhone}`;
+        const whatsappWebLink = `https://wa.me/${cleanPhone}`;
+
+        if (Capacitor.isNativePlatform()) {
+          try {
+            Browser.open({ url: whatsappDeepLink });
+          } catch (e) {
+            Browser.open({ url: whatsappWebLink });
+          }
+        } else {
+          window.location.href = whatsappDeepLink;
+          setTimeout(() => {
+            window.open(whatsappWebLink, '_blank');
+          }, 500);
+        }
     };
 
     const handleLanguageChange = (lang: 'ar' | 'en' | 'fr' | 'hi') => {

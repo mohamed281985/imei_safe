@@ -3,6 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useLanguage } from '../contexts/LanguageContext';
 import './ProductDetails.css';
+import { Browser } from '@capacitor/browser';
+import { Capacitor } from '@capacitor/core';
 import { 
   Heart, 
   Share2, 
@@ -105,7 +107,32 @@ const ProductDetails = () => {
       const data = await response.json();
 
       if (data.success && data.phone) {
-        window.open(`https://wa.me/${data.phone}`, '_blank');
+        let phone = data.phone;
+        let cleanPhone = '';
+
+        if (phone.includes('phone=')) {
+          const match = phone.match(/phone=([0-9]+)/);
+          if (match && match[1]) {
+            cleanPhone = match[1];
+          }
+        }
+        
+        if (!cleanPhone) {
+          cleanPhone = phone.replace(/\D/g, '');
+        }
+        
+        const whatsappDeepLink = `whatsapp://send?phone=${cleanPhone}`;
+        const whatsappWebLink = `https://wa.me/${cleanPhone}`;
+
+        if (Capacitor.isNativePlatform()) {
+          // استخدام _system لفتح التطبيق مباشرة وتجنب فتح المتصفح الداخلي
+          window.open(whatsappDeepLink, '_system');
+        } else {
+          window.location.href = whatsappDeepLink;
+          setTimeout(() => {
+            window.open(whatsappWebLink, '_blank');
+          }, 500);
+        }
       } else {
         alert(t('no_contact_info'));
       }

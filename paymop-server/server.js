@@ -6652,6 +6652,38 @@ const normalizeRedirectUrl = (url) => {
   return `https://${normalized}`;
 };
 
+app.get('/api/ad-website-decrypted/:id', verifyJwtToken, async (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ error: 'id is required' });
+
+    const { data, error } = await supabase
+      .from('ads_payment')
+      .select('id, is_active, is_paid, expires_at, phone')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error) {
+      console.error('/api/ad-website-decrypted/:id supabase error:', error);
+      return sendError(res, 500, 'Database error', error);
+    }
+    
+    if (!data || !data.is_active || !data.is_paid || (data.expires_at && new Date(data.expires_at) <= new Date())) {
+      return res.status(404).json({ success: false, error: 'Ad not available' });
+    }
+
+    const phone = decryptField(data.phone);
+    if (!phone) {
+      return res.status(404).json({ success: false, error: 'Phone not found' });
+    }
+
+    return res.json({ success: true, website_url: phone });
+  } catch (e) {
+    console.error('/api/ad-website-decrypted/:id error:', e);
+    return sendError(res, 500, 'Server error', e);
+  }
+});
+
 app.get('/api/ad-redirect/:id', async (req, res) => {
   try {
     const id = String(req.params.id || '').trim();

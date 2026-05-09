@@ -21,6 +21,8 @@ import localAdImage from '@/assets/images/ads/default_ad.jpeg';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { Browser } from '@capacitor/browser';
+import { Capacitor } from '@capacitor/core';
 
 interface ads_payment {
   id: number;
@@ -195,20 +197,35 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
       const data = await response.json();
 
       if (data.success && data.website_url) {
-        let finalUrl = data.website_url;
-        
-        // التأكد من أن الرابط هو رابط واتساب إذا كان رقم هاتف
-        if (/^\+?[0-9]{8,15}$/.test(finalUrl.trim())) {
-          finalUrl = `https://wa.me/${finalUrl.trim().replace(/\D/g, '')}`;
-        }
+        let phone = data.website_url;
+        let cleanPhone = '';
 
-        const browserPlugin = (window as any)?.Capacitor?.Plugins?.Browser;
-        if (browserPlugin?.openExternal) {
-          await browserPlugin.openExternal({ url: finalUrl });
-        } else if (browserPlugin?.open) {
-          await browserPlugin.open({ url: finalUrl, toolbarColor: '#000000' });
+        if (phone.includes('phone=')) {
+          const match = phone.match(/phone=([0-9]+)/);
+          if (match && match[1]) {
+            cleanPhone = match[1];
+          }
+        }
+        
+        if (!cleanPhone) {
+          cleanPhone = phone.replace(/\D/g, '');
+        }
+        
+        // استخدام رابط Deep Link للواتساب لفتحه مباشرة
+        const whatsappDeepLink = `whatsapp://send?phone=${cleanPhone}`;
+        const whatsappWebLink = `https://wa.me/${cleanPhone}`;
+
+        // محاولة الفتح باستخدام Capacitor App Launcher أو Browser
+        if (Capacitor.isNativePlatform()) {
+          // استخدام _system لفتح التطبيق مباشرة وتجنب فتح المتصفح الداخلي
+          window.open(whatsappDeepLink, '_system');
         } else {
-          window.open(finalUrl, '_blank', 'noopener,noreferrer');
+          // في المتصفح العادي
+          window.location.href = whatsappDeepLink;
+          // fallback بعد فترة قصيرة للمتصفح
+          setTimeout(() => {
+            window.open(whatsappWebLink, '_blank');
+          }, 500);
         }
       } else {
         // في حال فشل جلب الرابط المشفر، نستخدم التوجيه التقليدي كخيار بديل
@@ -249,7 +266,11 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
                 <img
                   src={ads[currentAdIndex]?.image_url}
                   alt={t('advertisement')}
-                  className="w-full h-full object-cover absolute inset-0"
+                  className="w-full h-full object-cover absolute inset-0 cursor-pointer"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openAdRedirect(ads[currentAdIndex].id);
+                  }}
                 />
                 <div
                   className="absolute bottom-2 left-2 bg-orange-500 text-black text-xs font-bold px-3 py-1 rounded shadow-lg z-20"
@@ -262,7 +283,11 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
               <img
                 src={ads[currentAdIndex]?.image_url}
                 alt={t('advertisement')}
-                className="w-full h-full object-cover absolute inset-0"
+                className="w-full h-full object-cover absolute inset-0 cursor-pointer"
+                onClick={(e) => {
+                  e.preventDefault();
+                  openAdRedirect(ads[currentAdIndex].id);
+                }}
               />
             )}
             {/* زر الموقع الجغرافي */}
