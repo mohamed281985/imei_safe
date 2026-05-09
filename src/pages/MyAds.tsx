@@ -49,7 +49,6 @@ const normalizeWebsiteUrl = (url: string): string => {
 const sanitizeAd = (ad: any): Ad => ({
   ...ad,
   store_name: sanitizeServerValue(ad.store_name),
-  website_url: sanitizeServerValue(ad.website_url),
   image_url: sanitizeServerValue(ad.image_url),
 });
 
@@ -325,16 +324,6 @@ const MyAds: React.FC = () => {
                       })()
                       : '-'}
                   </span>
-                  {normalizeWebsiteUrl(ad.website_url || '') && (
-                    <a
-                      href={normalizeWebsiteUrl(ad.website_url || '')}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[#289c8e] text-xs underline font-semibold hover:text-cyan-400 transition-colors"
-                    >
-                      {normalizeWebsiteUrl(ad.website_url || '')}
-                    </a>
-                  )}
                   <span className="text-xs text-black/70 font-light">{ad.upload_date?.slice(0, 10)}</span>
                 </div>
                 <div className="flex gap-2 mt-2">

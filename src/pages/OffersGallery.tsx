@@ -10,6 +10,8 @@ import secureFetch from '@/utils/secureFetch';
 import { validateSession } from '@/utils/session';
 import { validateId } from '@/utils/validateId';
 import axiosInstance from '@/services/axiosInterceptor';
+import { Browser } from '@capacitor/browser';
+import { Capacitor } from '@capacitor/core';
 
 const OffersGallery = () => {
     useScrollToTop();
@@ -310,8 +312,7 @@ const OffersGallery = () => {
 
             // افتح نافذة فارغة فورًا لتجنّب حظر النوافذ المنبثقة في المتصفّحات
             let popup: Window | null = null;
-            const isCapacitorBrowserAvailable = (window as any).Capacitor && (window as any).Capacitor.Plugins && (window as any).Capacitor.Plugins.Browser;
-            if (!isCapacitorBrowserAvailable) {
+            if (!Capacitor.isNativePlatform()) {
                 try {
                     // افتح نافذة فارغة بدون flags التي قد تمنع التحكم بها لاحقاً
                     popup = window.open('about:blank', '_blank');
@@ -478,8 +479,8 @@ const OffersGallery = () => {
                 }, 3000); // فحص كل 3 ثوانٍ
             };
             if (paymentData.iframe_url) {
-                if (isCapacitorBrowserAvailable) {
-                    await (window as any).Capacitor.Plugins.Browser.open({ url: paymentData.iframe_url, toolbarColor: '#000000' });
+                if (Capacitor.isNativePlatform()) {
+                    await Browser.open({ url: paymentData.iframe_url, toolbarColor: '#000000' });
                 } else if (popup) {
                     try {
                         popup.location.href = paymentData.iframe_url;
@@ -524,8 +525,8 @@ const OffersGallery = () => {
                                 const linkJson = await resp.json();
                                 if (linkJson.iframe_url) {
                                     // افتح البوابة الآن
-                                    if (isCapacitorBrowserAvailable) {
-                                        await (window as any).Capacitor.Plugins.Browser.open({ url: linkJson.iframe_url, toolbarColor: '#000000' });
+                                    if (Capacitor.isNativePlatform()) {
+                                        await Browser.open({ url: linkJson.iframe_url, toolbarColor: '#000000' });
                                     } else {
                                         window.open(linkJson.iframe_url, '_blank', 'noopener,noreferrer');
                                     }

@@ -3,7 +3,6 @@ import React, { createContext, useState, useContext, ReactNode } from 'react';
 interface Advertisement {
   id: string;
   image_url: string;
-  website_url?: string;
 }
 
 interface AdModalContextType {

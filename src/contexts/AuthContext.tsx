@@ -25,7 +25,7 @@ interface AuthContextType {
   clearFirstLogin: () => void; // ⭐ دالة لإعادة تعيين الحالة
   login: (email: string, password: string, remember?: boolean) => Promise<{ success: boolean; needsProfileCompletion?: boolean; error?: string; }>;
   loginWithGoogle: () => Promise<boolean>;
-  logout: () => void;
+  logout: (isAutoLogout?: boolean) => void;
   signup: (email: string, password: string, username: string, phoneNumber: string, idLast6: string) => Promise<'success' | 'email_exists' | 'error'>;
   error: string | null;
   completeProfile: () => void; // دالة لتحديث حالة اكتمال الملف يدويًا
@@ -145,34 +145,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // تم تعريف دالة الخروج هنا وتغليفها بـ useCallback
   // لحل مشكلة "used before its declaration" في الـ useEffects.
-  const logout = useCallback(async () => {
-    // الخطوة 1: تسجيل علامة في التخزين المحلي للإشارة إلى أن الخروج تم بشكل يدوي.
-    // هذا يمنع checkAuth من تسجيل الدخول تلقائيًا عند إعادة تشغيل التطبيق.
-    localStorage.setItem('manual_logout', 'true');
+  const logout = useCallback(async (isAutoLogout: boolean = false) => {
+    // الخطوة 1: تسجيل علامة في التخزين المحلي للإشارة إلى نوع الخروج.
+    if (isAutoLogout) {
+      localStorage.setItem('auto_logged_out', 'true');
+      localStorage.removeItem('manual_logout');
+    } else {
+      localStorage.setItem('manual_logout', 'true');
+      localStorage.removeItem('auto_logged_out');
+    }
 
     // الخطوة 2: مسح حالة المستخدم محليًا "لقفل" واجهة التطبيق.
     setUser(null);
     setNeedsProfileCompletion(false);
     setUnreadNotificationsCount(0);
-    setIsFirstLogin(false); // ⭐ إعادة تعيين الحالة عند الخروج
+    setIsFirstLogin(false);
     setLastActivity(Date.now());
 
     // إذا كان هناك توكن بصمة مفعل، نقوم بتسجيل الخروج محلياً فقط للحفاظ على صلاحية التوكن على السيرفر.
     const biometricStored = await isBiometricTokenStored();
     try {
       if (biometricStored) {
-        // خروج محلي فقط: يمسح الجلسة من ذاكرة التطبيق ولكنه لا يبطل التوكن في السيرفر.
         await supabase.auth.signOut({ scope: 'local' });
         console.log('Biometric token present; performed local-only signOut.');
       } else {
-        // خروج كامل: يبطل الجلسة في السيرفر ويمسحها محلياً.
         await supabase.auth.signOut();
         console.log('No biometric token; performed full global signOut.');
       }
     } catch (err) {
       console.error('Supabase signOut failed:', err);
     }
-  }, []); // الاعتماديات فارغة لأن دوال الحالة (setters) مستقرة
+  }, []);
 
   // Function to update last activity time
   const updateLastActivity = () => {
@@ -181,10 +184,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   
   // Add event listeners for user activity
   useEffect(() => {
-    const activityEvents = ['mousedown', 'keydown', 'scroll', 'touchstart', 'mousemove', 'click', 'keypress'];
+    // Removed mousemove as it can be triggered too often and keep session alive unintentionally
+    const activityEvents = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click', 'keypress'];
     
+    // Throttle activity updates to once every 10 seconds to improve performance
+    let lastUpdate = 0;
     const handleActivity = () => {
-      updateLastActivity();
+      const now = Date.now();
+      if (now - lastUpdate > 10000) {
+        updateLastActivity();
+        lastUpdate = now;
+      }
     };
     
     activityEvents.forEach(event => {
@@ -200,13 +210,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   
   // Check for inactivity and logout
   useEffect(() => {
+    if (!user) return; // Only check if user is logged in
+
     const checkInactivity = () => {
       const now = Date.now();
       const timeElapsed = now - lastActivity;
       const FIVE_MINUTES = 5 * 60 * 1000; // 5 minutes in milliseconds
       
-      if (timeElapsed > FIVE_MINUTES && user) {
-        logout();
+      if (timeElapsed >= FIVE_MINUTES) {
+        console.log('Inactivity detected, logging out...');
+        logout(true); // تمرير true للإشارة إلى خروج تلقائي
         toast({
           title: t('session_expired'),
           description: t('logged_out_inactivity'),
@@ -214,7 +227,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     };
     
-    const interval = setInterval(checkInactivity, 1000); // Check every second
+    const interval = setInterval(checkInactivity, 10000); // Check every 10 seconds instead of every 1s
     
     return () => clearInterval(interval);
   }, [lastActivity, user, t, toast, logout]);
@@ -241,7 +254,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (backgroundTimestamp) {
           const timeInBackground = Date.now() - parseInt(backgroundTimestamp, 10);
           if (timeInBackground > FIVE_MINUTES) {
-            logout();
+            logout(true); // تمرير true للإشارة إلى خروج تلقائي
             toast({ title: t('session_expired'), description: t('logged_out_inactivity') });
           }
           // إزالة المؤقت دائماً بعد التحقق
@@ -262,11 +275,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // التحقق من المصادقة والتعامل مع الجلسة
     const checkAuth = async () => {
       try {
-        // التحقق مما إذا كان المستخدم قد سجل الخروج يدويًا
+        // التحقق مما إذا كان المستخدم قد سجل الخروج يدويًا أو تلقائيًا
         const manualLogout = localStorage.getItem('manual_logout');
-        if (manualLogout === 'true') {
+        const autoLoggedOut = localStorage.getItem('auto_logged_out');
+        
+        if (manualLogout === 'true' || autoLoggedOut === 'true') {
           // لا تقم بتسجيل الدخول تلقائيًا، مما يجبر المستخدم على رؤية شاشة تسجيل الدخول.
-          // هذا يعطي إحساسًا بانتهاء الجلسة مع الحفاظ على صلاحية التوكن للبصمة.
           setIsLoading(false);
           return;
         }
@@ -364,9 +378,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
         setUser(userProfile);
         setLastActivity(Date.now());
-        setIsFirstLogin(true); // ⭐ تعيين حالة أول تسجيل دخول
+        setIsFirstLogin(true);
 
         localStorage.removeItem('manual_logout');
+        localStorage.removeItem('auto_logged_out');
         
         // تحديث عدد الإشعارات غير المقروؤة
         refreshNotifications();
@@ -588,9 +603,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
         setUser(userProfile);
         setLastActivity(Date.now());
-        setIsFirstLogin(true); // ⭐ تفعيل حالة أول تسجيل دخول
-        // إزالة علامة تسجيل الخروج اليدوي عند تسجيل الدخول بنجاح
+        setIsFirstLogin(true);
+        // إزالة علامات تسجيل الخروج عند تسجيل الدخول بنجاح
         localStorage.removeItem('manual_logout');
+        localStorage.removeItem('auto_logged_out');
         
         // تحديث عدد الإشعارات غير المقروؤة
         refreshNotifications();

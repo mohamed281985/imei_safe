@@ -614,7 +614,6 @@ export default {
   "enter_store_name": "Entrez le nom du magasin ou de l'entreprise",
   "ad_duration": "Durée de l'annonce",
   "days": "Jours",
-  "website_url": "URL du site web",
   "whatsapp_link": "Lien WhatsApp",
   "publishing": "Publication en cours...",
   "ad_published_successfully": "Votre annonce a été publiée avec succès !",

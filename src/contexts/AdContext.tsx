@@ -6,7 +6,6 @@ export interface ads_payment {
   image_url: string;
   is_active: boolean;
   page?: string;
-  website_url?: string;
   adType?: 'normal' | 'special';
   store_name?: string;
   user_id?: string;

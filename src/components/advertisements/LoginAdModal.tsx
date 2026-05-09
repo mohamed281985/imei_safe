@@ -7,7 +7,6 @@ import useSpecialAdDisplay from '../../hooks/useSpecialAdDisplay';
 interface Advertisement {
   id: string;
   image_url: string;
-  website_url?: string;
   latitude?: number;
   longitude?: number;
   shop_location?: string;
@@ -56,9 +55,7 @@ const LoginAdModal: React.FC<LoginAdModalProps> = ({ ad, onClose }) => {
     }
   };
   const handleAdClick = () => {
-    if (ad.website_url) {
-      window.open(ad.website_url, '_blank', 'noopener,noreferrer');
-    }
+    // تم إزالة توجيه الرابط الخارجي
   };
 
   // تحديد ما إذا كان يجب عرض الإعلان المميز

@@ -606,7 +606,6 @@ export default {
   "enter_store_name": "स्टोर या व्यवसाय का नाम दर्ज करें",
   "ad_duration": "विज्ञापन की अवधि",
   "days": "दिन",
-  "website_url": "वेबसाइट URL",
   "whatsapp_link": "व्हाट्सएप लिंक",
   "publishing": "प्रकाशित हो रहा है...",
   "ad_published_successfully": "आपका विज्ञापन सफलतापूर्वक प्रकाशित हो गया है!",
