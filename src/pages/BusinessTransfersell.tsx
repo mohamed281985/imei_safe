@@ -1099,6 +1099,7 @@ const BusinessTransfer: React.FC = () => {
                       required
                       placeholder="اسم البائع سيظهر هنا تلقائياً"
                       disabled={isLoading || isBusinessRole(user?.role) || isFormLocked}
+                      readOnly
                     />
                   </div>
                   <div>
@@ -1118,6 +1119,7 @@ const BusinessTransfer: React.FC = () => {
                       maxLength={15}
                       required
                       disabled={isLoading || user?.role === 'business' || isFormLocked}
+                      readOnly
                     />
                   </div>
                   {phoneImage && (

@@ -1287,6 +1287,7 @@ const BusinessTransferBuy: React.FC = () => {
                       className="input-field w-full"
                       required
                       disabled={isLoading || user?.role === 'business'}
+                      readOnly
                     />
                   </div>
                   <div>
@@ -1299,6 +1300,7 @@ const BusinessTransferBuy: React.FC = () => {
                       maxLength={15}
                       required
                       disabled={isLoading || user?.role === 'business' }
+                      readOnly
                     />
                   </div>
                   <div>
@@ -1311,6 +1313,7 @@ const BusinessTransferBuy: React.FC = () => {
                       required
                       disabled={isLoading || user?.role === 'business'}
                       placeholder="example@email.com"
+                      readOnly
                     />
                   </div>
                   <div>
@@ -1326,6 +1329,7 @@ const BusinessTransferBuy: React.FC = () => {
                       placeholder="******"
                       required
                       disabled={isLoading || user?.role === 'business'}
+                      readOnly
                     />
                   </div>
                 </div>

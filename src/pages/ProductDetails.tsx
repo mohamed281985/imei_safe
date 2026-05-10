@@ -5,6 +5,8 @@ import { useLanguage } from '../contexts/LanguageContext';
 import './ProductDetails.css';
 import { Browser } from '@capacitor/browser';
 import { Capacitor } from '@capacitor/core';
+import { Share } from '@capacitor/share';
+import { useToast } from '@/hooks/use-toast';
 import { 
   Heart, 
   Share2, 
@@ -44,7 +46,7 @@ L.Icon.Default.mergeOptions({
 interface Product {
   id: string;
   title: string;
-  brand?: string;
+  phone_type?: string; // ✅ تم التأكد من وجود الحقل
   model?: string;
   category?: string;
   compatibility?: string;
@@ -78,6 +80,7 @@ const ProductDetails = () => {
     const { id } = useParams();
     const navigate = useNavigate();
     const { t } = useLanguage();
+    const { toast } = useToast();
     const [product, setProduct] = useState<Product | null>(null);
     const [loading, setLoading] = useState(true);
     const [loadingPhone, setLoadingPhone] = useState(false);
@@ -141,6 +144,75 @@ const ProductDetails = () => {
       alert(t('error_fetching_contact'));
     } finally {
       setLoadingPhone(false);
+    }
+  };
+
+  // Favorites stored as array of product ids in localStorage under 'favorites'
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('favorites');
+      if (raw) {
+        const arr: string[] = JSON.parse(raw);
+        setIsFavorite(!!(id && arr.includes(id)));
+      } else {
+        setIsFavorite(false);
+      }
+    } catch (e) {
+      setIsFavorite(false);
+    }
+  }, [id]);
+
+  const toggleFavorite = () => {
+    if (!id) return;
+    try {
+      const raw = localStorage.getItem('favorites');
+      const arr: string[] = raw ? JSON.parse(raw) : [];
+      const exists = arr.includes(id);
+      let next: string[];
+      if (exists) {
+        next = arr.filter(x => x !== id);
+      } else {
+        next = [id, ...arr];
+      }
+      localStorage.setItem('favorites', JSON.stringify(next));
+      setIsFavorite(!exists);
+      toast({ title: exists ? 'أُزيل من المفضلة' : 'أُضيف للمفضلة' });
+    } catch (e) {
+      console.error('Favorite toggle failed', e);
+    }
+  };
+
+  const shareProduct = async () => {
+    if (!product) return;
+    const url = window.location.href;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: product.title, url });
+        return;
+      }
+
+      if (Capacitor.isNativePlatform()) {
+        await Share.share({ title: product.title, text: product.description || '', url });
+        return;
+      }
+
+      // Fallback: copy to clipboard
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(url);
+        toast({ title: 'تم النسخ', description: 'تم نسخ رابط المنتج إلى الحافظة.' });
+        return;
+      }
+
+      // Last resort: open share URL in new tab
+      window.open(url, '_blank');
+    } catch (err) {
+      console.error('Share failed:', err);
+      try {
+        await navigator.clipboard.writeText(url);
+        toast({ title: 'تم النسخ', description: 'تم نسخ رابط المنتج إلى الحافظة.' });
+      } catch (e) {
+        alert('فشل في المشاركة.');
+      }
     }
   };
 
@@ -250,7 +322,15 @@ const ProductDetails = () => {
             <ChevronRight className="h-6 w-6 text-gray-800" />
           </button>
           <h1 className="text-lg font-bold text-gray-800">تفاصيل المنتج</h1>
-          <div className="w-12"></div> {/* Spacer to center title */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate('/favorites')}
+              className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/60 bg-white/40 backdrop-blur-xl shadow-sm"
+              aria-label="المفضلة"
+            >
+              <Heart className="h-6 w-6 text-gray-800" />
+            </button>
+          </div>
         </div>
 
         {/* Hero Image Section */}
@@ -259,24 +339,18 @@ const ProductDetails = () => {
             {/* Floating Buttons inside Hero */}
             <div className="absolute top-6 left-6 z-10">
               <button 
-                onClick={() => setIsFavorite(!isFavorite)}
-                className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/80 backdrop-blur-md shadow-sm transition-transform active:scale-90"
-              >
-                <Heart className={`h-6 w-6 ${isFavorite ? 'fill-red-500 text-red-500' : 'text-[#0A84FF]'}`} />
-              </button>
+                  onClick={toggleFavorite}
+                  className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/80 backdrop-blur-md shadow-sm transition-transform active:scale-90"
+                >
+                  <Heart className={`h-6 w-6 ${isFavorite ? 'fill-red-500 text-red-500' : 'text-[#0A84FF]'}`} />
+                </button>
             </div>
 
             <div className="absolute top-6 right-6 z-10">
               <button 
-                onClick={() => {
-                  if (navigator.share) {
-                    navigator.share({
-                      title: product.title,
-                      url: window.location.href
-                    });
-                  }
-                }}
+                onClick={shareProduct}
                 className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/80 backdrop-blur-md shadow-sm transition-transform active:scale-90"
+                aria-label="مشاركة"
               >
                 <Share2 className="h-5 w-5 text-gray-800" />
               </button>
@@ -328,8 +402,20 @@ const ProductDetails = () => {
             
             <h2 className="text-3xl font-black text-gray-900 leading-tight">{product.title}</h2>
             
-            {product.model && product.model !== 'unknown_model' && (
-              <p className="text-lg font-medium text-gray-500">{product.model}</p>
+            {/* ✅ التعديل: عرض الماركة والموديل معاً بشكل أنيق */}
+            {(product.phone_type || product.model) && (
+              <div className="flex items-center gap-2 text-2xl font-large text-black">
+                
+                {product.phone_type && product.model && (
+                  <span className="text-black">•</span>
+                )}
+                {product.model && product.model !== 'unknown_model' && (
+                  <span>{product.model}</span>
+                )}
+                {product.phone_type && product.phone_type !== 'unknown_brand' && (
+                  <span className="text-black font-bold">{product.phone_type}</span>
+                )}
+              </div>
             )}
 
             <div className="flex items-end gap-2 pt-2">
@@ -341,15 +427,15 @@ const ProductDetails = () => {
           </div>
 
           {/* Specifications Card */}
-          <div className="rounded-[30px] border border-white bg-white/70 p-6 backdrop-blur-xl shadow-[0_15px_35px_rgba(0,0,0,0.03)]">
+          <div className="rounded-[30px] border border-white bg-white/70 p-2 backdrop-blur-xl shadow-[0_15px_35px_rgba(0,0,0,0.03)]">
             <div className="grid grid-cols-2 gap-y-6">
               <div className="flex items-center gap-4">
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#0A84FF]/10 text-[#0A84FF]">
                   <HardDrive className="h-6 w-6" />
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-gray-400">التخزين</p>
-                  <p className="text-sm font-black text-gray-800">{product.specs?.storage || '--'}</p>
+                  <p className="text-sm font-bold text-gray-500">التخزين</p>
+                  <p className="text-xl font-black text-gray-800">{product.specs?.storage || '--'}</p>
                 </div>
               </div>
 
@@ -358,8 +444,8 @@ const ProductDetails = () => {
                   <Cpu className="h-6 w-6" />
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-gray-400">الرام</p>
-                  <p className="text-sm font-black text-gray-800">{product.specs?.ram || '--'}</p>
+                  <p className="text-sm font-bold text-gray-500">الرام</p>
+                  <p className="text-xl font-black text-gray-800">{product.specs?.ram || '--'}</p>
                 </div>
               </div>
 
@@ -368,8 +454,8 @@ const ProductDetails = () => {
                   <ShieldCheck className="h-6 w-6" />
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-gray-400">الضمان</p>
-                  <p className="text-sm font-black text-gray-800">{product.warranty_months && product.warranty_months > 0 ? `${product.warranty_months} شهر` : 'بدون ضمان'}</p>
+                  <p className="text-sm font-bold text-gray-500">الضمان</p>
+                  <p className="text-xl font-black text-gray-800">{product.warranty_months && product.warranty_months > 0 ? `${product.warranty_months} شهر` : 'بدون ضمان'}</p>
                 </div>
               </div>
 
@@ -378,8 +464,8 @@ const ProductDetails = () => {
                   <MapPin className="h-6 w-6" />
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-gray-400">الموقع</p>
-                  <p className="text-sm font-black text-gray-800">{product.city || '--'}</p>
+                  <p className="text-sm font-bold text-gray-500">الموقع</p>
+                  <p className="text-xl font-black text-gray-800">{product.city || '--'}</p>
                 </div>
               </div>
 
@@ -388,8 +474,8 @@ const ProductDetails = () => {
                   <Calendar className="h-6 w-6" />
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-gray-400">تاريخ النشر</p>
-                  <p className="text-sm font-black text-gray-800">{formatDate(product.created_at)}</p>
+                  <p className="text-sm font-bold text-gray-500">تاريخ النشر</p>
+                  <p className="text-xl font-black text-gray-800">{formatDate(product.created_at)}</p>
                 </div>
               </div>
 
@@ -398,10 +484,18 @@ const ProductDetails = () => {
                   <CheckCircle2 className="h-6 w-6" />
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-gray-400">التوثيق</p>
-                  <p className="text-sm font-black text-gray-800">الهاتف موثق ✓</p>
+                  <p className="text-sm font-bold text-gray-500">التوثيق</p>
+                  <p className="text-xl font-black text-gray-800">الهاتف موثق ✓</p>
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* Additional Details */}
+          <div className="space-y-4">
+            <h3 className="text-xl font-black text-gray-900">تفاصيل إضافية</h3>
+            <div className="rounded-[24px] border border-[#0A84FF]/10 bg-[#0A84FF]/[0.02]  p-4  leading-relaxed text-gray-700 shadow-inner">
+              {product.description || 'لا توجد تفاصيل إضافية'}
             </div>
           </div>
 
@@ -425,14 +519,6 @@ const ProductDetails = () => {
               </div>
             </div>
           )}
-
-          {/* Additional Details */}
-          <div className="space-y-4">
-            <h3 className="text-xl font-black text-gray-900">تفاصيل إضافية</h3>
-            <div className="rounded-[24px] border border-[#0A84FF]/10 bg-[#0A84FF]/[0.02] p-6 leading-relaxed text-gray-700 shadow-inner">
-              {product.description || 'لا توجد تفاصيل إضافية'}
-            </div>
-          </div>
         </div>
       </div>
 

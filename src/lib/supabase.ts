@@ -13,6 +13,10 @@ const supabaseOptions = {
     // تقصير مدة صلاحية الجلسة لزيادة الأمان
     storage: window.localStorage,
     flowType: 'pkce' as const, // استخدام PKCE لزيادة الأمان في عمليات المصادقة
+    // إعدادات إضافية لتحسين تجربة البصمة
+    storageKey: 'supabase.auth.token',
+    // زيادة وقت انتهاء الجلسة للبصمة
+    sessionExpiryMargin: 60 * 60 * 24 * 7, // 7 أيام
   },
   db: {
     schema: 'public'
