@@ -106,6 +106,28 @@ const AddAccessoriesForm: React.FC = () => {
     fetchPromotionPrices();
   }, []);
 
+  // عند مغادرة الصفحة: حذف المسودة من التخزين المحلي لتفادي استعادتها لاحقًا
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      try {
+        localStorage.removeItem(DRAFT_KEY);
+      } catch (e) {
+        /* ignore */
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      try {
+        localStorage.removeItem(DRAFT_KEY);
+      } catch (e) {
+        /* ignore */
+      }
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []);
+
   // Update price when duration changes
     // Update price when duration changes
   useEffect(() => {
@@ -221,23 +243,38 @@ const AddAccessoriesForm: React.FC = () => {
   useEffect(() => {
     try {
       const savedDraft = localStorage.getItem(DRAFT_KEY);
-      if (!savedDraft) return;
-      const parsed = JSON.parse(savedDraft);
+      const parsed = savedDraft ? JSON.parse(savedDraft) : null;
 
-      if (parsed?.formData) {
-        setFormData(prev => ({
-          ...prev,
-          ...parsed.formData,
-          contact_methods: {
-            ...prev.contact_methods,
-            ...(parsed.formData.contact_methods || {}),
-          },
-        }));
-      }
+      // Always start from step 1 (index 0) when entering the accessory page
+      setCurrentStep(0);
 
-      if (typeof parsed?.currentStep === 'number') {
-        setCurrentStep(Math.min(Math.max(parsed.currentStep, 0), 3));
-      }
+      // Preserve only basic info (step 1) if present; clear data for steps 2-4
+      const preservedBasic = parsed?.formData
+        ? {
+            store_name: parsed.formData.store_name || '',
+            city: parsed.formData.city || '',
+            contact_methods: { ...(parsed.formData.contact_methods || {}) },
+          }
+        : {};
+
+      setFormData(prev => ({
+        ...prev,
+        ...preservedBasic,
+        // Clear accessory info (step 2)
+        category: '',
+        brand: '',
+        compatibility: '',
+        price: '',
+        condition: 'new',
+        warranty_months: '0',
+        // Clear description & title (step 3)
+        title: '',
+        description: '',
+      }));
+
+      // Clear images (step 4)
+      setImages([]);
+      setImagesPreviews([]);
     } catch (e) {
       console.warn('Could not restore accessory form draft', e);
     }

@@ -4,7 +4,6 @@ import { Fingerprint } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
 
 // Define the interface for the Capacitor plugin
 interface CapacitorSecureBiometricStorage {
@@ -26,20 +25,15 @@ const EnableBiometricAuth: React.FC = () => {
 
   useEffect(() => {
     const checkAvailability = async () => {
-      const Fingerprint = (window as any).Fingerprint || ((window as any).cordova && (window as any).cordova.plugins && (window as any).cordova.plugins.fingerprint);
-      
-      if (!Fingerprint) {
+      if (!CapacitorSecureBiometricStorage) {
         setIsBiometricAvailable(false);
         setIsCheckingBiometrics(false);
         return;
       }
 
       try {
-        Fingerprint.isAvailable((result: any) => {
-          setIsBiometricAvailable(true);
-        }, (error: any) => {
-          setIsBiometricAvailable(false);
-        });
+        const availability = await CapacitorSecureBiometricStorage.isAvailable();
+        setIsBiometricAvailable(availability.isAvailable);
       } catch (error) {
         console.error('Error checking biometric availability:', error);
         setIsBiometricAvailable(false);
@@ -52,43 +46,29 @@ const EnableBiometricAuth: React.FC = () => {
   }, []);
 
   const handleEnableBiometrics = async () => {
-    if (!user || !(window as any).SecureStorage) return;
+    if (!CapacitorSecureBiometricStorage || !user) return;
 
     try {
-      // 1. جلب الجلسة الحالية للحصول على الـ refresh_token
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError || !sessionData.session) {
+      const reason = t('enable_biometric_auth_reason');
+      // Store the user's auth token or a specific biometric token
+      const result = await CapacitorSecureBiometricStorage.setItem(
+        BIOMETRIC_AUTH_TOKEN_KEY,
+        user.id, // or any other authentication token
+        reason
+      );
+
+      if (result.error) {
         toast({
           title: t('error'),
-          description: t('session_not_found'),
+          description: t('biometric_setup_failed'),
           variant: 'destructive',
         });
-        return;
+      } else {
+        toast({
+          title: t('success'),
+          description: t('biometric_setup_success'),
+        });
       }
-
-      const refreshToken = sessionData.session.refresh_token;
-
-      // 2. حفظ الـ refresh_token في SecureStorage
-      const ss = new (window as any).SecureStorage(() => {}, () => {}, 'my_app_storage');
-      
-      ss.set(
-        () => {
-          toast({
-            title: t('success'),
-            description: t('biometric_setup_success'),
-          });
-        },
-        (error: any) => {
-          toast({
-            title: t('error'),
-            description: t('biometric_setup_failed'),
-            variant: 'destructive',
-          });
-        },
-        BIOMETRIC_AUTH_TOKEN_KEY,
-        refreshToken
-      );
     } catch (error: any) {
       console.error('Error setting up biometric auth:', error);
       toast({
@@ -98,7 +78,6 @@ const EnableBiometricAuth: React.FC = () => {
       });
     }
   };
-
 
   if (!isBiometricAvailable || isCheckingBiometrics) {
     return null;

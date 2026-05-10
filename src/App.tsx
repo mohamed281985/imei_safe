@@ -9,6 +9,7 @@ import { Capacitor } from '@capacitor/core';
 import type { PluginListenerHandle } from '@capacitor/core';
 import { supabase } from './lib/supabase';
 import { Routes, Route, useNavigate, useLocation, Link } from "react-router-dom";
+import { PushNotifications, Token } from '@capacitor/push-notifications';
 
 import { LanguageProvider } from "./contexts/LanguageContext";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
@@ -60,13 +61,13 @@ const SellerDashboard = lazy(() => import('@/pages/SellerDashboard'));
 const AddPhoneForm = lazy(() => import('@/pages/AddPhoneForm'));
 const AddAccessoriesForm = lazy(() => import('@/pages/AddaccessoriesForm'));
 const AccessoriesForSalePage = lazy(() => import('@/pages/AccessoriesForSalePage'));
-import { PushNotifications, Token } from '@capacitor/push-notifications';
 const ChallengeGamePage = lazy(() => import('./pages/ChallengeGamePage'));
 const ProfileMenuPage = lazy(() => import('./pages/ProfileMenuPage'));
 const RewardsPage = lazy(() => import('./pages/RewardsPage'));
 const EditPhoneListing = lazy(() => import('./pages/EditPhoneListing'));
 const EditAccessoryListing = lazy(() => import('./pages/EditAccessoryListing'));
 const ProductDetails = lazy(() => import('./pages/ProductDetails'));
+const Favorites = lazy(() => import('./pages/Favorites'));
 
 import { toast } from "@/hooks/use-toast";
 
@@ -127,19 +128,35 @@ const AppCore = () => {
 
           // معالجة myapp://my-ads
           if (url.protocol === 'myapp:') {
-            if (pathname === '//my-ads' || pathname === '/my-ads') {
+            const hostOrPath = url.host || pathname.replace(/^\/+/, '');
+            if (hostOrPath === 'my-ads') {
               navigate('/myads');
+              return;
             }
-            return;
+            // لا نُرجع هنا لأن روابط المصادقة قد تستخدم myapp://auth#... ويجب معالجتها لاحقاً
           }
 
-          // معالجة روابط المصادقة من Supabase
-          if (hash.includes('access_token') && hash.includes('refresh_token')) {
-            const params = new URLSearchParams(hash.substring(1));
-            const type = params.get('type');
-            if (type === 'recovery') {
-              navigate(`/reset?${params.toString()}`);
+          // معالجة روابط المصادقة من Supabase: دمج query و hash ودعم وجود access_token بدون refresh_token
+          try {
+            const combined = new URLSearchParams();
+            if (url.search && url.search.length > 1) {
+              const s = new URLSearchParams(url.search);
+              for (const [k, v] of s) combined.set(k, v);
             }
+            if (hash && hash.includes('=')) {
+              const h = new URLSearchParams(hash.substring(1));
+              for (const [k, v] of h) combined.set(k, v);
+            }
+            const type = combined.get('type');
+            const access = combined.get('access_token');
+            // حالة خاصة: إذا كان المسار أو host يشير إلى 'reset' فنتجاهل شرط type/access
+            if ((url.host && url.host.toLowerCase() === 'reset') || pathname === '/reset' || pathname === 'reset') {
+              navigate(`/reset?${combined.toString()}`);
+            } else if (type === 'recovery' && access) {
+              navigate(`/reset?${combined.toString()}`);
+            }
+          } catch (e) {
+            console.error('Failed to parse auth params from deep link', e);
           }
         } catch (e) {
           console.error('Failed to parse deep link URL:', e);
@@ -269,7 +286,7 @@ const AppCore = () => {
       console.log('Cleaning up push notification listeners.');
       if (!(Capacitor.getPlatform && Capacitor.getPlatform() === 'web')) {
         try {
-          PushNotifications.removeAllListeners(); // يزيل جميع المستمعات التي تم إضافتها في هذا التأثير
+      PushNotifications.removeAllListeners(); // يزيل جميع المستمعات التي تم إضافتها في هذا التأثير
         } catch (e) {
           console.debug('PushNotifications.removeAllListeners() failed or not available on this platform', e);
         }
@@ -341,6 +358,7 @@ const AppCore = () => {
             <Route path="/accessories-for-sale" element={<AuthGuard><AccessoriesForSalePage /></AuthGuard>} />
             <Route path="/edit-accessory/:id" element={<AuthGuard><EditAccessoryListing /></AuthGuard>} />
             <Route path="/product/:id" element={<AuthGuard><React.Suspense fallback={null}><ProductDetails /></React.Suspense></AuthGuard>} />
+            <Route path="/favorites" element={<Favorites />} />
             <Route path="*" element={<NotFound />} />
             <Route path="/profile-menu" element={<AuthGuard><ProfileMenuPage /></AuthGuard>} />
             <Route path="/rewards" element={<AuthGuard><RewardsPage /></AuthGuard>} />

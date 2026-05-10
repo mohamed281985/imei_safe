@@ -1084,15 +1084,15 @@ const Dashboard: React.FC = () => {
                           
                           <div className="p-2 sm:p-2.5 flex flex-col gap-1.5 sm:gap-2">
                             {/* Title */}
-                            <h3 className="text-base sm:text-lg font-bold text-gray-800 truncate leading-tight mb-0.5 px-2">
-                              {phone.brand}
+                            <h3 className="text-xl font-bold text-gray-800 truncate leading-tight mb-0.5 px-2">
+                              {phone.phone_type}
                             </h3>
-                            <h4 className="text-sm sm:text-base font-medium text-gray-700 truncate leading-tight mb-1 px-2">
+                            <h4 className="text-md font-bold text-gray-700 truncate leading-tight mb-1 px-2">
                               {phone.model}
                             </h4>
 
                             {/* Specs Line */}
-                            <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-gray-500 truncate font-bold">
+                            <div className="flex items-center gap-1.5 sm:gap-4 text-md sm:text-md text-gray-500 truncate font-bold">
                               {phone.specs?.ram && <span>{phone.specs.ram}GB</span>}
                               {phone.specs?.storage && (
                                 <>
@@ -1196,12 +1196,12 @@ const Dashboard: React.FC = () => {
                         
                         <div className="p-2.5 flex flex-col gap-2 bg-white">
                           {/* Title */}
-                          <h3 className="text-lg font-bold text-gray-800 truncate leading-tight mb-0.5">
+                          <h3 className="text-xl font-bold text-gray-800 truncate leading-tight mb-0.5">
                             {acc.title}
                           </h3>
 
                           {/* Category and Brand */}
-                          <div className="flex items-center gap-2 text-xs text-gray-500 truncate font-medium">
+                          <div className="flex items-center gap-2 text-xl text-gray-500 truncate font-medium">
                             {acc.category && <span>{acc.category}</span>}
                             {acc.category && acc.brand && <span className="w-0.5 h-0.5 rounded-full bg-gray-400"></span>}
                             {acc.brand && <span>{acc.brand}</span>}

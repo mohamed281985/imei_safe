@@ -33,6 +33,9 @@ const __dirname = path.dirname(__filename);
 const envPath = path.resolve(__dirname, '.env');
 dotenv.config({ path: envPath });
 
+// Allow configuring trust proxy via environment for safer local vs prod behavior
+const TRUST_PROXY = Number(process.env.TRUST_PROXY || 0);
+
 // Development bypass token (only used when explicitly set in .env)
 const DEV_BYPASS_TOKEN = process.env.DEV_BYPASS_TOKEN || null;
 const IS_DEVELOPMENT = process.env.NODE_ENV === 'development';
@@ -374,7 +377,7 @@ app.use((err, req, res, next) => {
 
 // If behind a proxy (Render, Heroku, etc.) trust proxy headers so req.secure and x-forwarded-proto work
 // Use 1 instead of true for single proxy (Render/Heroku) to avoid rate-limit bypass warnings
-app.set('trust proxy', 1);
+app.set('trust proxy', TRUST_PROXY);
 
 // Security headers with explicit HSTS in production
 if (process.env.NODE_ENV === 'production') {
@@ -457,7 +460,7 @@ const checkEmailLimiter = rateLimit({
   max: 6,
   standardHeaders: true,
   legacyHeaders: false,
-  trustProxy: 1,
+  trustProxy: TRUST_PROXY,
   handler: (req, res) => res.status(429).json({ error: 'Too many requests, please try again later.' })
 });
  
@@ -470,7 +473,7 @@ const createAppUserLimiter = rateLimit({
   max: CREATE_APP_USER_MAX,
   standardHeaders: true,
   legacyHeaders: false,
-  trustProxy: 1,
+  trustProxy: TRUST_PROXY,
   handler: (req, res) => res.status(429).json({ error: 'Too many account creation attempts, please try later.' })
 });
 
@@ -480,7 +483,7 @@ const searchImeiLimiter = rateLimit({
   max: SECURITY_CONFIG.RATE_LIMITS.SEARCH_IMEI.max,
   standardHeaders: true,
   legacyHeaders: false,
-  trustProxy: 1,
+  trustProxy: TRUST_PROXY,
   handler: (req, res) => res.status(429).json({ error: 'Too many IMEI search attempts, please try later.' })
 });
 
@@ -490,7 +493,7 @@ const verifyOwnerLimiter = rateLimit({
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
-  trustProxy: 1,
+  trustProxy: TRUST_PROXY,
   handler: (req, res) => res.status(429).json({ error: 'Too many verification attempts, please try later.' })
 });
 
@@ -500,7 +503,7 @@ const uploadImageLimiter = rateLimit({
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  trustProxy: 1,
+  trustProxy: TRUST_PROXY,
   handler: (req, res) => res.status(429).json({ error: 'Too many upload attempts, please try later.' })
 });
 
@@ -510,7 +513,7 @@ const loginLimiter = rateLimit({
   max: SECURITY_CONFIG.RATE_LIMITS.LOGIN.max, // 5 محاولات
   standardHeaders: true,
   legacyHeaders: false,
-  trustProxy: 1,
+  trustProxy: TRUST_PROXY,
   handler: (req, res) => res.status(429).json({ error: 'Too many login attempts, please try later.' }),
   skip: (req) => req.user // لا تحد للمستخدمين المسجلين
 });
@@ -1431,6 +1434,12 @@ app.get('/api/lost-phones', verifyJwtToken, async (req, res) => {
       .order('report_date', { ascending: false })
       .limit(50);
 
+    // Diagnostic logging (dev only): surface supabase error and returned row count
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('/api/lost-phones supabase fetch error:', error ? (error.message || error) : null);
+      console.log('/api/lost-phones rows:', Array.isArray(data) ? data.length : typeof data);
+    }
+
     if (error) {
       console.error('Supabase error fetching lost phones:', error);
       return res.status(500).json({ error: 'Database error' });
@@ -1483,6 +1492,31 @@ app.get('/api/lost-phones', verifyJwtToken, async (req, res) => {
   } catch (err) {
     if (process.env.NODE_ENV !== 'production') console.error('Error in /api/lost-phones:', err);
     return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Endpoint: /api/user-phones
+// Returns minimal user phone records needed by the frontend ownership confirmation flow
+app.get('/api/user-phones', verifyJwtToken, async (req, res) => {
+  try {
+    if (!req.user || !req.user.id) return res.status(401).json({ success: false, error: 'Unauthorized' });
+
+    // Select minimal fields used by the frontend for ownership confirmation
+    const { data, error } = await supabase
+      .from('phones')
+      .select('id, status, registration_date, last_confirmed_at')
+      .eq('user_id', req.user.id)
+      .order('registration_date', { ascending: false });
+
+    if (error) {
+      console.error('/api/user-phones supabase error:', error);
+      return res.status(500).json({ success: false, error: 'Database error' });
+    }
+
+    return res.json({ success: true, data: data || [] });
+  } catch (err) {
+    console.error('Error in /api/user-phones:', err);
+    return res.status(500).json({ success: false, error: 'Server error' });
   }
 });
 
