@@ -1505,7 +1505,7 @@ app.get('/api/user-phones', verifyJwtToken, async (req, res) => {
 
     // Select minimal fields used by the frontend for ownership confirmation
     const { data, error } = await supabase
-      .from('phones')
+      .from('registered_phones')
       .select('id, status, registration_date, last_confirmed_at')
       .eq('user_id', req.user.id)
       .order('registration_date', { ascending: false });
