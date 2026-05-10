@@ -378,6 +378,8 @@ app.use((err, req, res, next) => {
 // If behind a proxy (Render, Heroku, etc.) trust proxy headers so req.secure and x-forwarded-proto work
 // Use 1 instead of true for single proxy (Render/Heroku) to avoid rate-limit bypass warnings
 app.set('trust proxy', TRUST_PROXY);
+console.log('Configured TRUST_PROXY (env):', process.env.TRUST_PROXY, '=> numeric TRUST_PROXY:', TRUST_PROXY);
+console.log("Express app.get('trust proxy') =>", app.get('trust proxy'));
 
 // Security headers with explicit HSTS in production
 if (process.env.NODE_ENV === 'production') {
@@ -1517,6 +1519,27 @@ app.get('/api/user-phones', verifyJwtToken, async (req, res) => {
   } catch (err) {
     console.error('Error in /api/user-phones:', err);
     return res.status(500).json({ success: false, error: 'Server error' });
+  }
+});
+
+// DEBUG: echo request headers (no auth) to verify proxy forwards Authorization header
+app.get('/api/debug-headers', (req, res) => {
+  try {
+    const auth = req.header('authorization') || null;
+    return res.json({ ok: true, authorization: auth, forwardedFor: req.headers['x-forwarded-for'] || null });
+  } catch (e) {
+    console.error('/api/debug-headers error', e);
+    return res.status(500).json({ ok: false, error: 'Server error' });
+  }
+});
+
+// DEBUG: verifyJwtToken then return req.user to confirm middleware success
+app.get('/api/debug-whoami', verifyJwtToken, (req, res) => {
+  try {
+    return res.json({ ok: true, user: req.user || null });
+  } catch (e) {
+    console.error('/api/debug-whoami error', e);
+    return res.status(500).json({ ok: false, error: 'Server error' });
   }
 });
 
