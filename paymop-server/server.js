@@ -1497,30 +1497,6 @@ app.get('/api/lost-phones', verifyJwtToken, async (req, res) => {
   }
 });
 
-// Endpoint: /api/user-phones
-// Returns minimal user phone records needed by the frontend ownership confirmation flow
-app.get('/api/user-phones', verifyJwtToken, async (req, res) => {
-  try {
-    if (!req.user || !req.user.id) return res.status(401).json({ success: false, error: 'Unauthorized' });
-
-    // Select minimal fields used by the frontend for ownership confirmation
-    const { data, error } = await supabase
-      .from('registered_phones')
-      .select('id, status, registration_date, last_confirmed_at')
-      .eq('user_id', req.user.id)
-      .order('registration_date', { ascending: false });
-
-    if (error) {
-      console.error('/api/user-phones supabase error:', error);
-      return res.status(500).json({ success: false, error: 'Database error' });
-    }
-
-    return res.json({ success: true, data: data || [] });
-  } catch (err) {
-    console.error('Error in /api/user-phones:', err);
-    return res.status(500).json({ success: false, error: 'Server error' });
-  }
-});
 
 // DEBUG: echo request headers (no auth) to verify proxy forwards Authorization header
 app.get('/api/debug-headers', (req, res) => {
