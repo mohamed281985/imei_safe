@@ -29,6 +29,97 @@ const SellerDashboard: React.FC = () => {
     pending: 0,
     rejected: 0
   });
+  
+  // حالة رمز العملة
+  const [userCurrencySymbol, setUserCurrencySymbol] = React.useState(t('currency_short') || 'EGP');
+  const [currencyLoading, setCurrencyLoading] = React.useState(true);
+
+  // --- دالة جلب رمز العملة ---
+  React.useEffect(() => {
+    const fetchUserCurrency = async () => {
+      setCurrencyLoading(true);
+      
+      // جلب المستخدم الحالي من Supabase Auth
+      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+      
+      if (authError) {
+        console.error('Error fetching auth user:', authError);
+        setCurrencyLoading(false);
+        return;
+      }
+
+      if (!authUser?.id) {
+        console.warn('No authenticated user found');
+        setCurrencyLoading(false);
+        return;
+      }
+
+      console.log('Fetching currency for user ID:', authUser.id);
+
+      try {
+        // 1. جلب بيانات البلد من جدول المستخدمين
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('countries')
+          .eq('id', authUser.id)
+          .single();
+
+        if (userError) {
+          console.error('Error fetching user data:', userError);
+          setCurrencyLoading(false);
+          return;
+        }
+
+        if (!userData?.countries) {
+          console.warn('No country found for user:', authUser.id);
+          setCurrencyLoading(false);
+          return;
+        }
+
+        console.log('User country:', userData.countries);
+        
+        // تنظيف اسم البلد
+        const userCountryName = userData.countries.trim();
+        
+        // 2. محاولة البحث في العمود العربي أولاً (لأن البيانات غالباً بالعربية)
+        const { data: countryDataAr, error: countryErrorAr } = await supabase
+          .from('countries')
+          .select('currency_symbol')
+          .ilike('name_ar', userCountryName)
+          .maybeSingle();
+
+        if (!countryErrorAr && countryDataAr?.currency_symbol) {
+          // تم العثور على العملة في العمود العربي
+          console.log('Found currency in Arabic table:', countryDataAr.currency_symbol);
+          setUserCurrencySymbol(countryDataAr.currency_symbol);
+        } else {
+          // 3. إذا لم نجد في العمود العربي، نبحث في العمود الإنجليزي
+          const { data: countryDataEn, error: countryErrorEn } = await supabase
+            .from('countries')
+            .select('currency_symbol')
+            .ilike('name_en', userCountryName)
+            .maybeSingle();
+
+          if (!countryErrorEn && countryDataEn?.currency_symbol) {
+            // تم العثور على العملة في العمود الإنجليزي
+            console.log('Found currency in English table:', countryDataEn.currency_symbol);
+            setUserCurrencySymbol(countryDataEn.currency_symbol);
+          } else {
+            // 4. لم يتم العثور على البلد في أي من العمودين
+            console.warn(`Currency symbol not found for country: ${userCountryName}`);
+            console.log('Using default currency:', t('currency_short') || 'EGP');
+            setUserCurrencySymbol(t('currency_short') || 'EGP');
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching user currency:', error);
+      } finally {
+        setCurrencyLoading(false);
+      }
+    };
+
+    fetchUserCurrency();
+  }, [i18n.language]); // استخدام i18n.language بدلاً من language
 
   React.useEffect(() => {
     if (!user) return;
@@ -228,8 +319,8 @@ const SellerDashboard: React.FC = () => {
                       </div>
                     </div>
                   </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-900">{(product.price || 0).toLocaleString()} {t('currency')}</div>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-md font-bold text-gray-900">{(product.price || 0).toLocaleString()} {userCurrencySymbol}</div>
                 </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(product.status)}`}>

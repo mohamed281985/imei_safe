@@ -82,7 +82,7 @@ const AddPhoneForm: React.FC = () => {
     },
     userDecisionTimeout: 5000,
   });
-  const [imeiStatus, setImeiStatus] = useState<'' | 'verified' | 'reported'>('');
+  const [imeiStatus, setImeiStatus] = useState<'' | 'verified' | 'reported' | 'not_registered'>('');
   const [currentStep, setCurrentStep] = useState(0);
   const DRAFT_KEY = 'add-phone-form-draft-v2';
 
@@ -199,7 +199,7 @@ const AddPhoneForm: React.FC = () => {
   }, [user]);
 
   const [imeiChecking, setImeiChecking] = useState(false);
-  const isReported = imeiStatus === 'reported';
+  const isReported = imeiStatus === 'reported' || imeiStatus === 'not_registered';
 
   // جلب اسم المتجر ورقم الهاتف من جدول businesses عند تحميل المكون
   useEffect(() => {
@@ -351,6 +351,12 @@ const AddPhoneForm: React.FC = () => {
       return;
     }
 
+    // Prevent submission if IMEI is not registered
+    // Prevent submission if IMEI is not registered
+    if (imeiStatus === 'not_registered') {
+      setError(t('phone_not_registered_with_us'));
+      return;
+    }
     let phoneData: any = null;
     try {
       setLoading(true);
@@ -627,6 +633,11 @@ const AddPhoneForm: React.FC = () => {
       setError(t('cannot_publish_reported_phone'));
       return;
     }
+    // Prevent submission if IMEI is not registered
+    if (imeiStatus === 'not_registered') {
+      setError(t('phone_not_registered_with_us'));
+      return;
+    }
 
     let phoneData: any = null;
     try {
@@ -819,8 +830,9 @@ const AddPhoneForm: React.FC = () => {
           }
         }
       } else {
-        setImeiStatus('');
-        setError('');
+        // IMEI not found in any records
+        setImeiStatus('not_registered');
+        setError(t('phone_not_registered_with_us'));
       }
 
       // Auto-fill phone_type if server provided it and the field is empty
@@ -1012,7 +1024,7 @@ const AddPhoneForm: React.FC = () => {
                     <Hash className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-orange-500" />
                     <input
                       type="text"
-                      name="imei"
+                      name="imei" // Keep name as imei
                       required
                       value={formData.imei}
                       onChange={handleInputChange}
@@ -1022,7 +1034,7 @@ const AddPhoneForm: React.FC = () => {
                       onKeyDown={handleImeiKeyDown}
                       pattern="[0-9]{15}"
                       title={t('imei_15_digits_title')}
-                      className={`${fieldClass} pl-10 ${imeiStatus === 'verified' ? 'border-orange-300 ring-1 ring-orange-200' : imeiStatus === 'reported' ? 'border-red-300 ring-1 ring-red-200' : ''}`}
+                      className={`${fieldClass} pl-10 ${imeiStatus === 'verified' ? 'border-orange-300 ring-1 ring-orange-200' : imeiStatus === 'reported' || imeiStatus === 'not_registered' ? 'border-red-300 ring-1 ring-red-200' : ''}`}
                       placeholder={t('imei_example')}
                       dir="ltr"
                     />
