@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import PageContainer from '@/components/PageContainer';
 import AppNavbar from '@/components/AppNavbar';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useAuth } from '../contexts/AuthContext';
 import { useTranslation } from 'react-i18next';
 import { Crown, Smartphone, Search, Star } from 'lucide-react';
 import { useGeolocated } from 'react-geolocated';
@@ -65,6 +66,8 @@ function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon
 const AccessoriesForSalePage: React.FC = () => {
     const { t } = useLanguage();
     const { i18n } = useTranslation();
+    const { user } = useAuth();
+    const [userCurrencySymbol, setUserCurrencySymbol] = useState(t('currency_short') || 'EGP');
     const [accessories, setAccessories] = useState<Accessory[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -76,6 +79,31 @@ const AccessoriesForSalePage: React.FC = () => {
     useEffect(() => {
         const fetchAccessories = async () => {
             setLoading(true);
+
+            // --- جلب عملة المستخدم ---
+            if (user?.id) {
+                const { data: userData } = await supabase
+                    .from('users')
+                    .select('countries')
+                    .eq('id', user.id)
+                    .maybeSingle();
+
+                if (userData?.countries) {
+                    const userCountryName = userData.countries.trim();
+                    const { data: countryData } = await supabase
+                        .from('countries')
+                        .select('currency_symbol')
+                        .ilike('name_en', userCountryName)
+                        .maybeSingle();
+
+                    if (countryData?.currency_symbol) {
+                        setUserCurrencySymbol(countryData.currency_symbol);
+                    } else if (userCountryName.toLowerCase() === 'kuwait') {
+                        setUserCurrencySymbol(i18n.language === 'ar' ? 'د.ك' : 'KWD');
+                    }
+                }
+            }
+
             const { data, error } = await supabase
                 .from('accessories')
                 .select(`*, accessory_images(image_path, main_image)`)
@@ -92,7 +120,7 @@ const AccessoriesForSalePage: React.FC = () => {
         };
 
         fetchAccessories();
-    }, []);
+    }, [user?.id, i18n.language]);
 
     const getFilteredAccessories = () => {
         const filtered = accessories.filter(acc => {
@@ -289,7 +317,7 @@ const AccessoriesForSalePage: React.FC = () => {
                                   {/* Price */}
                                   <div className="mt-0.5 flex items-center justify-between">
                                     <div className="text-purple-700 font-bold text-lg" dir="ltr">
-                                      {acc.price.toLocaleString(i18n.language === 'ar' ? 'ar-EG' : 'en-US')} <span className="text-xs font-normal text-gray-500">{t('currency_short')}</span>
+                                      {acc.price.toLocaleString(i18n.language === 'ar' ? 'ar-EG' : 'en-US')} <span className="text-sm font-normal text-bold">{userCurrencySymbol}</span>
                                     </div>
                                     <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${acc.condition === 'used' ? 'bg-orange-50 text-orange-700 border-orange-100' : 'bg-cyan-50 text-cyan-700 border-cyan-100'}`}>
                                       {t(acc.condition)}

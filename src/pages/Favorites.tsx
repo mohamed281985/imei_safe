@@ -15,11 +15,102 @@ interface FavItem {
 
 const Favorites: React.FC = () => {
   const navigate = useNavigate();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const { toast } = useToast();
   const [items, setItems] = useState<FavItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [flippedIds, setFlippedIds] = useState<Record<string, boolean>>({});
+  
+  // حالة رمز العملة
+  const [userCurrencySymbol, setUserCurrencySymbol] = useState(t('currency_short') || 'EGP');
+  const [currencyLoading, setCurrencyLoading] = useState(true);
+
+  // --- دالة جلب رمز العملة ---
+  useEffect(() => {
+    const fetchUserCurrency = async () => {
+      setCurrencyLoading(true);
+      
+      // جلب المستخدم الحالي من Supabase Auth
+      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+      
+      if (authError) {
+        console.error('Error fetching auth user:', authError);
+        setCurrencyLoading(false);
+        return;
+      }
+
+      if (!authUser?.id) {
+        console.warn('No authenticated user found');
+        setCurrencyLoading(false);
+        return;
+      }
+
+      console.log('Fetching currency for user ID:', authUser.id);
+
+      try {
+        // 1. جلب بيانات البلد من جدول المستخدمين
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('countries')
+          .eq('id', authUser.id)
+          .single();
+
+        if (userError) {
+          console.error('Error fetching user data:', userError);
+          setCurrencyLoading(false);
+          return;
+        }
+
+        if (!userData?.countries) {
+          console.warn('No country found for user:', authUser.id);
+          setCurrencyLoading(false);
+          return;
+        }
+
+        console.log('User country:', userData.countries);
+        
+        // تنظيف اسم البلد
+        const userCountryName = userData.countries.trim();
+        
+        // 2. محاولة البحث في العمود العربي أولاً (لأن البيانات غالباً بالعربية)
+        const { data: countryDataAr, error: countryErrorAr } = await supabase
+          .from('countries')
+          .select('currency_symbol')
+          .ilike('name_ar', userCountryName)
+          .maybeSingle();
+
+        if (!countryErrorAr && countryDataAr?.currency_symbol) {
+          // تم العثور على العملة في العمود العربي
+          console.log('Found currency in Arabic table:', countryDataAr.currency_symbol);
+          setUserCurrencySymbol(countryDataAr.currency_symbol);
+        } else {
+          // 3. إذا لم نجد في العمود العربي، نبحث في العمود الإنجليزي
+          const { data: countryDataEn, error: countryErrorEn } = await supabase
+            .from('countries')
+            .select('currency_symbol')
+            .ilike('name_en', userCountryName)
+            .maybeSingle();
+
+          if (!countryErrorEn && countryDataEn?.currency_symbol) {
+            // تم العثور على العملة في العمود الإنجليزي
+            console.log('Found currency in English table:', countryDataEn.currency_symbol);
+            setUserCurrencySymbol(countryDataEn.currency_symbol);
+          } else {
+            // 4. لم يتم العثور على البلد في أي من العمودين
+            console.warn(`Currency symbol not found for country: ${userCountryName}`);
+            console.log('Using default currency:', t('currency_short') || 'EGP');
+            setUserCurrencySymbol(t('currency_short') || 'EGP');
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching user currency:', error);
+      } finally {
+        setCurrencyLoading(false);
+      }
+    };
+
+    fetchUserCurrency();
+  }, [language]); // يعاد التنفيذ عند تغيير اللغة فقط
 
   useEffect(() => {
     const load = async () => {
@@ -169,7 +260,7 @@ const Favorites: React.FC = () => {
                       <span className="text-xl font-black text-[#0A84FF]">
                         {item.price.toLocaleString('en-US')}
                       </span>
-                      <span className="mb-1 text-sm font-bold text-gray-400">{t('currency')}</span>
+                      <span className="mb-1 text-sm font-bold text-gray-400">{userCurrencySymbol}</span>
                     </div>
                   )}
                 </div>

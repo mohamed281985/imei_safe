@@ -6,12 +6,10 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 import { Device } from '@capacitor/device';
-import { Browser } from '@capacitor/browser';
-import { Capacitor } from '@capacitor/core';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useScrollToTop } from '@/hooks/useScrollToTop';
+import { useScrollToTop } from '../hooks/useScrollToTop';
 import CountryCodeSelector from '@/components/CountryCodeSelector';
 
 // إبقاء نفس عناصر القائمة الأصلية
@@ -238,7 +236,8 @@ const ProfileMenuPage: React.FC = () => {
             'biometricAuthToken'
         );
     }, []);
-    // Clear sensitive fields whenever the change-phone modal opens
+
+    // Clear sensitive fields whenever change-phone modal opens
     useEffect(() => {
         if (showChangePhoneModal) {
             setNewPhone('');
@@ -246,6 +245,7 @@ const ProfileMenuPage: React.FC = () => {
             setVerificationPassword('');
         }
     }, [showChangePhoneModal]);
+
     // معالجة تسجيل الخروج
     const handleLogout = () => {
         logout();
@@ -257,7 +257,7 @@ const ProfileMenuPage: React.FC = () => {
         if (!supportNumber) {
             toast({
                 title: 'خطأ',
-                description: 'رقم الدالفني غير متاح حالياً، يرجى المحاولة لاحقاً',
+                description: 'رقم الدعم الفني غير متاح حالياً، يرجى المحاولة لاحقاً',
                 variant: 'destructive'
             });
             return;
@@ -265,22 +265,8 @@ const ProfileMenuPage: React.FC = () => {
 
         // فتح رابط واتساب مع رقم الدعم الفني مع رمز الدولة
         const fullNumber = countryCode ? `${countryCode}${supportNumber}` : supportNumber;
-        const cleanPhone = fullNumber.replace(/\D/g, '');
-        const whatsappDeepLink = `whatsapp://send?phone=${cleanPhone}`;
-        const whatsappWebLink = `https://wa.me/${cleanPhone}`;
-
-        if (Capacitor.isNativePlatform()) {
-          try {
-            Browser.open({ url: whatsappDeepLink });
-          } catch (e) {
-            Browser.open({ url: whatsappWebLink });
-          }
-        } else {
-          window.location.href = whatsappDeepLink;
-          setTimeout(() => {
-            window.open(whatsappWebLink, '_blank');
-          }, 500);
-        }
+        const whatsappUrl = `https://wa.me/${fullNumber}`;
+        window.open(whatsappUrl, '_blank');
     };
 
     const handleLanguageChange = (lang: 'ar' | 'en' | 'fr' | 'hi') => {
@@ -445,7 +431,7 @@ const ProfileMenuPage: React.FC = () => {
                 let cc = String(ccRaw || '').toString();
                 cc = cc.replace(/\D/g, '').replace(/^0+/, '');
                 if (!cc) cc = '20';
-                // keep the leading zero in the national number (important for countries like Egypt)
+                // keep leading zero in national number (important for countries like Egypt)
                 // only remove trunk zero if it's followed by another zero (e.g., 00 -> 0)
                 if (digits.startsWith('00')) {
                     digits = digits.replace(/^0+/, '0');
@@ -459,7 +445,7 @@ const ProfileMenuPage: React.FC = () => {
             return;
         }
         if (!last6 || last6.length !== 6) {
-            toast({ title: t('error'), description: t('enter_last6') || 'Please enter the last 6 digits', variant: 'destructive' });
+            toast({ title: t('error'), description: t('enter_last6') || 'Please enter last 6 digits', variant: 'destructive' });
             return;
         }
         if (!pwd || pwd.length < 6) {
@@ -578,7 +564,7 @@ const ProfileMenuPage: React.FC = () => {
                                     {t('view_all')}
                                 </Link>
                             </div>
-                            
+                             
                             <div className="grid grid-cols-3 gap-2 mt-3">
                                 <div className="text-center bg-white/50 rounded-lg p-2">
                                     <div className="text-xl font-bold text-purple-600">{rewardsInfo.count}</div>
@@ -593,7 +579,7 @@ const ProfileMenuPage: React.FC = () => {
                                     <div className="text-xs text-gray-600">{t('available_rewards')}</div>
                                 </div>
                             </div>
-                            
+                             
                             {rewardsInfo.totalValue > 0 && (
                                 <div className="mt-3 p-2 bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-lg text-center">
                                     <div className="text-sm text-gray-700">{t('total_rewards_value')}:</div>

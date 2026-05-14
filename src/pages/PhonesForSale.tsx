@@ -6,7 +6,8 @@ import { useTranslation } from 'react-i18next';
 import PageContainer from '@/components/PageContainer';
 import AppNavbar from '@/components/AppNavbar';
 import BackButton from '@/components/BackButton';
-import { Smartphone, Eye, Search, Filter, SortAsc, Star } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import { Smartphone, Eye, Search, Filter, SortAsc, Star, PhoneCallIcon } from 'lucide-react';
 
 // Utility function to disable console logs in production
 if (import.meta.env.MODE === 'production') {
@@ -62,7 +63,7 @@ const getTransformedImageUrl = (originalUrl: string | null | undefined): string 
 };
 
 const PhonesForSale: React.FC = () => {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const { i18n } = useTranslation();
   const [phoneListings, setPhoneListings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -73,14 +74,79 @@ const PhonesForSale: React.FC = () => {
   const [page, setPage] = useState(1); // Current page for pagination
   const [totalPages, setTotalPages] = useState(1); // Total number of pages
   const itemsPerPage = 10; // Number of items per page
+  const { user } = useAuth();
+  
+  // الحالة الافتراضية لرمز العملة هي العملة المترجمة أو "EGP"
+  const [userCurrencySymbol, setUserCurrencySymbol] = useState(t('currency_short') || 'EGP');
 
+  // --- دالة جلب رمز العملة ---
+  useEffect(() => {
+    const fetchUserCurrency = async () => {
+      if (!user?.id) return;
+
+      try {
+        // 1. جلب بيانات البلد من جدول المستخدمين
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('countries')
+          .eq('id', user.id)
+          .single();
+
+        if (userError) throw userError;
+
+        if (userData?.countries) {
+          // تنظيف اسم البلد
+          const userCountryName = userData.countries.trim();
+          console.log('[Currency Debug] userCountryName:', userCountryName);
+
+          // 2. محاولة البحث في العمود العربي أولاً (لأن البيانات غالباً بالعربية)
+          const { data: countryDataAr, error: countryErrorAr } = await supabase
+            .from('countries')
+            .select('currency_symbol')
+            .ilike('name_ar', userCountryName)
+            .maybeSingle();
+          console.log('[Currency Debug] countryDataAr:', countryDataAr, 'countryErrorAr:', countryErrorAr);
+
+          if (!countryErrorAr && countryDataAr?.currency_symbol) {
+            // تم العثور على العملة في العمود العربي
+            setUserCurrencySymbol(countryDataAr.currency_symbol);
+            console.log('[Currency Debug] Found currency in name_ar:', countryDataAr.currency_symbol);
+          } else {
+            // 3. إذا لم نجد في العمود العربي، نبحث في العمود الإنجليزي
+            const { data: countryDataEn, error: countryErrorEn } = await supabase
+              .from('countries')
+              .select('currency_symbol')
+              .ilike('name_en', userCountryName)
+              .maybeSingle();
+            console.log('[Currency Debug] countryDataEn:', countryDataEn, 'countryErrorEn:', countryErrorEn);
+
+            if (!countryErrorEn && countryDataEn?.currency_symbol) {
+              // تم العثور على العملة في العمود الإنجليزي
+              setUserCurrencySymbol(countryDataEn.currency_symbol);
+              console.log('[Currency Debug] Found currency in name_en:', countryDataEn.currency_symbol);
+            } else {
+              // 4. لم يتم العثور على البلد في أي من العمودين
+              console.warn(`[Currency Debug] Currency symbol not found for country: ${userCountryName}`);
+              setUserCurrencySymbol(t('currency_short') || 'EGP');
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching user currency:', error);
+      }
+    };
+
+    fetchUserCurrency();
+  }, [user?.id, language]); // يعاد التنفيذ عند تغيير المستخدم أو اللغة
+
+  // --- دالة جلب قائمة الهواتف ---
   useEffect(() => {
     const fetchPhoneListings = async () => {
       setLoading(true);
       try {
         const { data, error, count } = await supabase
           .from('phones')
-          .select(`*, phone_images(image_path, main_image)`, { count: 'exact' })
+          .select(`*, is_verified, phone_images(image_path, main_image)`, { count: 'exact' })
           .eq('status', 'active')
           .range((page - 1) * itemsPerPage, page * itemsPerPage - 1); // Fetch items for the current page
 
@@ -366,9 +432,10 @@ const PhonesForSale: React.FC = () => {
                     {/* Price */}
                     <div className="mt-0.5 flex items-center justify-between">
                       <div className="text-purple-700 font-bold text-lg" dir="ltr">
-                        {phone.price.toLocaleString('en-US')} <span className="text-xs font-normal text-gray-500">{t('currency_short')}</span>
+                        <span className="text-sm font-bold text-black mr-1">{userCurrencySymbol}</span>
+                        {phone.price.toLocaleString('en-US')}
                       </div>
-                      {phone.is_verified && (
+              {(phone.is_verified === true || phone.is_verified === 'true') && (
                         <span className="text-[10px] bg-green-50 text-green-700 px-1.5 py-0.5 rounded border border-green-100 font-medium">
                           {t('verified')}
                         </span>

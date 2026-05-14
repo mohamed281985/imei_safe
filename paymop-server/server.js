@@ -1431,7 +1431,7 @@ app.get('/api/lost-phones', verifyJwtToken, async (req, res) => {
     // جلب الحقول المشفرة من قاعدة البيانات (اقتصر على 50 سجل لتفادي التحميل الزائد)
     const { data, error } = await supabase
       .from('phone_reports')
-      .select('imei, phone_type, masked_imei, imei_hash')
+      .select('phone_type')
       .eq('status', 'active')
       .order('report_date', { ascending: false })
       .limit(50);
@@ -1449,46 +1449,15 @@ app.get('/api/lost-phones', verifyJwtToken, async (req, res) => {
 
     // فك تشفير الحقول وإرجاع الشكل المطلوب
     const result = (data || []).map(row => {
-      // حاول فك التشفير أولاً
-      let imei = decryptField(row.imei);
       let phone_type = decryptField(row.phone_type);
-
-      // إذا فشل فك التشفير للـ IMEI، حاول إنشاء قيمة مقنّعة بديلة
-      if (!imei) {
-        // 0) إذا كان هناك عمود masked_imei استخدمه مباشرة
-        if (row.masked_imei && typeof row.masked_imei === 'string' && row.masked_imei.trim()) {
-          imei = row.masked_imei;
-        }
-        // 1) إذا كان هناك عمود id_last6 استخدمه (قد يحتوي وصفًا أو آخر 6)
-        else if (row.id_last6 && typeof row.id_last6 === 'string' && /\d/.test(row.id_last6)) {
-          const digits = ('' + row.id_last6).replace(/\D/g, '');
-          imei = digits ? (digits.slice(0, 6) + '*'.repeat(Math.max(0, Math.max(8, 15) - digits.length))) : '*************';
-        } else {
-          // 2) حاول استخراج أرقام من الحقل الخام (قد يكون نص يحتوي أرقام)
-          try {
-            const raw = (typeof row.imei === 'string' && row.imei.trim().startsWith('{')) ? JSON.parse(row.imei) : row.imei;
-            const candidate = raw && (raw.encryptedData || raw) ? String(raw.encryptedData || raw) : '';
-            const digits = candidate.replace(/\D/g, '');
-            if (digits && digits.length >= 6) {
-              imei = digits.slice(0, 6) + '*'.repeat(Math.max(0, digits.length - 6));
-            } else if (digits) {
-              imei = digits + '*'.repeat(15 - digits.length);
-            } else {
-              imei = '***************';
-            }
-          } catch (e) {
-            imei = '***************';
-          }
-        }
-      }
 
       // إذا لم يُفكّ phone_type، حاول استخدام القيمة الخام أو نص افتراضي
       if (!phone_type) {
         phone_type = (row.phone_type && typeof row.phone_type === 'string') ? row.phone_type : 'غير محدد';
       }
 
-      return { imei, phone_type };
-    }).filter(item => item.imei || item.phone_type);
+      return { phone_type };
+    }).filter(item => item.phone_type);
 
     return res.json(result);
   } catch (err) {
@@ -7239,7 +7208,7 @@ app.get('/api/ad-website-decrypted/:id', async (req, res) => {
     // جلب الإعلان من جدول publish_ad أولاً
     let { data: ad, error: fetchError } = await supabase
       .from('publish_ad')
-      .select('id, phone, is_active, is_paid, payment_status, expires_at')
+      .select('id, phone, status, is_paid, payment_status, expires_at')
       .eq('id', adId)
       .maybeSingle();
 
@@ -7247,7 +7216,7 @@ app.get('/api/ad-website-decrypted/:id', async (req, res) => {
     if (!ad) {
       const { data: adPay, error: payErr } = await supabase
         .from('ads_payment')
-        .select('id, phone, is_active, is_paid, payment_status, expires_at')
+        .select('id, phone, status, is_paid, payment_status, expires_at')
         .eq('id', adId)
         .maybeSingle();
       ad = adPay;

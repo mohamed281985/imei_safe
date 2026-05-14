@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '../contexts/LanguageContext';
 import { supabase } from '../lib/supabase';
@@ -11,6 +11,34 @@ const LanguageSelect: React.FC = () => {
   const navigate = useNavigate();
   const [showWarning, setShowWarning] = useState(false);
   const [selectedLang, setSelectedLang] = useState<string>('');
+
+  // جلب البلد تلقائياً للمستخدم وتحديث قاعدة البيانات
+  useEffect(() => {
+    const autoDetectCountry = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const userId = session?.user?.id;
+
+        if (userId) {
+          // طلب بيانات الموقع الجغرافي بناءً على الـ IP
+          const response = await fetch('https://ipapi.co/json/');
+          const geo = await response.json();
+
+          if (geo && geo.country_name) {
+            // تحديث عمود countries في جدول users بالدولة المكتشفة
+            await supabase
+              .from('users')
+              .update({ countries: geo.country_name })
+              .eq('id', userId);
+          }
+        }
+      } catch (err) {
+        console.error('Auto-detection country error:', err);
+      }
+    };
+
+    autoDetectCountry();
+  }, []);
 
   const handleLanguageSelect = async (lang: 'en' | 'ar' | 'fr' | 'hi') => {
     setSelectedLang(lang);

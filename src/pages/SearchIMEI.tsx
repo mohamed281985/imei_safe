@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle, Search, ArrowLeft, Smartphone, FileText, CheckCircle, XCircle, ShieldCheck } from 'lucide-react';
+import { AlertTriangle, Search, ArrowLeft, Smartphone, FileText, CheckCircle, XCircle, ShieldCheck, MapPin, Clock, Calendar, Hash } from 'lucide-react';
 import PageContainer from '@/components/PageContainer';
 import AppNavbar from '@/components/AppNavbar';
 import PageAdvertisement from '@/components/advertisements/PageAdvertisement';
@@ -467,58 +467,142 @@ const WelcomeSearch: React.FC = () => {
             )}
 
             {searchResult === 'found' && foundReportStatus && (
-              <div className={`mt-8 p-6 rounded-xl border ${foundReportStatus === 'resolved' ? 'bg-green-100 border-green-400' : 'bg-red-100 border-red-400'}`}>
-                <div className="flex items-center justify-center mb-4">
-                  {foundReportStatus === 'resolved' ? (
-                    <CheckCircle size={48} className="text-green-600" />
-                  ) : (
-                    <AlertTriangle size={48} className="text-red-600" />
+              <div className="mt-8 rounded-2xl overflow-hidden shadow-lg border-2 border-red-400">
+                {/* الهيدر الوردي الشفاف الفاتح */}
+                <div className="bg-rose-100/70 pt-4 pb-3 px-5 flex flex-col items-center">
+                  <AlertTriangle size={36} className="text-red-500 mb-2" />
+                  <h3 className="text-xl font-extrabold text-red-600 mb-0.5">
+                    {foundReportStatus === 'resolved' ? t('phone_found') : t('phone_lost')}
+                  </h3>
+                  <p className="text-red-500 text-xs font-bold">
+                    {foundReportStatus === 'resolved' ? t('phone_found_message') : t('phone_lost_message')}
+                  </p>
+                </div>
+
+                {/* الحاوية الداخلية البيضاء */}
+                <div className="bg-white p-4">
+                  {/* صف IMEI + حالة البلاغ */}
+                  <div className="grid grid-cols-2 gap-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
+                        <Hash size={16} className="text-blue-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[10px] text-gray-500 font-bold">IMEI</p>
+                        <p className="text-xs font-bold text-gray-800 truncate">
+                          {phoneId ? (() => {
+                            try {
+                              if (/^[a-zA-Z0-9+/=]+$/.test(phoneId) && phoneId.length > 15) {
+                                const { decryptIMEI } = require('@/lib/imeiCrypto');
+                                const decrypted = decryptIMEI(phoneId);
+                                return /^\d{14,16}$/.test(decrypted) ? decrypted : phoneId;
+                              }
+                              return phoneId;
+                            } catch {
+                              return phoneId;
+                            }
+                          })() : 'N/A'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
+                        <AlertTriangle size={16} className="text-blue-600" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-[10px] text-gray-500 font-bold">{t('report_status')}</p>
+                        <p className={`text-xs font-bold ${foundReportStatus === 'resolved' ? 'text-green-600' : 'text-red-600'}`}>
+                          {foundReportStatus === 'resolved' ? t('resolved') : t('active')}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="border-b border-gray-100 my-1" />
+
+                  {/* صف تاريخ البلاغ + وقت البلاغ */}
+                  {foundReportDate && (
+                    <>
+                      <div className="grid grid-cols-2 gap-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
+                            <Calendar size={16} className="text-blue-600" />
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-[10px] text-gray-500 font-bold">{t('report_date')}</p>
+                            <p className="text-xs font-bold text-gray-800">
+                              {new Date(foundReportDate).toLocaleDateString(i18n.language === 'ar' ? 'ar-EG' : 'en-US')}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
+                            <Clock size={16} className="text-blue-600" />
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-[10px] text-gray-500 font-bold">{t('report_time')}</p>
+                            <p className="text-xs font-bold text-gray-800">
+                              {new Date(foundReportDate).toLocaleTimeString(i18n.language === 'ar' ? 'ar-EG' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="border-b border-gray-100 my-1" />
+                    </>
+                  )}
+
+                  {/* صف مكان الفقد + تاريخ الفقد */}
+                  {foundReportStatus === 'active' && (lossLocation || lossTime) && (
+                    <>
+                      <div className="grid grid-cols-2 gap-3 py-2">
+                        {lossLocation ? (
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
+                              <MapPin size={16} className="text-blue-600" />
+                            </div>
+                            <div className="flex-1">
+                              <p className="text-[10px] text-gray-500 font-bold">{t('loss_location')}</p>
+                              <p className="text-xs font-bold text-gray-800">{lossLocation}</p>
+                            </div>
+                          </div>
+                        ) : <div />}
+                        {lossTime ? (
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
+                              <Calendar size={16} className="text-blue-600" />
+                            </div>
+                            <div className="flex-1">
+                              <p className="text-[10px] text-gray-500 font-bold">{t('loss_date')}</p>
+                              <p className="text-xs font-bold text-gray-800">
+                                {new Date(lossTime).toLocaleDateString(i18n.language === 'ar' ? 'ar-EG' : 'en-US')}
+                              </p>
+                            </div>
+                          </div>
+                        ) : <div />}
+                      </div>
+                      <div className="border-b border-gray-100 my-1" />
+                    </>
+                  )}
+
+                  {/* صف وقت الفقد */}
+                  {foundReportStatus === 'active' && lossTime && (
+                    <>
+                      <div className="grid grid-cols-2 gap-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
+                            <Clock size={16} className="text-blue-600" />
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-[10px] text-gray-500 font-bold">{t('loss_time')}</p>
+                            <p className="text-xs font-bold text-gray-800">
+                              {new Date(lossTime).toLocaleTimeString(i18n.language === 'ar' ? 'ar-EG' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                            </p>
+                          </div>
+                        </div>
+                        <div />
+                      </div>
+                    </>
                   )}
                 </div>
-                <h3 className={`text-xl font-bold text-center mb-2 ${foundReportStatus === 'resolved' ? 'text-green-800' : 'text-red-800'}`}>
-                  {foundReportStatus === 'resolved' ? t('phone_found') : t('phone_lost')}
-                </h3>
-                <p className={`text-center ${foundReportStatus === 'resolved' ? 'text-green-700' : 'text-red-700'}`}>
-                  {foundReportStatus === 'resolved' ? t('phone_found_message') : t('phone_lost_message')}
-                </p>
-
-                <div className="text-center text-black mb-2">
-                  <span className="font-bold">IMEI:</span> {phoneId ? (() => {
-                    try {
-                      // محاولة فك تشفير IMEI إذا كان مشفراً
-                      if (/^[a-zA-Z0-9+/=]+$/.test(phoneId) && phoneId.length > 15) {
-                        const { decryptIMEI } = require('@/lib/imeiCrypto');
-                        const decrypted = decryptIMEI(phoneId);
-                        return /^\d{14,16}$/.test(decrypted) ? decrypted : phoneId;
-                      }
-                      return phoneId;
-                    } catch {
-                      return phoneId;
-                    }
-                  })() : 'N/A'}
-                </div>
-                {/* عرض مكان الفقد وتاريخ الفقد إذا توفرا */}
-                {foundReportStatus === 'active' && (
-                  <>
-                    {foundReportDate && (
-                      <div className="text-center text-black mb-2">
-                        <span className="font-bold">تاريخ البلاغ:</span> {new Date(foundReportDate).toLocaleDateString(i18n.language === 'ar' ? 'ar-EG' : 'en-US')}<br />
-                        <span className="font-bold">وقت البلاغ:</span> {new Date(foundReportDate).toLocaleTimeString(i18n.language === 'ar' ? 'ar-EG' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
-                      </div>
-                    )}
-                    {lossLocation && (
-                      <div className="text-center text-black mb-2">
-                        <span className="font-bold">مكان الفقد:</span> {lossLocation}
-                        {lossTime && (
-                          <>
-                            <br />
-                            <span className="font-bold">وقت الفقد:</span> {new Date(lossTime).toLocaleTimeString(i18n.language === 'ar' ? 'ar-EG' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
-                          </>
-                        )}
-                      </div>
-                    )}
-                  </>
-                )}
               </div>
             )}
 
@@ -629,11 +713,11 @@ const WelcomeSearch: React.FC = () => {
 
             {searchResult === 'found' && foundReportStatus === 'active' && (
               <div className="mt-4 p-4 bg-[#c0dee5] rounded-xl border border-red-500/50">
-                <h3 className="text-lg font-bold text-red-600 mb-2">{t('report_and_box_image', { defaultValue: 'صورة المحضر والعلبة' })}</h3>
+                <h3 className="text-lg font-bold text-red-600 mb-2">{t('report_and_box_image')}</h3>
                 <div className="relative">
                   <div className="w-full h-auto rounded-lg bg-gray-200 flex items-center justify-center" style={{ minHeight: '200px' }}>
                     <p className="text-black text-center p-4 text-sm font-bold">
-                      {t('privacy_notice_search', { defaultValue: 'هذه البيانات لها خصوصيه وقد تمت مراجعتها من النظام علي مسئولية صاحب البلاغ' })}
+                      {t('privacy_notice_search')}
                     </p>
                   </div>
                 </div>

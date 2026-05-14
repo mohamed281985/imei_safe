@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useRef, Suspense } from 'react';
 import LostPhoneCard from '../components/LostPhoneCard';
 import { Capacitor } from '@capacitor/core';
-// import { Browser } from '@capacitor/browser';
-
 import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -21,7 +19,7 @@ import PageAdvertisement from '@/components/advertisements/PageAdvertisement';
 import AdsOfferSlider from '@/components/advertisements/AdsOfferSlider';
 import { useScrollToTop } from '../hooks/useScrollToTop';
 import BottomNavbar from '@/pages/BottomNavbar';
-import { useAds } from '@/contexts/AdContext'; // تأكد من استيراد useToast
+import { useAds } from '@/contexts/AdContext';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import axiosInstance from '@/services/axiosInterceptor';
@@ -47,11 +45,11 @@ interface Accessory {
   latitude?: number;
   longitude?: number;
   distance?: number;
-  category?: string; // Added category property
-  brand?: string; // Added brand property
-  created_at?: string; // Added created_at property
-  warranty_months?: number; // Added warranty_months property
-  type?: 'promotions' | 'normal'; // Added type property
+  category?: string;
+  brand?: string;
+  created_at?: string;
+  warranty_months?: number;
+  type?: 'promotions' | 'normal';
 }
 
 // دالة مساعدة للحصول على الصورة الرئيسية للهاتف
@@ -86,7 +84,7 @@ const getAccessoryMainImage = (accessory: any): string | null => {
 };
 
 const getTransformedAccessoryImageUrl = (originalUrl: string | null | undefined): string => {
-  return getTransformedImageUrl(originalUrl); // يمكن استخدام نفس الدالة
+  return getTransformedImageUrl(originalUrl);
 };
 
 // دالة مساعدة لإنشاء رابط صورة محسن باستخدام Supabase Storage
@@ -138,18 +136,17 @@ function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon
 const START_DATE = new Date('2025-01-01').getTime();
 
 
-
 const Dashboard: React.FC = () => {
   useScrollToTop();
-  const { t } = useLanguage();
-  const { user, isFirstLogin, clearFirstLogin } = useAuth(); // ⭐ جلب الحالة والدالة من السياق
+  const { t, language } = useLanguage();
+  const { user, isFirstLogin, clearFirstLogin } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
 
   // حالة للهواتف المفقودة
   const [displayedPhones, setDisplayedPhones] = useState<any[]>([]);
   const [loadingPhones, setLoadingPhones] = useState(true);
-  const [phoneIndex, setPhoneIndex] = useState(0); // للتحكم في التبديل بين البلاغات
+  const [phoneIndex, setPhoneIndex] = useState(0);
 
   // حالة للهواتف المعروضة للبيع
   const [phoneListings, setPhoneListings] = useState<any[]>([]);
@@ -179,7 +176,7 @@ const Dashboard: React.FC = () => {
   // حالات جديدة لنافذة تأكيد الملكية
   const [showOwnershipConfirmation, setShowOwnershipConfirmation] = useState(false);
   const [phonesForConfirmation, setPhonesForConfirmation] = useState<any[]>([]);
-  
+
   // حالات للهواتف غير المطالب بها (التي تم العثور عليها بالبريد الإلكتروني)
   const [unclaimedPhones, setUnclaimedPhones] = useState<any[]>([]);
   const [showClaimModal, setShowClaimModal] = useState(false);
@@ -187,10 +184,12 @@ const Dashboard: React.FC = () => {
   const [isNavbarVisible, setIsNavbarVisible] = useState(true);
   const [showLocationRequest, setShowLocationRequest] = useState(false);
 
-  const { coords, positionError, isGeolocationAvailable, isGeolocationEnabled } = useGeolocated({
+  const { coords } = useGeolocated({
     positionOptions: { enableHighAccuracy: true, maximumAge: 60000, timeout: 10000 },
     userDecisionTimeout: 10000,
   });
+
+  const [userCurrencySymbol, setUserCurrencySymbol] = useState<string>(t('currency_short') || 'EGP');
 
   // ⭐ useRef لتخزين موضع التمرير الأخير
   const lastScrollY = useRef(0);
@@ -228,9 +227,7 @@ const Dashboard: React.FC = () => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          // Suppress detailed location coordinates in logs
           console.debug('تم الحصول على الموقع بنجاح');
-          // سيتم تحديث تلقائيًا لأن coords قد تتغير
         },
         (error) => {
           console.error('خطأ في الحصول على الموقع:', error?.message || error);
@@ -252,109 +249,105 @@ const Dashboard: React.FC = () => {
   };
 
   // التأثير الخاص بالتحقق من ملكية الهواتف
-  useEffect(() => {
-    const checkPhoneOwnership = async () => {
-      if (!user) return;
+  const checkPhoneOwnership = async () => {
+    if (!user) return;
 
-      try {
-        // الحصول على التوكن
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token;
+    try {
+      // استخدام axiosInstance لجلب الهواتف
+      const response = await axiosInstance.get('/api/user-phones');
 
-        if (!token) return;
-
-        // استخدام API لجلب الهواتف مع فك التشفير
-        const apiBase = import.meta.env.PROD ? 'https://imei-safe.me' : '/api';
-        const response = await fetch(`${apiBase}/user-phones`, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        });
-
-        const text = await response.text();
-        let result: any = {};
-        try {
-          result = text ? JSON.parse(text) : {};
-        } catch (parseErr) {
-          result = {};
-        }
-
-        if (!response.ok) {
-          console.error("Error fetching user phones:", result.error || text || `HTTP ${response.status}`);
-          return;
-        }
-
-        if (!result.success) {
-          console.error("Error fetching user phones:", result.error?.message || result.error);
-          return;
-        }
-
-        const data = result.data;
-
-        // تصفية الهواتف المعتمدة فقط
-        const approvedPhones = data.filter((p: any) => p.status === 'approved');
-
-        const phonesToConfirm = approvedPhones.filter((phone: any) => {
-          // تحديد التاريخ الأساسي للتحقق:
-          // إذا كان هناك تاريخ تأكيد سابق، نستخدمه. وإلا، نستخدم تاريخ التسجيل.
-          const baseDate = phone.last_confirmed_at ? new Date(phone.last_confirmed_at) : new Date(phone.registration_date);
-
-          // حساب المدة الزمنية التي يجب أن تمر (24 ساعة)
-          const oneDayInMilliseconds = 24 * 60 * 60 * 1000;
-
-          // التحقق مما إذا مر أكثر من يوم على التاريخ الأساسي
-          return (new Date().getTime() - baseDate.getTime()) > oneDayInMilliseconds;
-        });
-
-        if (phonesToConfirm.length > 0) {
-          setPhonesForConfirmation(phonesToConfirm);
-          setShowOwnershipConfirmation(true);
-        }
-
-      } catch (err) {
-        console.error("Unexpected error in checkPhoneOwnership:", err?.message || err);
+      // التحقق من صحة الاستجابة
+      if (!response.data) {
+        console.error("No data in response");
+        return;
       }
-    };
 
-    // تشغيل التحقق بعد فترة قصيرة من تحميل الصفحة لضمان استقرار الواجهة
+      // التحقق من وجود البيانات في response.data.phones أو response.data.data أو أن response.data نفسه مصفوفة
+      let data = [];
+      if (response.data.success && Array.isArray(response.data.phones)) {
+        data = response.data.phones;
+      } else if (Array.isArray(response.data.data)) {
+        data = response.data.data;
+      } else if (Array.isArray(response.data)) {
+        data = response.data;
+      }
+
+      // تصفية الهواتف المعتمدة فقط
+      const approvedPhones = data.filter((p: any) => p.status === 'approved');
+
+      const phonesToConfirm = approvedPhones.filter((phone: any) => {
+        // تحديد التاريخ الأساسي للتحقق:
+        // إذا كان هناك تاريخ تأكيد سابق، نستخدمه. وإلا، نستخدم تاريخ التسجيل.
+        const baseDate = phone.last_confirmed_at ? new Date(phone.last_confirmed_at) : new Date(phone.registration_date);
+
+        // حساب المدة الزمنية التي يجب أن تمر (24 ساعة)
+        const oneDayInMilliseconds = 24 * 60 * 60 * 1000;
+
+        // التحقق مما إذا مر أكثر من يوم على التاريخ الأساسي
+        return (new Date().getTime() - baseDate.getTime()) > oneDayInMilliseconds;
+      });
+
+      // تصفية الهواتف المنقولة
+      const transferredPhonesData = data.filter((p: any) => p.status === 'transferred');
+
+      // دمج الهواتف التي تحتاج إلى تأكيد مع الهواتف المنقولة
+      const allPhonesToConfirm = [...phonesToConfirm, ...transferredPhonesData];
+
+      // 2. تحديث الحالة وعرض النافذة
+      console.log("Phones to confirm count:", allPhonesToConfirm.length);
+      console.log("Approved phones to confirm:", phonesToConfirm.length);
+      console.log("Transferred phones:", transferredPhonesData.length);
+      
+      if (allPhonesToConfirm.length > 0) {
+        setPhonesForConfirmation(allPhonesToConfirm);
+        setShowOwnershipConfirmation(true);
+      } else {
+        setShowOwnershipConfirmation(false);
+      }
+
+    } catch (err) {
+      console.error("Unexpected error in checkPhoneOwnership:", err);
+    }
+  };
+
+  // تشغيل التحقق بعد فترة قصيرة من تحميل الصفحة لضمان استقرار الواجهة
+  useEffect(() => {
     const timer = setTimeout(checkPhoneOwnership, 5000);
 
     return () => clearTimeout(timer);
   }, [user]);
 
   // التحقق من الهواتف غير المطالب بها عن طريق البريد الإلكتروني
-  useEffect(() => {
-    const checkUnclaimedPhones = async () => {
-      if (!user || !user.email) return;
+  const checkUnclaimedPhones = async () => {
+    if (!user || !user.email) return;
 
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
 
-        const response = await axiosInstance.get('/api/check-unclaimed-phones',
-          {
-            headers: {
-              'Authorization': `Bearer ${token}`
-            }
-          }
-        );
-
-        console.debug('Check unclaimed phones response status');
-        if (response.status === 200) {
-          const result = response.data;
-          if (result.success && result.phones && result.phones.length > 0) {
-            setUnclaimedPhones(result.phones);
-            setShowClaimModal(true);
+      const response = await axiosInstance.get('/api/check-unclaimed-phones',
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
           }
         }
-      } catch (error) {
-        console.error('Error checking unclaimed phones:', error?.message || error);
-      }
-    };
+      );
 
-    // تأخير بسيط لضمان تحميل المستخدم
+      console.debug('Check unclaimed phones response status');
+      if (response.status === 200) {
+        const result = response.data;
+        if (result.success && result.phones && result.phones.length > 0) {
+          setUnclaimedPhones(result.phones);
+          setShowClaimModal(true);
+        }
+      }
+    } catch (error) {
+      console.error('Error checking unclaimed phones:', error?.message || error);
+    }
+  };
+
+  // تأخير بسيط لضمان تحميل المستخدم
+  useEffect(() => {
     const timer = setTimeout(() => {
       checkUnclaimedPhones();
     }, 2000);
@@ -364,130 +357,129 @@ const Dashboard: React.FC = () => {
 
   const handleClaimPhone = async (imei: string) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
+      // استخدام axiosInstance لإرسال الطلب
+      const response = await axiosInstance.post<{ success: boolean; error?: string }>('/api/claim-phone-by-email', { imei });
 
-      const apiBase = import.meta.env.PROD ? 'https://imei-safe.me' : '/api';
-      const response = await fetch(`${apiBase}/claim-phone-by-email`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ imei })
-      });
-      const text = await response.text();
-      let result: any = {};
-      try { result = text ? JSON.parse(text) : {}; } catch (parseErr) { result = {}; }
-
-      if (response.ok && result.success) {
+      if (response.data.success) {
         toast({ title: t('success'), description: 'تم تأكيد ملكية الهاتف وربطه بحسابك بنجاح' });
         setUnclaimedPhones(prev => prev.filter(p => p.imei !== imei));
         if (unclaimedPhones.length <= 1) setShowClaimModal(false);
       } else {
-        throw new Error(result.error || 'Failed to claim phone');
+        throw new Error(response.data.error || 'Failed to claim phone');
       }
     } catch (error: any) {
-      toast({ title: t('error'), description: error.message || 'حدث خطأ أثناء تأكيد الملكية', variant: 'destructive' });
+      toast({ title: t('error'), description: error.response?.data?.error || error.message || 'حدث خطأ أثناء تأكيد الملكية', variant: 'destructive' });
     }
   };
 
   const handleConfirmOwnership = async (phoneIds: string[]) => {
-    // اطلب من السيرفر تحديث الحالة و last_confirmed_at بأمان
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      const resp = await fetch('/api/update-phone-status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ ids: phoneIds, status: 'approved' })
-      });
-      const text = await resp.text();
-      let json: any = {};
-      try { json = text ? JSON.parse(text) : {}; } catch (parseErr) { json = {}; }
-      if (!resp.ok) throw new Error(json.error || text || 'Failed to update status');
+      // استخدام axiosInstance لإرسال الطلب
+      const response = await axiosInstance.post<{ success: boolean; error?: string }>('/api/update-phone-status', { ids: phoneIds, status: 'approved' });
+
       toast({ title: "شكراً لك", description: "تم تأكيد ملكيتك بنجاح." });
       setPhonesForConfirmation(prev => prev.filter(p => !phoneIds.includes(p.id)));
-      setShowOwnershipConfirmation(false);
-    } catch (e) {
-      console.error('Failed to approve phones:', e?.message || e);
-      toast({ title: "خطأ", description: "فشل تحديث حالة التأكيد.", variant: "destructive" });
+      if (phonesForConfirmation.length <= phoneIds.length) setShowOwnershipConfirmation(false);
+    } catch (error: any) {
+      console.error('Failed to approve phones:', error);
+      toast({ title: "خطأ", description: error.response?.data?.error || "فشل تحديث حالة التأكيد.", variant: "destructive" });
     }
   };
 
   const handleDenyOwnership = async (phoneIds: string[]) => {
     console.warn('User denied ownership of phones');
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      const resp = await fetch('/api/update-phone-status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ ids: phoneIds, status: 'transferred' })
-      });
-      const text = await resp.text();
-      let json: any = {};
-      try { json = text ? JSON.parse(text) : {}; } catch (parseErr) { json = {}; }
-      if (!resp.ok) throw new Error(json.error || text || 'Failed to update status');
+      // استخدام axiosInstance لإرسال الطلب
+      const response = await axiosInstance.post<{ success: boolean; error?: string }>('/api/update-phone-status', { ids: phoneIds, status: 'transferred' });
+
       toast({ title: "تمت الإزالة", description: "تمت إزالة الهاتف من قائمة هواتفك المسجلة." });
-    } catch (e) {
-      console.error('Failed to transfer phones:', e?.message || e);
-      toast({ title: "خطأ", description: "فشل تحديث حالة الهاتف.", variant: "destructive" });
+      setPhonesForConfirmation(prev => prev.filter(p => !phoneIds.includes(p.id)));
+      if (phonesForConfirmation.length <= phoneIds.length) setShowOwnershipConfirmation(false);
+    } catch (error: any) {
+      console.error('Failed to transfer phones:', error);
+      toast({ title: "خطأ", description: error.response?.data?.error || "فشل تحديث حالة الهاتف.", variant: "destructive" });
     }
-    setShowOwnershipConfirmation(false);
   };
 
   // جلب بيانات الهواتف من Supabase
   useEffect(() => {
     const fetchData = async () => {
+      // تحديد العملة الافتراضية بناءً على اللغة قبل البدء بالجلب من قاعدة البيانات
+      const defaultCurrency = t('currency_short') || 'EGP';
+
       setLoadingPhones(true);
       setLoadingListings(true);
       setLoadingAccessories(true);
-      try {
-        // جلب الهواتف المفقودة عن طريق API خادم يُفك التشفير ويعيد فقط الحقول المطلوبة
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          const token = session?.access_token;
-          const apiBase = import.meta.env.VITE_API_URL || '';
-          const resp = await fetch(`${apiBase}/api/lost-phones`, {
-            method: 'GET',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-            }
-          });
 
-          if (resp.ok) {
-            const json = await resp.json();
-            // نتوقع مصفوفة من العناصر بالشكل: { imei: string, phone_type: string }
-            if (Array.isArray(json)) {
-              setDisplayedPhones(json);
-            } else if (json && Array.isArray(json.data)) {
-              setDisplayedPhones(json.data);
+      // --- جلب عملة المستخدم (يتم تشغيله عند تغيير user.id أو coords) ---
+      let detectedCurrency = defaultCurrency;
+
+      if (user?.id) {
+        try {
+          const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('countries')
+            .eq('id', user.id)
+            .maybeSingle();
+
+          if (userError) {
+            console.error('Dashboard: Error fetching user country:', userError);
+          } else if (userData?.countries) {
+            const userCountryName = userData.countries.trim();
+            console.log('[Currency Debug] userCountryName:', userCountryName);
+
+            // البحث أولاً في name_ar
+            const { data: countryDataAr, error: countryErrorAr } = await supabase
+              .from('countries')
+              .select('currency_symbol')
+              .ilike('name_ar', userCountryName)
+              .maybeSingle();
+            console.log('[Currency Debug] countryDataAr:', countryDataAr, 'countryErrorAr:', countryErrorAr);
+
+            if (!countryErrorAr && countryDataAr?.currency_symbol) {
+              detectedCurrency = countryDataAr.currency_symbol;
+              setUserCurrencySymbol(countryDataAr.currency_symbol);
+              console.log('[Currency Debug] Found currency in name_ar:', countryDataAr.currency_symbol);
             } else {
-              console.warn('Unexpected lost-phones response shape, falling back to Supabase');
-              throw new Error('Unexpected response');
+              // إذا لم نجد في name_ar نبحث في name_en
+              const { data: countryDataEn, error: countryErrorEn } = await supabase
+                .from('countries')
+                .select('currency_symbol')
+                .ilike('name_en', userCountryName)
+                .maybeSingle();
+              console.log('[Currency Debug] countryDataEn:', countryDataEn, 'countryErrorEn:', countryErrorEn);
+
+              if (!countryErrorEn && countryDataEn?.currency_symbol) {
+                detectedCurrency = countryDataEn.currency_symbol;
+                setUserCurrencySymbol(countryDataEn.currency_symbol);
+                console.log('[Currency Debug] Found currency in name_en:', countryDataEn.currency_symbol);
+              } else {
+                console.warn(`[Currency Debug] Currency symbol not found for country: ${userCountryName}`);
+                // fallback خاص للكويت
+                if (userCountryName && userCountryName.toLowerCase() === 'kuwait') {
+                  detectedCurrency = (language === 'ar' ? 'د.ك' : 'KWD');
+                  setUserCurrencySymbol(detectedCurrency);
+                } else {
+                  setUserCurrencySymbol(defaultCurrency);
+                }
+              }
             }
           } else {
-            console.warn('Server API /api/lost-phones returned non-ok, falling back to Supabase');
-            throw new Error('API failed');
+            setUserCurrencySymbol(defaultCurrency);
           }
         } catch (err) {
-          console.warn('Falling back to Supabase for lost phones:', err?.message || err);
-          // رجوع إلى Supabase إذا فشل استدعاء الـ API
-          const { data: lostPhones, error: lostError } = await supabase
-            .from('phone_reports') // جدول بلاغات الهواتف
-            .select('*') // اختر كل الأعمدة
-            .eq('status', 'active') // فقط البلاغات النشطة
-            .order('report_date', { ascending: false }); // الأحدث أولاً
-
-          if (lostError) {
-            console.error('خطأ في جلب بيانات الهواتف المفقودة من Supabase:', lostError?.message || lostError);
-            setDisplayedPhones([]);
-          } else {
-            setDisplayedPhones(lostPhones || []);
-          }
+          setUserCurrencySymbol(defaultCurrency);
+          console.error('Error in fetching user currency:', err);
         }
+      } else {
+        setUserCurrencySymbol(defaultCurrency);
+      }
+      // --- نهاية جلب عملة المستخدم ---
+
+      try {
+        // جلب الهواتف المفقودة عن طريق API خادم يُفك التشفير ويعيد فقط الحقول المطلوبة
+        const response = await axiosInstance.get<any[]>('/api/lost-phones');
+        setDisplayedPhones(response.data);
 
         // جلب الهواتف المعروضة للبيع مع بيانات الموقع
         const { data: listings, error: listingsError } = await supabase
@@ -622,7 +614,7 @@ const Dashboard: React.FC = () => {
       }
     };
     fetchData();
-  }, [coords]); // إعادة الجلب عند تغير إحداثيات المستخدم
+  }, [coords, user?.id, language]); // إعادة الجلب عند تغير إحداثيات المستخدم أو معرف المستخدم أو اللغة
 
   // تأثير لتحديث الموقع بشكل دوري
   useEffect(() => {
@@ -665,7 +657,6 @@ const Dashboard: React.FC = () => {
           .eq('is_paid', true)
           .eq('type', 'special') // التأكد من أن النوع هو special
           .gt('expires_at', new Date().toISOString());
-
 
         if (specialError || !specialAds || specialAds.length === 0) {
           console.log('لا توجد إعلانات مميزة متاحة');
@@ -851,8 +842,8 @@ const Dashboard: React.FC = () => {
       <PageAdvertisement pageName="dashboard" />
       <div
         className="relative min-h-screen pb-0 mb-0"
-        style={{ 
-          paddingBottom: 'env(safe-area-inset-bottom)', 
+        style={{
+          paddingBottom: 'env(safe-area-inset-bottom)',
           marginBottom: 0,
           backgroundImage: "none",
           backgroundSize: 'cover',
@@ -996,11 +987,10 @@ const Dashboard: React.FC = () => {
                         >
                           {/* الشريط العلوي للإعلانات المميزة */}
                           {phone.type === 'promotions' && <div className="h-1.5 bg-gradient-to-r from-yellow-400 to-amber-500"></div>}
-                          
                           <div className="relative w-full h-[180px] sm:h-[200px] md:h-[220px] lg:h-[180px] bg-gray-50">
                             {phone.phone_images?.[0]?.image_path ? (
                               <>
-                                
+
                                 <div className="relative w-full h-full">
                                   {/* صورة الهاتف */}
                                   {(() => {
@@ -1014,7 +1004,7 @@ const Dashboard: React.FC = () => {
                                         alt={phone.title || 'صورة الهاتف'}
                                         className="absolute inset-0 w-full h-full object-cover opacity-0 transition-opacity duration-300"
                                         loading="lazy"
-                                       onLoad={(e) => {
+                                        onLoad={(e) => {
                                           const target = e.target as HTMLImageElement;
                                           target.classList.remove('opacity-0');
                                           target.classList.add('opacity-100');
@@ -1081,12 +1071,13 @@ const Dashboard: React.FC = () => {
                               </div>
                             )}
                           </div>
-                          
+
                           <div className="p-2 sm:p-2.5 flex flex-col gap-1.5 sm:gap-2">
                             {/* Title */}
                             <h3 className="text-xl font-bold text-gray-800 truncate leading-tight mb-0.5 px-2">
                               {phone.phone_type}
                             </h3>
+                            
                             <h4 className="text-md font-bold text-gray-700 truncate leading-tight mb-1 px-2">
                               {phone.model}
                             </h4>
@@ -1103,14 +1094,12 @@ const Dashboard: React.FC = () => {
 
                             </div>
 
-
-
                             {/* Price */}
                             <div className="mt-0.5 flex items-center justify-between">
-                              <div className="text-purple-700 font-bold text-base sm:text-lg" dir="ltr">
-                                {phone.price.toLocaleString('en-US')} <span className="text-xs font-normal text-gray-500">{t('currency_short')}</span>
+                              <div className="text-purple-700 font-bold text-base sm:text-lg" dir="ltr"> {/* تم تغيير dir إلى ltr لضمان عرض العملة بشكل صحيح */}
+                                {phone.price.toLocaleString('en-US')} <span className="text-md font-bold text-black">{userCurrencySymbol}</span>
                               </div>
-                              {phone.is_verified && (
+              {(phone.is_verified === true || phone.is_verified === 'true') && (
                                 <span className="text-[10px] bg-green-50 text-green-700 px-1.5 py-0.5 rounded border border-green-100 font-medium">
                                   {t('verified')}
                                 </span>
@@ -1162,61 +1151,61 @@ const Dashboard: React.FC = () => {
                         <Link
                           to={`/product/${acc.id}`}
                           className="flex flex-col h-full"
-                      >
-                        {/* الشريط العلوي للإعلانات المميزة */}
-                        {acc.type === 'promotions' && <div className="h-1.5 bg-gradient-to-r from-yellow-400 to-amber-500"></div>}
-                        <div className="relative w-full h-[200px] bg-gray-50">
-                          {acc.accessory_images?.[0]?.image_path ? (
-                            <img
-                              src={getTransformedAccessoryImageUrl(getAccessoryMainImage(acc))}
-                              alt={acc.title || 'صورة الإكسسوار'}
-                              className="absolute inset-0 w-full h-full object-cover"
-                              loading="lazy"
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-gray-100">
-                              <Smartphone className="w-12 h-12 text-gray-300" />
-                            </div>
-                          )}
-                          {/* شارة "مميز" */}
-                          {acc.type === 'promotions' && (
-                            <div className="absolute top-2 left-1.5 bg-yellow-400/90 backdrop-blur-[2px] text-black text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10 flex items-center gap-0.5">
-                              <Star className="w-2.5 h-2.5 text-black" />
-                              <span>{t('featured')}</span>
-                            </div>
-                          )}
+                        >
+                          {/* الشريط العلوي للإعلانات المميزة */}
+                          {acc.type === 'promotions' && <div className="h-1.5 bg-gradient-to-r from-yellow-400 to-amber-500"></div>}
+                          <div className="relative w-full h-[200px] bg-gray-50">
+                            {acc.accessory_images?.[0]?.image_path ? (
+                              <img
+                                src={getTransformedAccessoryImageUrl(getAccessoryMainImage(acc))}
+                                alt={acc.title || 'صورة الإكسسوار'}
+                                className="absolute inset-0 w-full h-full object-cover"
+                                loading="lazy"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center bg-gray-100">
+                                <Smartphone className="w-12 h-12 text-gray-300" />
+                              </div>
+                            )}
+                            {/* شارة "مميز" */}
+                            {acc.type === 'promotions' && (
+                              <div className="absolute top-2 left-1.5 bg-yellow-400/90 backdrop-blur-[2px] text-black text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10 flex items-center gap-0.5">
+                                <Star className="w-2.5 h-2.5 text-black" />
+                                <span>{t('featured')}</span>
+                              </div>
+                            )}
 
-                          {/* شارة الضمان */}
-                          {acc.warranty_months && acc.warranty_months > 0 && (
-                            <div className="absolute bottom-1 right-1 bg-blue-600/90 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm">
-                              {t('warranty_months').replace('{months}', acc.warranty_months.toString())}
-                            </div>
-                          )}
-                        </div>
-                        
-                        <div className="p-2.5 flex flex-col gap-2 bg-white">
-                          {/* Title */}
-                          <h3 className="text-xl font-bold text-gray-800 truncate leading-tight mb-0.5">
-                            {acc.title}
-                          </h3>
-
-                          {/* Category and Brand */}
-                          <div className="flex items-center gap-2 text-xl text-gray-500 truncate font-medium">
-                            {acc.category && <span>{acc.category}</span>}
-                            {acc.category && acc.brand && <span className="w-0.5 h-0.5 rounded-full bg-gray-400"></span>}
-                            {acc.brand && <span>{acc.brand}</span>}
+                            {/* شارة الضمان */}
+                            {acc.warranty_months && acc.warranty_months > 0 && (
+                              <div className="absolute bottom-1 right-1 bg-blue-600/90 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm">
+                                {t('warranty_months').replace('{months}', acc.warranty_months.toString())}
+                              </div>
+                            )}
                           </div>
 
-                          {/* Price */}
-                          <div className="mt-0.5 flex items-center justify-between">
-                            <div className="text-purple-700 font-bold text-lg" dir="ltr">
-                              {acc.price.toLocaleString('en-US')} <span className="text-xs font-normal text-gray-500">{t('currency_short')}</span>
+                          <div className="p-2.5 flex flex-col gap-2 bg-white">
+                            {/* Title */}
+                            <h3 className="text-xl font-bold text-gray-800 truncate leading-tight mb-0.5">
+                              {acc.title}
+                            </h3>
+
+                            {/* Category and Brand */}
+                            <div className="flex items-center gap-2 text-xl text-gray-500 truncate font-medium">
+                              {acc.category && <span>{acc.category}</span>}
+                              {acc.category && acc.brand && <span className="w-0.5 h-0.5 rounded-full bg-gray-400"></span>}
+                              {acc.brand && <span>{acc.brand}</span>}
                             </div>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${acc.condition === 'used' ? 'bg-orange-50 text-orange-700 border-orange-100' : 'bg-cyan-50 text-cyan-700 border-cyan-100'}`}>
-                              {t(acc.condition)}
-                            </span>
+
+                            {/* Price */}
+                            <div className="mt-0.5 flex items-center justify-between">
+                              <div className="text-purple-700 font-bold text-lg" dir="ltr"> {/* تم تغيير dir إلى ltr لضمان عرض العملة بشكل صحيح */}
+                                {acc.price.toLocaleString('en-US')} <span className="text-xs font-normal text-gray-500">{userCurrencySymbol}</span>
+                              </div>
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${acc.condition === 'used' ? 'bg-orange-50 text-orange-700 border-orange-100' : 'bg-cyan-50 text-cyan-700 border-cyan-100'}`}>
+                                {t(acc.condition)}
+                              </span>
+                            </div>
                           </div>
-                        </div>
                         </Link>
                       </div>
                     </SwiperSlide>
@@ -1266,7 +1255,9 @@ const Dashboard: React.FC = () => {
                       <div className="w-full max-w-md animate-fade-in-out" style={{ minHeight: '60px' }}>
                         <LostPhoneCard
                           key={safeKey}
-                          imei={phone?.masked_imei || phone?.imei}
+                          imei={t('lost')}
+                          phoneType={phone?.phone_type || phone?.phoneType}
+                        />t('lost')}
                           phoneType={phone?.phone_type || phone?.phoneType}
                         />
                       </div>
@@ -1297,7 +1288,7 @@ const Dashboard: React.FC = () => {
           onDeny={handleDenyOwnership}
         />
       </Suspense>
-      
+
       {/* نافذة تأكيد ملكية الهواتف غير المطالب بها */}
       <Dialog open={showClaimModal} onOpenChange={setShowClaimModal}>
         <DialogContent className="bg-white/90 backdrop-blur-lg text-gray-800 w-[90%] sm:max-w-md border-2 border-orange-400 shadow-2xl rounded-2xl">

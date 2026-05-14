@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { House, PlusSquare, User, Bell, FileText, CheckCircle2, Clock, Sparkles, X, Plus } from 'lucide-react';
+import { House, PlusSquare, User, Bell, FileText, CheckCircle2, Clock, Sparkles, X, Plus, Smartphone, Megaphone } from 'lucide-react';
 import { Search } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -357,18 +357,20 @@ const BottomNavbar: React.FC<BottomNavbarProps> = ({ isVisible = true }) => {
                 <div className="flex items-center justify-center w-full h-full -mt-5 gap-4">
                   <Link
                     to="/seller-dashboard"
-                    className="flex items-center justify-center px-8 sm:px-11 py-2 bg-white text-blue-800 rounded-full font-bold text-base sm:text-lg shadow-lg hover:bg-blue-50 transition-colors"
+                    className="flex items-center justify-center px-8 sm:px-11 py-1 bg-white text-blue-800 rounded-full font-bold text-base sm:text-lg shadow-lg hover:bg-blue-50 transition-colors"
                     onClick={() => setShowCreateAdModal(false)}
                   >
+                    <Smartphone className="w-5 h-5 ml-2 text-orange-500" />
                     {t('sell_now')}
                   </Link>
                   {/* عرض زر "إنشاء إعلان" فقط للمستخدمين التجاريين */}
                   {isBusinessUser && (
                     <Link
                       to="/create-advertisement"
-                      className="flex items-center justify-center px-6 py-2 bg-white text-blue-800 rounded-full font-bold text-base sm:text-lg shadow-lg hover:bg-blue-50 transition-colors"
+                      className="flex items-center justify-center px-6 py-1 bg-white text-blue-800 rounded-full font-bold text-base sm:text-lg shadow-lg hover:bg-blue-50 transition-colors"
                       onClick={() => setShowCreateAdModal(false)}
                     >
+                      <Megaphone className="w-5 h-5 ml-2 text-blue-600" />
                       {t('create_advertisement')}
                     </Link>
                   )}
