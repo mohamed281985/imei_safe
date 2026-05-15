@@ -1120,5 +1120,46 @@ export default {
 
   // CountryCodeSelector Translations
   "search_country_or_code": "Recherchez un pays ou un code...",
+
+  // SearchIMEI Page - Hardcoded Arabic Texts
+  "bonus_deducted_can_continue": "{{amount}} a été déduit de votre bonus et vous pouvez continuer",
+  "search_limit_check_error": "Une erreur s'est produite lors de la vérification de la limite de recherche",
+  "login_required_first": "Veuillez vous connecter d'abord",
+  "finder_phone_fetch_failed": "Échec de l'obtention du numéro de téléphone du trouveur.",
+  "phone_found_but_not_saved": "Le téléphone a été trouvé mais votre numéro n'a pas été enregistré dans la base de données.",
+  "phone_not_found_in_database": "Aucun enregistrement de téléphone trouvé dans la base de données",
+  "finder_email_fetch_failed": "Échec de la recherche de l'e-mail associé à ce téléphone",
+  "notification_title_phone_found": "Votre téléphone a été trouvé !",
+  "notification_body_phone_found": "Félicitations ! Votre téléphone a été trouvé. Pour contacter la personne qui l'a trouvé, veuillez appeler le : {{phone}}.",
+  "warning_security_settings": "Votre numéro de téléphone a été enregistré avec succès, mais le système n'a pas pu envoyer de notification au propriétaire en raison des paramètres de sécurité. Veuillez contacter le propriétaire directement au : {{phone}}",
+  "phone_saved_notification_error": "Numéro de téléphone enregistré mais une erreur s'est produite lors de l'enregistrement de la notification : {{error}}",
+  "notification_save_error": "Une erreur s'est produite lors de l'enregistrement de la notification : {{error}}",
+  "cannot_send_alert": "Impossible d'envoyer l'alerte",
+  "no_valid_owner_contact": "Aucune donnée de contact valide trouvée pour le propriétaire.",
+  "error_notifying_owner": "Une erreur s'est produite lors de la tentative de notification du propriétaire.",
+  "phone_image_label": "Image du téléphone :",
+  "phone_type_label": "Type de téléphone",
+  "alert_warning": "Alerte",
+
+  // Premium Search UI
+  "check_device_safety": "Vérifiez votre appareil et assurez sa sécurité",
+  "enter_imei_placeholder": "Entrez le numéro IMEI",
+  "scan_qr": "Scanner QR",
+  "protect_data": "Protégez vos données",
+  "instant_results": "Résultats instantanés",
+  "trusted_database": "Base de données fiable",
+  "high_accuracy": "Haute précision",
+  "search_device_info": "Pour rechercher des informations sur l'appareil",
+
+  // Search IMEI Page
+  "search_imei_title": "Trouvez votre téléphone perdu",
+  "search_imei_description": "Entrez le numéro IMEI pour vérifier l'état du téléphone et rechercher les signalements de perte",
+  "enter_imei_description": "Entrez le numéro IMEI à 15 chiffres pour vérifier l'état de votre téléphone dans la base de données",
+  "data_protection": "Protection des données",
+  "data_protection_desc": "Vos données sont entièrement protégées et cryptées",
+  "instant_results_desc": "Obtenez des résultats instantanément en quelques secondes",
+  "reliable_database_desc": "Base de données complète et continuellement mise à jour",
+  "high_accuracy_desc": "Résultats hautement précis et fiables",
+  "back_to_search": "Retour à la recherche",
   // Remaining translations (appended)
 }

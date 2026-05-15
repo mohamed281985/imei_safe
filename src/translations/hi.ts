@@ -1119,4 +1119,46 @@ export default {
 
   // CountryCodeSelector Translations
   "search_country_or_code": "एक देश या कोड खोजें...",
+
+  // SearchIMEI Page - Hardcoded Arabic Texts
+  "bonus_deducted_can_continue": "{{amount}} बोनस से काटा गया है और आप जारी रख सकते हैं",
+  "search_limit_check_error": "खोज सीमा की जाँच में त्रुटि हुई",
+  "login_required_first": "कृपया पहले लॉग इन करें",
+  "finder_phone_fetch_failed": "खोजकर्ता का फ़ोन नंबर प्राप्त करने में विफल।",
+  "phone_found_but_not_saved": "फ़ोन मिला लेकिन आपका नंबर डेटाबेस में सहेजा नहीं गया।",
+  "phone_not_found_in_database": "डेटाबेस में कोई फ़ोन रिकॉर्ड नहीं मिला",
+  "finder_email_fetch_failed": "इस फ़ोन से जुड़ा ईमेल खोजने में विफल",
+  "notification_title_phone_found": "आपका फ़ोन मिल गया है!",
+  "notification_body_phone_found": "बधाई! आपका फ़ोन मिल गया है। जिस व्यक्ति ने इसे पाया है, उससे संपर्क करने के लिए कृपया कॉल करें: {{phone}}।",
+  "warning_security_settings": "आपका फ़ोन नंबर सफलतापूर्वक सहेजा गया, लेकिन सुरक्षा सेटिंग्स के कारण सिस्टम मालिक को सूचना नहीं भेज सका। कृपया सीधे मालिक से संपर्क करें: {{phone}}",
+  "phone_saved_notification_error": "फ़ोन नंबर सहेजा गया लेकिन सूचना सहेजने में त्रुटि हुई: {{error}}",
+  "notification_save_error": "सूचना सहेजने में त्रुटि हुई: {{error}}",
+  "cannot_send_alert": "अलर्ट भेजा नहीं जा सकता",
+  "no_valid_owner_contact": "मालिक के लिए कोई मान्य संपर्क डेटा नहीं मिला।",
+  "error_notifying_owner": "मालिक को सूचित करने का प्रयास करते समय त्रुटि हुई।",
+  "phone_image_label": "फ़ोन की छवि:",
+  "phone_type_label": "फ़ोन का प्रकार",
+  "alert_warning": "चेतावनी",
+
+  // Premium Search UI
+  "check_device_safety": "अपने डिवाइस की जाँच करें और सुनिश्चित करें कि यह सुरक्षित है",
+  "enter_imei_placeholder": "IMEI नंबर दर्ज करें",
+  "scan_qr": "QR स्कैन करें",
+  "protect_data": "अपना डेटा सुरक्षित करें",
+  "instant_results": "तत्काल परिणाम",
+  "trusted_database": "विश्वसनीय डेटाबेस",
+  "high_accuracy": "उच्च सटीकता",
+  "search_device_info": "डिवाइस की जानकारी खोजने के लिए",
+
+  // Search IMEI Page
+  "search_imei_title": "अपना खोया हुआ फ़ोन खोजें",
+  "search_imei_description": "फ़ोन की स्थिति जांचने और हानि रिपोर्ट खोजने के लिए IMEI नंबर दर्ज करें",
+  "enter_imei": "IMEI दर्ज करें",
+  "enter_imei_description": "डेटाबेस में अपने फ़ोन की स्थिति जांचने के लिए 15 अंकों का IMEI नंबर दर्ज करें",
+  "data_protection": "डेटा सुरक्षा",
+  "data_protection_desc": "आपका डेटा पूरी तरह से सुरक्षित और एन्क्रिप्टेड है",
+  "instant_results_desc": "कुछ सेकंड में तुरंत परिणाम प्राप्त करें",
+  "reliable_database_desc": "व्यापक और लगातार अपडेट किया गया डेटाबेस",
+  "high_accuracy_desc": "अत्यधिक सटीक और विश्वसनीय परिणाम",
+  "back_to_search": "खोज पर वापस जाएं",
 }

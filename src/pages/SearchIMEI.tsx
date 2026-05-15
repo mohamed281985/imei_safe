@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle, Search, ArrowLeft, Smartphone, FileText, CheckCircle, XCircle, ShieldCheck, MapPin, Clock, Calendar, Hash } from 'lucide-react';
+import { AlertTriangle, Search, ArrowLeft, ArrowRight, Smartphone, FileText, CheckCircle, XCircle, ShieldCheck, MapPin, Clock, Calendar, Hash, ScanLine, Lock, Zap, Database, Target } from 'lucide-react';
 import PageContainer from '@/components/PageContainer';
 import AppNavbar from '@/components/AppNavbar';
 import PageAdvertisement from '@/components/advertisements/PageAdvertisement';
@@ -13,6 +13,7 @@ import { useScrollToTop } from '../hooks/useScrollToTop';
 import { supabase } from '../lib/supabase';
 import AdsOfferSlider from '@/components/AdsOfferSlider';
 import axiosInstance from '@/services/axiosInterceptor';
+import arTranslations from '../translations/ar';
 
 const WelcomeSearch: React.FC = () => {
   useScrollToTop();
@@ -28,7 +29,6 @@ const WelcomeSearch: React.FC = () => {
   const [searchResult, setSearchResult] = useState<'found' | 'not_found' | null>(null);
   const [phoneId, setPhoneId] = useState<string | null>(null);
   const [registeredPhoneDetails, setRegisteredPhoneDetails] = useState<any | null>(null);
-  // إزالة تخزين البيانات الحساسة في الحالة
   const [foundReportStatus, setFoundReportStatus] = useState<string | null>(null);
   const [foundReportDate, setFoundReportDate] = useState<string | null>(null);
   const [lossLocation, setLossLocation] = useState<string | null>(null);
@@ -39,60 +39,59 @@ const WelcomeSearch: React.FC = () => {
 
   // التحقق من حد البحث للمستخدم بناءً على أحدث دفع في ads_payment
   const checkSearchLimit = async (userId: string) => {
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
 
-    const response = await axiosInstance.post('/api/check-limit', 
-      { type: 'search_imei', consumeBonusOnLimit: true },
-      {
-        headers: {
-          'Authorization': `Bearer ${token}`
+      const response = await axiosInstance.post('/api/check-limit',
+        { type: 'search_imei', consumeBonusOnLimit: true },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
         }
+      );
+
+      const result = response.data;
+
+      if (result?.usedBonus) {
+        toast({
+          title: t('alert'),
+          description: t('bonus_deducted_can_continue', { amount: result.deductedAmount }),
+          variant: 'default'
+        });
       }
-    );
 
-    const result = response.data;
+      if (!result.allowed) {
+        toast({
+          title: t('alert'),
+          description: t('search_limit_exceeded'),
+          variant: 'destructive'
+        });
+        setHasReachedSearchLimit(true);
+        setShowUpgradeModal(true);
+        return false;
+      }
 
-    if (result?.usedBonus) {
+      if (result.isLastUsage) {
+        toast({
+          title: t('alert'),
+          description: t('last_search_allowed'),
+          variant: 'default'
+        });
+      }
+
+      setHasReachedSearchLimit(false);
+      return true;
+    } catch (error) {
       toast({
-        title: t('alert'),
-        description: `تم خصم ${result.deductedAmount} من البونص ويمكنك المتابعة`,
-        variant: 'default'
-      });
-    }
-
-    if (!result.allowed) {
-      toast({
-        title: t('alert'),
-        description: t('search_limit_exceeded'),
+        title: t('error'),
+        description: t('search_limit_check_error'),
         variant: 'destructive'
       });
-      setHasReachedSearchLimit(true);
-      setShowUpgradeModal(true);
       return false;
     }
-
-    if (result.isLastUsage) {
-      toast({
-        title: t('alert'),
-        description: t('last_search_allowed'),
-        variant: 'default'
-      });
-    }
-
-    setHasReachedSearchLimit(false);
-    return true;
-  } catch (error) {
-    toast({
-      title: 'خطأ',
-      description: 'حدث خطأ في التحقق من حد البحث',
-      variant: 'destructive'
-    });
-    return false;
-  }
-};
-
+  };
 
   // تحديث عدد عمليات البحث المستخدمة
   const updateSearchUsage = async (userId: string) => {
@@ -113,13 +112,22 @@ const WelcomeSearch: React.FC = () => {
     }
   };
 
+  const handleResetSearch = () => {
+    setSearchResult(null);
+    setImei('');
+    setPhoneId(null);
+    setRegisteredPhoneDetails(null);
+    setFoundReportStatus(null);
+    setFoundReportDate(null);
+    setLossLocation(null);
+    setLossTime(null);
+  };
+
   const handleImeiChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value.replace(/\D/g, '');
     if (value.length > 15) return;
     setImei(value);
   }, []);
-
-  // تم إزالة هذا useEffect لأننا نتحقق من الحد مباشرة في الدوال
 
   const handleNotifyOwner = async () => {
     // Debug: تحقق من القيم قبل التحقق
@@ -149,7 +157,7 @@ const WelcomeSearch: React.FC = () => {
       const { finderPhone, error } = response.data;
 
       if (error || !finderPhone) {
-        throw new Error(error || 'فشل في الحصول على رقم هاتف الواجد.');
+        throw new Error(error || t('finder_phone_fetch_failed'));
       }
 
       // 2. تحديث جدول phone_reports بوضع رقم هاتف الواجد المشفر في عمود finder_phone باستخدام IMEI
@@ -167,7 +175,7 @@ const WelcomeSearch: React.FC = () => {
       const updateResult = updateResponse.data;
 
       if (!updateResponse.status || !updateResult.success) {
-        toast({ title: 'تنبيه', description: 'تم العثور على الهاتف لكن لم يتم حفظ رقمك في قاعدة البيانات.', variant: 'destructive' });
+        toast({ title: t('alert_warning'), description: t('phone_found_but_not_saved'), variant: 'destructive' });
       } else {
 
         // حفظ البيانات في جدول notifications
@@ -187,12 +195,12 @@ const WelcomeSearch: React.FC = () => {
             );
             const result = response.data;
             if (response.status !== 200 || !result?.email) {
-              throw new Error(result?.error || 'لم يتم العثور على سجل للهاتف في قاعدة البيانات');
+              throw new Error(result?.error || t('phone_not_found_in_database'));
             }
             ownerEmailForNotification = result.email;
           } catch (err) {
             console.debug('Error finding email for notification:', err);
-            throw new Error('فشل في العثور على البريد الإلكتروني الخاص بهذا الهاتف');
+            throw new Error(t('finder_email_fetch_failed'));
           }
 
           let imeiForNotification = phoneId || '';
@@ -208,9 +216,15 @@ const WelcomeSearch: React.FC = () => {
             // تجاهل أي خطأ في فك التشفير واستخدم القيمة كما هي
           }
 
+          // استخدام اللغة العربية دائماً للإشعار لأن صاحب الهاتف سجل بالعربية
+          // والأشعارات يجب أن تصل بلغة المستلم (صاحب الهاتف) وليس بلغة الواجد
+          const notificationTitle = arTranslations['notification_title_phone_found'] || 'تم العثور على هاتفك!';
+          const notificationBodyRaw = arTranslations['notification_body_phone_found'] || 'مبروك! تم العثور على هاتفك. للتواصل مع الشخص الذي وجده، يرجى الاتصال على الرقم: {{phone}}.';
+          const notificationBody = notificationBodyRaw.replace('{{phone}}', finderPhone);
+
           const notificationPayload = {
-            title: 'تم العثور على هاتفك!',
-            body: `مبروك! تم العثور على هاتفك. للتواصل مع الشخص الذي وجده، يرجى الاتصال على الرقم: ${finderPhone}.`,
+            title: notificationTitle,
+            body: notificationBody,
             user_id: user.id,
             finder_phone: finderPhone,
             imei: imeiForNotification,
@@ -233,22 +247,22 @@ const WelcomeSearch: React.FC = () => {
           // التحقق إذا كان الخطأ بسبب سياسة الأمان
           if (notificationError && notificationError.code === '42501') {
             toast({
-              title: 'تحذير',
-              description: `تم حفظ رقم الهاتف بنجاح، لكن لم يتمكن النظام من إرسال إشعار للمالك بسبب إعدادات الأمان. يرجى التواصل مع المالك مباشرة عبر الرقم: ${finderPhone}`,
+              title: t('alert'),
+              description: t('warning_security_settings', { phone: finderPhone }),
               variant: 'default'
             });
           } else if (notificationError) {
             toast({
-              title: 'خطأ',
-              description: `تم حفظ رقم الهاتف لكن حدث خطأ في حفظ الإشعار: ${notificationError.message || 'غير معروف'}`,
+              title: t('error'),
+              description: t('phone_saved_notification_error', { error: notificationError.message || t('not_available') }),
               variant: 'destructive'
             });
           }
         } catch (saveError) {
           if (saveError instanceof Error) {
             toast({
-              title: 'خطأ',
-              description: `حدث خطأ أثناء حفظ الإشعار: ${saveError.message}`,
+              title: t('error'),
+              description: t('notification_save_error', { error: saveError.message }),
               variant: 'destructive'
             });
           }
@@ -260,11 +274,11 @@ const WelcomeSearch: React.FC = () => {
         if (notificationSent || emailSent) {
           toast({ title: t('notification_sent'), description: t('owner_notified_success') });
         } else {
-          toast({ title: 'تعذر إرسال التنبيه', description: 'لم يتم العثور على بيانات تواصل صالحة للمالك.', variant: 'destructive' });
+          toast({ title: t('cannot_send_alert'), description: t('no_valid_owner_contact'), variant: 'destructive' });
         }
       }
     } catch (error) {
-      toast({ title: t('error'), description: error.message || 'حدث خطأ أثناء محاولة إبلاغ المالك.', variant: 'destructive' });
+      toast({ title: t('error'), description: error.message || t('error_notifying_owner'), variant: 'destructive' });
     } finally {
       setIsNotifying(false);
     }
@@ -290,7 +304,7 @@ const WelcomeSearch: React.FC = () => {
       });
       return;
     }
-    
+
     // ملاحظة أمنية: التحقق من صحة الـ IMEI يتم هنا في الواجهة الأمامية لتحسين تجربة المستخدم
     // ولكن يجب أيضاً التحقق من صحة الـ IMEI في الخادم لضمان أمان البيانات
     // الخادم يجب أن يرفض أي IMEI لا يطابق النمط المطلوب
@@ -302,8 +316,8 @@ const WelcomeSearch: React.FC = () => {
     }
     if (!user) {
       toast({
-        title: 'خطأ',
-        description: 'يرجى تسجيل الدخول أولاً',
+        title: t('error'),
+        description: t('login_required_first'),
         variant: 'destructive'
       });
       return;
@@ -365,10 +379,10 @@ const WelcomeSearch: React.FC = () => {
         const rp = result.registeredPhone
           ? result.registeredPhone
           : {
-              imei: result.imei || imei,
-              registration_date: result.registration_date || result.registered_at || null,
-              status: result.status || 'registered',
-            };
+            imei: result.imei || imei,
+            registration_date: result.registration_date || result.registered_at || null,
+            status: result.status || 'registered',
+          };
 
         setPhoneId(rp.imei || imei); // عيّن phoneId دائماً
         setRegisteredPhoneDetails({
@@ -415,341 +429,425 @@ const WelcomeSearch: React.FC = () => {
     <PageContainer>
       <AppNavbar />
       <PageAdvertisement pageName="welcomesearch" />
-      <div className="container mx-auto px-4 py-8 glass-bg" style={{ background: 'rgba(255,255,255,0.18)' }}>
-        <div className="my-6 flex-1 flex flex-col">
-          <div className="flex items-center mb-6" style={{ background: 'linear-gradient(to top, #053060 0%, #0a4d8c 100%)', padding: '0.3rem', borderRadius: '1rem', marginTop: '1rem' }}>
-            <button
-              onClick={() => navigate('/dashboard')}
-              className="bg-orange-500 p-2 rounded-full hover:bg-orange-600 transition-colors mr-4"
-            >
-              <ArrowLeft size={20} className="text-white" />
-            </button>
-            <h1
-              className="flex-1 text-center text-2xl font-bold"
-              style={{ color: '#ffffff' }}
-            >
-              {t('search_imei')}
-            </h1>
-          </div>
-          <div className="space-y-4">
-            <form onSubmit={handleSearch} className="space-y-4">
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Search size={18} className="text-gray-400" />
-                </div>
-                <input
-                  type="text"
-                  value={imei}
-                  onChange={handleImeiChange}
-                  placeholder="12345789012345"
-                  className="w-full pl-10 py-3 border border-imei-cyan/30 rounded-lg text-black focus:border-imei-cyan focus:ring-1 focus:ring-imei-cyan"
-                  style={{ background: '#c0dee5' }}
-                  maxLength={15}
-                  pattern="[0-9]*"
-                  inputMode="numeric"
-                />
-              </div>
-              <Button
-                type="submit"
-                className="w-full bg-cyan-400 hover:bg-cyan-500 py-3 text-lg font-medium flex items-center justify-center gap-2 shadow-lg transition-all duration-300"
-                disabled={isSearching}
+
+      <div className="min-h-screen bg-slate-50 pb-10">
+        <div className="container mx-auto px-4 py-6 max-w-4xl">
+          {/* Header Section */}
+          <div className="bg-white rounded-2xl shadow-sm p-4 mb-6 border border-slate-200">
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => navigate('/dashboard')}
+                className="text-slate-600 hover:text-slate-900 transition-colors"
               >
-                <Search className="w-5 h-5 text-blue-900" />
-                <span className="text-blue-900">{t('search')}</span>
-              </Button>
-            </form>
-
-            {searchResult === null && (
-              <div className="flex flex-col items-center justify-center mt-8 space-y-2">
-                <Smartphone className="text-gray-500" width={48} height={48} />
-                <p className="text-gray-400 text-center">{t('enter_imei')}</p>
+                <ArrowRight size={20} className="rtl:rotate-180" />
+              </button>
+              <div className="flex items-center">
+                <div className="bg-gradient-to-br from-orange-500 to-orange-600 p-2 rounded-lg ml-4 shadow-md">
+                  <ShieldCheck size={20} className="text-white" />
+                </div>
+                <h1 className="text-xl font-bold text-blue-600">
+                  {t('search_imei')}
+                </h1>
               </div>
-            )}
+              <div className="w-5"></div> {/* Spacer for balance */}
+            </div>
+          </div>
 
-            {searchResult === 'found' && foundReportStatus && (
-              <div className="mt-8 rounded-2xl overflow-hidden shadow-lg border-2 border-red-400">
-                {/* الهيدر الوردي الشفاف الفاتح */}
-                <div className="bg-rose-100/70 pt-4 pb-3 px-5 flex flex-col items-center">
-                  <AlertTriangle size={36} className="text-red-500 mb-2" />
-                  <h3 className="text-xl font-extrabold text-red-600 mb-0.5">
-                    {foundReportStatus === 'resolved' ? t('phone_found') : t('phone_lost')}
-                  </h3>
-                  <p className="text-red-500 text-xs font-bold">
-                    {foundReportStatus === 'resolved' ? t('phone_found_message') : t('phone_lost_message')}
-                  </p>
+          {/* Search Card */}
+          {searchResult !== 'found' && (
+            <div className="bg-white rounded-3xl shadow-lg p-6 mb-8 border border-slate-100">
+              <div className="mb-6 text-center">
+                <h2 className="text-2xl font-bold text-blue-600 mb-2">
+                  {t('search_imei_title')}
+                </h2>
+                <p className="text-blue-600">
+                  {t('search_imei_description')}
+                </p>
+              </div>
+
+
+              <form onSubmit={handleSearch} className="space-y-6">
+                <div className="relative">
+                  <div className="absolute inset-y-0 right-0 flex items-center pr-4 pointer-events-none">
+                    <Hash size={20} className="text-slate-400" />
+                  </div>
+                  <input
+                    type="text"
+                    value={imei}
+                    onChange={handleImeiChange}
+                    placeholder={t('enter_imei_placeholder')}
+                    className="w-full pr-12 pl-12 py-4 bg-slate-50 border-2 border-slate-200 rounded-xl text-blue-600 focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 transition-all duration-300"
+                    maxLength={15}
+                    pattern="[0-9]*"
+                    inputMode="numeric"
+                  />
+                  <div className="absolute inset-y-0 left-0 flex items-center pl-4">
+                    <button
+                      type="button"
+                      className="bg-slate-100 hover:bg-slate-200 text-slate-600 p-2 rounded-lg transition-colors"
+                      onClick={() => {/* TODO: Implement QR scan */ }}
+                    >
+                      <ScanLine size={20} />
+                    </button>
+                  </div>
                 </div>
 
-                {/* الحاوية الداخلية البيضاء */}
-                <div className="bg-white p-4">
-                  {/* صف IMEI + حالة البلاغ */}
-                  <div className="grid grid-cols-2 gap-3 py-2">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
-                        <Hash size={16} className="text-blue-600" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[10px] text-gray-500 font-bold">IMEI</p>
-                        <p className="text-xs font-bold text-gray-800 truncate">
-                          {phoneId ? (() => {
-                            try {
-                              if (/^[a-zA-Z0-9+/=]+$/.test(phoneId) && phoneId.length > 15) {
-                                const { decryptIMEI } = require('@/lib/imeiCrypto');
-                                const decrypted = decryptIMEI(phoneId);
-                                return /^\d{14,16}$/.test(decrypted) ? decrypted : phoneId;
-                              }
-                              return phoneId;
-                            } catch {
-                              return phoneId;
-                            }
-                          })() : 'N/A'}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
-                        <AlertTriangle size={16} className="text-blue-600" />
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-[10px] text-gray-500 font-bold">{t('report_status')}</p>
-                        <p className={`text-xs font-bold ${foundReportStatus === 'resolved' ? 'text-green-600' : 'text-red-600'}`}>
-                          {foundReportStatus === 'resolved' ? t('resolved') : t('active')}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="border-b border-gray-100 my-1" />
-
-                  {/* صف تاريخ البلاغ + وقت البلاغ */}
-                  {foundReportDate && (
+                <Button
+                  type="submit"
+                  className="w-full h-14 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-bold text-lg rounded-xl shadow-lg shadow-orange-500/30 transition-all duration-300 flex items-center justify-center gap-2"
+                  disabled={isSearching || !imei}
+                >
+                  {isSearching ? (
                     <>
-                      <div className="grid grid-cols-2 gap-3 py-2">
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
-                            <Calendar size={16} className="text-blue-600" />
-                          </div>
-                          <div className="flex-1">
-                            <p className="text-[10px] text-gray-500 font-bold">{t('report_date')}</p>
-                            <p className="text-xs font-bold text-gray-800">
-                              {new Date(foundReportDate).toLocaleDateString(i18n.language === 'ar' ? 'ar-EG' : 'en-US')}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
-                            <Clock size={16} className="text-blue-600" />
-                          </div>
-                          <div className="flex-1">
-                            <p className="text-[10px] text-gray-500 font-bold">{t('report_time')}</p>
-                            <p className="text-xs font-bold text-gray-800">
-                              {new Date(foundReportDate).toLocaleTimeString(i18n.language === 'ar' ? 'ar-EG' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="border-b border-gray-100 my-1" />
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                      <span>{t('searching')}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Search className="w-5 h-5" />
+                      <span>{t('search')}</span>
                     </>
                   )}
+                </Button>
+              </form>
+            </div>
+          )}
 
-                  {/* صف مكان الفقد + تاريخ الفقد */}
-                  {foundReportStatus === 'active' && (lossLocation || lossTime) && (
-                    <>
-                      <div className="grid grid-cols-2 gap-3 py-2">
-                        {lossLocation ? (
-                          <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
-                              <MapPin size={16} className="text-blue-600" />
+          {/* Empty State - تم إزالة هذا القسم بالكامل */}
+
+          {/* Features Grid - تم إضافة هذا القسم مباشرة بعد بطاقة البحث */}
+          <div className="grid grid-cols-2 gap-4 mt-8 w-full">
+            {[
+              { icon: Lock, title: t('data_protection'), desc: t('data_protection_desc') },
+              { icon: Zap, title: t('instant_results'), desc: t('instant_results_desc') },
+              { icon: Database, title: t('trusted_database'), desc: t('reliable_database_desc') },
+              { icon: Target, title: t('high_accuracy'), desc: t('high_accuracy_desc') }
+            ].map((feature, index) => (
+              <div key={index} className="bg-gradient-to-br from-white to-slate-50 rounded-xl p-6 shadow-xl border border-slate-100 hover:shadow-lg hover:border-orange-200 transition-all duration-300">
+                <div className="bg-gradient-to-br from-orange-500 to-orange-600 w-14 h-14 rounded-xl flex items-center justify-center mb-4 shadow-md">
+                  <feature.icon size={24} className="text-white" />
+                </div>
+                <h4 className="font-bold text-blue-600 mb-2 text-lg">{feature.title}</h4>
+                <p className="text-sm text-blue-600 leading-relaxed">{feature.desc}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Search Results Section */}
+          {searchResult !== null && (
+            <div className="space-y-6">
+
+              {/* Found Phone Card */}
+              {searchResult === 'found' && foundReportStatus && (
+                <div className={`bg-white rounded-2xl shadow-lg overflow-hidden border ${foundReportStatus === 'resolved' ? 'border-green-100' : 'border-red-100'}`}>
+                  {/* Header */}
+                  <div className={`pt-6 pb-4 px-6 flex flex-col items-center ${foundReportStatus === 'resolved' ? 'bg-green-600' : 'bg-red-600'}`}>
+                    <div className={`${foundReportStatus === 'resolved' ? 'bg-green-400' : 'bg-red-400'} p-4 rounded-full mb-3`}>
+                      {foundReportStatus === 'resolved' ? (
+                        <CheckCircle size={32} className="text-green-600" />
+                      ) : (
+                        <AlertTriangle size={32} className="text-white" />
+                      )}
+                    </div>
+                    <h3 className={`text-2xl font-bold mb-1 ${foundReportStatus === 'resolved' ? 'text-white' : 'text-white'}`}>
+                      {foundReportStatus === 'resolved' ? t('phone_found') : t('phone_lost')}
+                    </h3>
+                  </div>
+
+                  {/* Details */}
+                  <div className="p-4 bg-white">
+                    <div className="flex flex-col gap-4">
+                      {/* صف رقم IMEI */}
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center flex-shrink-0">
+                          <Hash size={24} className="text-slate-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-slate-500 font-bold mb-1">IMEI</p>
+                          <p className="text-base font-bold text-blue-600 truncate">
+                            {phoneId ? (() => {
+                              try {
+                                if (/^[a-zA-Z0-9+/=]+$/.test(phoneId) && phoneId.length > 15) {
+                                  const { decryptIMEI } = require('@/lib/imeiCrypto');
+                                  const decrypted = decryptIMEI(phoneId);
+                                  return /^\d{14,16}$/.test(decrypted) ? decrypted : phoneId;
+                                }
+                                return phoneId;
+                              } catch {
+                                return phoneId;
+                              }
+                            })() : 'N/A'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* صف حالة البلاغ */}
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center flex-shrink-0">
+                          <AlertTriangle size={24} className="text-slate-600" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-sm text-slate-500 font-bold mb-1">{t('report_status')}</p>
+                          <p className={`text-base font-bold ${foundReportStatus === 'resolved' ? 'text-green-600' : 'text-red-600'}`}>
+                            {foundReportStatus === 'resolved' ? t('resolved') : t('active')}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* صف بعمودين: وقت الفقد ووقت البلاغ */}
+                      <div className="grid grid-cols-2 gap-4">
+                        {/* وقت الفقد */}
+                        {lossTime ? (
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center flex-shrink-0">
+                              <Clock size={24} className="text-slate-600" />
                             </div>
                             <div className="flex-1">
-                              <p className="text-[10px] text-gray-500 font-bold">{t('loss_location')}</p>
-                              <p className="text-xs font-bold text-gray-800">{lossLocation}</p>
+                              <p className="text-sm text-slate-500 font-bold mb-1">{t('loss_time')}</p>
+                              <p className="text-base font-bold text-blue-600">
+                                {new Date(lossTime).toLocaleTimeString(i18n.language === 'ar' ? 'ar-EG' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                              </p>
                             </div>
                           </div>
-                        ) : <div />}
-                        {lossTime ? (
-                          <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
-                              <Calendar size={16} className="text-blue-600" />
+                        ) : null}
+
+                        {/* وقت البلاغ */}
+                        {foundReportDate ? (
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center flex-shrink-0">
+                              <Clock size={24} className="text-slate-600" />
                             </div>
                             <div className="flex-1">
-                              <p className="text-[10px] text-gray-500 font-bold">{t('loss_date')}</p>
-                              <p className="text-xs font-bold text-gray-800">
+                              <p className="text-sm text-slate-500 font-bold mb-1">{t('report_time')}</p>
+                              <p className="text-base font-bold text-blue-600">
+                                {new Date(foundReportDate).toLocaleTimeString(i18n.language === 'ar' ? 'ar-EG' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                              </p>
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+
+                      {/* صف بعمودين: تاريخ الفقد وتاريخ البلاغ */}
+                      <div className="grid grid-cols-2 gap-4">
+                        {/* تاريخ الفقد */}
+                        {lossTime ? (
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center flex-shrink-0">
+                              <Calendar size={24} className="text-slate-600" />
+                            </div>
+                            <div className="flex-1">
+                              <p className="text-sm text-slate-500 font-bold mb-1">{t('loss_date')}</p>
+                              <p className="text-base font-bold text-blue-600">
                                 {new Date(lossTime).toLocaleDateString(i18n.language === 'ar' ? 'ar-EG' : 'en-US')}
                               </p>
                             </div>
                           </div>
-                        ) : <div />}
-                      </div>
-                      <div className="border-b border-gray-100 my-1" />
-                    </>
-                  )}
+                        ) : null}
 
-                  {/* صف وقت الفقد */}
-                  {foundReportStatus === 'active' && lossTime && (
-                    <>
-                      <div className="grid grid-cols-2 gap-3 py-2">
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
-                            <Clock size={16} className="text-blue-600" />
+                        {/* تاريخ البلاغ */}
+                        {foundReportDate ? (
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center flex-shrink-0">
+                              <Calendar size={24} className="text-slate-600" />
+                            </div>
+                            <div className="flex-1">
+                              <p className="text-sm text-slate-500 font-bold mb-1">{t('report_date')}</p>
+                              <p className="text-base font-bold text-blue-600">
+                                {new Date(foundReportDate).toLocaleDateString(i18n.language === 'ar' ? 'ar-EG' : 'en-US')}
+                              </p>
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+
+                      {/* صف مكان الفقد */}
+                      {lossLocation ? (
+                        <div className="flex items-center gap-3 bg-white/60 p-3 rounded-xl border border-red-100 shadow-sm">
+                          <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center flex-shrink-0">
+                            <MapPin size={24} className="text-slate-600" />
                           </div>
                           <div className="flex-1">
-                            <p className="text-[10px] text-gray-500 font-bold">{t('loss_time')}</p>
-                            <p className="text-xs font-bold text-gray-800">
-                              {new Date(lossTime).toLocaleTimeString(i18n.language === 'ar' ? 'ar-EG' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
-                            </p>
+                            <p className="text-sm text-slate-500 font-bold mb-1">{t('loss_location')}</p>
+                            <p className="text-base font-bold text-blue-600">{lossLocation}</p>
                           </div>
                         </div>
-                        <div />
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Registered Phone Card */}
+              {searchResult === 'not_found' && registeredPhoneDetails && (
+                <>
+                  {registeredPhoneDetails.status === 'transferred' ? (
+                    <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-slate-100">
+                      <div className="bg-green-50 pt-6 pb-4 px-6 flex flex-col items-center">
+                        <div className="bg-green-100 p-4 rounded-full mb-3">
+                          <ShieldCheck size={32} className="text-green-600" />
+                        </div>
+                        <h3 className="text-xl font-bold text-center mb-2 text-blue-600">
+                          {t('this_phone_is_registered_in_our_system_since')}{' '}
+                          {formatDateTime(registeredPhoneDetails.registration_date) || t('not_available')}{' '}
+                          {t('and_no_report_has_been_filed_yet')}
+                        </h3>
                       </div>
-                    </>
+
+                      {/* Phone Image - تم تعديل هذا القسم لتقليل ارتفاع الصورة */}
+                      {registeredPhoneDetails.phone_image_url && (
+                        <div className="p-3 flex flex-col items-center">
+                          <p className="text-blue-600 font-bold mb-2">{t('phone_image_label')}</p>
+                          <img
+                            src={registeredPhoneDetails.phone_image_url}
+                            alt={t('phone_image_label')}
+                            className="w-full max-w-xs h-32 object-contain rounded-xl border-2 border-slate-200 shadow-sm"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Crect fill=%22%23ddd%22 width=%22100%22 height=%22100%22/%3E%3Crect x=%225%22 y=%225%22 width=%2290%22 height=%2290%22 fill=%22%23eee%22/%3E%3Ctext x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 font-family=%22sans-serif%22 font-size=%2214%22 fill=%22%23999%22%3ENo Image%3C/text%3E%3C/svg%3E';
+                            }}
+                          />
+                        </div>
+                      )}
+
+                      {/* Phone Type */}
+                      {registeredPhoneDetails.phone_type && (
+                        <div className="px-6 pb-6 text-center">
+                          <p className="text-blue-600 font-bold">{t('phone_type_label')}: <span className="font-normal">{registeredPhoneDetails.phone_type}</span></p>
+                        </div>
+                      )}
+                    </div>
+                  ) : registeredPhoneDetails.status === 'pending' ? (
+                    <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-slate-100">
+                      <div className="bg-yellow-50 pt-6 pb-4 px-6 flex flex-col items-center">
+                        <div className="bg-yellow-100 p-4 rounded-full mb-3">
+                          <AlertTriangle size={32} className="text-yellow-600" />
+                        </div>
+                        <h3 className="text-xl font-bold text-center mb-2 text-blue-600">
+                          {t('this_phone_is_registered_in_our_system_since')}{' '}
+                          {formatDateTime(registeredPhoneDetails.registration_date) || t('not_available')}{' '}
+                          {t('and_it_is_under_review_please_check_purchase_invoice')}
+                        </h3>
+                      </div>
+
+                      {/* Phone Image - تم تعديل هذا القسم لتقليل ارتفاع الصورة */}
+                      {registeredPhoneDetails.phone_image_url && (
+                        <div className="p-3 flex flex-col items-center">
+                          <p className="text-blue-600 font-bold mb-2">{t('phone_image_label')}</p>
+                          <img
+                            src={registeredPhoneDetails.phone_image_url}
+                            alt={t('phone_image_label')}
+                            className="w-full max-w-xs h-32 object-contain rounded-xl border-2 border-slate-200 shadow-sm"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Crect fill=%22%23ddd%22 width=%22100%22 height=%22100%22/%3E%3Ctext x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 font-family=%22sans-serif%22 font-size=%2214%22 fill=%22%23999%22%3ENo Image%3C/text%3E%3C/svg%3E';
+                            }}
+                          />
+                        </div>
+                      )}
+
+                      {/* Phone Type */}
+                      {registeredPhoneDetails.phone_type && (
+                        <div className="px-6 pb-6 text-center">
+                          <p className="text-blue-600 font-bold">{t('phone_type_label')}: <span className="font-normal">{registeredPhoneDetails.phone_type}</span></p>
+                        </div>
+                      )}
+                    </div>
+                  ) : registeredPhoneDetails.status === 'rejected' ? (
+                    <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-slate-100">
+                      <div className="bg-red-10 pt-6 pb-4 px-6 flex flex-col items-center">
+                        <div className="bg-red-100 p-4 rounded-full mb-3">
+                          <XCircle size={32} className="text-red-600" />
+                        </div>
+                        <h3 className="text-xl font-bold text-center mb-2 text-blue-600">
+                          {t('this_phone_registration_has_been_rejected_due_to_incorrect_data')}
+                        </h3>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-slate-100">
+                      <div className="bg-green-50 pt-6 pb-4 px-6 flex flex-col items-center">
+                        <div className="bg-green-100 p-4 rounded-full mb-3">
+                          <ShieldCheck size={32} className="text-green-600" />
+                        </div>
+                        <h3 className="text-xl font-bold text-center mb-2 text-blue-600">
+                          {t('this_phone_is_registered_in_our_system_since')}{' '}
+                          {formatDateTime(registeredPhoneDetails.registration_date) || t('not_available')}{' '}
+                          {t('and_no_report_has_been_filed_yet')}
+                        </h3>
+                      </div>
+
+                      {/* Phone Image - تم تعديل هذا القسم لتقليل ارتفاع الصورة */}
+                      {registeredPhoneDetails.phone_image_url && (
+                        <div className="p-3 flex flex-col items-center">
+                          <p className="text-blue-600 font-bold mb-2">{t('phone_image_label')}</p>
+                          <img
+                            src={registeredPhoneDetails.phone_image_url}
+                            alt={t('phone_image_label')}
+                            className="w-full max-w-xs h-32 object-contain rounded-xl border-2 border-slate-200 shadow-sm"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Crect fill=%22%23ddd%22 width=%22100%22 height=%22100%22/%3E%3Ctext x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 font-family=%22sans-serif%22 font-size=%2214%22 fill=%22%23999%22%3ENo Image%3C/text%3E%3C/svg%3E';
+                            }}
+                          />
+                        </div>
+                      )}
+
+                      {/* Phone Type */}
+                      {registeredPhoneDetails.phone_type && (
+                        <div className="px-6 pb-6 text-center">
+                          <p className="text-blue-600 font-bold">{t('phone_type_label')}: <span className="font-normal">{registeredPhoneDetails.phone_type}</span></p>
+                        </div>
+                      )}
+                    </div>
                   )}
-                </div>
-              </div>
-            )}
+                </>
+              )}
 
-            {searchResult === 'not_found' && registeredPhoneDetails && (
-              <>
-                {registeredPhoneDetails.status === 'transferred' ? (
-                  <div className="mt-8 p-6 rounded-xl border bg-green-100 border-green-400">
-                    <div className="flex items-center justify-center mb-4">
-                      <ShieldCheck size={48} className="text-green-600" />
+              {/* Report Image for Active Status */}
+              {searchResult === 'found' && foundReportStatus === 'active' && (
+                <div className="bg-white rounded-xl p-4 shadow-xl border border-slate-100">
+                  <h3 className="text-lg font-bold text-blue-600 mb-2">{t('report_and_box_image')}</h3>
+                  <div className="relative">
+                    <div className="w-full h-auto rounded-lg bg-slate-50 flex items-center justify-center" style={{ minHeight: '100px' }}>
+                      <p className="text-slate-600 text-center p-2 text-sm font-bold">
+                        {t('privacy_notice_search')}
+                      </p>
                     </div>
-                    <h3 className="text-xl font-bold text-center mb-2 text-green-800 rtl">
-                      {t('this_phone_is_registered_in_our_system_since')}{' '}
-                      {formatDateTime(registeredPhoneDetails.registration_date) || 'غير متوفر'}{' '}
-                      {t('and_no_report_has_been_filed_yet')}
-                    </h3>
-                    {/* عرض صورة وتفاصيل الهاتف */}
-                    {registeredPhoneDetails.phone_image_url && (
-                      <div className="mt-4 flex flex-col items-center">
-                        <p className="text-green-700 font-semibold mb-2">صورة الهاتف:</p>
-                        <img 
-                          src={registeredPhoneDetails.phone_image_url} 
-                          alt="صورة الهاتف" 
-                          className="w-full max-w-xs rounded-lg border border-green-400"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Crect fill=%22%23ddd%22 width=%22100%22 height=%22100%22/%3E%3Ctext x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 font-family=%22sans-serif%22 font-size=%2214%22 fill=%22%23999%22%3ENo Image%3C/text%3E%3C/svg%3E';
-                          }}
-                        />
-                      </div>
-                    )}
-                    {registeredPhoneDetails.phone_type && (
-                      <div className="mt-3 text-center">
-                        <p className="text-green-700 font-semibold">نوع الهاتف: <span className="font-normal">{registeredPhoneDetails.phone_type}</span></p>
-                      </div>
-                    )}
-                  </div>
-                ) : registeredPhoneDetails.status === 'pending' ? (
-                  <div className="mt-8 p-6 rounded-xl border bg-yellow-100 border-yellow-400 shadow-lg shadow-yellow-500/20">
-                    <div className="flex items-center justify-center mb-4">
-                      <AlertTriangle size={48} className="text-yellow-600" />
-                    </div>
-                    <h3 className="text-xl font-bold text-center mb-2 text-yellow-800 rtl">
-                      {t('this_phone_is_registered_in_our_system_since')}{' '}
-                      {formatDateTime(registeredPhoneDetails.registration_date) || 'غير متوفر'}{' '}
-                      {t('and_it_is_under_review_please_check_purchase_invoice')}
-                    </h3>
-                    {registeredPhoneDetails.phone_image_url && (
-                      <div className="mt-4 flex flex-col items-center">
-                        <p className="text-yellow-700 font-semibold mb-2">صورة الهاتف:</p>
-                        <img 
-                          src={registeredPhoneDetails.phone_image_url} 
-                          alt="صورة الهاتف" 
-                          className="w-full max-w-xs rounded-lg border border-yellow-400"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Crect fill=%22%23ddd%22 width=%22100%22 height=%22100%22/%3E%3Ctext x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 font-family=%22sans-serif%22 font-size=%2214%22 fill=%22%23999%22%3ENo Image%3C/text%3E%3C/svg%3E';
-                          }}
-                        />
-                      </div>
-                    )}
-                    {registeredPhoneDetails.phone_type && (
-                      <div className="mt-3 text-center">
-                        <p className="text-yellow-700 font-semibold">نوع الهاتف: <span className="font-normal">{registeredPhoneDetails.phone_type}</span></p>
-                      </div>
-                    )}
-                  </div>
-                ) : registeredPhoneDetails.status === 'rejected' ? (
-                  <div className="mt-8 p-6 rounded-xl border bg-red-100 border-red-400 shadow-lg shadow-red-500/20 rtl">
-                    <div className="flex items-center justify-center mb-4">
-                      <XCircle size={48} className="text-red-600" />
-                    </div>
-                    <h3 className="text-xl font-bold text-center mb-2 text-red-800 rtl">
-                      {t('this_phone_registration_has_been_rejected_due_to_incorrect_data')}
-                    </h3>
-                  </div>
-                ) : (
-                  <div className="mt-8 p-6 rounded-xl border bg-green-100 border-green-400">
-                    <div className="flex items-center justify-center mb-4">
-                      <ShieldCheck size={48} className="text-green-600" />
-                    </div>
-                    <h3 className="text-xl font-bold text-center mb-2 text-green-800 rtl">
-                      {t('this_phone_is_registered_in_our_system_since')}{' '}
-                      {formatDateTime(registeredPhoneDetails.registration_date) || 'غير متوفر'}{' '}
-                      {t('and_no_report_has_been_filed_yet')}
-                    </h3>
-                    {/* عرض صورة وتفاصيل الهاتف */}
-                    {registeredPhoneDetails.phone_image_url && (
-                      <div className="mt-4 flex flex-col items-center">
-                        <p className="text-green-700 font-semibold mb-2">صورة الهاتف:</p>
-                        <img 
-                          src={registeredPhoneDetails.phone_image_url} 
-                          alt="صورة الهاتف" 
-                          className="w-full max-w-xs rounded-lg border border-green-400"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Crect fill=%22%23ddd%22 width=%22100%22 height=%22100%22/%3E%3Ctext x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 font-family=%22sans-serif%22 font-size=%2214%22 fill=%22%23999%22%3ENo Image%3C/text%3E%3C/svg%3E';
-                          }}
-                        />
-                      </div>
-                    )}
-                    {registeredPhoneDetails.phone_type && (
-                      <div className="mt-3 text-center">
-                        <p className="text-green-700 font-semibold">نوع الهاتف: <span className="font-normal">{registeredPhoneDetails.phone_type}</span></p>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </>
-            )}
-
-
-            {searchResult === 'found' && foundReportStatus === 'active' && (
-              <div className="mt-4 p-4 bg-[#c0dee5] rounded-xl border border-red-500/50">
-                <h3 className="text-lg font-bold text-red-600 mb-2">{t('report_and_box_image')}</h3>
-                <div className="relative">
-                  <div className="w-full h-auto rounded-lg bg-gray-200 flex items-center justify-center" style={{ minHeight: '200px' }}>
-                    <p className="text-black text-center p-4 text-sm font-bold">
-                      {t('privacy_notice_search')}
-                    </p>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {searchResult === 'found' && foundReportStatus === 'active' && (
-              <div className="flex flex-col sm:flex-row gap-3 w-full">
-                <Button
-                  onClick={handleNotifyOwner}
-                  className="flex-1 h-12 bg-orange-600 hover:bg-orange-700 text-white transition-all duration-300 text-base font-semibold shadow-md hover:shadow-lg rounded-md flex items-center justify-center gap-2"
-                  disabled={isNotifying}
-                >
-                  {isNotifying ? t('processing') : t('notify_owner')}
-                </Button>
-              </div>
-            )}
-            
+              {/* Notify Owner Button */}
+              {searchResult === 'found' && foundReportStatus === 'active' && (
+                <div className="flex flex-col sm:flex-row gap-3 w-full">
+                  <Button
+                    onClick={handleNotifyOwner}
+                    className="flex-1 h-14 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white transition-all duration-300 text-lg font-bold shadow-lg shadow-orange-500/30 rounded-xl flex items-center justify-center gap-2"
+                    disabled={isNotifying}
+                  >
+                    {isNotifying ? (
+                      <>
+                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                        <span>{t('processing')}</span>
+                      </>
+                    ) : (
+                      t('notify_owner')
+                    )}
+                  </Button>
+                </div>
+              )}
 
-
-            {searchResult === 'not_found' && !registeredPhoneDetails && (
-              <div className="mt-8 p-6 bg-sky-900/90 rounded-xl border border-sky-400 shadow-lg shadow-sky-900/40">
-                <p className="text-white text-lg text-center font-semibold">
-                  {t('phone_not_registered_register_now')}
-                </p>
-              </div>
-            )}
-
-          </div>
+              {/* Not Registered Phone */}
+              {searchResult === 'not_found' && !registeredPhoneDetails && (
+                <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
+                  <p className="text-blue-600 text-lg text-center font-bold">
+                    {t('phone_not_registered_register_now')}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
-      {/* عرض AdsOfferSlider عندما يكون المستخدم قد استهلك الحد المسموح من عمليات البحث */}
+
+      {/* Upgrade Modal */}
       {showUpgradeModal && (
         <AdsOfferSlider onClose={() => setShowUpgradeModal(false)} userId={userId} isUpgradePrompt={true} />
       )}

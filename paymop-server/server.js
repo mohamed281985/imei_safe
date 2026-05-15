@@ -3653,37 +3653,8 @@ app.post('/paymob/publish-from-bonus', paymentLimiter, rateLimitMiddleware({ win
         return res.status(500).json({ error: 'Failed to create ad' });
       }
 
-      // Informational: trigger server-side event (no window in backend) by updating a small field or returning info
       console.log(`Ad published using bonus for user ${userId}, ad id: ${insertedAd.id}`);
-        // Also insert into `publish_ad` table if it exists (best-effort)
-        try {
-          const publishRow = {
-            ad_id: insertedAd.id,
-            id: insertedAd.id,
-            user_id: userId,
-            store_name: adInsert.store_name || null,
-            image_url: adInsert.image_url || null,
-            phone: adInsert.phone ? encryptFieldForStorage(adInsert.phone) : null,
-            latitude: adInsert.latitude || null,
-            longitude: adInsert.longitude || null,
-            duration_days: adInsert.duration_days || null,
-            amount: adInsert.amount || null,
-            is_paid: true,
-            payment_status: 'paid',
-            upload_date: adInsert.upload_date || new Date().toISOString(),
-            expires_at: adInsert.expires_at || null
-          };
-          const { data: pubData, error: pubErr } = await supabase.from('publish_ad').insert(publishRow).select().maybeSingle();
-          if (pubErr) {
-            try { console.warn('publish_ad insert skipped or failed (table may not exist or RLS/constraint):', JSON.stringify(pubErr)); } catch (_) { console.warn('publish_ad insert error (non-serializable):', pubErr); }
-            try { console.warn('Attempted publish_ad row:', JSON.stringify(publishRow)); } catch (_) { console.warn('Attempted publish_ad row (non-serializable)'); }
-          } else {
-            console.log('Inserted row into publish_ad:', pubData && pubData.id ? pubData.id : '<no-id>');
-            try { console.log('publish_ad returned row:', JSON.stringify(pubData)); } catch (_) {}
-          }
-        } catch (e) {
-          console.warn('Exception while inserting into publish_ad (ignored):', e?.message || e);
-        }
+      // ⭐ لا يتم الإدراج يدوياً في publish_ad - المشغل (trigger_copy_ad) سيتكفل بذلك تلقائياً عند تفعيل is_active
       return res.json({ ok: true, adId: insertedAd.id, deducted: expectedAmount, remainingBonus: newBonusValue });
     } catch (e) {
       console.error('Exception inserting ad using bonus:', e);
@@ -3769,26 +3740,7 @@ app.post("/paymob/create-invoice", async (req, res) => {
   }
 });
 
-// Debug endpoint: attempt to insert into publish_ad (development only / protected)
-app.post('/debug/insert-publish-ad', async (req, res) => {
-  if (!IS_DEVELOPMENT && (!DEV_BYPASS_TOKEN || req.headers['x-dev-bypass'] !== DEV_BYPASS_TOKEN)) {
-    return res.status(403).json({ error: 'Forbidden' });
-  }
-
-  const row = req.body || {};
-  try {
-    console.log('Debug insert publish_ad attempt', { row });
-    const { data, error } = await supabase.from('publish_ad').insert(row).select().maybeSingle();
-    if (error) {
-      try { console.error('Debug publish_ad insert error:', JSON.stringify(error)); } catch (_) { console.error('Debug publish_ad insert error (non-serializable):', error); }
-      return res.status(500).json({ error: 'insert_failed', detail: error });
-    }
-    return res.json({ ok: true, data });
-  } catch (e) {
-    console.error('Exception during debug publish_ad insert:', e);
-    return res.status(500).json({ error: 'exception', detail: String(e) });
-  }
-});
+// ⭐ تم حذف نقطة debug لإدراج publish_ad - المشغل (trigger_copy_ad) سيتكفل بذلك تلقائياً
 
 // نقطة نهاية دفع الاشتراك بالعرض (offers)
 app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ windowMs: 15 * 60 * 1000, max: 10 }), async (req, res) => {
@@ -4016,35 +3968,7 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
           console.warn('Could not store iframe_url in ads_payment (column may not exist):', storeErr.message || storeErr);
           // لا نُعيد الخطأ لأننا نريد إرجاع الـ iframe إلى العميل مهما حدث
         }
-          // Best-effort: also insert into `publish_ad` table to reflect published ad record
-          try {
-            const publishRow = {
-              ad_id: insertedPaymentId,
-              id: insertedPaymentId,
-              user_id: paymentData.user_id,
-              store_name: paymentData.store_name || null,
-              image_url: paymentData.image_url || null,
-              phone: paymentData.phone ? encryptFieldForStorage(paymentData.phone) : null,
-              latitude: paymentData.latitude || null,
-              longitude: paymentData.longitude || null,
-              duration_days: paymentData.duration_days || null,
-              amount: paymentData.amount || null,
-              is_paid: false,
-              payment_status: paymentData.payment_status || 'pending',
-              upload_date: paymentData.upload_date || new Date().toISOString(),
-              expires_at: paymentData.expires_at || null
-            };
-            const { data: pubData, error: pubErr } = await supabase.from('publish_ad').insert(publishRow).select().maybeSingle();
-            if (pubErr) {
-              try { console.warn('publish_ad insert skipped or failed (table may not exist or RLS/constraint):', JSON.stringify(pubErr)); } catch (_) { console.warn('publish_ad insert error (non-serializable):', pubErr); }
-              try { console.warn('Attempted publish_ad row:', JSON.stringify(publishRow)); } catch (_) { console.warn('Attempted publish_ad row (non-serializable)'); }
-            } else {
-              console.log('Inserted row into publish_ad for payment path:', pubData && pubData.id ? pubData.id : '<no-id>');
-              try { console.log('publish_ad returned row:', JSON.stringify(pubData)); } catch (_) {}
-            }
-          } catch (e) {
-            console.warn('Exception while inserting into publish_ad (ignored):', e?.message || e);
-          }
+          // ⭐ لا يتم الإدراج يدوياً في publish_ad - المشغل (trigger_copy_ad) سيتكفل بذلك تلقائياً عند تفعيل is_active
       } catch (insertError) {
         console.error('خطأ في حفظ بيانات الدفع في جدول ads_payment:', insertError);
         throw insertError;
@@ -6479,7 +6403,87 @@ app.post('/api/decrypt-fields', verifyJwtToken, async (req, res) => {
   });
 });
 
-// Get ad by id with decrypted PII fields (requires auth)
+// ⭐ نقطة نهاية لتفعيل الإعلان (للمسؤول فقط) - المشغل (trigger_copy_ad) سينسخ تلقائياً إلى publish_ad
+app.post('/api/admin/activate-ad/:id', verifyJwtToken, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const adId = req.params.id;
+    if (!adId) return res.status(400).json({ error: 'Ad ID is required' });
+
+    // التحقق من أن الإعلان موجود ومدفوع قبل التفعيل
+    const { data: existingAd, error: fetchError } = await supabase
+      .from('ads_payment')
+      .select('id, is_active, is_paid, payment_status')
+      .eq('id', adId)
+      .maybeSingle();
+
+    if (fetchError) {
+      console.error('Error fetching ad for activation:', fetchError);
+      return res.status(500).json({ error: 'Database error' });
+    }
+    if (!existingAd) return res.status(404).json({ error: 'Ad not found' });
+    if (!existingAd.is_paid || existingAd.payment_status !== 'paid') {
+      return res.status(400).json({ error: 'Ad is not paid yet' });
+    }
+    if (existingAd.is_active) {
+      return res.json({ success: true, message: 'Ad is already active', ad: existingAd });
+    }
+
+    // تحديث is_active إلى true - المشغل سينسخ تلقائياً إلى publish_ad
+    const { data, error } = await supabase
+      .from('ads_payment')
+      .update({ is_active: true })
+      .eq('id', adId)
+      .select('id, is_active, is_paid, payment_status')
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error activating ad:', error);
+      return res.status(500).json({ error: 'Database error' });
+    }
+
+    console.log(`Ad ${adId} activated successfully by user ${userId}`);
+    return res.json({ success: true, ad: data });
+  } catch (err) {
+    console.error('Error in /api/admin/activate-ad/:id:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ⭐ نقطة نهاية لإلغاء تفعيل الإعلان (للمسؤول فقط) - المشغل سيحذف تلقائياً من publish_ad
+app.post('/api/admin/deactivate-ad/:id', verifyJwtToken, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const adId = req.params.id;
+    if (!adId) return res.status(400).json({ error: 'Ad ID is required' });
+
+    // تحديث is_active إلى false - المشغل سيحذف تلقائياً من publish_ad
+    const { data, error } = await supabase
+      .from('ads_payment')
+      .update({ is_active: false })
+      .eq('id', adId)
+      .select('id, is_active')
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error deactivating ad:', error);
+      return res.status(500).json({ error: 'Database error' });
+    }
+    if (!data) return res.status(404).json({ error: 'Ad not found' });
+
+    console.log(`Ad ${adId} deactivated successfully by user ${userId}`);
+    return res.json({ success: true, ad: data });
+  } catch (err) {
+    console.error('Error in /api/admin/deactivate-ad/:id:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ⭐ Get ad by id with decrypted PII fields (requires auth) - يبحث في ads_payment فقط
 app.get('/api/ad/:id', verifyJwtToken, async (req, res) => {
   try {
     const id = String(req.params.id || '').trim();
@@ -6487,48 +6491,7 @@ app.get('/api/ad/:id', verifyJwtToken, async (req, res) => {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    // Prefer reading from `publish_ad` first (server-side service role), then fallback to `ads_payment`.
-    // This ensures edits return the same source that is shown publicly.
-    try {
-      const { data: pubData, error: pubErr } = await supabase
-        .from('publish_ad')
-        .select('*')
-        .eq('id', id)
-        .eq('user_id', userId)
-        .maybeSingle();
-
-      if (pubErr) {
-        if (process.env.NODE_ENV !== 'production') console.warn('/api/ad/:id publish_ad lookup error:', pubErr);
-      } else if (pubData) {
-        const outPub = {
-          id: pubData.id,
-          amount: pubData.amount ?? null,
-          type: pubData.type ?? null,
-          payment_status: pubData.payment_status ?? null,
-          is_paid: pubData.is_paid ?? null,
-          payment_date: pubData.payment_date ?? null,
-          duration_days: pubData.duration_days ?? null,
-          expires_at: pubData.expires_at ?? null,
-          image_url: pubData.image_url ?? null,
-          store_name: pubData.store_name ?? null,
-          created_at: pubData.created_at ?? null,
-          updated_at: pubData.updated_at ?? null,
-          phone: pubData.phone ?? null,
-          email: pubData.email ?? null,
-          owner_name: pubData.owner_name ?? null
-        };
-        try { outPub.store_name = decryptField(outPub.store_name); } catch (e) { outPub.store_name = null; }
-        try { outPub.phone = decryptField(outPub.phone); } catch (e) { outPub.phone = null; }
-        try { outPub.email = decryptField(outPub.email); } catch (e) { outPub.email = null; }
-        try { outPub.owner_name = decryptField(outPub.owner_name); } catch (e) { outPub.owner_name = null; }
-
-        return res.json({ ok: true, ad: outPub });
-      }
-    } catch (e) {
-      console.error('/api/ad/:id publish_ad lookup exception:', e);
-      // fallthrough to ads_payment lookup
-    }
-
+    // البحث في ads_payment فقط (المصدر الرئيسي لجميع البيانات)
     const { data, error } = await supabase
       .from('ads_payment')
       .select('*')
@@ -6549,6 +6512,7 @@ app.get('/api/ad/:id', verifyJwtToken, async (req, res) => {
       type: data.type ?? null,
       payment_status: data.payment_status ?? null,
       is_paid: data.is_paid ?? null,
+      is_active: data.is_active ?? null,
       payment_date: data.payment_date ?? null,
       paymob_order_id: data.paymob_order_id ?? null,
       merchant_order_id: data.merchant_order_id ?? null,
@@ -6557,6 +6521,8 @@ app.get('/api/ad/:id', verifyJwtToken, async (req, res) => {
       expires_at: data.expires_at ?? null,
       image_url: data.image_url ?? null,
       store_name: data.store_name ?? null,
+      latitude: data.latitude ?? null,
+      longitude: data.longitude ?? null,
       created_at: data.created_at ?? null,
       updated_at: data.updated_at ?? null,
       phone: data.phone ?? null,
@@ -7146,7 +7112,7 @@ app.post('/api/validate-buyer-data', verifyJwtToken, async (req, res) => {
   }
 });
 
-// نقطة نهاية لفك تشفير رقم الهاتف من جدول publish_ad
+// ⭐ نقطة نهاية لفك تشفير رقم الهاتف من جدول ads_payment (المصدر الرئيسي للبيانات الحساسة)
 app.get('/api/ad-phone-decrypted/:id', verifyJwtToken, async (req, res) => {
   try {
     const userId = req.user?.id;
@@ -7159,15 +7125,16 @@ app.get('/api/ad-phone-decrypted/:id', verifyJwtToken, async (req, res) => {
       return res.status(400).json({ error: 'Ad ID is required' });
     }
 
-    // جلب الإعلان من جدول publish_ad
+    // البحث في ads_payment مباشرة (المصدر الرئيسي للبيانات الحساسة)
     const { data: ad, error: fetchError } = await supabase
-      .from('publish_ad')
+      .from('ads_payment')
       .select('*')
       .eq('id', adId)
+      .eq('user_id', userId)
       .maybeSingle();
 
     if (fetchError) {
-      console.error('Error fetching ad from publish_ad:', fetchError);
+      console.error('Error fetching ad from ads_payment:', fetchError);
       return res.status(500).json({ error: 'Database error' });
     }
 
@@ -7175,18 +7142,29 @@ app.get('/api/ad-phone-decrypted/:id', verifyJwtToken, async (req, res) => {
       return res.status(404).json({ error: 'Ad not found' });
     }
 
-    // فك تشفير رقم الهاتف
-    const decryptedPhone = decryptField(ad.phone);
+    // فك تشفير رقم الهاتف وباقي الحقول الحساسة من ads_payment
+    let decryptedPhone = null;
+    let decryptedStoreName = null;
+    let decryptedEmail = null;
+    let decryptedOwnerName = null;
+    try { decryptedPhone = decryptField(ad.phone); } catch (e) { decryptedPhone = null; }
+    try { decryptedStoreName = decryptField(ad.store_name); } catch (e) { decryptedStoreName = null; }
+    try { decryptedEmail = decryptField(ad.email); } catch (e) { decryptedEmail = null; }
+    try { decryptedOwnerName = decryptField(ad.owner_name); } catch (e) { decryptedOwnerName = null; }
 
-    // فك تشفير باقي الحقول الحساسة
     const decryptedData = {
       id: ad.id,
-      store_name: ad.store_name,
+      store_name: decryptedStoreName,
       phone: decryptedPhone,
+      email: decryptedEmail,
+      owner_name: decryptedOwnerName,
       image_url: ad.image_url,
+      latitude: ad.latitude,
+      longitude: ad.longitude,
       duration_days: ad.duration_days,
       expires_at: ad.expires_at,
       is_paid: ad.is_paid,
+      is_active: ad.is_active,
       payment_status: ad.payment_status
     };
 
@@ -7198,29 +7176,20 @@ app.get('/api/ad-phone-decrypted/:id', verifyJwtToken, async (req, res) => {
 });
 
 // نقطة نهاية لفك تشفير رقم الهاتف للإعلانات النشطة المدفوعة (بدون توكن)
-app.get('/api/ad-website-decrypted/:id', async (req, res) => {
+// ⭐ النسخة بدون توكن: تبحث في ads_payment فقط (المصدر الرئيسي للبيانات الحساسة)
+app.get('/api/ad-website-decrypted-public/:id', async (req, res) => {
   try {
     const adId = req.params.id;
     if (!adId) {
       return res.status(400).json({ error: 'Ad ID is required' });
     }
 
-    // جلب الإعلان من جدول publish_ad أولاً
-    let { data: ad, error: fetchError } = await supabase
-      .from('publish_ad')
-      .select('id, phone, status, is_paid, payment_status, expires_at')
+    // البحث في ads_payment مباشرة (المصدر الرئيسي للبيانات الحساسة)
+    const { data: ad, error: fetchError } = await supabase
+      .from('ads_payment')
+      .select('id, phone, is_active, is_paid, payment_status, expires_at')
       .eq('id', adId)
       .maybeSingle();
-
-    // إذا لم يوجد في publish_ad، جربه في ads_payment
-    if (!ad) {
-      const { data: adPay, error: payErr } = await supabase
-        .from('ads_payment')
-        .select('id, phone, status, is_paid, payment_status, expires_at')
-        .eq('id', adId)
-        .maybeSingle();
-      ad = adPay;
-    }
 
     if (fetchError) {
       console.error('Error fetching ad for decryption:', fetchError);
@@ -7241,7 +7210,7 @@ app.get('/api/ad-website-decrypted/:id', async (req, res) => {
       return res.status(404).json({ error: 'Ad expired' });
     }
 
-    // فك تشفير البيانات
+    // فك تشفير رقم الهاتف من ads_payment
     const decryptedPhone = decryptField(ad.phone);
 
     // إذا كان الناتج رقم هاتف، نقوم بتنسيقه كرابط واتساب مباشر
@@ -7252,7 +7221,7 @@ app.get('/api/ad-website-decrypted/:id', async (req, res) => {
 
     return res.json({ success: true, website_url: finalUrl });
   } catch (err) {
-    console.error('Error in /api/ad-website-decrypted/:id:', err);
+    console.error('Error in /api/ad-website-decrypted-public/:id:', err);
     return res.status(500).json({ error: 'Server error' });
   }
 });

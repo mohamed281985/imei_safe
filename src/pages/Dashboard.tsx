@@ -297,7 +297,7 @@ const Dashboard: React.FC = () => {
       console.log("Phones to confirm count:", allPhonesToConfirm.length);
       console.log("Approved phones to confirm:", phonesToConfirm.length);
       console.log("Transferred phones:", transferredPhonesData.length);
-      
+
       if (allPhonesToConfirm.length > 0) {
         setPhonesForConfirmation(allPhonesToConfirm);
         setShowOwnershipConfirmation(true);
@@ -1077,7 +1077,7 @@ const Dashboard: React.FC = () => {
                             <h3 className="text-xl font-bold text-gray-800 truncate leading-tight mb-0.5 px-2">
                               {phone.phone_type}
                             </h3>
-                            
+
                             <h4 className="text-md font-bold text-gray-700 truncate leading-tight mb-1 px-2">
                               {phone.model}
                             </h4>
@@ -1099,7 +1099,7 @@ const Dashboard: React.FC = () => {
                               <div className="text-purple-700 font-bold text-base sm:text-lg" dir="ltr"> {/* تم تغيير dir إلى ltr لضمان عرض العملة بشكل صحيح */}
                                 {phone.price.toLocaleString('en-US')} <span className="text-md font-bold text-black">{userCurrencySymbol}</span>
                               </div>
-              {(phone.is_verified === true || phone.is_verified === 'true') && (
+                              {(phone.is_verified === true || phone.is_verified === 'true') && (
                                 <span className="text-[10px] bg-green-50 text-green-700 px-1.5 py-0.5 rounded border border-green-100 font-medium">
                                   {t('verified')}
                                 </span>
@@ -1241,7 +1241,7 @@ const Dashboard: React.FC = () => {
 
 
           {/* قسم الهواتف المفقودة */}
-          <div className="mb-5">
+          <div className="mb-0.5">
             <h2 className="text-black text-xl font-bold mb-3">{t('lost_phones')}</h2>
             {loadingPhones ? (
               <div className="text-center text-white/70 py-8">{t('loading_lost_phones')}</div>
@@ -1257,9 +1257,9 @@ const Dashboard: React.FC = () => {
                           key={safeKey}
                           imei={t('lost')}
                           phoneType={phone?.phone_type || phone?.phoneType}
-                        />t('lost')}
-                          phoneType={phone?.phone_type || phone?.phoneType}
-                        />
+                        />t('lost')
+                        phoneType={phone?.phone_type || phone?.phoneType}
+
                       </div>
                     );
                   })()}
