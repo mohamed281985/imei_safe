@@ -1105,4 +1105,45 @@ export default {
   
   // CountryCodeSelector Translations
   "search_country_or_code": "Search country or code...",
+
+  // SearchIMEI Page - Hardcoded Arabic Texts
+  "bonus_deducted_can_continue": "{{amount}} has been deducted from your bonus and you can continue",
+  "search_limit_check_error": "An error occurred while checking the search limit",
+  "login_required_first": "Please log in first",
+  "finder_phone_fetch_failed": "Failed to get the finder's phone number.",
+  "phone_found_but_not_saved": "The phone was found but your number was not saved in the database.",
+  "phone_not_found_in_database": "No phone record found in the database",
+  "finder_email_fetch_failed": "Failed to find the email associated with this phone",
+  "notification_title_phone_found": "Your phone has been found!",
+  "notification_body_phone_found": "Congratulations! Your phone has been found. To contact the person who found it, please call: {{phone}}.",
+  "warning_security_settings": "Your phone number was saved successfully, but the system could not send a notification to the owner due to security settings. Please contact the owner directly at: {{phone}}",
+  "phone_saved_notification_error": "Phone number saved but an error occurred while saving the notification: {{error}}",
+  "notification_save_error": "An error occurred while saving the notification: {{error}}",
+  "cannot_send_alert": "Cannot send alert",
+  "no_valid_owner_contact": "No valid contact data found for the owner.",
+  "error_notifying_owner": "An error occurred while trying to notify the owner.",
+  "phone_image_label": "Phone image:",
+  "phone_type_label": "Phone type",
+  "alert_warning": "Alert",
+
+  // Premium Search UI
+  "check_device_safety": "Check your device and ensure its safety",
+  "enter_imei_placeholder": "Enter IMEI number",
+  "scan_qr": "Scan QR",
+  "protect_data": "Protect your data",
+  "instant_results": "Instant results",
+  "trusted_database": "Trusted database",
+  "high_accuracy": "High accuracy",
+  "search_device_info": "To search for device information",
+
+  // Search IMEI Page
+  "search_imei_title": "Find Your Lost Phone",
+  "search_imei_description": "Enter the IMEI number to check phone status and search for loss reports",
+  "enter_imei_description": "Enter the 15-digit IMEI number to check your phone's status in the database",
+  "data_protection": "Data Protection",
+  "data_protection_desc": "Your data is fully protected and encrypted",
+  "instant_results_desc": "Get results instantly within seconds",
+  "reliable_database_desc": "Comprehensive and continuously updated database",
+  "high_accuracy_desc": "Highly accurate and reliable results",
+  "back_to_search": "Back to Search",
 };

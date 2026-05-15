@@ -21,19 +21,16 @@ import localAdImage from '@/assets/images/ads/default_ad.jpeg';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { Browser } from '@capacitor/browser';
 import { Capacitor } from '@capacitor/core';
 
-interface ads_payment {
-  id: number;
+// ⭐ واجهة الإعلان المدمج (من publish_ad + ads_payment)
+interface AdDisplay {
+  id: string;
   image_url: string;
-  is_active: boolean;
-  page: string;
-  whatsapp?: boolean;
-  latitude?: number;
-  longitude?: number;
-  shop_location?: string;
-  expires_at?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  expires_at?: string | null;
+  distance?: number;
 }
 
 interface PageAdvertisementProps {
@@ -42,7 +39,7 @@ interface PageAdvertisementProps {
 
 const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
   const { t } = useLanguage();
-  const [ads, setAds] = useState<ads_payment[]>([]);
+  const [ads, setAds] = useState<AdDisplay[]>([]);
   const [currentAdIndex, setCurrentAdIndex] = useState(0);
   const [showLocalAd, setShowLocalAd] = useState(true);
 
@@ -53,7 +50,7 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
     // 1. محاولة تحميل الإعلانات من ذاكرة التخزين المؤقت أولاً
     const cachedAdsRaw = localStorage.getItem(cacheKey);
     if (cachedAdsRaw) {
-      const cachedAds: ads_payment[] = JSON.parse(cachedAdsRaw);
+      const cachedAds: AdDisplay[] = JSON.parse(cachedAdsRaw);
       const now = new Date();
       const validCachedAds = cachedAds.filter(ad => ad.expires_at && new Date(ad.expires_at) > now);
       if (validCachedAds.length > 0) {
@@ -64,7 +61,6 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
 
     // جلب الموقع الجغرافي ثم الإعلانات
     if (!('geolocation' in navigator)) {
-      // إذا لم يكن هناك إذن للموقع، جلب الإعلانات العالمية فقط
       fetchAds(null);
       return;
     }
@@ -80,34 +76,73 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
     );
   }, [pageName]);
 
+  // ⭐ الاستعلام المزدوج: publish_ad (سريع) + ads_payment (للموقع وتاريخ الانتهاء)
   const fetchAds = async (coords: { latitude: number; longitude: number } | null) => {
     const cacheKey = `page-ads-${pageName}`;
-    const { data } = await supabase
-      .from('ads_payment')
-      .select('*')
-      .gt('expires_at', new Date().toISOString()) // <-- إضافة شرط للتحقق من تاريخ الانتهاء
-      .eq('is_active', true) // <-- إضافة شرط لجلب الإعلانات النشطة فقط
-      .eq('is_paid', true)
-      .eq('type', 'publish')
-      .eq('payment_status', 'paid') // التأكد من أن الدفع مكتمل
-      .order('upload_date', { ascending: false });
-
-    // فلترة إضافية للتأكد من عدم عرض الإعلانات المنتهية
     const now = new Date();
-    const activeAds = data ? data.filter(ad => ad.expires_at && new Date(ad.expires_at) > now) : [];
 
-    if (!activeAds || activeAds.length === 0) {
+    // ===== الاستعلام الأول: جلب ad_id و image_url من publish_ad (سريع جداً) =====
+    const { data: publishedAds, error: pubError } = await supabase
+      .from('publish_ad')
+      .select('ad_id, image_url')
+      .order('created_at', { ascending: false });
+
+    if (pubError || !publishedAds || publishedAds.length === 0) {
       setShowLocalAd(true);
       setAds([]);
       localStorage.setItem(cacheKey, JSON.stringify([]));
       return;
     }
 
-    const globalAds = activeAds.filter(ad => ad.latitude == null && ad.longitude == null);
-    let fetchedAds = globalAds;
+    // ===== الاستعلام الثاني: جلب latitude, longitude, expires_at من ads_payment فقط =====
+    const adIds = publishedAds.map((ad: any) => ad.ad_id).filter(Boolean);
+    const { data: paymentAds, error: payError } = await supabase
+      .from('ads_payment')
+      .select('id, latitude, longitude, expires_at, is_active, is_paid, payment_status')
+      .in('id', adIds);
+
+    if (payError || !paymentAds || paymentAds.length === 0) {
+      setShowLocalAd(true);
+      setAds([]);
+      localStorage.setItem(cacheKey, JSON.stringify([]));
+      return;
+    }
+
+    // ===== دمج البيانات من الجدولين =====
+    const paymentMap = new Map(paymentAds.map((ad: any) => [ad.id, ad]));
+
+    const mergedAds: AdDisplay[] = publishedAds
+      .map((pubAd: any) => {
+        const payAd = paymentMap.get(pubAd.ad_id);
+        if (!payAd) return null;
+
+        // ⭐ فلترة: استبعاد الإعلانات غير النشطة أو غير المدفوعة أو المنتهية
+        if (!payAd.is_active || !payAd.is_paid || payAd.payment_status !== 'paid') return null;
+        if (payAd.expires_at && new Date(payAd.expires_at) <= now) return null;
+
+        return {
+          id: pubAd.ad_id,
+          image_url: pubAd.image_url,
+          latitude: payAd.latitude ?? null,
+          longitude: payAd.longitude ?? null,
+          expires_at: payAd.expires_at ?? null,
+        };
+      })
+      .filter(Boolean) as AdDisplay[];
+
+    if (mergedAds.length === 0) {
+      setShowLocalAd(true);
+      setAds([]);
+      localStorage.setItem(cacheKey, JSON.stringify([]));
+      return;
+    }
+
+    // ===== الفلترة والترتيب حسب الموقع الجغرافي =====
+    const globalAds = mergedAds.filter(ad => ad.latitude == null && ad.longitude == null);
+    let fetchedAds: AdDisplay[] = globalAds;
 
     if (coords) {
-      const nearbyAds = activeAds
+      const nearbyAds = mergedAds
         .filter(ad => ad.latitude && ad.longitude)
         .map(ad => ({
           ...ad,
@@ -117,16 +152,16 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
 
       // أولاً، حاول العثور على إعلانات في نطاق 3 كم
       const inRangeAds = nearbyAds.filter(ad => ad.distance <= 3);
-      
+
       // إذا لم يتم العثور على إعلانات في نطاق 3 كم، حاول البحث حتى 30 كم
       let finalNearbyAds = inRangeAds;
       if (inRangeAds.length === 0 && nearbyAds.length > 0) {
         finalNearbyAds = nearbyAds.filter(ad => ad.distance <= 30);
       }
-      
+
       const allAds = [...finalNearbyAds, ...globalAds];
       const uniqueAds = Array.from(new Map(allAds.map(ad => [ad.id, ad])).values());
-      fetchedAds = uniqueAds; // تحديث القائمة النهائية
+      fetchedAds = uniqueAds;
     }
 
     if (fetchedAds && fetchedAds.length > 0) {
@@ -157,13 +192,13 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
       setCurrentAdIndex((prevIndex) => {
         if (!ads || ads.length === 0) return 0;
         const nextIndex = (prevIndex + 1) % ads.length;
-        
+
         // تحميل الصورة التالية مسبقاً
         if (ads[nextIndex]?.image_url) {
           const img = new Image();
           img.src = ads[nextIndex].image_url;
         }
-        
+
         return nextIndex;
       });
     }, 2000);
@@ -171,69 +206,24 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
     return () => clearInterval(timer);
   }, [ads.length, currentAdIndex, ads]);
 
-  const openAdRedirect = async (id: number) => {
+  // ⭐ التفاعل: إرسال ad_id فقط للخادم والاعتماد عليه في فك التشفير والتوجيه
+  const openAdRedirect = async (id: string) => {
     const baseUrl = API_BASE_URL.replace(/\/+$/, '');
-    
+
     try {
-      // الحصول على التوكن من التخزين للمصادقة
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
+      // استخدام نقطة /api/ad-redirect/:id - الخادم يتحقق ويفك التشفير ويوجه
+      const apiUrl = `${baseUrl}/api/ad-redirect/${id}`;
 
-      if (!token) {
-        // إذا لم يكن مسجلاً للدخول، نستخدم التوجيه التقليدي
-        const apiUrl = `${baseUrl}/api/ad-redirect/${id}`;
-        window.open(apiUrl, '_blank', 'noopener,noreferrer');
-        return;
-      }
-
-      // الاتصال بنقطة النهاية لجلب رقم الهاتف المشفر (مثل منطق ProductDetails)
-      const response = await fetch(`${baseUrl}/api/ad-website-decrypted/${id}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      const data = await response.json();
-
-      if (data.success && data.website_url) {
-        let phone = data.website_url;
-        let cleanPhone = '';
-
-        if (phone.includes('phone=')) {
-          const match = phone.match(/phone=([0-9]+)/);
-          if (match && match[1]) {
-            cleanPhone = match[1];
-          }
-        }
-        
-        if (!cleanPhone) {
-          cleanPhone = phone.replace(/\D/g, '');
-        }
-        
-        // استخدام رابط Deep Link للواتساب لفتحه مباشرة
-        const whatsappDeepLink = `whatsapp://send?phone=${cleanPhone}`;
-        const whatsappWebLink = `https://wa.me/${cleanPhone}`;
-
-        // محاولة الفتح باستخدام Capacitor App Launcher أو Browser
-        if (Capacitor.isNativePlatform()) {
-          // استخدام _system لفتح التطبيق مباشرة وتجنب فتح المتصفح الداخلي
-          window.open(whatsappDeepLink, '_system');
-        } else {
-          // في المتصفح العادي
-          window.location.href = whatsappDeepLink;
-          // fallback بعد فترة قصيرة للمتصفح
-          setTimeout(() => {
-            window.open(whatsappWebLink, '_blank');
-          }, 500);
-        }
+      if (Capacitor.isNativePlatform()) {
+        // في التطبيق الأصلي: فتح الرابط عبر المتصفح الخارجي
+        window.open(apiUrl, '_system');
       } else {
-        // في حال فشل جلب الرابط المشفر، نستخدم التوجيه التقليدي كخيار بديل
-        const apiUrl = `${baseUrl}/api/ad-redirect/${id}`;
-        window.open(apiUrl, '_blank', 'noopener,noreferrer');
+        // في المتصفح العادي: توجيه مباشر
+        window.location.href = apiUrl;
       }
     } catch (error) {
-      console.error('Failed to fetch/open ad redirect URL:', error);
+      console.error('Failed to open ad redirect URL:', error);
+      // fallback: محاولة فتح الرابط مباشرة
       const apiUrl = `${baseUrl}/api/ad-redirect/${id}`;
       window.open(apiUrl, '_blank', 'noopener,noreferrer');
     }
@@ -242,7 +232,7 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
   if (showLocalAd) {
     return (
       <div className="sticky top-1 z-10">
-        <div className="rounded-lg overflow-hidden shadow-2xl w-full aspect-video relative bg-gray-100">
+        <div className="rounded-lg overflow-hidden shadow-2xl w-full aspect-video relative bg-black">
           <img src={localAdImage} alt={t('local_ad')} className="w-full h-full object-cover absolute inset-0" />
         </div>
       </div>
@@ -254,44 +244,33 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
     <div className="sticky top-1 z-10">
       {ads && ads.length > 0 && currentAdIndex < ads.length && (
         <>
-          <div className="rounded-lg overflow-hidden shadow-[0_5px_40px_rgba(0,0,0,0.3)] w-full aspect-video relative bg-gray-100 mb-3 ring-1 ring-black/5">
-            {ads[currentAdIndex]?.whatsapp ? (
-              <div
-                className="block w-full h-full relative cursor-pointer"
-                onClick={(e) => {
-                  e.preventDefault();
-                  openAdRedirect(ads[currentAdIndex].id);
-                }}
-              >
-                <img
-                  src={ads[currentAdIndex]?.image_url}
-                  alt={t('advertisement')}
-                  className="w-full h-full object-cover absolute inset-0 cursor-pointer"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openAdRedirect(ads[currentAdIndex].id);
-                  }}
-                />
-                <div
-                  className="absolute bottom-2 left-2 bg-green-500 text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg z-20 flex items-center gap-1 border border-white"
-                  style={{ direction: 'rtl', pointerEvents: 'none' }}
-                >
-                  <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 fill-white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-                  {t('click_to_contact')}
-                </div>
-              </div>
-            ) : (
+          <div className="rounded-lg overflow-hidden shadow-[0_5px_8px_rgba(0,0,0,0.6)] w-full aspect-video relative bg-gray-100 mb-3 ring-1 ring-black/5">
+            <div
+              className="block w-full h-full relative cursor-pointer"
+              onClick={(e) => {
+                e.preventDefault();
+                openAdRedirect(ads[currentAdIndex].id);
+              }}
+            >
               <img
                 src={ads[currentAdIndex]?.image_url}
                 alt={t('advertisement')}
                 className="w-full h-full object-cover absolute inset-0 cursor-pointer"
                 onClick={(e) => {
-                  e.preventDefault();
+                  e.stopPropagation();
                   openAdRedirect(ads[currentAdIndex].id);
                 }}
               />
-            )}
-            {/* زر الموقع الجغرافي - في نفس مستوى زر الواتساب */}
+              {/* زر الواتساب - يظهر دائماً لأن التفاعل يفتح الواتساب */}
+              <div
+                className="absolute bottom-2 left-2 bg-green-500 text-white text-xs font-bold px-3 py-1 rounded-full shadow-xl z-20 flex items-center gap-1 border border-white"
+                style={{ direction: 'rtl', pointerEvents: 'none' }}
+              >
+                <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 fill-white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                {t('click_to_contact')}
+              </div>
+            </div>
+            {/* زر الموقع الجغرافي */}
             {ads[currentAdIndex]?.latitude && ads[currentAdIndex]?.longitude && (
               <div className="absolute bottom-2 right-2 z-20 w-auto">
                 <button
@@ -301,7 +280,7 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
                     const url = `https://www.google.com/maps/search/?api=1&query=${ad.latitude},${ad.longitude}`;
                     window.open(url, '_blank', 'noopener,noreferrer');
                   }}
-                  className="py-1 px-6 sm:px-12 md:px-20 bg-black/70 backdrop-blur-sm text-white rounded-full shadow-lg hover:bg-black/50 transition-all text-sm sm:text-base font-bold flex items-center justify-center gap-2"
+                  className="py-1 px-6 sm:px-12 md:px-20 bg-black/70 backdrop-blur-sm text-white rounded-full shadow-xl hover:bg-black/50 transition-all text-sm sm:text-base font-bold flex items-center justify-center gap-2"
                   style={{ direction: 'rtl' }}
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24">

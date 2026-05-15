@@ -1114,4 +1114,45 @@ export default {
   
   // CountryCodeSelector Translations
   "search_country_or_code": "بحث عن الدولة أو الكود...",
+
+  // SearchIMEI Page - Hardcoded Arabic Texts
+  "bonus_deducted_can_continue": "تم خصم {{amount}} من البونص ويمكنك المتابعة",
+  "search_limit_check_error": "حدث خطأ في التحقق من حد البحث",
+  "login_required_first": "يرجى تسجيل الدخول أولاً",
+  "finder_phone_fetch_failed": "فشل في الحصول على رقم هاتف الواجد.",
+  "phone_found_but_not_saved": "تم العثور على الهاتف لكن لم يتم حفظ رقمك في قاعدة البيانات.",
+  "phone_not_found_in_database": "لم يتم العثور على سجل للهاتف في قاعدة البيانات",
+  "finder_email_fetch_failed": "فشل في العثور على البريد الإلكتروني الخاص بهذا الهاتف",
+  "notification_title_phone_found": "تم العثور على هاتفك!",
+  "notification_body_phone_found": "مبروك! تم العثور على هاتفك. للتواصل مع الشخص الذي وجده، يرجى الاتصال على الرقم: {{phone}}.",
+  "warning_security_settings": "تم حفظ رقم الهاتف بنجاح، لكن لم يتمكن النظام من إرسال إشعار للمالك بسبب إعدادات الأمان. يرجى التواصل مع المالك مباشرة عبر الرقم: {{phone}}",
+  "phone_saved_notification_error": "تم حفظ رقم الهاتف لكن حدث خطأ في حفظ الإشعار: {{error}}",
+  "notification_save_error": "حدث خطأ أثناء حفظ الإشعار: {{error}}",
+  "cannot_send_alert": "تعذر إرسال التنبيه",
+  "no_valid_owner_contact": "لم يتم العثور على بيانات تواصل صالحة للمالك.",
+  "error_notifying_owner": "حدث خطأ أثناء محاولة إبلاغ المالك.",
+  "phone_image_label": "صورة الهاتف:",
+  "phone_type_label": "نوع الهاتف",
+  "alert_warning": "تنبيه",
+
+  // Premium Search UI
+  "check_device_safety": "افحص جهازك وتأكد من سلامته",
+  "enter_imei_placeholder": "أدخل رقم IMEI",
+  "scan_qr": "مسح QR",
+  "protect_data": "حماية بياناتك",
+  "instant_results": "نتائج فورية",
+  "trusted_database": "قاعدة بيانات موثوقة",
+  "high_accuracy": "دقة عالية",
+  "search_device_info": "للبحث عن معلومات الجهاز",
+
+  // Search IMEI Page
+  "search_imei_title": "ابحث عن هاتفك المفقود",
+  "search_imei_description": "أدخل رقم IMEI للتحقق من حالة الهاتف والبحث عن تقارير الفقدان",
+  "enter_imei_description": "أدخل رقم IMEI المكون من 15 رقمًا للتحقق من حالة هاتفك في قاعدة البيانات",
+  "data_protection": "حماية البيانات",
+  "data_protection_desc": "بياناتك محمية ومشفرة بالكامل",
+  "instant_results_desc": "احصل على النتائج فورًا خلال ثوانٍ",
+  "reliable_database_desc": "قاعدة بيانات شاملة ومحدثة باستمرار",
+  "high_accuracy_desc": "نتائج دقيقة وموثوقة بنسبة عالية",
+  "back_to_search": "العودة للبحث",
 };
