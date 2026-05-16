@@ -3636,7 +3636,6 @@ app.post('/paymob/publish-from-bonus', paymentLimiter, rateLimitMiddleware({ win
         ...adDataToStore,
         user_id: userId,
         is_paid: true,
-        is_active: true, // ⭐ تفعيل الإعلان تلقائياً - المشغل سينسخ إلى publish_ad
         payment_status: 'paid',
         transaction: 'ad_payment',
         amount: expectedAmount,
@@ -4136,7 +4135,6 @@ app.get('/paymob/redirect-success', async (req, res) => {
                 .from('ads_payment')
                 .update({
                   is_paid: true,
-                  is_active: true, // ⭐ تفعيل الإعلان تلقائياً عند نجاح الدفع - المشغل سينسخ إلى publish_ad
                   payment_status: 'paid',
                   ...(isOffersGallerySubscription ? { transaction: 'bonus_add' } : {}),
                   payment_date: paymentDate.toISOString(),
@@ -4419,7 +4417,6 @@ const amountCents = obj.amount_cents; // number
             // 3. تحديث حالة الدفع وتاريخ الانتهاء
             const updatePayload = {
               is_paid: true,
-              is_active: true, // ⭐ تفعيل الإعلان تلقائياً عند نجاح الدفع - المشغل سينسخ إلى publish_ad
               payment_date: paymentDate.toISOString(),
               payment_status: 'paid',
               ...(isOffersGallerySubscription ? { transaction: 'bonus_add' } : {}),

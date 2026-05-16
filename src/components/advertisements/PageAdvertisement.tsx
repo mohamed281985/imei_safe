@@ -46,45 +46,43 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
   const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || 'https://imei-safe.me';
 
   useEffect(() => {
-    const cacheKey = `page-ads-${pageName}`;
-    // 1. محاولة تحميل الإعلانات من ذاكرة التخزين المؤقت أولاً
-    const cachedAdsRaw = localStorage.getItem(cacheKey);
-    if (cachedAdsRaw) {
-      const cachedAds: AdDisplay[] = JSON.parse(cachedAdsRaw);
-      const now = new Date();
-      const validCachedAds = cachedAds.filter(ad => ad.expires_at && new Date(ad.expires_at) > now);
-      if (validCachedAds.length > 0) {
-        setAds(validCachedAds);
-        setShowLocalAd(false);
+    // ⭐ مفتاح إصدار الكاش - تغييره يبطل الكاش القديم
+    const CACHE_VERSION = 'v3';
+    const cacheKey = `page-ads-${pageName}-${CACHE_VERSION}`;
+
+    // تنظيف الكاش القديم (الذي بدون إصدار أو بإصدار مختلف)
+    Object.keys(localStorage).forEach(key => {
+      if (key.startsWith(`page-ads-${pageName}`) && key !== cacheKey) {
+        localStorage.removeItem(key);
       }
-    }
+    });
 
     // جلب الموقع الجغرافي ثم الإعلانات
     if (!('geolocation' in navigator)) {
-      fetchAds(null);
+      fetchAds(null, cacheKey);
       return;
     }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
-        fetchAds(coords);
+        fetchAds(coords, cacheKey);
       },
       () => {
-        fetchAds(null);
+        fetchAds(null, cacheKey);
       },
       { enableHighAccuracy: true, timeout: 5000 }
     );
   }, [pageName]);
 
-  // ⭐ الاستعلام المزدوج: publish_ad (سريع) + ads_payment (للموقع وتاريخ الانتهاء)
-  const fetchAds = async (coords: { latitude: number; longitude: number } | null) => {
-    const cacheKey = `page-ads-${pageName}`;
+  // ⭐ الاعتماد على publish_ad فقط - وجود السجل فيه يعني موافقة الأدمن
+  const fetchAds = async (coords: { latitude: number; longitude: number } | null, cacheKey: string) => {
     const now = new Date();
 
-    // ===== الاستعلام الأول: جلب ad_id و image_url من publish_ad (سريع جداً) =====
+    // ===== جلب الإعلانات المعتمدة من publish_ad مع بيانات ads_payment (استعلام واحد بـ Join) =====
+    // وجود السجل في publish_ad يعني أن الأدمن وافق عليه
     const { data: publishedAds, error: pubError } = await supabase
       .from('publish_ad')
-      .select('ad_id, image_url')
+      .select('ad_id, image_url, ads_payment(latitude, longitude, expires_at)')
       .order('created_at', { ascending: false });
 
     if (pubError || !publishedAds || publishedAds.length === 0) {
@@ -94,38 +92,22 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
       return;
     }
 
-    // ===== الاستعلام الثاني: جلب latitude, longitude, expires_at من ads_payment فقط =====
-    const adIds = publishedAds.map((ad: any) => ad.ad_id).filter(Boolean);
-    const { data: paymentAds, error: payError } = await supabase
-      .from('ads_payment')
-      .select('id, latitude, longitude, expires_at, is_active, is_paid, payment_status')
-      .in('id', adIds);
-
-    if (payError || !paymentAds || paymentAds.length === 0) {
-      setShowLocalAd(true);
-      setAds([]);
-      localStorage.setItem(cacheKey, JSON.stringify([]));
-      return;
-    }
-
-    // ===== دمج البيانات من الجدولين =====
-    const paymentMap = new Map(paymentAds.map((ad: any) => [ad.id, ad]));
-
+    // ===== تحويل البيانات من Join إلى AdDisplay =====
     const mergedAds: AdDisplay[] = publishedAds
       .map((pubAd: any) => {
-        const payAd = paymentMap.get(pubAd.ad_id);
-        if (!payAd) return null;
+        const payAd = pubAd.ads_payment;
+        const expiresAt = payAd?.expires_at ?? null;
 
-        // ⭐ فلترة: استبعاد الإعلانات غير النشطة أو غير المدفوعة أو المنتهية
-        if (!payAd.is_active || !payAd.is_paid || payAd.payment_status !== 'paid') return null;
-        if (payAd.expires_at && new Date(payAd.expires_at) <= now) return null;
+        // فلترة: استبعاد الإعلانات المنتهية
+        if (expiresAt && new Date(expiresAt) <= now) return null;
+        if (!pubAd.image_url) return null;
 
         return {
           id: pubAd.ad_id,
           image_url: pubAd.image_url,
-          latitude: payAd.latitude ?? null,
-          longitude: payAd.longitude ?? null,
-          expires_at: payAd.expires_at ?? null,
+          latitude: payAd?.latitude ?? null,
+          longitude: payAd?.longitude ?? null,
+          expires_at: expiresAt,
         };
       })
       .filter(Boolean) as AdDisplay[];
