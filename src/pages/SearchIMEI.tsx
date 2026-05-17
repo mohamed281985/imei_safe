@@ -42,6 +42,7 @@ const WelcomeSearch: React.FC = () => {
   const [ownerWhatsAppEnabled, setOwnerWhatsAppEnabled] = useState<boolean>(false);
   const [ownerWhatsAppNumber, setOwnerWhatsAppNumber] = useState<string | null>(null);
   const [isCheckingWhatsApp, setIsCheckingWhatsApp] = useState(false);
+  const [hasNotifiedOwner, setHasNotifiedOwner] = useState<boolean>(false);
 
   // التحقق من حد البحث للمستخدم بناءً على أحدث دفع في ads_payment
   const checkSearchLimit = async (userId: string) => {
@@ -131,6 +132,7 @@ const WelcomeSearch: React.FC = () => {
     setOwnerRole(null);
     setOwnerWhatsAppEnabled(false);
     setOwnerWhatsAppNumber(null);
+    setHasNotifiedOwner(false);
   };
 
   const handleImeiChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -318,6 +320,9 @@ const WelcomeSearch: React.FC = () => {
 
         if (notificationSent || emailSent) {
           toast({ title: t('notification_sent'), description: t('owner_notified_success') });
+          // بعد نجاح الإبلاغ، تحقق من إعدادات الواتساب وأظهر الزر
+          setHasNotifiedOwner(true);
+          checkOwnerWhatsAppSettings(phoneId);
         } else {
           toast({ title: t('cannot_send_alert'), description: t('no_valid_owner_contact'), variant: 'destructive' });
         }
@@ -385,6 +390,7 @@ const WelcomeSearch: React.FC = () => {
       setOwnerRole(null);
       setOwnerWhatsAppEnabled(false);
       setOwnerWhatsAppNumber(null);
+      setHasNotifiedOwner(false);
 
       // مخاطبة السيرفر عبر API
       // ملاحظة: استخدم https://imei-safe.me للإنتاج أو http://10.0.2.2:3000 للمحاكي
@@ -425,10 +431,7 @@ const WelcomeSearch: React.FC = () => {
           });
         }
         
-        // التحقق من إعدادات الواتساب للمالك إذا كان الهاتف مفقوداً
-        if (result.status === 'active') {
-          await checkOwnerWhatsAppSettings(result.imei || imei);
-        }
+        // لا نتحقق من الواتساب عند البحث - يظهر فقط بعد إبلاغ المالك
       } else if (result.registeredPhone || result.registered || result.isRegistered) {
         // Normalize registered phone data: the API may return different shapes
         const rp = result.registeredPhone
@@ -914,8 +917,8 @@ const WelcomeSearch: React.FC = () => {
                     )}
                   </Button>
                   
-                  {/* زر الواتساب - يظهر فقط إذا كان المالك من نوع gold_business أو gold_user وفعّل الواتساب */}
-                  {ownerWhatsAppEnabled && (ownerRole === 'gold_business' || ownerRole === 'gold_user') && ownerWhatsAppNumber && (
+                  {/* زر الواتساب - يظهر فقط بعد إبلاغ المالك بنجاح وإذا كان الواتساب مفعّلاً */}
+                  {hasNotifiedOwner && ownerWhatsAppEnabled && (ownerRole === 'gold_business' || ownerRole === 'gold_user') && (
                     <Button
                       onClick={handleWhatsAppContact}
                       className="flex-1 h-14 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white transition-all duration-300 text-lg font-bold shadow-lg shadow-green-500/30 rounded-xl flex items-center justify-center gap-2"
