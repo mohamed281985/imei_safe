@@ -1955,6 +1955,20 @@ const maskIdLast6 = (id) => {
   // إذا كانت أطول من 6، أظهر آخر 6 أرقام بدون إخفاء
   return cleanId.slice(-6);
 };
+
+// إخفاء رقم واتساب/هاتف: يُظهر أول 3 أرقام وآخر رقمين فقط
+const maskWhatsAppNumber = (phone) => {
+  if (!phone) return null;
+  const s = String(phone).trim();
+  const digits = s.replace(/\D/g, '');
+  if (digits.length <= 5) return s; // قصير جداً، أرجعه كما هو
+  // احتفظ بـ + أو رمز الدولة في البداية إن وُجد
+  const prefix = s.startsWith('+') ? '+' : '';
+  const first3 = digits.slice(0, 3);
+  const last2 = digits.slice(-2);
+  const masked = '*'.repeat(Math.max(0, digits.length - 5));
+  return `${prefix}${first3}${masked}${last2}`;
+};
 // Normalize IMEI/phone-like values: keep digits only for robust comparisons
 const normalizeDigitsOnly = (s) => {
   if (s === null || s === undefined) return '';
@@ -5153,8 +5167,10 @@ app.post('/api/get-owner-details-by-imei', verifyJwtToken, async (req, res) => {
       // ignore
     }
 
-    console.log('Responding from /api/get-owner-details-by-imei with', { role, whatsapp_enabled: !!whatsappEnabled, whatsapp_number: whatsappNumber });
-    return res.json({ role, whatsapp_enabled: !!whatsappEnabled, whatsapp_number: whatsappNumber });
+    // إخفاء رقم واتساب قبل الإرجاع لحماية الخصوصية
+    const maskedWhatsappNumber = maskWhatsAppNumber(whatsappNumber);
+    console.log('Responding from /api/get-owner-details-by-imei with', { role, whatsapp_enabled: !!whatsappEnabled, whatsapp_number: '***masked***' });
+    return res.json({ role, whatsapp_enabled: !!whatsappEnabled, whatsapp_number: maskedWhatsappNumber });
   } catch (err) {
     console.error('خطأ في /api/get-owner-details-by-imei:', err);
     return res.status(500).json({ error: 'خطأ في الخادم' });
