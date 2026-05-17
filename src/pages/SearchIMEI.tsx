@@ -140,9 +140,10 @@ const WelcomeSearch: React.FC = () => {
   }, []);
 
   // دالة جديدة للتحقق من إعدادات الواتساب للمالك
-  const checkOwnerWhatsAppSettings = async () => {
-    if (!phoneId) return;
-    
+  const checkOwnerWhatsAppSettings = async (imeiParam?: string) => {
+    const idToUse = imeiParam || phoneId;
+    if (!idToUse) return;
+
     setIsCheckingWhatsApp(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -150,21 +151,21 @@ const WelcomeSearch: React.FC = () => {
 
       // جلب بيانات المالك من جدول phone_reports
       const response = await axiosInstance.post('/api/get-owner-details-by-imei',
-        { imei: phoneId },
+        { imei: idToUse },
         {
           headers: {
             'Authorization': `Bearer ${token}`
           }
         }
       );
-      
+
       const result = response.data;
-      
+
       // التحقق من دور المستخدم وإعدادات الواتساب
       if (result) {
         setOwnerRole(result.role || null);
         setOwnerWhatsAppEnabled(result.whatsapp_enabled || false);
-        
+
         // إذا كان الدور مناسباً والواتساب مفعلاً، جلب رقم الواتساب
         if ((result.role === 'gold_business' || result.role === 'gold_user') && result.whatsapp_enabled) {
           // الخادم يجب أن يعيد الرقم مفكوك التشفير. لا نفك التشفير في الواجهة الأمامية.
@@ -426,7 +427,7 @@ const WelcomeSearch: React.FC = () => {
         
         // التحقق من إعدادات الواتساب للمالك إذا كان الهاتف مفقوداً
         if (result.status === 'active') {
-          await checkOwnerWhatsAppSettings();
+          await checkOwnerWhatsAppSettings(result.imei || imei);
         }
       } else if (result.registeredPhone || result.registered || result.isRegistered) {
         // Normalize registered phone data: the API may return different shapes

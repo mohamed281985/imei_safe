@@ -5008,9 +5008,10 @@ app.post('/api/get-owner-details-by-imei', verifyJwtToken, async (req, res) => {
     const { imei } = req.body;
     if (!imei) return res.status(400).json({ error: 'IMEI is required' });
 
+    console.log('/api/get-owner-details-by-imei called by', requesterId, 'imei:', imei);
     const { data: allReports, error: reportError } = await supabase
       .from('phone_reports')
-      .select('id, imei, user_id')
+      .select('id, imei, user_id, phone_number')
       .order('id', { ascending: true });
 
     if (reportError || !allReports || allReports.length === 0) {
@@ -5018,6 +5019,7 @@ app.post('/api/get-owner-details-by-imei', verifyJwtToken, async (req, res) => {
     }
 
     const normalizedIncoming = String(imei).replace(/\D/g, '');
+    console.log('Looking for normalized IMEI:', normalizedIncoming, 'among', (allReports || []).length, 'reports');
     let foundReport = null;
     for (const r of allReports) {
       let decrypted = null;
@@ -5034,44 +5036,72 @@ app.post('/api/get-owner-details-by-imei', verifyJwtToken, async (req, res) => {
 
     const ownerId = foundReport.user_id;
 
-    // حاول جلب بيانات المستخدم (role, phone, whatsapp_enabled)
+    // حاول أولاً فك تشفير رقم الهاتف الموجود في صف البلاغ نفسه (phone_reports.phone_number)
     let role = null;
     let whatsappEnabled = false;
     let whatsappNumber = null;
 
     try {
-      const { data: userRow, error: userErr } = await supabase.from('users').select('role, phone, whatsapp_enabled').eq('id', ownerId).maybeSingle();
-      if (!userErr && userRow) {
-        role = userRow.role || null;
+      if (foundReport.phone_number) {
+        console.log('Found phone_number in phone_reports (raw):', foundReport.phone_number);
         try {
-          whatsappNumber = decryptField(userRow.phone) || null;
-        } catch (e) {
-          whatsappNumber = userRow.phone || null;
+          const fromReport = decryptField(foundReport.phone_number);
+          console.log('Decrypted phone_number from phone_reports:', fromReport);
+          whatsappNumber = fromReport || foundReport.phone_number || null;
+        } catch (dErr) {
+          console.error('Failed to decrypt phone_reports.phone_number, using raw value:', dErr?.message || dErr);
+          whatsappNumber = foundReport.phone_number || null;
         }
-        whatsappEnabled = !!userRow.whatsapp_enabled;
       }
     } catch (e) {
-      // ignore
+      console.error('Error while processing phone_reports.phone_number:', e);
     }
 
-    // إذا لم نجد في users، حاول جلب من businesses
+    // إذا لم نحصل على رقم صالح من صف البلاغ، جرب جلبه من users
+    try {
+      if (!whatsappNumber) {
+        const { data: userRow, error: userErr } = await supabase.from('users').select('role, phone, whatsapp_enabled').eq('id', ownerId).maybeSingle();
+        console.log('Fetched user row for ownerId', ownerId, 'err:', userErr);
+        if (!userErr && userRow) {
+          role = userRow.role || null;
+          try {
+            const decryptedUserPhone = decryptField(userRow.phone);
+            console.log('Decrypted phone from users table:', decryptedUserPhone);
+            whatsappNumber = decryptedUserPhone || userRow.phone || null;
+          } catch (e) {
+            console.error('Failed to decrypt users.phone, using raw:', e?.message || e);
+            whatsappNumber = userRow.phone || null;
+          }
+          whatsappEnabled = !!userRow.whatsapp_enabled;
+        }
+      }
+    } catch (e) {
+      console.error('Error while checking users table:', e);
+    }
+
+    // إذا لم نجد بعد، جرب من جدول businesses
     if (!whatsappNumber) {
       try {
         const { data: bizRow, error: bizErr } = await supabase.from('businesses').select('phone, whatsapp_enabled, store_name').eq('user_id', ownerId).maybeSingle();
+        console.log('Fetched business row for ownerId', ownerId, 'err:', bizErr);
         if (!bizErr && bizRow) {
           if (!role) role = null;
           try {
-            whatsappNumber = decryptField(bizRow.phone) || whatsappNumber;
+            const decryptedBizPhone = decryptField(bizRow.phone);
+            console.log('Decrypted phone from businesses table:', decryptedBizPhone);
+            whatsappNumber = decryptedBizPhone || bizRow.phone || null;
           } catch (e) {
-            whatsappNumber = whatsappNumber || bizRow.phone || null;
+            console.error('Failed to decrypt businesses.phone, using raw:', e?.message || e);
+            whatsappNumber = bizRow.phone || null;
           }
           if (!whatsappEnabled) whatsappEnabled = !!bizRow.whatsapp_enabled;
         }
       } catch (e) {
-        // ignore
+        console.error('Error while checking businesses table:', e);
       }
     }
 
+    console.log('Responding from /api/get-owner-details-by-imei with', { role, whatsapp_enabled: !!whatsappEnabled, whatsapp_number: whatsappNumber });
     return res.json({ role, whatsapp_enabled: !!whatsappEnabled, whatsapp_number: whatsappNumber });
   } catch (err) {
     console.error('خطأ في /api/get-owner-details-by-imei:', err);
