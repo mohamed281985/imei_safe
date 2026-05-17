@@ -4999,6 +4999,86 @@ app.post('/api/get-owner-email-by-imei', verifyJwtToken, async (req, res) => {
   }
 });
 
+// نقطة نهاية لجلب تفاصيل المالك (دور، حالة واتساب، ورقم واتساب مفكوك التشفير) بناءً على IMEI
+app.post('/api/get-owner-details-by-imei', verifyJwtToken, async (req, res) => {
+  try {
+    const requesterId = req.user?.id;
+    if (!requesterId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { imei } = req.body;
+    if (!imei) return res.status(400).json({ error: 'IMEI is required' });
+
+    const { data: allReports, error: reportError } = await supabase
+      .from('phone_reports')
+      .select('id, imei, user_id')
+      .order('id', { ascending: true });
+
+    if (reportError || !allReports || allReports.length === 0) {
+      return res.status(404).json({ error: 'لم يتم العثور على الهاتف في البلاغات', imei });
+    }
+
+    const normalizedIncoming = String(imei).replace(/\D/g, '');
+    let foundReport = null;
+    for (const r of allReports) {
+      let decrypted = null;
+      try {
+        decrypted = decryptField(r.imei);
+      } catch (e) {}
+      if (decrypted && decrypted.replace(/\D/g, '') === normalizedIncoming) {
+        foundReport = r;
+        break;
+      }
+    }
+
+    if (!foundReport) return res.status(404).json({ error: 'لم يتم العثور على البلاغ لهذا الـ IMEI' });
+
+    const ownerId = foundReport.user_id;
+
+    // حاول جلب بيانات المستخدم (role, phone, whatsapp_enabled)
+    let role = null;
+    let whatsappEnabled = false;
+    let whatsappNumber = null;
+
+    try {
+      const { data: userRow, error: userErr } = await supabase.from('users').select('role, phone, whatsapp_enabled').eq('id', ownerId).maybeSingle();
+      if (!userErr && userRow) {
+        role = userRow.role || null;
+        try {
+          whatsappNumber = decryptField(userRow.phone) || null;
+        } catch (e) {
+          whatsappNumber = userRow.phone || null;
+        }
+        whatsappEnabled = !!userRow.whatsapp_enabled;
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    // إذا لم نجد في users، حاول جلب من businesses
+    if (!whatsappNumber) {
+      try {
+        const { data: bizRow, error: bizErr } = await supabase.from('businesses').select('phone, whatsapp_enabled, store_name').eq('user_id', ownerId).maybeSingle();
+        if (!bizErr && bizRow) {
+          if (!role) role = null;
+          try {
+            whatsappNumber = decryptField(bizRow.phone) || whatsappNumber;
+          } catch (e) {
+            whatsappNumber = whatsappNumber || bizRow.phone || null;
+          }
+          if (!whatsappEnabled) whatsappEnabled = !!bizRow.whatsapp_enabled;
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    return res.json({ role, whatsapp_enabled: !!whatsappEnabled, whatsapp_number: whatsappNumber });
+  } catch (err) {
+    console.error('خطأ في /api/get-owner-details-by-imei:', err);
+    return res.status(500).json({ error: 'خطأ في الخادم' });
+  }
+});
+
 // نقطة نهاية لجلب الهواتف المسجلة للمستخدم الحالي مع فك تشفير IMEI
 app.get('/api/user-phones', verifyJwtToken, async (req, res) => {
   try {

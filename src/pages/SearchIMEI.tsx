@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle, Search, ArrowLeft, ArrowRight, Smartphone, FileText, CheckCircle, XCircle, ShieldCheck, MapPin, Clock, Calendar, Hash, ScanLine, Lock, Zap, Database, Target } from 'lucide-react';
+import { AlertTriangle, Search, ArrowLeft, ArrowRight, Smartphone, FileText, CheckCircle, XCircle, ShieldCheck, MapPin, Clock, Calendar, Hash, ScanLine, Lock, Zap, Database, Target, MessageCircle } from 'lucide-react';
 import PageContainer from '@/components/PageContainer';
 import AppNavbar from '@/components/AppNavbar';
 import PageAdvertisement from '@/components/advertisements/PageAdvertisement';
@@ -36,6 +36,12 @@ const WelcomeSearch: React.FC = () => {
   const [hasReachedSearchLimit, setHasReachedSearchLimit] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [userId, setUserId] = useState<string>('');
+  
+  // متغيرات جديدة للتعامل مع ميزة الواتساب
+  const [ownerRole, setOwnerRole] = useState<string | null>(null);
+  const [ownerWhatsAppEnabled, setOwnerWhatsAppEnabled] = useState<boolean>(false);
+  const [ownerWhatsAppNumber, setOwnerWhatsAppNumber] = useState<string | null>(null);
+  const [isCheckingWhatsApp, setIsCheckingWhatsApp] = useState(false);
 
   // التحقق من حد البحث للمستخدم بناءً على أحدث دفع في ads_payment
   const checkSearchLimit = async (userId: string) => {
@@ -121,6 +127,10 @@ const WelcomeSearch: React.FC = () => {
     setFoundReportDate(null);
     setLossLocation(null);
     setLossTime(null);
+    // إعادة تعيين متغيرات الواتساب
+    setOwnerRole(null);
+    setOwnerWhatsAppEnabled(false);
+    setOwnerWhatsAppNumber(null);
   };
 
   const handleImeiChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -128,6 +138,50 @@ const WelcomeSearch: React.FC = () => {
     if (value.length > 15) return;
     setImei(value);
   }, []);
+
+  // دالة جديدة للتحقق من إعدادات الواتساب للمالك
+  const checkOwnerWhatsAppSettings = async () => {
+    if (!phoneId) return;
+    
+    setIsCheckingWhatsApp(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      // جلب بيانات المالك من جدول phone_reports
+      const response = await axiosInstance.post('/api/get-owner-details-by-imei',
+        { imei: phoneId },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+      
+      const result = response.data;
+      
+      // التحقق من دور المستخدم وإعدادات الواتساب
+      if (result) {
+        setOwnerRole(result.role || null);
+        setOwnerWhatsAppEnabled(result.whatsapp_enabled || false);
+        
+        // إذا كان الدور مناسباً والواتساب مفعلاً، جلب رقم الواتساب
+        if ((result.role === 'gold_business' || result.role === 'gold_user') && result.whatsapp_enabled) {
+          // الخادم يجب أن يعيد الرقم مفكوك التشفير. لا نفك التشفير في الواجهة الأمامية.
+          setOwnerWhatsAppNumber(result.whatsapp_number || null);
+        }
+      }
+    } catch (error) {
+      console.error('Error checking owner WhatsApp settings:', error);
+      toast({
+        title: t('error'),
+        description: t('error_checking_whatsapp_settings'),
+        variant: 'destructive'
+      });
+    } finally {
+      setIsCheckingWhatsApp(false);
+    }
+  };
 
   const handleNotifyOwner = async () => {
     // Debug: تحقق من القيم قبل التحقق
@@ -204,17 +258,7 @@ const WelcomeSearch: React.FC = () => {
           }
 
           let imeiForNotification = phoneId || '';
-          try {
-            if (imeiForNotification && /\D/.test(imeiForNotification)) {
-              const { decryptIMEI } = await import('@/lib/imeiCrypto');
-              const decryptedCandidate = decryptIMEI(imeiForNotification);
-              if (/^\d{14,16}$/.test(decryptedCandidate)) {
-                imeiForNotification = decryptedCandidate;
-              }
-            }
-          } catch (e) {
-            // تجاهل أي خطأ في فك التشفير واستخدم القيمة كما هي
-          }
+          // نفترض أن الخادم يعيد IMEI مفكوك التشفير عند الحاجة؛ لا نفك التشفير في الواجهة الأمامية.
 
           // استخدام اللغة العربية دائماً للإشعار لأن صاحب الهاتف سجل بالعربية
           // والأشعارات يجب أن تصل بلغة المستلم (صاحب الهاتف) وليس بلغة الواجد
@@ -335,6 +379,11 @@ const WelcomeSearch: React.FC = () => {
       setPhoneId(null);
       setFoundReportStatus(null);
       setFoundReportDate(null);
+      
+      // إعادة تعيين متغيرات الواتساب
+      setOwnerRole(null);
+      setOwnerWhatsAppEnabled(false);
+      setOwnerWhatsAppNumber(null);
 
       // مخاطبة السيرفر عبر API
       // ملاحظة: استخدم https://imei-safe.me للإنتاج أو http://10.0.2.2:3000 للمحاكي
@@ -373,6 +422,11 @@ const WelcomeSearch: React.FC = () => {
             phone_image_url: result.registeredPhone.phone_image_url || result.phone_image_url,
             phone_type: result.registeredPhone.phone_type || result.phone_type,
           });
+        }
+        
+        // التحقق من إعدادات الواتساب للمالك إذا كان الهاتف مفقوداً
+        if (result.status === 'active') {
+          await checkOwnerWhatsAppSettings();
         }
       } else if (result.registeredPhone || result.registered || result.isRegistered) {
         // Normalize registered phone data: the API may return different shapes
@@ -422,6 +476,16 @@ const WelcomeSearch: React.FC = () => {
       return d.toLocaleString(i18n.language === 'ar' ? 'ar-EG' : 'en-US');
     } catch (e) {
       return null;
+    }
+  };
+
+  // دالة للتواصل عبر الواتساب
+  const handleWhatsAppContact = () => {
+    if (ownerWhatsAppNumber) {
+      // إنشاء رابط الواتساب
+      const whatsappUrl = `https://wa.me/${ownerWhatsAppNumber}`;
+      // فتح الرابط في نافذة جديدة
+      window.open(whatsappUrl, '_blank');
     }
   };
 
@@ -515,23 +579,25 @@ const WelcomeSearch: React.FC = () => {
 
           {/* Empty State - تم إزالة هذا القسم بالكامل */}
 
-          {/* Features Grid - تم إضافة هذا القسم مباشرة بعد بطاقة البحث */}
-          <div className="grid grid-cols-2 gap-4 mt-8 w-full">
-            {[
-              { icon: Lock, title: t('data_protection'), desc: t('data_protection_desc') },
-              { icon: Zap, title: t('instant_results'), desc: t('instant_results_desc') },
-              { icon: Database, title: t('trusted_database'), desc: t('reliable_database_desc') },
-              { icon: Target, title: t('high_accuracy'), desc: t('high_accuracy_desc') }
-            ].map((feature, index) => (
-              <div key={index} className="bg-gradient-to-br from-white to-slate-50 rounded-xl p-6 shadow-xl border border-slate-100 hover:shadow-lg hover:border-orange-200 transition-all duration-300">
-                <div className="bg-gradient-to-br from-orange-500 to-orange-600 w-14 h-14 rounded-xl flex items-center justify-center mb-4 shadow-md">
-                  <feature.icon size={24} className="text-white" />
+          {/* Features Grid - تم تعديل هذا القسم ليظهر فقط قبل البحث */}
+          {searchResult === null && (
+            <div className="grid grid-cols-2 gap-4 mt-8 w-full">
+              {[
+                { icon: Lock, title: t('data_protection'), desc: t('data_protection_desc') },
+                { icon: Zap, title: t('instant_results'), desc: t('instant_results_desc') },
+                { icon: Database, title: t('trusted_database'), desc: t('reliable_database_desc') },
+                { icon: Target, title: t('high_accuracy'), desc: t('high_accuracy_desc') }
+              ].map((feature, index) => (
+                <div key={index} className="bg-gradient-to-br from-white to-slate-50 rounded-xl p-6 shadow-xl border border-slate-100 hover:shadow-lg hover:border-orange-200 transition-all duration-300">
+                  <div className="bg-gradient-to-br from-orange-500 to-orange-600 w-14 h-14 rounded-xl flex items-center justify-center mb-4 shadow-md">
+                    <feature.icon size={24} className="text-white" />
+                  </div>
+                  <h4 className="font-bold text-blue-600 mb-2 text-lg">{feature.title}</h4>
+                  <p className="text-sm text-blue-600 leading-relaxed">{feature.desc}</p>
                 </div>
-                <h4 className="font-bold text-blue-600 mb-2 text-lg">{feature.title}</h4>
-                <p className="text-sm text-blue-600 leading-relaxed">{feature.desc}</p>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
 
           {/* Search Results Section */}
           {searchResult !== null && (
@@ -565,18 +631,7 @@ const WelcomeSearch: React.FC = () => {
                         <div className="flex-1 min-w-0">
                           <p className="text-sm text-slate-500 font-bold mb-1">IMEI</p>
                           <p className="text-base font-bold text-blue-600 truncate">
-                            {phoneId ? (() => {
-                              try {
-                                if (/^[a-zA-Z0-9+/=]+$/.test(phoneId) && phoneId.length > 15) {
-                                  const { decryptIMEI } = require('@/lib/imeiCrypto');
-                                  const decrypted = decryptIMEI(phoneId);
-                                  return /^\d{14,16}$/.test(decrypted) ? decrypted : phoneId;
-                                }
-                                return phoneId;
-                              } catch {
-                                return phoneId;
-                              }
-                            })() : 'N/A'}
+                            {phoneId ? phoneId : 'N/A'}
                           </p>
                         </div>
                       </div>
@@ -814,9 +869,10 @@ const WelcomeSearch: React.FC = () => {
                 </div>
               )}
 
-              {/* Notify Owner Button */}
+              {/* Notify Owner Button - تم تعديله لإظهار خيارات متعددة */}
               {searchResult === 'found' && foundReportStatus === 'active' && (
                 <div className="flex flex-col sm:flex-row gap-3 w-full">
+                  {/* زر إرسال إشعار للمالك */}
                   <Button
                     onClick={handleNotifyOwner}
                     className="flex-1 h-14 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white transition-all duration-300 text-lg font-bold shadow-lg shadow-orange-500/30 rounded-xl flex items-center justify-center gap-2"
@@ -831,6 +887,27 @@ const WelcomeSearch: React.FC = () => {
                       t('notify_owner')
                     )}
                   </Button>
+                  
+                  {/* زر الواتساب - يظهر فقط إذا كان المالك من نوع gold_business أو gold_user وفعّل الواتساب */}
+                  {ownerWhatsAppEnabled && (ownerRole === 'gold_business' || ownerRole === 'gold_user') && ownerWhatsAppNumber && (
+                    <Button
+                      onClick={handleWhatsAppContact}
+                      className="flex-1 h-14 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white transition-all duration-300 text-lg font-bold shadow-lg shadow-green-500/30 rounded-xl flex items-center justify-center gap-2"
+                      disabled={isCheckingWhatsApp}
+                    >
+                      {isCheckingWhatsApp ? (
+                        <>
+                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                          <span>{t('processing')}</span>
+                        </>
+                      ) : (
+                        <>
+                          <MessageCircle className="w-5 h-5" />
+                          <span>{t('contact_via_whatsapp')}</span>
+                        </>
+                      )}
+                    </Button>
+                  )}
                 </div>
               )}
 
