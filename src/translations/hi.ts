@@ -112,6 +112,9 @@ export default {
   "owner_name_label": "मालिक का नाम",
   // नोटिफिकेशन: यह फ़ोन किसी अन्य खाते से पंजीकृत है
   "this_phone_registered_to_another_account": "यह फ़ोन किसी अन्य खाते से पंजीकृत है और आप इस खाते से इसकी रिपोर्ट नहीं कर सकते।",
+  "this_phone_registered_to_another_account_cannot_report": "यह फ़ोन किसी अन्य खाते से पंजीकृत है। आप इस खाते से इसकी रिपोर्ट नहीं कर सकते।",
+  "phone_not_registered_can_report": "यह खाता हमारे पास पंजीकृत नहीं है। आप अभी रिपोर्ट कर सकते हैं, और कृपया फ़ोन मिलने पर उसे पंजीकृत करें।",
+  "share_whatsapp_number": "अपना फ़ोन मिलने पर अपना WhatsApp नंबर साझा करें",
   "phone_label": "फ़ोन नंबर",
   "address_label": "स्टोर का पता",
   "business_type_label": "व्यवसाय का प्रकार",
@@ -170,7 +173,7 @@ export default {
   "secure_storage_init_failed_desc": "सुरक्षित संग्रहण प्रारंभ करने में विफल। बायोमेट्रिक अनुपलब्ध है।",
   "dashboard": "डैशबोर्ड",
   "lost_phones": "खोए हुए फ़ोन",
-  "report_lost_phone": "खोए हुए फ़ोन\nकी रिपोर्ट करें",
+  "report_lost_phone": "हानि\nसूचना",
   "search_imei": "IMEI\nखोजें",
   "register_new_phone": "नया फ़ोन\nपंजीकृत करें",
   "welcome": "स्वागत है",

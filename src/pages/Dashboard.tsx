@@ -481,6 +481,35 @@ const Dashboard: React.FC = () => {
         const response = await axiosInstance.get<any[]>('/api/lost-phones');
         setDisplayedPhones(response.data);
 
+        // --- جلب معرفات البائعين في نفس دولة المستخدم ---
+        let sellerIdsInUserCountry: string[] | null = null;
+        if (user?.id && detectedCurrency !== defaultCurrency) {
+          try {
+            // جلب اسم دولة المستخدم من جدول users
+            const { data: currentUserData } = await supabase
+              .from('users')
+              .select('countries')
+              .eq('id', user.id)
+              .maybeSingle();
+
+            if (currentUserData?.countries) {
+              const userCountry = currentUserData.countries.trim();
+              // جلب كل البائعين الذين دولتهم تطابق دولة المستخدم
+              const { data: sellersInCountry } = await supabase
+                .from('users')
+                .select('id')
+                .ilike('countries', userCountry);
+
+              if (sellersInCountry && sellersInCountry.length > 0) {
+                sellerIdsInUserCountry = sellersInCountry.map(s => s.id);
+                console.log(`[Country Filter] Found ${sellerIdsInUserCountry.length} sellers in user's country: ${userCountry}`);
+              }
+            }
+          } catch (err) {
+            console.error('[Country Filter] Error fetching sellers by country:', err);
+          }
+        }
+
         // جلب الهواتف المعروضة للبيع مع بيانات الموقع
         const { data: listings, error: listingsError } = await supabase
           .from('phones')
@@ -503,7 +532,12 @@ const Dashboard: React.FC = () => {
           setPhoneListings([]);
         } else {
           console.debug('تم جلب بيانات الهواتف المعروضة للبيع');
+          // فلترة الهواتف حسب دولة البائع
           let sortedListings = listings || [];
+          if (sellerIdsInUserCountry && sellerIdsInUserCountry.length > 0) {
+            sortedListings = sortedListings.filter(phone => sellerIdsInUserCountry!.includes(phone.seller_id));
+            console.log(`[Country Filter] Filtered phones to ${sortedListings.length} in user's country`);
+          }
 
           // فرز حسب الموقع إذا كانت الإحداثيات متاحة
           if (coords?.latitude && coords?.longitude) {

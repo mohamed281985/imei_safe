@@ -110,6 +110,9 @@ export default {
   "owner_name_label": "اسم صاحب المحل",
   // إشعار الهاتف مسجل لحساب آخر
   "this_phone_registered_to_another_account": "هذا الهاتف مسجل لحساب آخر ولا يمكن بيعه أو نقل ملكيته من هذا الحساب.",
+  "this_phone_registered_to_another_account_cannot_report": "هذا الهاتف مسجل لحساب آخر ولا يمكن الإبلاغ عنه من هذا الحساب.",
+  "phone_not_registered_can_report": "هذا الحساب غير مسجل لدينا. يمكنك الإبلاغ الآن، وبرجاء تسجيل الهاتف عند العثور عليه.",
+  "share_whatsapp_number": "مشاركة رقم الواتساب الخاص بك عند العثور على هاتفك",
   "phone_label": "رقم الهاتف",
   "address_label": "عنوان المحل",
   "business_type_label": "نوع النشاط",
@@ -168,7 +171,7 @@ export default {
   "secure_storage_init_failed_desc": "فشل تهيئة وحدة التخزين الآمنة. لا يمكن استخدام البصمة حالياً.",
   "dashboard": "لوحة التحكم",
   "lost_phones": "الهواتف المفقودة",
-  "report_lost_phone": "إبلاغ\nهاتف مفقود",
+  "report_lost_phone": "اخطار\nفقد",
   "search_imei": "بحث\nIMEI",
   "register_new_phone": "تسجيل\nهاتف جديد",
   "welcome": "مرحباً",
