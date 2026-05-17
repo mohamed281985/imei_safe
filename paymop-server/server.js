@@ -2707,10 +2707,9 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
       return res.status(404).json({ error: 'لم يتم العثور على الهاتف في البلاغات', imei });
     }
 
-    // تفويض صارم: لا يسمح بتعديل finder_phone إلا لنفس finder_user_id إن كان محدداً.
-    if (foundReport.finder_user_id && foundReport.finder_user_id !== requesterId) {
-      return res.status(403).json({ error: 'Forbidden: you are not allowed to update this report' });
-    }
+    // تفويض: أي مستخدم موثق يمكنه إبلاغ المالك بالعثور على هاتفه.
+    // أكثر من شخص قد يجد الهاتف، لذلك لا نقيّد الإبلاغ بواجد واحد فقط.
+    // ملاحظة: finder_user_id سيُحدّث لآخر مُبلّغ، لكن الإشعار سيُرسل للمالك بغض النظر.
 
     const decryptedOwnerName = (() => {
       if (!foundReport.owner_name) return undefined;
