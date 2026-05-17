@@ -4984,11 +4984,13 @@ app.post('/api/whatsapp-redirect', verifyJwtToken, whatsappRedirectLimiter, asyn
 
     if (!foundReport) return res.status(404).json({ error: 'لم يتم العثور على البلاغ لهذا الـ IMEI' });
 
-    // تفويض: فقط المالك أو الواجد المعين يمكنه استخدام هذا الرابط
+    // تفويض: أي مستخدم موثق يمكنه التواصل عبر واتساب مع المالك
+    // شروط: البلاغ يجب أن يكون نشطاً والواتساب مفعّلاً عند المالك
+    // المالك نفسه لا يحتاج لاستخدام هذا الرابط (يمكنه رؤية رقمه مباشرة)
     const isOwner = !!foundReport.user_id && foundReport.user_id === requesterId;
-    const isAssignedFinder = !!foundReport.finder_user_id && foundReport.finder_user_id === requesterId;
-    if (!isOwner && !isAssignedFinder) {
-      return res.status(403).json({ error: 'Forbidden: not authorized' });
+    // لا نسمح للمالك بالتواصل مع نفسه
+    if (isOwner) {
+      return res.status(400).json({ error: 'لا يمكنك التواصل مع نفسك عبر واتساب' });
     }
 
     // فك تشفير رقم الواتساب/الهاتف

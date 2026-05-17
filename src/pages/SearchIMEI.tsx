@@ -480,13 +480,38 @@ const WelcomeSearch: React.FC = () => {
     }
   };
 
-  // دالة للتواصل عبر الواتساب
-  const handleWhatsAppContact = () => {
-    if (ownerWhatsAppNumber) {
-      // إنشاء رابط الواتساب
-      const whatsappUrl = `https://wa.me/${ownerWhatsAppNumber}`;
-      // فتح الرابط في نافذة جديدة
-      window.open(whatsappUrl, '_blank');
+  // دالة للتواصل عبر الواتساب - تفك التشفير من الخادم فقط عند الضغط
+  const handleWhatsAppContact = async () => {
+    if (!phoneId) {
+      toast({ title: t('error'), description: t('imei_not_available'), variant: 'destructive' });
+      return;
+    }
+
+    setIsCheckingWhatsApp(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      const response = await axiosInstance.post('/api/whatsapp-redirect',
+        { imei: phoneId },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+
+      const result = response.data;
+      if (result.success && result.whatsapp_url) {
+        window.open(result.whatsapp_url, '_blank');
+      } else {
+        toast({ title: t('error'), description: t('whatsapp_number_not_available'), variant: 'destructive' });
+      }
+    } catch (error: any) {
+      const errorMsg = error?.response?.data?.error || t('error_opening_whatsapp');
+      toast({ title: t('error'), description: errorMsg, variant: 'destructive' });
+    } finally {
+      setIsCheckingWhatsApp(false);
     }
   };
 
