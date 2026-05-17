@@ -5011,7 +5011,7 @@ app.post('/api/get-owner-details-by-imei', verifyJwtToken, async (req, res) => {
     console.log('/api/get-owner-details-by-imei called by', requesterId, 'imei:', imei);
     const { data: allReports, error: reportError } = await supabase
       .from('phone_reports')
-      .select('id, imei, user_id, phone_number, email')
+      .select('id, imei, user_id, phone_number, email, whatsapp, owner_name, finder_user_id')
       .order('id', { ascending: true });
 
     if (reportError || !allReports || allReports.length === 0) {
@@ -5050,7 +5050,7 @@ app.post('/api/get-owner-details-by-imei', verifyJwtToken, async (req, res) => {
         if (userErr) {
           console.error('Error fetching users row for ownerId', ownerId, userErr);
         } else if (userRow) {
-          role = userRow.role || null;
+          role = userRow.role ? String(userRow.role).trim() : null;
           // Note: `users.whatsapp_enabled` column may not exist; prefer report/business flags
           // Keep user phone as fallback if phone_reports doesn't have a number
           try {
@@ -5084,9 +5084,15 @@ app.post('/api/get-owner-details-by-imei', verifyJwtToken, async (req, res) => {
 
         // If the report row explicitly contains a whatsapp flag, honor it
         if (typeof foundReport.whatsapp !== 'undefined') {
-          whatsappEnabled = !!foundReport.whatsapp;
+          const v = foundReport.whatsapp;
+          whatsappEnabled = typeof v === 'string'
+            ? ['1', 'true', 'yes'].includes(String(v).trim().toLowerCase())
+            : !!v;
         } else if (typeof foundReport.whatsapp_enabled !== 'undefined') {
-          whatsappEnabled = !!foundReport.whatsapp_enabled;
+          const v = foundReport.whatsapp_enabled;
+          whatsappEnabled = typeof v === 'string'
+            ? ['1', 'true', 'yes'].includes(String(v).trim().toLowerCase())
+            : !!v;
         }
       }
     } catch (e) {
@@ -5107,7 +5113,12 @@ app.post('/api/get-owner-details-by-imei', verifyJwtToken, async (req, res) => {
           } catch (e) {
             if (bizRow.phone) whatsappNumber = bizRow.phone;
           }
-          if (!whatsappEnabled) whatsappEnabled = !!bizRow.whatsapp_enabled;
+          if (!whatsappEnabled && typeof bizRow.whatsapp_enabled !== 'undefined') {
+            const v = bizRow.whatsapp_enabled;
+            whatsappEnabled = typeof v === 'string'
+              ? ['1', 'true', 'yes'].includes(String(v).trim().toLowerCase())
+              : !!v;
+          }
         }
       } catch (e) {
         console.error('Error while checking businesses table:', e);
