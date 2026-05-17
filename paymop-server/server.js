@@ -5044,24 +5044,26 @@ app.post('/api/get-owner-details-by-imei', verifyJwtToken, async (req, res) => {
     let whatsappNumber = null;
 
     // 1) Always try to fetch owner row to obtain the canonical `role`
+    let fetchedUserRow = null;
     try {
       if (ownerId) {
         const { data: userRow, error: userErr } = await supabase.from('users').select('role, phone').eq('id', ownerId).maybeSingle();
+        fetchedUserRow = userRow || null;
         if (userErr) {
           console.error('Error fetching users row for ownerId', ownerId, userErr);
-        } else if (userRow) {
-          role = userRow.role ? String(userRow.role).trim() : null;
+        } else if (fetchedUserRow) {
+          role = fetchedUserRow.role ? String(fetchedUserRow.role).trim() : null;
           // Note: `users.whatsapp_enabled` column may not exist; prefer report/business flags
           // Keep user phone as fallback if phone_reports doesn't have a number
           try {
-            const decryptedUserPhone = decryptField(userRow.phone);
+            const decryptedUserPhone = decryptField(fetchedUserRow.phone);
             if (decryptedUserPhone) {
               // do not override phone_reports value if present — this is fallback
               if (!whatsappNumber) whatsappNumber = decryptedUserPhone;
             }
           } catch (e) {
             // Ignore decryption failure here; we'll try other sources
-            if (!whatsappNumber && userRow.phone) whatsappNumber = userRow.phone;
+            if (!whatsappNumber && fetchedUserRow.phone) whatsappNumber = fetchedUserRow.phone;
           }
         }
       }
@@ -5100,21 +5102,23 @@ app.post('/api/get-owner-details-by-imei', verifyJwtToken, async (req, res) => {
     }
 
     // 3) If still no number, fallback to businesses table
+    let fetchedBizRow = null;
     if (!whatsappNumber && ownerId) {
       try {
         const { data: bizRow, error: bizErr } = await supabase.from('businesses').select('phone, whatsapp_enabled, store_name').eq('user_id', ownerId).maybeSingle();
+        fetchedBizRow = bizRow || null;
         if (bizErr) {
           console.error('Error fetching businesses row for ownerId', ownerId, bizErr);
-        } else if (bizRow) {
+        } else if (fetchedBizRow) {
           try {
-            const decryptedBizPhone = decryptField(bizRow.phone);
+            const decryptedBizPhone = decryptField(fetchedBizRow.phone);
             if (decryptedBizPhone) whatsappNumber = decryptedBizPhone;
-            else if (bizRow.phone) whatsappNumber = bizRow.phone;
+            else if (fetchedBizRow.phone) whatsappNumber = fetchedBizRow.phone;
           } catch (e) {
-            if (bizRow.phone) whatsappNumber = bizRow.phone;
+            if (fetchedBizRow.phone) whatsappNumber = fetchedBizRow.phone;
           }
-          if (!whatsappEnabled && typeof bizRow.whatsapp_enabled !== 'undefined') {
-            const v = bizRow.whatsapp_enabled;
+          if (!whatsappEnabled && typeof fetchedBizRow.whatsapp_enabled !== 'undefined') {
+            const v = fetchedBizRow.whatsapp_enabled;
             whatsappEnabled = typeof v === 'string'
               ? ['1', 'true', 'yes'].includes(String(v).trim().toLowerCase())
               : !!v;
@@ -5123,6 +5127,30 @@ app.post('/api/get-owner-details-by-imei', verifyJwtToken, async (req, res) => {
       } catch (e) {
         console.error('Error while checking businesses table:', e);
       }
+    }
+
+    // 4) If role still missing, infer a convincing role for the UI: prefer business then gold_user when phone exists
+    try {
+      if (!role) {
+        if (fetchedBizRow) {
+          role = 'gold_business';
+        } else if (fetchedUserRow && (whatsappNumber || fetchedUserRow.phone)) {
+          role = 'gold_user';
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    // If we have a WhatsApp number and the owner role is privileged, but no explicit whatsapp flag,
+    // be permissive so the UI can offer the WhatsApp contact (prevents UX breakage).
+    try {
+      const roleLower = role ? String(role).toLowerCase() : '';
+      if (whatsappNumber && !whatsappEnabled && (roleLower.includes('gold') || roleLower.includes('business') || roleLower.includes('user'))) {
+        whatsappEnabled = true;
+      }
+    } catch (e) {
+      // ignore
     }
 
     console.log('Responding from /api/get-owner-details-by-imei with', { role, whatsapp_enabled: !!whatsappEnabled, whatsapp_number: whatsappNumber });
