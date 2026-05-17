@@ -4953,12 +4953,12 @@ const whatsappRedirectLimiter = rateLimit({
   handler: (req, res) => res.status(429).json({ error: 'Too many WhatsApp redirect attempts, please try later.' })
 });
 
-app.get('/api/whatsapp-redirect/:imei', verifyJwtToken, whatsappRedirectLimiter, async (req, res) => {
+app.post('/api/whatsapp-redirect', verifyJwtToken, whatsappRedirectLimiter, async (req, res) => {
   try {
     const requesterId = req.user?.id;
     if (!requesterId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const imei = String(req.params.imei || '').trim();
+    const { imei } = req.body || {};
     if (!imei) return res.status(400).json({ error: 'IMEI is required' });
 
     // البحث عن البلاغ المطابق للـ IMEI
@@ -5052,8 +5052,8 @@ app.get('/api/whatsapp-redirect/:imei', verifyJwtToken, whatsappRedirectLimiter,
       // لا نوقف العملية بسبب فشل التدقيق
     }
 
-    // إعادة التوجيه إلى واتساب
-    return res.redirect(`https://wa.me/${cleanNumber}`);
+    // إرجاع رابط واتساب المفكوك كـ JSON (الواجهة تفتحه عبر window.open)
+    return res.json({ success: true, whatsapp_url: `https://wa.me/${cleanNumber}` });
   } catch (err) {
     console.error('خطأ في /api/whatsapp-redirect/:imei:', err);
     return res.status(500).json({ error: 'خطأ في الخادم' });
