@@ -5038,63 +5038,73 @@ app.post('/api/get-owner-details-by-imei', verifyJwtToken, async (req, res) => {
 
     const ownerId = foundReport.user_id;
 
-    // حاول أولاً فك تشفير رقم الهاتف الموجود في صف البلاغ نفسه (phone_reports.phone_number)
+    // Configure response defaults
     let role = null;
     let whatsappEnabled = false;
     let whatsappNumber = null;
 
+    // 1) Always try to fetch owner row to obtain the canonical `role`
+    try {
+      if (ownerId) {
+        const { data: userRow, error: userErr } = await supabase.from('users').select('role, phone, whatsapp_enabled').eq('id', ownerId).maybeSingle();
+        if (userErr) {
+          console.error('Error fetching users row for ownerId', ownerId, userErr);
+        } else if (userRow) {
+          role = userRow.role || null;
+          // If user row advertises whatsapp_enabled, consider it a candidate
+          whatsappEnabled = !!userRow.whatsapp_enabled;
+          // Keep user phone as fallback if phone_reports doesn't have a number
+          try {
+            const decryptedUserPhone = decryptField(userRow.phone);
+            if (decryptedUserPhone) {
+              // do not override phone_reports value if present — this is fallback
+              if (!whatsappNumber) whatsappNumber = decryptedUserPhone;
+            }
+          } catch (e) {
+            // Ignore decryption failure here; we'll try other sources
+            if (!whatsappNumber && userRow.phone) whatsappNumber = userRow.phone;
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Error while fetching owner user row:', e);
+    }
+
+    // 2) Prefer phone_reports.phone_number (decrypted) as primary WhatsApp number
     try {
       if (foundReport.phone_number) {
         console.log('Found phone_number in phone_reports (raw):', foundReport.phone_number);
         try {
           const fromReport = decryptField(foundReport.phone_number);
           console.log('Decrypted phone_number from phone_reports:', fromReport);
-          whatsappNumber = fromReport || foundReport.phone_number || null;
+          whatsappNumber = fromReport || normalizeDecrypted(foundReport.phone_number) || whatsappNumber;
         } catch (dErr) {
-          console.error('Failed to decrypt phone_reports.phone_number, using raw value:', dErr?.message || dErr);
-          whatsappNumber = foundReport.phone_number || null;
+          console.error('Failed to decrypt phone_reports.phone_number, using raw value if it looks valid:', dErr?.message || dErr);
+          if (/^\+?\d+$/.test(String(foundReport.phone_number))) whatsappNumber = String(foundReport.phone_number);
+        }
+
+        // If the report row explicitly contains a whatsapp flag, honor it
+        if (typeof foundReport.whatsapp !== 'undefined') {
+          whatsappEnabled = !!foundReport.whatsapp;
         }
       }
     } catch (e) {
       console.error('Error while processing phone_reports.phone_number:', e);
     }
 
-    // إذا لم نحصل على رقم صالح من صف البلاغ، جرب جلبه من users
-    try {
-      if (!whatsappNumber) {
-        const { data: userRow, error: userErr } = await supabase.from('users').select('role, phone, whatsapp_enabled').eq('id', ownerId).maybeSingle();
-        console.log('Fetched user row for ownerId', ownerId, 'err:', userErr);
-        if (!userErr && userRow) {
-          role = userRow.role || null;
-          try {
-            const decryptedUserPhone = decryptField(userRow.phone);
-            console.log('Decrypted phone from users table:', decryptedUserPhone);
-            whatsappNumber = decryptedUserPhone || userRow.phone || null;
-          } catch (e) {
-            console.error('Failed to decrypt users.phone, using raw:', e?.message || e);
-            whatsappNumber = userRow.phone || null;
-          }
-          whatsappEnabled = !!userRow.whatsapp_enabled;
-        }
-      }
-    } catch (e) {
-      console.error('Error while checking users table:', e);
-    }
-
-    // إذا لم نجد بعد، جرب من جدول businesses
-    if (!whatsappNumber) {
+    // 3) If still no number, fallback to businesses table
+    if (!whatsappNumber && ownerId) {
       try {
         const { data: bizRow, error: bizErr } = await supabase.from('businesses').select('phone, whatsapp_enabled, store_name').eq('user_id', ownerId).maybeSingle();
-        console.log('Fetched business row for ownerId', ownerId, 'err:', bizErr);
-        if (!bizErr && bizRow) {
-          if (!role) role = null;
+        if (bizErr) {
+          console.error('Error fetching businesses row for ownerId', ownerId, bizErr);
+        } else if (bizRow) {
           try {
             const decryptedBizPhone = decryptField(bizRow.phone);
-            console.log('Decrypted phone from businesses table:', decryptedBizPhone);
-            whatsappNumber = decryptedBizPhone || bizRow.phone || null;
+            if (decryptedBizPhone) whatsappNumber = decryptedBizPhone;
+            else if (bizRow.phone) whatsappNumber = bizRow.phone;
           } catch (e) {
-            console.error('Failed to decrypt businesses.phone, using raw:', e?.message || e);
-            whatsappNumber = bizRow.phone || null;
+            if (bizRow.phone) whatsappNumber = bizRow.phone;
           }
           if (!whatsappEnabled) whatsappEnabled = !!bizRow.whatsapp_enabled;
         }
