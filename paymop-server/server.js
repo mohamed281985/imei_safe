@@ -216,7 +216,7 @@ const decryptField = (encryptedField) => {
           const parsed = JSON.parse(candidate);
           if (parsed && parsed.encryptedData && parsed.iv && parsed.authTag) {
             try {
-            return normalizeDecrypted(decryptAES(parsed.encryptedData, parsed.iv, parsed.authTag));
+              return normalizeDecrypted(decryptAES(parsed.encryptedData, parsed.iv, parsed.authTag));
             } catch (e) {
               if (process.env.NODE_ENV !== 'production') console.warn('[decryptField] decryptAES failed:', e);
               return null;
@@ -236,7 +236,7 @@ const decryptField = (encryptedField) => {
     // في الحالات الأخرى، أعِد السلسلة كما هي إذا كانت تبدو عادية
     // (ليست JSON مشفّر)
     if (!s.includes('encryptedData') && !s.includes('authTag')) return normalizeDecrypted(s);
-    
+
     // في حال فشل التعرف على أي نموذج صالح، لا نُرجع النص المشفر الخام
     return null;
   }
@@ -321,7 +321,7 @@ app.use(session(SECURITY_CONFIG.SESSION));
 
 // ✅ SECURITY: Enable CORS with whitelisted origins
 const CLIENT_ORIGINS = SECURITY_CONFIG.ALLOWED_ORIGINS;
-app.use(cors({ 
+app.use(cors({
   origin: (origin, callback) => {
     if (!origin || CLIENT_ORIGINS.includes(origin)) {
       callback(null, true);
@@ -465,7 +465,7 @@ const checkEmailLimiter = rateLimit({
   trustProxy: TRUST_PROXY,
   handler: (req, res) => res.status(429).json({ error: 'Too many requests, please try again later.' })
 });
- 
+
 // ✅ SECURITY: Rate limiter for creating app users (TIGHTENED)
 const CREATE_APP_USER_WINDOW_MS = SECURITY_CONFIG.RATE_LIMITS.CREATE_APP_USER.windowMs; // 24 ساعة
 const DEFAULT_CREATE_APP_USER_MAX = process.env.NODE_ENV !== 'production' ? 50 : SECURITY_CONFIG.RATE_LIMITS.CREATE_APP_USER.max; // تشديد من 20 إلى 5
@@ -519,7 +519,7 @@ const loginLimiter = rateLimit({
   handler: (req, res) => res.status(429).json({ error: 'Too many login attempts, please try later.' }),
   skip: (req) => req.user // لا تحد للمستخدمين المسجلين
 });
- 
+
 
 // Middleware: if incoming body is encrypted (encryptedData + iv + authTag), try to decrypt and replace req.body
 app.use((req, res, next) => {
@@ -552,7 +552,7 @@ if (REDIS_URL) {
     redisClient = new Redis(REDIS_URL);
     redisClient.on('error', (err) => { if (process.env.NODE_ENV !== 'production') console.error('Redis error:', err); });
     console.log('Connected to Redis for shared state');
-    } catch (e) {
+  } catch (e) {
     if (process.env.NODE_ENV !== 'production') console.error('Failed to initialize Redis client:', e);
     redisClient = null;
   }
@@ -914,9 +914,9 @@ app.post('/api/supabase-auth-webhook', async (req, res) => {
   }
 });
 
-  // Endpoint: /api/upload-image
-  // Accepts JSON { bucket, filename, base64 } where `base64` may be a data URL
-  // Validates file-type using `file-type`, rejects non-images, re-encodes with `sharp` to webp, and uploads via Supabase service role.
+// Endpoint: /api/upload-image
+// Accepts JSON { bucket, filename, base64 } where `base64` may be a data URL
+// Validates file-type using `file-type`, rejects non-images, re-encodes with `sharp` to webp, and uploads via Supabase service role.
 app.post('/api/upload-image', verifyJwtToken, uploadImageLimiter, async (req, res) => {
   try {
     const bucket = 'registerphone';
@@ -1004,7 +1004,7 @@ app.post('/api/create-app-user', verifyJwtToken, createAppUserLimiter, async (re
     const checkAuthUserExists = async (uid) => {
       try {
         if (!SUPABASE_URL || !SUPABASE_KEY) return false;
-        const adminUrl = `${SUPABASE_URL.replace(/\/+$/,'')}/auth/v1/admin/users/${uid}`;
+        const adminUrl = `${SUPABASE_URL.replace(/\/+$/, '')}/auth/v1/admin/users/${uid}`;
         const r = await fetch(adminUrl, {
           method: 'GET',
           headers: {
@@ -2022,7 +2022,7 @@ const paymobRequest = async (url, body, method = "POST", timeoutMs = PAYMENT_OP_
     };
     console.log(`Making ${method} request to Paymob API:`, url);
     console.log("Request body (redacted):", JSON.stringify(redact(body), null, 2));
-    
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     const res = await fetch(url, {
@@ -2031,9 +2031,9 @@ const paymobRequest = async (url, body, method = "POST", timeoutMs = PAYMENT_OP_
       body: JSON.stringify(body),
       signal: controller.signal
     }).finally(() => clearTimeout(timeoutId));
-    
+
     console.log(`Response status: ${res.status}`);
-    
+
     if (!res.ok) {
       let errorData;
       try {
@@ -2043,10 +2043,10 @@ const paymobRequest = async (url, body, method = "POST", timeoutMs = PAYMENT_OP_
         errorData = { message: res.statusText };
         console.log("Error parsing JSON, using status text:", res.statusText);
       }
-      
+
       throw new Error(`Paymob API Error (${url}): ${errorData.message || res.statusText}`);
     }
-    
+
     const data = await res.json();
     console.log("Success response (redacted):", JSON.stringify(redact(data), null, 2));
     return data;
@@ -2063,15 +2063,15 @@ const paymobRequest = async (url, body, method = "POST", timeoutMs = PAYMENT_OP_
 const getAuthToken = async () => {
   try {
     console.log("Requesting auth token from Paymob...");
-    const authData = await paymobRequest("https://accept.paymob.com/api/auth/tokens", { 
-      api_key: PAYMOB_API_KEY 
+    const authData = await paymobRequest("https://accept.paymob.com/api/auth/tokens", {
+      api_key: PAYMOB_API_KEY
     });
-    
+
     if (!authData || !authData.token) {
       console.error("Invalid auth response from Paymob:", JSON.stringify(authData, null, 2));
       throw new Error("فشل في الحصول على توكن المصادقة من Paymob - استجابة غير صالحة");
     }
-    
+
     console.log("Successfully obtained auth token");
     return authData.token;
   } catch (error) {
@@ -2083,14 +2083,14 @@ const getAuthToken = async () => {
 const registerOrder = async (token, { amount, merchantOrderId }) => {
   try {
     console.log("Registering order with Paymob...");
-    
+
     const amountCents = Math.round(Number(amount) * 100);
     if (isNaN(amountCents)) {
       throw new Error("المبلغ المرسل غير صالح");
     }
-    
+
     const orderId = merchantOrderId || `ORD-${Date.now()}`;
-    
+
     const orderData = await paymobRequest("https://accept.paymob.com/api/ecommerce/orders", {
       auth_token: token,
       delivery_needed: "false",
@@ -2099,12 +2099,12 @@ const registerOrder = async (token, { amount, merchantOrderId }) => {
       merchant_order_id: orderId,
       items: []
     });
-    
+
     if (!orderData || !orderData.id) {
       console.error("Invalid order response from Paymob:", JSON.stringify(orderData, null, 2));
       throw new Error("فشل في إنشاء الطلب لدى Paymob - استجابة غير صالحة");
     }
-    
+
     console.log(`Successfully registered order with ID: ${orderData.id}`);
     return orderData;
   } catch (error) {
@@ -2237,8 +2237,8 @@ app.post('/api/send-notification-by-imei', verifyJwtToken, async (req, res) => {
       console.error('خطأ في تسجيل الإشعار في قاعدة البيانات:', dbErr);
     }
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       result,
       message: result ? 'Notification sent successfully' : 'Notification recorded but failed to send'
     });
@@ -2252,32 +2252,32 @@ app.post('/api/send-notification-by-imei', verifyJwtToken, async (req, res) => {
 app.post('/api/search-imei', searchImeiLimiter, async (req, res) => {
   try {
     const { imei, userId } = req.body;
-    
+
     if (!imei) {
       return res.status(400).json({ error: 'IMEI is required' });
     }
-    
+
     // التحقق من صحة الـ IMEI (يجب أن يكون 14-15 رقم)
     if (!/^\d{14,15}$/.test(imei)) {
       return res.status(400).json({ error: 'Invalid IMEI format' });
     }
-    
+
     // التحقق من صحة التوكن واستخراج userId منه
     const authHeader = req.headers['authorization'];
     if (!authHeader) {
       return res.status(401).json({ error: 'Unauthorized: No token provided' });
     }
-    
+
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    
+
     if (authError || !user) {
       return res.status(401).json({ error: 'Unauthorized: Invalid token' });
     }
-    
+
     // استخدام userId من التوكن بدلاً من الطلب
     const authenticatedUserId = user.id;
-    
+
     // 1. البحث في الهواتف المسجلة
     // ملاحظة: لا يمكن البحث المباشر بالقيمة المشفرة لأن التشفير يستخدم IV عشوائي (قيم مختلفة لنفس الـ IMEI)
     // لذلك نجلب البيانات ونفك تشفيرها للمقارنة
@@ -2306,8 +2306,8 @@ app.post('/api/search-imei', searchImeiLimiter, async (req, res) => {
     }
 
     // فك تشفير IMEI المخزن في البلاغات ومقارنته
-        // Debug: طباعة كل البلاغات بعد فك التشفير
-        // Keep logs free of decrypted sensitive payloads.
+    // Debug: طباعة كل البلاغات بعد فك التشفير
+    // Keep logs free of decrypted sensitive payloads.
 
     // ابحث عن أي بلاغ موجود: سنُظهر البلاغ فقط إذا كان "active" صريحاً
     // تحقق هل المستخدم هو المالك (بمقارنة userId فقط)
@@ -2362,7 +2362,7 @@ app.post('/api/search-imei', searchImeiLimiter, async (req, res) => {
         registered: false
       });
     }
-    
+
     // تسجيل البحث الناجح للتحليل وإحصائيات الاستخدام
     try {
       await supabase.from('search_history').insert({
@@ -2601,7 +2601,7 @@ app.post('/api/report-lost-phone', verifyJwtToken, async (req, res) => {
       action: 'report_lost_phone',
       resourceType: 'phone_report',
       resourceId: inserted?.[0]?.id,
-      details: { 
+      details: {
         imei_last_4: reportedImei.slice(-4),
         status: 'active'
       },
@@ -2650,7 +2650,7 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
   if (!imei || !finderPhone) {
     return res.status(400).json({ error: 'IMEI and finderPhone are required' });
   }
-  
+
   console.log(`Processing IMEI: ${imei}, Finder phone: ${finderPhone}, Owner name: ${ownerName || 'Not provided'}`);
 
   // --- ⭐ التحقق من فترة التهدئة (Cooldown) ---
@@ -2681,7 +2681,7 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
       let decrypted = null;
       try {
         decrypted = decryptField(r.imei);
-      } catch (e) {}
+      } catch (e) { }
       if (decrypted && decrypted.replace(/\D/g, '') === normalizedIncoming) {
         foundReport = r;
         break;
@@ -3245,12 +3245,12 @@ app.get("/", (req, res) => {
 const registerInvoice = async (token, { amount, currency, shippingData, items }) => {
   try {
     console.log("Registering invoice with Paymob...");
-    
+
     const amountCents = Math.round(Number(amount) * 100);
     if (isNaN(amountCents)) {
       throw new Error("المبلغ المرسل غير صالح");
     }
-    
+
     const currencyCode = currency || "EGP";
     const defaultShippingData = {
       first_name: "Test",
@@ -3258,7 +3258,7 @@ const registerInvoice = async (token, { amount, currency, shippingData, items })
       phone_number: "01010101010",
       email: "test@account.com"
     };
-    
+
     const orderData = await paymobRequest("https://accept.paymob.com/api/ecommerce/orders", {
       auth_token: token,
       api_source: "INVOICE",
@@ -3268,12 +3268,12 @@ const registerInvoice = async (token, { amount, currency, shippingData, items })
       items: items || [],
       delivery_needed: "false"
     });
-    
+
     if (!orderData || !orderData.id) {
       console.error("Invalid invoice response from Paymob:", JSON.stringify(orderData, null, 2));
       throw new Error("فشل في إنشاء الفاتورة لدى Paymob - استجابة غير صالحة");
     }
-    
+
     console.log(`Successfully registered invoice with ID: ${orderData.id}`);
     return orderData;
   } catch (error) {
@@ -3319,12 +3319,12 @@ const getPaymentKey = async (token, { amount, orderId, email, name, phone, redir
       redirect_url: redirect_url,
       failed_redirect_url: failed_redirect_url
     });
-    
+
     if (!paymentKeyData.token) throw new Error("فشل في الحصول على مفتاح الدفع من Paymob");
     return paymentKeyData.token;
   } catch (error) {
     console.error("Error getting payment key:", error.message);
-    
+
     // إذا فشل الاول، حاول بدون خصومات أو قسائم
     try {
       const paymentKeyData = await paymobRequest("https://accept.paymob.com/api/acceptance/payment_keys", {
@@ -3339,7 +3339,7 @@ const getPaymentKey = async (token, { amount, orderId, email, name, phone, redir
         "redirect_url": redirect_url,
         "failed_redirect_url": failed_redirect_url
       });
-      
+
       if (!paymentKeyData.token) throw new Error("فشل في الحصول على مفتاح الدفع من Paymob");
       return paymentKeyData.token;
     } catch (secondError) {
@@ -3370,17 +3370,17 @@ app.post("/paymob/create-payment", paymentLimiter, rateLimitMiddleware({ windowM
 
   try {
     console.log("Received create-payment request:", JSON.stringify(req.body, null, 2));
-    
+
     // ⭐ تعديل: استقبال adId للتمييز بين الإنشاء والتحديث
     const { amount, email, name, phone, merchantOrderId, adData, redirect_url_success, redirect_url_failed, isSpecialAd, adId, signature, timestamp } = req.body;
 
     // سيتم التحقق من التوقيع بعد تحديد المبلغ المتوقع من الخادم (أكثر أماناً)
-    
+
     // التحقق من وجود البيانات المطلوبة
     if (!amount) {
       return res.status(400).json({ error: "المبلغ مطلوب" });
     }
-    
+
     // ===== تحقق من المبلغ: لا تعتمد على مبلغ العميل دون تحقق من الخادم =====
     // حاول تحديد السعر المتوقع بناءً على بيانات الإعلان أو معرف الإعلان
     let expectedAmount = null;
@@ -3453,11 +3453,11 @@ app.post("/paymob/create-payment", paymentLimiter, rateLimitMiddleware({ windowM
     // 1. الحصول على توكن المصادقة
     console.log("Step 1: Getting auth token...");
     const token = await getAuthToken();
-    
+
     // 2. تسجيل الطلب
     console.log("Step 2: Registering order...");
     const orderData = await registerOrder(token, { amount, merchantOrderId });
-    
+
     // 3. الحصول على مفتاح الدفع
     console.log("Step 3: Getting payment key...");
     const paymentKey = await getPaymentKey(token, {
@@ -3465,15 +3465,15 @@ app.post("/paymob/create-payment", paymentLimiter, rateLimitMiddleware({ windowM
       orderId: orderData.id,
       email,
       name,
-      phone,      
+      phone,
       redirect_url: redirect_url_success,
       failed_redirect_url: redirect_url_failed
     });
-    
-  // 4. بناء رابط الدفع
-  console.log("Step 4: Building iframe URL...");
-  const iframe_url = `https://accept.paymob.com/api/acceptance/iframes/${IFRAME_ID}?payment_token=${paymentKey}`;
-    
+
+    // 4. بناء رابط الدفع
+    console.log("Step 4: Building iframe URL...");
+    const iframe_url = `https://accept.paymob.com/api/acceptance/iframes/${IFRAME_ID}?payment_token=${paymentKey}`;
+
     // تشفير الحقول الحساسة قبل الحفظ في ads_payment
     const adDataToStore = adData ? { ...adData } : null;
     if (adDataToStore) {
@@ -3526,7 +3526,7 @@ app.post("/paymob/create-payment", paymentLimiter, rateLimitMiddleware({ windowM
         throw insertError;
       }
     }
-    
+
     // 6. إرسال الرد للواجهة الأمامية
     const response = {
       ok: true,
@@ -3536,7 +3536,7 @@ app.post("/paymob/create-payment", paymentLimiter, rateLimitMiddleware({ windowM
       // ⭐ إرجاع adId سواء كان جديداً أو محدثاً
       adId: newAdId || adId || null
     };
-    
+
     // لا نُرجع payment_token للعميل لتقليل سطح التسريب
     console.log("Sending response:", JSON.stringify(response, null, 2));
     return safeJson(response);
@@ -3688,48 +3688,48 @@ app.post("/paymob/create-invoice", async (req, res) => {
 
   try {
     console.log("Received create-invoice request:", JSON.stringify(req.body, null, 2));
-    
+
     const { amount, currency, shippingData, items, merchantOrderId } = req.body;
-    
+
     // التحقق من وجود البيانات المطلوبة
     if (!amount) {
       return safeStatusJson(400, { error: "المبلغ مطلوب" });
     }
-    
+
     // التحقق من صحة المبلغ
     const amountCents = Math.round(Number(amount) * 100);
     if (isNaN(amountCents)) {
       return safeStatusJson(400, { error: "المبلغ المرسل غير صالح" });
     }
-    
+
     // 1. الحصول على توكن المصادقة
     console.log("Step 1: Getting auth token...");
     const token = await getAuthToken();
-    
+
     // 2. تسجيل الفاتورة
     console.log("Step 2: Registering invoice...");
-    const invoiceData = await registerInvoice(token, { 
-      amount, 
-      currency, 
-      shippingData, 
-      items 
+    const invoiceData = await registerInvoice(token, {
+      amount,
+      currency,
+      shippingData,
+      items
     });
-    
+
     // 3. بناء رابط الفاتورة
     console.log("Step 3: Building invoice URL...");
     let invoiceUrl = null;
-    
+
     if (invoiceData && invoiceData.id) {
       invoiceUrl = `https://accept.paymob.com/api/ecommerce/invoices/${invoiceData.id}`;
     }
-    
+
     const response = {
       ok: true,
       invoice_id: invoiceData.id || null,
       merchant_order_id: merchantOrderId || null,
       invoice_url: invoiceUrl
     };
-    
+
     // سجل الاستجابة بدون أي حقول حساسة
     console.log("Sending response:", JSON.stringify(response, null, 2));
     return safeJson(response);
@@ -3744,250 +3744,250 @@ app.post("/paymob/create-invoice", async (req, res) => {
 
 // نقطة نهاية دفع الاشتراك بالعرض (offers)
 app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ windowMs: 15 * 60 * 1000, max: 10 }), async (req, res) => {
-    // per-operation timeout guard
-    let _timedOut = false;
-    const _timeoutHandle = setTimeout(() => {
-      _timedOut = true;
-      if (!res.headersSent) return sendError(res, 504, 'انتهت مهلة عملية الدفع');
-    }, PAYMENT_OP_TIMEOUT_MS);
+  // per-operation timeout guard
+  let _timedOut = false;
+  const _timeoutHandle = setTimeout(() => {
+    _timedOut = true;
+    if (!res.headersSent) return sendError(res, 504, 'انتهت مهلة عملية الدفع');
+  }, PAYMENT_OP_TIMEOUT_MS);
 
-    const safeStatusJson = (status, payload) => {
-      if (_timedOut || res.headersSent) return;
-      clearTimeout(_timeoutHandle);
-      return res.status(status).json(payload);
-    };
-    const safeJson = (payload) => {
-      if (_timedOut || res.headersSent) return;
-      clearTimeout(_timeoutHandle);
-      return res.json(payload);
-    };
+  const safeStatusJson = (status, payload) => {
+    if (_timedOut || res.headersSent) return;
+    clearTimeout(_timeoutHandle);
+    return res.status(status).json(payload);
+  };
+  const safeJson = (payload) => {
+    if (_timedOut || res.headersSent) return;
+    clearTimeout(_timeoutHandle);
+    return res.json(payload);
+  };
 
+  try {
+    // سجل الحدث بدون طباعة الحقول الحساسة
+    console.log("Received create-offer-payment request:", JSON.stringify({ merchantOrderId: req.body?.merchantOrderId || null, offerId: req.body?.offerId || null, timestamp: req.body?.timestamp || null }));
+    const { amount, email, name, phone, merchantOrderId, offerData, redirect_url_success, redirect_url_failed, offerId, signature, timestamp } = req.body;
+    // الملاحظة: الآن يمكن للعميل ألا يرسل حقل `amount`؛ الخادم سيحسب المبلغ المتوقع من قاعدة البيانات
+
+
+    // NOTE: signature verification will be performed after computing expectedAmount
+    // to avoid relying on client-sent `amount`. (see below)
+
+    // ===== تحقق من المبلغ المتوقع لعرض الـ offer =====
+    let numericAmount = null;
     try {
-      // سجل الحدث بدون طباعة الحقول الحساسة
-      console.log("Received create-offer-payment request:", JSON.stringify({ merchantOrderId: req.body?.merchantOrderId || null, offerId: req.body?.offerId || null, timestamp: req.body?.timestamp || null }));
-      const { amount, email, name, phone, merchantOrderId, offerData, redirect_url_success, redirect_url_failed, offerId, signature, timestamp } = req.body;
-      // الملاحظة: الآن يمكن للعميل ألا يرسل حقل `amount`؛ الخادم سيحسب المبلغ المتوقع من قاعدة البيانات
+      let expectedAmount = null;
 
+      // حاول جلب السعر من جدول ads_price باستخدام نوع العرض و/أو مدة إذا كانت متوفرة
+      if (offerData && offerData.type) {
+        const durationDays = offerData.duration_days || offerData.duration || null;
+        if (durationDays) {
+          const { data: priceRow, error: priceErr } = await supabase
+            .from('ads_price')
+            .select('amount')
+            .eq('type', offerData.type)
+            .eq('duration_days', durationDays)
+            .limit(1)
+            .single();
+          // Debug log: record result of price lookup for given type+duration
+          console.log('ads_price lookup (by type+duration):', { type: offerData.type, durationDays, priceRow: priceRow || null, priceErr: priceErr || null });
+          if (!priceErr && priceRow && typeof priceRow.amount !== 'undefined') expectedAmount = Number(priceRow.amount);
+        }
 
-      // NOTE: signature verification will be performed after computing expectedAmount
-      // to avoid relying on client-sent `amount`. (see below)
+        // كملطفة: إذا لم نجد من ads_price، استخدم السعر المرفق في offerData إذا وُجِد
+        if (expectedAmount === null && typeof offerData.price !== 'undefined') expectedAmount = Number(offerData.price);
+      }
 
-      // ===== تحقق من المبلغ المتوقع لعرض الـ offer =====
-      let numericAmount = null;
-      try {
-        let expectedAmount = null;
-
-        // حاول جلب السعر من جدول ads_price باستخدام نوع العرض و/أو مدة إذا كانت متوفرة
-        if (offerData && offerData.type) {
-          const durationDays = offerData.duration_days || offerData.duration || null;
-          if (durationDays) {
+      // إن فشلنا في الحصول على سعر متوقع، حاول جلب السعر من سجل العرض في قاعدة البيانات إذا كان offerId موجودًا
+      if (expectedAmount === null && offerId) {
+        // حاول جلب الحقول المحتملة: amount أو price، بالإضافة إلى type
+        const { data: offerRow, error: offerErr } = await supabase
+          .from('ads_offar')
+          .select('amount, price, type')
+          .eq('id', offerId)
+          .single();
+        if (!offerErr && offerRow) {
+          // Debug log: show fetched offerRow
+          console.log('ads_offar lookup result:', { offerId, offerRow: offerRow || null, offerErr: offerErr || null });
+          // استخدم عمود amount إن وُجد، وإلا عمود price
+          if (typeof offerRow.amount !== 'undefined' && offerRow.amount !== null) expectedAmount = Number(offerRow.amount);
+          else if (typeof offerRow.price !== 'undefined' && offerRow.price !== null) expectedAmount = Number(offerRow.price);
+          else if (offerRow.type) {
             const { data: priceRow, error: priceErr } = await supabase
               .from('ads_price')
               .select('amount')
-              .eq('type', offerData.type)
-              .eq('duration_days', durationDays)
+              .eq('type', offerRow.type)
               .limit(1)
               .single();
-            // Debug log: record result of price lookup for given type+duration
-            console.log('ads_price lookup (by type+duration):', { type: offerData.type, durationDays, priceRow: priceRow || null, priceErr: priceErr || null });
+            // Debug log: record result of fallback price lookup by offerRow.type
+            console.log('ads_price fallback lookup (by offerRow.type):', { type: offerRow.type, priceRow: priceRow || null, priceErr: priceErr || null });
             if (!priceErr && priceRow && typeof priceRow.amount !== 'undefined') expectedAmount = Number(priceRow.amount);
           }
-
-          // كملطفة: إذا لم نجد من ads_price، استخدم السعر المرفق في offerData إذا وُجِد
-          if (expectedAmount === null && typeof offerData.price !== 'undefined') expectedAmount = Number(offerData.price);
         }
-
-        // إن فشلنا في الحصول على سعر متوقع، حاول جلب السعر من سجل العرض في قاعدة البيانات إذا كان offerId موجودًا
-        if (expectedAmount === null && offerId) {
-          // حاول جلب الحقول المحتملة: amount أو price، بالإضافة إلى type
-          const { data: offerRow, error: offerErr } = await supabase
-            .from('ads_offar')
-            .select('amount, price, type')
-            .eq('id', offerId)
-            .single();
-          if (!offerErr && offerRow) {
-            // Debug log: show fetched offerRow
-            console.log('ads_offar lookup result:', { offerId, offerRow: offerRow || null, offerErr: offerErr || null });
-            // استخدم عمود amount إن وُجد، وإلا عمود price
-            if (typeof offerRow.amount !== 'undefined' && offerRow.amount !== null) expectedAmount = Number(offerRow.amount);
-            else if (typeof offerRow.price !== 'undefined' && offerRow.price !== null) expectedAmount = Number(offerRow.price);
-            else if (offerRow.type) {
-              const { data: priceRow, error: priceErr } = await supabase
-                .from('ads_price')
-                .select('amount')
-                .eq('type', offerRow.type)
-                .limit(1)
-                .single();
-              // Debug log: record result of fallback price lookup by offerRow.type
-              console.log('ads_price fallback lookup (by offerRow.type):', { type: offerRow.type, priceRow: priceRow || null, priceErr: priceErr || null });
-              if (!priceErr && priceRow && typeof priceRow.amount !== 'undefined') expectedAmount = Number(priceRow.amount);
-            }
-          }
-        }
-
-        if (expectedAmount === null) {
-          // Provide more detailed diagnostic info in logs to help root-cause investigation
-          console.warn('Unable to determine expected amount for offer payment', {
-            offerId: offerId || null,
-            offerData: offerData || null,
-            note: 'Checked ads_price by type/duration, fallback to offerData.price, then ads_offar and ads_price by offerRow.type'
-          });
-          return safeStatusJson(400, { error: 'تعذر التحقق من قيمة الدفع للعرض' });
-        }
-        // Verify signature against server-computed expectedAmount (strict)
-        if (!(await verifySignatureHmac({ merchantOrderId, amount: expectedAmount, timestamp, signature }))) {
-          console.warn('Rejected create-offer-payment due to invalid/missing signature', { merchantOrderId, expectedAmount });
-          return safeStatusJson(401, { error: 'Invalid or missing signature' });
-        }
-
-        // تحقق إذا أرسل العميل مبلغاً مُقَدَّماً: يجب أن يطابق المبلغ المتوقع
-        const providedAmount = (typeof amount !== 'undefined' && amount !== null) ? Number(amount) : null;
-        if (providedAmount !== null) {
-          if (isNaN(providedAmount) || providedAmount !== expectedAmount) {
-            console.warn('Offer payment amount mismatch', { expectedAmount, provided: amount, offerId });
-            return safeStatusJson(400, { error: 'قيمة الدفع غير مطابقة للسعر المتوقع للعرض' });
-          }
-        }
-
-        // استخدم المبلغ المحسوب من الخادم لإنشاء الطلب ومفتاح الدفع
-        numericAmount = Number(expectedAmount);
-      } catch (amtErr) {
-        console.error('Error verifying offer amount:', amtErr);
-        return safeStatusJson(500, { error: 'خطأ في التحقق من المبلغ' });
       }
-      console.log("Step 1: Getting auth token...");
-      const token = await getAuthToken();
-      console.log("Step 2: Registering order...");
-      const orderData = await registerOrder(token, { amount: numericAmount, merchantOrderId });
-      console.log("Step 3: Getting payment key...");
-      const paymentKey = await getPaymentKey(token, {
-        amount: numericAmount,
-        orderId: orderData.id,
-        email,
-        name,
-        phone,
-        redirect_url: redirect_url_success,
-        failed_redirect_url: redirect_url_failed
-      });
-      console.log("Step 4: Building iframe URL...");
-      const iframe_url = `https://accept.paymob.com/api/acceptance/iframes/${IFRAME_ID}?payment_token=${paymentKey}`;
-      console.log("Step 5: Saving payment data to ads_payment table...");
-      const offerRowId = (offerData && offerData.offer_id) ? offerData.offer_id : offerId;
-      const { data: adData, error: adError } = await supabase
-        .from('ads_offar')
-        .select('mainimage_url')
-        .eq('id', offerRowId)
+
+      if (expectedAmount === null) {
+        // Provide more detailed diagnostic info in logs to help root-cause investigation
+        console.warn('Unable to determine expected amount for offer payment', {
+          offerId: offerId || null,
+          offerData: offerData || null,
+          note: 'Checked ads_price by type/duration, fallback to offerData.price, then ads_offar and ads_price by offerRow.type'
+        });
+        return safeStatusJson(400, { error: 'تعذر التحقق من قيمة الدفع للعرض' });
+      }
+      // Verify signature against server-computed expectedAmount (strict)
+      if (!(await verifySignatureHmac({ merchantOrderId, amount: expectedAmount, timestamp, signature }))) {
+        console.warn('Rejected create-offer-payment due to invalid/missing signature', { merchantOrderId, expectedAmount });
+        return safeStatusJson(401, { error: 'Invalid or missing signature' });
+      }
+
+      // تحقق إذا أرسل العميل مبلغاً مُقَدَّماً: يجب أن يطابق المبلغ المتوقع
+      const providedAmount = (typeof amount !== 'undefined' && amount !== null) ? Number(amount) : null;
+      if (providedAmount !== null) {
+        if (isNaN(providedAmount) || providedAmount !== expectedAmount) {
+          console.warn('Offer payment amount mismatch', { expectedAmount, provided: amount, offerId });
+          return safeStatusJson(400, { error: 'قيمة الدفع غير مطابقة للسعر المتوقع للعرض' });
+        }
+      }
+
+      // استخدم المبلغ المحسوب من الخادم لإنشاء الطلب ومفتاح الدفع
+      numericAmount = Number(expectedAmount);
+    } catch (amtErr) {
+      console.error('Error verifying offer amount:', amtErr);
+      return safeStatusJson(500, { error: 'خطأ في التحقق من المبلغ' });
+    }
+    console.log("Step 1: Getting auth token...");
+    const token = await getAuthToken();
+    console.log("Step 2: Registering order...");
+    const orderData = await registerOrder(token, { amount: numericAmount, merchantOrderId });
+    console.log("Step 3: Getting payment key...");
+    const paymentKey = await getPaymentKey(token, {
+      amount: numericAmount,
+      orderId: orderData.id,
+      email,
+      name,
+      phone,
+      redirect_url: redirect_url_success,
+      failed_redirect_url: redirect_url_failed
+    });
+    console.log("Step 4: Building iframe URL...");
+    const iframe_url = `https://accept.paymob.com/api/acceptance/iframes/${IFRAME_ID}?payment_token=${paymentKey}`;
+    console.log("Step 5: Saving payment data to ads_payment table...");
+    const offerRowId = (offerData && offerData.offer_id) ? offerData.offer_id : offerId;
+    const { data: adData, error: adError } = await supabase
+      .from('ads_offar')
+      .select('mainimage_url')
+      .eq('id', offerRowId)
+      .single();
+    const imageUrl = adData?.mainimage_url || '';
+    let durationDays = 1;
+    try {
+      const { data: priceData, error: priceError } = await supabase
+        .from('ads_price')
+        .select('duration_days')
+        .eq('type', offerData.type)
         .single();
-      const imageUrl = adData?.mainimage_url || '';
-      let durationDays = 1;
-      try {
-        const { data: priceData, error: priceError } = await supabase
-          .from('ads_price')
-          .select('duration_days')
-          .eq('type', offerData.type)
+      if (priceError) {
+        console.warn('لم يتم العثور على مدة في ads_price, سيتم استخدام القيمة الافتراضية:', priceError.message);
+      } else if (priceData && priceData.duration_days) {
+        durationDays = priceData.duration_days;
+        console.log(`تم جلب مدة الإعلان: ${durationDays} يوم`);
+      }
+    } catch (e) { console.warn('خطأ أثناء جلب مدة الإعلان:', e); }
+    let currentUserData = null;
+    try {
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', offerData.user_id)
+        .single();
+      if (userError || !userData) {
+        console.error('خطأ في جلب بيانات المستخدم من جدول users:', userError);
+        const { data: businessData, error: businessError } = await supabase
+          .from('businesses')
+          .select('store_name, phone')
+          .eq('user_id', offerData.user_id)
           .single();
-        if (priceError) {
-          console.warn('لم يتم العثور على مدة في ads_price, سيتم استخدام القيمة الافتراضية:', priceError.message);
-        } else if (priceData && priceData.duration_days) {
-          durationDays = priceData.duration_days;
-          console.log(`تم جلب مدة الإعلان: ${durationDays} يوم`);
-        }
-      } catch (e) { console.warn('خطأ أثناء جلب مدة الإعلان:', e); }
-      let currentUserData = null;
-      try {
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', offerData.user_id)
-          .single();
-        if (userError || !userData) {
-          console.error('خطأ في جلب بيانات المستخدم من جدول users:', userError);
-          const { data: businessData, error: businessError } = await supabase
-            .from('businesses')
-            .select('store_name, phone')
-            .eq('user_id', offerData.user_id)
-            .single();
-          currentUserData = {
-            store_name: businessData?.store_name || offerData.store_name || 'متجر غير محدد',
-            phone: businessData?.phone || offerData.phone || '',
-            name: businessData?.store_name || offerData.name || ''
-          };
-        } else {
-          currentUserData = {
-            store_name: userData.user_metadata?.store_name || userData.store_name || offerData.store_name || '',
-            phone: userData.phone || offerData.phone || '',
-            name: userData.name || ''
-          };
-        }
-      } catch (error) {
-        console.error('خطأ في جلب بيانات المستخدم:', error);
         currentUserData = {
-          store_name: offerData.store_name || '',
-          phone: offerData.phone || '',
-          name: offerData.name || ''
+          store_name: businessData?.store_name || offerData.store_name || 'متجر غير محدد',
+          phone: businessData?.phone || offerData.phone || '',
+          name: businessData?.store_name || offerData.name || ''
+        };
+      } else {
+        currentUserData = {
+          store_name: userData.user_metadata?.store_name || userData.store_name || offerData.store_name || '',
+          phone: userData.phone || offerData.phone || '',
+          name: userData.name || ''
         };
       }
-      const paymentData = {
-        user_id: offerData.user_id,
-        store_name: currentUserData.store_name,
-        phone: currentUserData.phone,
-        duration_days: durationDays,
-        expires_at: null,
-        paymob_order_id: orderData.id,
-        is_paid: false,
-        payment_date: null,
-        amount: numericAmount,
-        type: offerData.type,
-        payment_status: 'pending',
-        offer_id: offerRowId,
-        bonus_offer: offerData.bonus_offer || 0,
-        image_url: imageUrl
+    } catch (error) {
+      console.error('خطأ في جلب بيانات المستخدم:', error);
+      currentUserData = {
+        store_name: offerData.store_name || '',
+        phone: offerData.phone || '',
+        name: offerData.name || ''
       };
-      let insertedPaymentId = null;
-      try {
-        const { data: insertedPayment, error: paymentError } = await supabase
-          .from('ads_payment')
-          .insert([paymentData])
-          .select('id')
-          .single();
-        if (_timedOut) return; // abort remaining processing if timed out
-        if (paymentError) {
-          console.error('خطأ في حفظ بيانات الدفع في جدول ads_payment:', paymentError);
-          throw paymentError;
-        }
-        insertedPaymentId = insertedPayment.id;
-        console.log(`تم حفظ بيانات الدفع بنجاح في جدول ads_payment with ID: ${insertedPaymentId}`);
-        // نحفظ iframe_url فقط (بدون payment_token) لتقليل المخاطر الأمنية
-        try {
-          await supabase
-            .from('ads_payment')
-            .update({ iframe_url })
-            .eq('id', insertedPaymentId);
-          console.log('تم حفظ iframe_url في ads_payment');
-        } catch (storeErr) {
-          console.warn('Could not store iframe_url in ads_payment (column may not exist):', storeErr.message || storeErr);
-          // لا نُعيد الخطأ لأننا نريد إرجاع الـ iframe إلى العميل مهما حدث
-        }
-          // ⭐ لا يتم الإدراج يدوياً في publish_ad - المشغل (trigger_copy_ad) سيتكفل بذلك تلقائياً عند تفعيل is_active
-      } catch (insertError) {
-        console.error('خطأ في حفظ بيانات الدفع في جدول ads_payment:', insertError);
-        throw insertError;
-      }
-      const response = {
-        ok: true,
-        iframe_url,
-        order_id: orderData.id,
-        merchant_order_id: merchantOrderId || null,
-        offerId: offerId || null,
-        payment_id: insertedPaymentId // ⭐ إضافة payment_id في الرد
-      };
-      console.log("Sending response:", JSON.stringify(response, null, 2));
-      return safeJson(response);
-    } catch (e) {
-      console.error("Error in create-offer-payment:", e);
-      if (_timedOut) return;
-      return sendError(res, 500, 'حدث خطأ في الخادم', e);
     }
+    const paymentData = {
+      user_id: offerData.user_id,
+      store_name: currentUserData.store_name,
+      phone: currentUserData.phone,
+      duration_days: durationDays,
+      expires_at: null,
+      paymob_order_id: orderData.id,
+      is_paid: false,
+      payment_date: null,
+      amount: numericAmount,
+      type: offerData.type,
+      payment_status: 'pending',
+      offer_id: offerRowId,
+      bonus_offer: offerData.bonus_offer || 0,
+      image_url: imageUrl
+    };
+    let insertedPaymentId = null;
+    try {
+      const { data: insertedPayment, error: paymentError } = await supabase
+        .from('ads_payment')
+        .insert([paymentData])
+        .select('id')
+        .single();
+      if (_timedOut) return; // abort remaining processing if timed out
+      if (paymentError) {
+        console.error('خطأ في حفظ بيانات الدفع في جدول ads_payment:', paymentError);
+        throw paymentError;
+      }
+      insertedPaymentId = insertedPayment.id;
+      console.log(`تم حفظ بيانات الدفع بنجاح في جدول ads_payment with ID: ${insertedPaymentId}`);
+      // نحفظ iframe_url فقط (بدون payment_token) لتقليل المخاطر الأمنية
+      try {
+        await supabase
+          .from('ads_payment')
+          .update({ iframe_url })
+          .eq('id', insertedPaymentId);
+        console.log('تم حفظ iframe_url في ads_payment');
+      } catch (storeErr) {
+        console.warn('Could not store iframe_url in ads_payment (column may not exist):', storeErr.message || storeErr);
+        // لا نُعيد الخطأ لأننا نريد إرجاع الـ iframe إلى العميل مهما حدث
+      }
+      // ⭐ لا يتم الإدراج يدوياً في publish_ad - المشغل (trigger_copy_ad) سيتكفل بذلك تلقائياً عند تفعيل is_active
+    } catch (insertError) {
+      console.error('خطأ في حفظ بيانات الدفع في جدول ads_payment:', insertError);
+      throw insertError;
+    }
+    const response = {
+      ok: true,
+      iframe_url,
+      order_id: orderData.id,
+      merchant_order_id: merchantOrderId || null,
+      offerId: offerId || null,
+      payment_id: insertedPaymentId // ⭐ إضافة payment_id في الرد
+    };
+    console.log("Sending response:", JSON.stringify(response, null, 2));
+    return safeJson(response);
+  } catch (e) {
+    console.error("Error in create-offer-payment:", e);
+    if (_timedOut) return;
+    return sendError(res, 500, 'حدث خطأ في الخادم', e);
+  }
 });
 
 // Endpoint to fetch stored iframe_url by payment_id
@@ -4189,7 +4189,7 @@ app.get('/paymob/redirect-failed', (req, res) => {
   try {
     console.log('تم الوصول إلى صفحة الفشل', req.query);
     const failurePath = path.join(__dirname, 'views', 'failure.html');
-    
+
     // التحقق من وجود الملف قبل إرساله
     if (fs.existsSync(failurePath)) {
       res.sendFile(failurePath);
@@ -4206,7 +4206,7 @@ app.get('/paymob/redirect-failed', (req, res) => {
 app.post("/paymob/webhook", async (req, res) => {
   const payload = req.body;
   const receivedHmac = req.query.hmac;
-  
+
   console.log("=== PAYMOB WEBHOOK NOTIFICATION ===");
   console.log("WEBHOOK RECEIVED:", JSON.stringify(payload, null, 2));
   console.log("Received HMAC:", receivedHmac);
@@ -4249,9 +4249,9 @@ app.post("/paymob/webhook", async (req, res) => {
 
   // بناء سلسلة التحقق كما هو مطلوب بواسطة Paymob
   console.log("Building HMAC string...");
-  
+
   // استخدام الترتيب المحدد في وثائق Paymob مع تحويل القيم المنطقية إلى نص
-const amountCents = obj.amount_cents; // number
+  const amountCents = obj.amount_cents; // number
   const createdAt = obj.created_at; // string
   const currency = obj.currency; // string
   const errorOccurred = String(obj.error_occured); // boolean -> "true" or "false"
@@ -4271,7 +4271,7 @@ const amountCents = obj.amount_cents; // number
   const subType = obj.source_data.sub_type; // string
   const type = obj.source_data.type; // string
   const success = String(obj.success); // boolean -> "true" or "false"
-  
+
   const concatenatedString = [
     amountCents.toString(),
     createdAt.toString(),
@@ -4294,7 +4294,7 @@ const amountCents = obj.amount_cents; // number
     type,
     success
   ].join("");
-  
+
   console.log("HMAC string:", concatenatedString);
 
   // حساب HMAC
@@ -4307,14 +4307,14 @@ const amountCents = obj.amount_cents; // number
   // مقارنة HMACs
   console.log("Received HMAC:", receivedHmac);
   console.log("Calculated HMAC:", calculatedHmac);
-  
+
   // تحقق من تطابق HMACs
   if (calculatedHmac !== receivedHmac) {
     console.error("HMAC validation failed. Request might be tampered.");
     console.error("Concatenated string:", concatenatedString);
     console.error("HMAC Secret length:", HMAC_SECRET.length);
     console.error("HMAC Secret (first 10 chars):", HMAC_SECRET.substring(0, 10));
-    
+
     // في بيئة التطوير، قد يكون من المفيد تجاهل التحقق من HMAC
     // لكن في بيئة الإنتاج، يجب إبقاء هذا التحقق
     if (process.env.NODE_ENV === 'development') {
@@ -4329,13 +4329,13 @@ const amountCents = obj.amount_cents; // number
   // --- 2. معالجة الإشعار بعد التحقق من صحته ---
   try {
     console.log("Processing webhook notification...");
-    
+
     // تحقق من نجاح الدفع
     if (obj?.success === true && obj?.pending === false) {
       console.log('تم تأكيد نجاح الدفع، سيتم تحديث حالة الإعلان');
       const orderId = payload.obj.order?.id;
       const merchantOrderId = payload.obj.order?.merchant_order_id;
-      
+
       console.log("=== PAYMENT SUCCESS ===");
       console.log(`تم استلام دفع ناجح. orderId: ${orderId}, merchantOrderId: ${merchantOrderId}`);
       console.log(`مبلغ الدفع: ${obj.amount_cents} ${obj.currency}`);
@@ -4461,7 +4461,7 @@ const amountCents = obj.amount_cents; // number
     } else {
       console.log("=== PAYMENT STATUS ===");
       console.log('الدفع لم ينجح أو لا يزال معلقاً:', JSON.stringify({ success: obj?.success, pending: obj?.pending }, null, 2));
-      
+
       if (obj?.success === false && obj?.error_occurred) {
         console.log("حدث خطأ في الدفع:", obj.error);
         if (obj.data && obj.data.message) {
@@ -4470,7 +4470,7 @@ const amountCents = obj.amount_cents; // number
       } else if (obj?.pending === true) {
         console.log("الدفع معلق بانتظار الموافقة");
       }
-      
+
       console.log("======================");
     }
     res.status(200).send("received");
@@ -4695,43 +4695,43 @@ app.get('/api/store-phone/:productId', verifyJwtToken, async (req, res) => {
 app.get("/api/offer-details", async (req, res) => {
   try {
     const adId = req.query.id;
-    
+
     if (!adId) {
       return res.status(400).json({ error: "معرّف الإعلان مطلوب" });
     }
-    
+
     console.log(`جلب تفاصيل الإعلان بالمعرّف: ${adId}`);
-    
+
     // 1. جلب بيانات الإعلان من جدول ads_offar
     const { data: offerData, error: offerError } = await supabase
       .from('ads_offar')
       .select('*')
       .eq('id', adId)
       .single();
-    
+
     if (offerError || !offerData) {
       console.error('خطأ في جلب بيانات العرض:', offerError);
       return res.status(404).json({ error: "لم يتم العثور على الإعلان" });
     }
-    
+
     console.log("بيانات الإعلان الكاملة:", JSON.stringify(offerData, null, 2));
-    
+
     // 2. جلب سعر الإعلان من جدول ads_price بناءً على النوع
     const adType = offerData.type;
     console.log(`نوع الإعلان: ${adType}`);
-    
+
     // 2.1. جلب سعر الإعلان من جدول ads_price بناءً على النوع
     const { data: priceData, error: priceError } = await supabase
       .from('ads_price')
       .select('*')
       .eq('type', adType);
-    
+
     console.log("بيانات السعر من ads_price:", JSON.stringify(priceData, null, 2));
-    
+
     if (priceError || !priceData || priceData.length === 0) {
       console.error('خطأ في جلب سعر الإعلان:', priceError);
       console.log(`محاولة البحث عن سعر للنوع: ${adType}`);
-      
+
       // محاولة الحصول على السعر من الإعلان نفسه إذا كان موجودًا
       if (offerData.price) {
         console.log("تم العثور على السعر مباشرة في بيانات الإعلان:", offerData.price);
@@ -4742,14 +4742,14 @@ app.get("/api/offer-details", async (req, res) => {
           price: offerData.price
         });
       }
-      
+
       return res.status(404).json({ error: "لم يتم العثور على سعر للإعلان" });
     }
-    
+
     // استخدام أول سعر متاح
     const price = priceData[0].price || priceData[0].amount;
     console.log(`سعر الإعلان: ${price}`);
-    
+
     // 3. إرجاع الرد
     const response = {
       ok: true,
@@ -4757,7 +4757,7 @@ app.get("/api/offer-details", async (req, res) => {
       adType,
       price
     };
-    
+
     console.log("إرسال تفاصيل الإعلان:", JSON.stringify(response, null, 2));
     res.json(response);
   } catch (e) {
@@ -4826,7 +4826,7 @@ app.get('/api/get-contact-info', verifyJwtToken, async (req, res) => {
       let decrypted = null;
       try {
         decrypted = decryptField(r.imei);
-      } catch (e) {}
+      } catch (e) { }
       if (decrypted && decrypted.replace(/\D/g, '') === normalizedIncoming) {
         foundReport = r;
         break;
@@ -4957,7 +4957,7 @@ app.post('/api/get-owner-email-by-imei', verifyJwtToken, async (req, res) => {
       let decrypted = null;
       try {
         decrypted = decryptField(r.imei);
-      } catch (e) {}
+      } catch (e) { }
       if (decrypted && decrypted.replace(/\D/g, '') === normalizedIncoming) {
         foundReport = r;
         break;
@@ -5025,7 +5025,7 @@ app.post('/api/get-owner-details-by-imei', verifyJwtToken, async (req, res) => {
       let decrypted = null;
       try {
         decrypted = decryptField(r.imei);
-      } catch (e) {}
+      } catch (e) { }
       if (decrypted && decrypted.replace(/\D/g, '') === normalizedIncoming) {
         foundReport = r;
         break;
@@ -5085,6 +5085,8 @@ app.post('/api/get-owner-details-by-imei', verifyJwtToken, async (req, res) => {
         // If the report row explicitly contains a whatsapp flag, honor it
         if (typeof foundReport.whatsapp !== 'undefined') {
           whatsappEnabled = !!foundReport.whatsapp;
+        } else if (typeof foundReport.whatsapp_enabled !== 'undefined') {
+          whatsappEnabled = !!foundReport.whatsapp_enabled;
         }
       }
     } catch (e) {
@@ -5754,7 +5756,7 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
       .from('phone_reports')
       .select('id, user_id, imei')
       .eq('status', 'active');
-    
+
     if (reportsFetchError) {
       console.error('Error fetching phone_reports:', reportsFetchError);
     } else if (allReports && allReports.length > 0) {
@@ -5764,7 +5766,7 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
         if (process.env.NODE_ENV !== 'production') console.log('[check-imei] report decrypted IMEI:', decryptedImei, 'normalized:', normalizeDigitsOnly(decryptedImei));
         return normalizeDigitsOnly(decryptedImei) === normalizeDigitsOnly(imei);
       });
-      
+
       if (matchingReport) {
         // يوجد بلاغ فعال لهذا الـ IMEI، لا يسمح بالتسجيل في أي حال
         // التحقق مما إذا كان البلاغ يخص المستخدم الحالي
@@ -5787,7 +5789,7 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
       console.error('Error fetching registered_phones:', phonesFetchError);
       return res.status(500).json({ error: 'Error fetching registered phones' });
     }
-    
+
     // فك تشفير جميع أرقام IMEI والبحث عن المطابقة (بما في ذلك الهواتف التي قد تكون بحالة 'transferred')
     const matchingPhone = allPhones ? allPhones.find(phone => {
       const decryptedImei = decryptField(phone.imei);
@@ -5800,7 +5802,7 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
       console.log('[check-imei] incoming IMEI raw/norm ->', imei, '/', normalizeDigitsOnly(imei));
       console.log('[check-imei] registered_phones rows count ->', (allPhones || []).length);
       console.log('[check-imei] No matching phone found. Listing decrypted IMEIs (first 50 rows):');
-      (allPhones || []).slice(0,50).forEach((p, idx) => {
+      (allPhones || []).slice(0, 50).forEach((p, idx) => {
         try {
           const d = decryptField(p.imei);
           const norm = normalizeDigitsOnly(d);
@@ -5828,7 +5830,7 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
           console.error('[check-imei] Error decrypting phone_number:', e);
           decryptedPhoneNumber = matchingPhone.phone_number;
         }
-        
+
         let decryptedIdLast6 = null;
         try {
           decryptedIdLast6 = decryptField(matchingPhone.id_last6);
@@ -5840,7 +5842,7 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
           console.error('[check-imei] Error decrypting id_last6:', e);
           decryptedIdLast6 = matchingPhone.id_last6;
         }
-        
+
         const decryptedOwnerName = decryptField(matchingPhone.owner_name) || matchingPhone.owner_name || '';
         const decryptedPhone = {
           ...matchingPhone,
@@ -5942,19 +5944,19 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
   if (!userId) {
     return res.status(401).json({ error: 'Unauthorized: Invalid user' });
   }
-  
+
   // التحقق من حد المحاولات
   const userAttempts = registrationAttempts.get(userId) || [];
   const now = Date.now();
-  
+
   // إزالة المحاولات القديمة (أقدم من ساعة)
   const recentAttempts = userAttempts.filter(attempt => now - attempt.timestamp < ATTEMPT_COOLDOWN);
-  
+
   // التحقق من تجاوز الحد الأقصى
   if (recentAttempts.length >= MAX_ATTEMPTS_PER_HOUR) {
     const oldestAttempt = recentAttempts[0];
     const timeUntilReset = Math.ceil((oldestAttempt.timestamp + ATTEMPT_COOLDOWN - now) / 60000); // بالدقائق
-    return res.status(429).json({ 
+    return res.status(429).json({
       error: `تم تجاوز الحد الأقصى للمحاولات. يرجى المحاولة مرة أخرى بعد ${timeUntilReset} دقيقة`,
       retryAfter: timeUntilReset,
       attemptsRemaining: 0
@@ -5965,7 +5967,7 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
   if (phoneData.password) {
     phoneData.password = await hashPasswordForStorage(phoneData.password);
   }
-  
+
   // تشفير رقم IMEI باستخدام AES
   if (phoneData.imei) {
     const encryptedImei = encryptAES(phoneData.imei);
@@ -5978,7 +5980,7 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
       authTag: encryptedImei.authTag
     });
   }
-  
+
   // تشفير رقم الهاتف باستخدام AES
   if (phoneData.phone_number) {
     const encryptedPhone = encryptAES(phoneData.phone_number);
@@ -5991,7 +5993,7 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
       authTag: encryptedPhone.authTag
     });
   }
-  
+
   // تشفير آخر 6 أرقام من البطاقة باستخدام AES
   if (phoneData.id_last6) {
     const encryptedId = encryptAES(phoneData.id_last6);
@@ -6004,7 +6006,7 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
       authTag: encryptedId.authTag
     });
   }
-  
+
   // تشفير البريد الإلكتروني باستخدام AES
   if (phoneData.email) {
     const encryptedEmail = encryptAES(phoneData.email);
@@ -6062,8 +6064,8 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
     // ⭐ التحقق من حد التسجيل (Rate Limiting)
     const limitCheck = await checkRegisterLimit(req.user.id, false);
     if (!limitCheck.canRegister && !(useBonusOnLimit && limitCheck.bonusAvailable)) {
-      return res.status(429).json({ 
-        success: false, 
+      return res.status(429).json({
+        success: false,
         error: limitCheck.message || 'تم الوصول إلى الحد الأقصى للتسجيل',
         limit: limitCheck.limit,
         currentUsage: limitCheck.currentUsage,
@@ -6080,7 +6082,7 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
         .from('phone_reports')
         .select('id, imei')
         .eq('status', 'active');
-      
+
       if (reportsFetchError) {
         console.error('Error checking phone_reports:', reportsFetchError);
       } else if (allReports && allReports.length > 0) {
@@ -6089,11 +6091,11 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
           const decryptedImei = decryptField(report.imei);
           return normalizeDigitsOnly(decryptedImei) === normalizeDigitsOnly(rawImei);
         });
-        
+
         if (matchingReport) {
           // يوجد بلاغ نشط لهذا الـ IMEI، لا يسمح بالتسجيل
-          return res.status(400).json({ 
-            success: false, 
+          return res.status(400).json({
+            success: false,
             error: 'لا يمكن تسجيل هذا الهاتف لأنه مسجل به بلاغ نشط',
             hasActiveReport: true,
             isStolen: true
@@ -6141,7 +6143,7 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
         action: 'register_phone',
         resourceType: 'registered_phone',
         resourceId: registeredId,
-        details: { 
+        details: {
           imei_last_4: rawImei.slice(-4),
           phone_type: phoneData.phone_type,
           status: 'pending'
@@ -6756,7 +6758,7 @@ app.get('/api/ad-website-decrypted/:id', verifyJwtToken, async (req, res) => {
       console.error('/api/ad-website-decrypted/:id supabase error:', error);
       return sendError(res, 500, 'Database error', error);
     }
-    
+
     if (!data || !data.is_active || !data.is_paid || (data.expires_at && new Date(data.expires_at) <= new Date())) {
       return res.status(404).json({ success: false, error: 'Ad not available' });
     }
@@ -6885,32 +6887,32 @@ app.post('/api/validate-other-registration-data', verifyJwtToken, async (req, re
 app.post('/api/validate-image', async (req, res) => {
   try {
     const { imageBase64, maxSizeMB = 10 } = req.body;
-    
+
     if (!imageBase64) {
       return res.status(400).json({ error: 'صورة مطلوبة' });
     }
-    
+
     // تحويل Base64 إلى Buffer
     const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
     const buffer = Buffer.from(base64Data, 'base64');
-    
+
     // الحد الأقصى لحجم الصورة بالبايت
     const maxSizeInBytes = maxSizeMB * 1024 * 1024;
-    
+
     // التحقق من الصورة
     const validation = validateImageFile(buffer, buffer.length, maxSizeInBytes);
-    
+
     if (!validation.isValid) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: validation.error,
         isValid: false
       });
     }
-    
-    res.json({ 
-      isValid: true, 
+
+    res.json({
+      isValid: true,
       mimeType: validation.mimeType,
-      message: 'الصورة صالحة' 
+      message: 'الصورة صالحة'
     });
   } catch (error) {
     console.error('خطأ في التحقق من الصورة:', error);
@@ -7007,7 +7009,7 @@ app.post('/api/delete-phone-if-failed', verifyJwtToken, async (req, res) => {
     }
 
     // Audit
-    try { await logAudit({ userId, action: 'delete_phone_failed_flow', resourceType: 'phone', resourceId: phoneId, ip: req.ip, userAgent: req.headers['user-agent'] }); } catch(e){ console.warn('audit delete-phone-if-failed failed', e); }
+    try { await logAudit({ userId, action: 'delete_phone_failed_flow', resourceType: 'phone', resourceId: phoneId, ip: req.ip, userAgent: req.headers['user-agent'] }); } catch (e) { console.warn('audit delete-phone-if-failed failed', e); }
 
     return res.json({ success: true });
   } catch (err) {
@@ -7046,7 +7048,7 @@ app.post('/api/delete-accessory-if-failed', verifyJwtToken, async (req, res) => 
       return res.status(500).json({ error: 'failed_to_delete_accessory' });
     }
 
-    try { await logAudit({ userId, action: 'delete_accessory_failed_flow', resourceType: 'accessory', resourceId: accessoryId, ip: req.ip, userAgent: req.headers['user-agent'] }); } catch(e){ console.warn('audit delete-accessory-if-failed failed', e); }
+    try { await logAudit({ userId, action: 'delete_accessory_failed_flow', resourceType: 'accessory', resourceId: accessoryId, ip: req.ip, userAgent: req.headers['user-agent'] }); } catch (e) { console.warn('audit delete-accessory-if-failed failed', e); }
 
     return res.json({ success: true });
   } catch (err) {
@@ -7078,7 +7080,7 @@ app.post('/api/insert-accessory-image', verifyJwtToken, async (req, res) => {
       return res.status(500).json({ error: 'failed_to_insert_image' });
     }
 
-    try { await logAudit({ userId, action: 'insert_accessory_image', resourceType: 'accessory', resourceId: accessoryId, meta: { imageId: inserted.id }, ip: req.ip, userAgent: req.headers['user-agent'] }); } catch(e){ console.warn('audit insert-accessory-image failed', e); }
+    try { await logAudit({ userId, action: 'insert_accessory_image', resourceType: 'accessory', resourceId: accessoryId, meta: { imageId: inserted.id }, ip: req.ip, userAgent: req.headers['user-agent'] }); } catch (e) { console.warn('audit insert-accessory-image failed', e); }
 
     return res.json({ success: true, data: inserted });
   } catch (err) {
@@ -7360,7 +7362,7 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
       .from('phone_reports')
       .select('imei')
       .eq('status', 'active');
-    
+
     if (reportError) throw reportError;
 
     // Decrypt and check reports (normalize to digits-only for robust matching)
@@ -7378,7 +7380,7 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
       try {
         const decryptedList = (phones || []).map(p => ({ id: p.id, user_id: p.user_id, imei_decrypted: decryptField(p.imei) }));
         console.log('[IMEI-MASKED-INFO][DEBUG] incoming imei:', imei);
-        console.log('[IMEI-MASKED-INFO][DEBUG] decrypted registered_phones sample (first 20):', decryptedList.slice(0,20));
+        console.log('[IMEI-MASKED-INFO][DEBUG] decrypted registered_phones sample (first 20):', decryptedList.slice(0, 20));
       } catch (dbgErr) {
         console.error('[IMEI-MASKED-INFO][DEBUG] failed to decrypt sample list:', dbgErr);
       }
@@ -7514,14 +7516,14 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
         console.log('[IMEI-MASKED-INFO] حالة transferred: returning masked transferred info');
         const decryptedPhoneNumber = decryptField(registeredPhone.phone_number);
         const decryptedIdLast6 = decryptField(registeredPhone.id_last6);
-        const maskedOwnerRaw = (function(){ try { return decryptField(registeredPhone.owner_name) || registeredPhone.owner_name || ''; } catch(e){ return registeredPhone.owner_name || ''; } })();
+        const maskedOwnerRaw = (function () { try { return decryptField(registeredPhone.owner_name) || registeredPhone.owner_name || ''; } catch (e) { return registeredPhone.owner_name || ''; } })();
         const maskedPhoneDetails = {
-            maskedOwnerName: maskName(maskedOwnerRaw),
-            maskedPhoneNumber: maskPhoneNumber(decryptedPhoneNumber),
-            maskedIdLast6: maskIdLast6(decryptedIdLast6 || ''),
-            phone_type: registeredPhone.phone_type || '',
-            phone_image_url: registeredPhone.phone_image_url || ''
-          };
+          maskedOwnerName: maskName(maskedOwnerRaw),
+          maskedPhoneNumber: maskPhoneNumber(decryptedPhoneNumber),
+          maskedIdLast6: maskIdLast6(decryptedIdLast6 || ''),
+          phone_type: registeredPhone.phone_type || '',
+          phone_image_url: registeredPhone.phone_image_url || ''
+        };
         return res.json({
           found: true,
           masked: true,
@@ -7699,7 +7701,7 @@ app.post('/api/verify-seller-password', verifyJwtToken, async (req, res) => {
   try {
     const { imei, password } = req.body;
     const userId = req.user?.id;
-    
+
     // Debug logging
     console.log('[verify-seller-password] userId:', userId, 'imei:', imei, 'password:', !!password);
 
@@ -7791,7 +7793,7 @@ app.post('/api/transfer-ownership', verifyJwtToken, async (req, res) => {
       status: registeredPhone?.status,
       user_id: registeredPhone?.user_id
     });
-    
+
     // تحقق ملكية المورد: يجب أن يكون الطلب من المالك الحالي للهاتف
     if (registeredPhone.user_id !== userId) {
       return res.status(403).json({ error: 'Forbidden: only current owner can transfer' });
@@ -8298,17 +8300,17 @@ app.post('/api/check-limit', verifyJwtToken, async (req, res) => {
           .single();
 
         if (insertError) {
-           console.error('Insert usage error:', insertError);
-           return res.status(500).json({ error: 'Failed to initialize usage data' });
+          console.error('Insert usage error:', insertError);
+          return res.status(500).json({ error: 'Failed to initialize usage data' });
         }
-        
+
         const limitKey = `${type}_limit`;
         const limit = parseInt(planData[limitKey]);
-        return res.json({ 
-            allowed: true, 
-            limit, 
-            currentUsage: 0,
-            isLastUsage: false 
+        return res.json({
+          allowed: true,
+          limit,
+          currentUsage: 0,
+          isLastUsage: false
         });
       }
       throw usageError;
@@ -8316,10 +8318,10 @@ app.post('/api/check-limit', verifyJwtToken, async (req, res) => {
 
     const usageKey = `used_${type}`;
     const limitKey = `${type}_limit`;
-    
+
     // التحقق من وجود المفاتيح
     if (usageData[usageKey] === undefined || planData[limitKey] === undefined) {
-        return res.status(400).json({ error: `Invalid limit type: ${type}` });
+      return res.status(400).json({ error: `Invalid limit type: ${type}` });
     }
 
     const currentUsage = usageData[usageKey] || 0;
@@ -8389,11 +8391,11 @@ app.post('/api/check-limit', verifyJwtToken, async (req, res) => {
         }
       }
 
-      return res.json({ 
-        allowed: false, 
-        limit, 
-        currentUsage, 
-        isLastUsage: false, 
+      return res.json({
+        allowed: false,
+        limit,
+        currentUsage,
+        isLastUsage: false,
         message: 'Limit exceeded',
         bonusAvailable,
         offerCost,
@@ -8401,11 +8403,11 @@ app.post('/api/check-limit', verifyJwtToken, async (req, res) => {
       });
     }
 
-    return res.json({ 
-      allowed: true, 
-      limit, 
-      currentUsage, 
-      isLastUsage 
+    return res.json({
+      allowed: true,
+      limit,
+      currentUsage,
+      isLastUsage
     });
 
   } catch (error) {
@@ -8416,29 +8418,29 @@ app.post('/api/check-limit', verifyJwtToken, async (req, res) => {
 
 // نقطة نهاية لزيادة الاستخدام
 app.post('/api/increment-usage', verifyJwtToken, async (req, res) => {
-    const { type } = req.body;
-    const userId = req.user.id;
+  const { type } = req.body;
+  const userId = req.user.id;
 
-    if (!type) return res.status(400).json({ error: 'Type required' });
+  if (!type) return res.status(400).json({ error: 'Type required' });
 
-    try {
-        let rpcName = '';
-        if (type === 'search_imei') rpcName = 'increment_search_usage';
-        else if (type === 'register_phone') rpcName = 'increment_register_usage';
-        else if (type === 'search_history') rpcName = 'increment_search_history';
-        else if (type === 'print_history') rpcName = 'increment_print_history';
-        else if (type === 'game') rpcName = 'increment_used_game';
-        else return res.status(400).json({ error: 'Invalid type' });
+  try {
+    let rpcName = '';
+    if (type === 'search_imei') rpcName = 'increment_search_usage';
+    else if (type === 'register_phone') rpcName = 'increment_register_usage';
+    else if (type === 'search_history') rpcName = 'increment_search_history';
+    else if (type === 'print_history') rpcName = 'increment_print_history';
+    else if (type === 'game') rpcName = 'increment_used_game';
+    else return res.status(400).json({ error: 'Invalid type' });
 
-        const { error } = await supabase.rpc(rpcName, { p_user_id: userId });
-        
-        if (error) throw error;
-        
-        res.json({ success: true });
-    } catch (error) {
-        console.error('Error incrementing usage:', error);
-      return sendError(res, 500, 'حدث خطأ في الخادم', error);
-    }
+    const { error } = await supabase.rpc(rpcName, { p_user_id: userId });
+
+    if (error) throw error;
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error incrementing usage:', error);
+    return sendError(res, 500, 'حدث خطأ في الخادم', error);
+  }
 });
 
 // =================================================================
@@ -8469,7 +8471,7 @@ app.post('/api/notify-owner-email', verifyJwtToken, async (req, res) => {
       let decrypted = null;
       try {
         decrypted = decryptField(r.imei);
-      } catch (e) {}
+      } catch (e) { }
       if (decrypted && decrypted.replace(/\D/g, '') === normalizedIncoming) {
         reportData = r;
         break;
@@ -8590,7 +8592,7 @@ app.get('/api/check-unclaimed-phones', verifyJwtToken, async (req, res) => {
   try {
     const userEmail = req.user.email;
     console.log(`[Check Unclaimed] Checking for user: ${userEmail}`);
-    
+
     // جلب الهواتف التي ليس لها user_id
     const { data: phones, error } = await supabase
       .from('registered_phones')
@@ -8600,18 +8602,18 @@ app.get('/api/check-unclaimed-phones', verifyJwtToken, async (req, res) => {
     if (error) throw error;
 
     const myPhones = [];
-    
+
     if (phones && phones.length > 0) {
       console.log(`[Check Unclaimed] Found ${phones.length} phones with null user_id`);
       for (const phone of phones) {
         let decryptedEmail = decryptField(phone.email);
-        
+
         // تحسين المقارنة: تجاهل حالة الأحرف والمسافات
-        if (decryptedEmail && userEmail && 
-            decryptedEmail.trim().toLowerCase() === userEmail.trim().toLowerCase()) {
+        if (decryptedEmail && userEmail &&
+          decryptedEmail.trim().toLowerCase() === userEmail.trim().toLowerCase()) {
           // فك تشفير البيانات الأخرى للعرض
           let decryptedImei = decryptField(phone.imei);
-          
+
           myPhones.push({
             id: phone.id,
             imei: decryptedImei,
@@ -8651,7 +8653,7 @@ app.post('/api/claim-phone-by-email', verifyJwtToken, async (req, res) => {
     // ملاحظة: البحث عن IMEI المشفر يتطلب أن يكون التشفير حتمي (Deterministic) أو البحث في الكل.
     // هنا سنفترض أننا سنبحث في الكل ونطابق (أو إذا كان العميل أرسل الـ IMEI الأصلي، سنبحث عنه في القائمة التي جلبناها سابقاً أو نعيد البحث).
     // للأمان، سنعيد البحث في الهواتف غير المطالب بها.
-    
+
     const { data: phones, error: fetchError } = await supabase
       .from('registered_phones')
       .select('id, email, user_id, imei')
