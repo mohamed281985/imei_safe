@@ -1055,18 +1055,64 @@ const handleWhatsAppCheckboxChange = async () => {
 
       // تشفير كلمة المرور قبل الإرسال
       // تجهيز البيانات للإرسال
+      // إذا كانت الحقول تشير إلى REGISTERED_IN_SYSTEM، حاول جلب القيم الحقيقية من resultRef.current
+      let effectiveOwnerName = isImeiRegistered ? originalData.ownerName : formData.ownerName;
+      let effectivePhoneNumber = isImeiRegistered ? originalData.phoneNumber : `${countryCode}${formData.phoneNumber}`;
+      let effectiveIdLast6 = isImeiRegistered ? originalData.idLast6 : formData.idLast6;
+
+      if (effectiveOwnerName === REGISTERED_IN_SYSTEM || effectivePhoneNumber === REGISTERED_IN_SYSTEM || effectiveIdLast6 === REGISTERED_IN_SYSTEM) {
+        // حاول الحصول عليها من نتيجة الاستعلام المحفوظة
+        const r = resultRef.current;
+        if (r) {
+          // server may return decrypted fields under multiple keys; try common ones
+          const maybeOwner = r.owner_name || r.ownerName || r.owner || r.name || null;
+          const maybePhone = r.phone_number || r.phoneNumber || r.phone || r.owner_phone || null;
+          const maybeId6 = r.id_last6 || r.idLast6 || r.id_last_6 || null;
+
+          if (maybeOwner) effectiveOwnerName = maybeOwner;
+          if (maybePhone) {
+            // ensure country code
+            if (maybePhone.startsWith('+')) effectivePhoneNumber = maybePhone;
+            else effectivePhoneNumber = `${countryCode}${maybePhone}`;
+          }
+          if (maybeId6) effectiveIdLast6 = maybeId6;
+        } else {
+          // Fallback: request server for decrypted info (trusted endpoint)
+          try {
+            const sessionResp = await supabase.auth.getSession();
+            const jwt = (sessionResp?.data as any)?.session?.access_token || '';
+            const resp = await axiosInstance.post('/api/imei-masked-info', { imei: formData.imei }, { headers: jwt ? { Authorization: `Bearer ${jwt}` } : {} });
+            const json = resp?.data;
+            const maybeOwner = json?.owner_name || json?.ownerName || null;
+            const maybePhone = json?.phone_number || json?.phoneNumber || null;
+            const maybeId6 = json?.id_last6 || json?.idLast6 || null;
+            if (maybeOwner) effectiveOwnerName = maybeOwner;
+            if (maybePhone) effectivePhoneNumber = maybePhone.startsWith('+') ? maybePhone : `${countryCode}${maybePhone}`;
+            if (maybeId6) effectiveIdLast6 = maybeId6;
+          } catch (e) {
+            console.error('Failed to fetch real owner data for REGISTERED_IN_SYSTEM fallback:', e);
+          }
+        }
+      }
+
       // Avoid logging large data URLs or sensitive image contents
-      const payload = {
-        ownerName: isImeiRegistered ? originalData.ownerName : formData.ownerName,
-        phoneNumber: isImeiRegistered ? originalData.phoneNumber : `${countryCode}${formData.phoneNumber}`,
+      console.log('Submitting report payload (sanitized):', {
+        ownerName: effectiveOwnerName ? '[REDACTED_NAME]' : null,
+        phoneNumber: effectivePhoneNumber ? '[REDACTED_PHONE]' : null,
         imei: formData.imei,
-        phone_type: formData.phone_type,
+      });
+
+      const payload = {
+        ownerName: effectiveOwnerName,
+        phoneNumber: effectivePhoneNumber,
+        imei: formData.imei,
+        phone_type: formData.phone_type === REGISTERED_IN_SYSTEM ? (resultRef.current?.phone_type || '') : formData.phone_type,
         loss_location: formData.lossLocation,
         loss_time: formData.lossTime,
         receipt_image_url: receiptImageToSend,
         report_image_url: reportImageToSend,
         password: password, // أرسل كلمة المرور نصية خام
-        id_last6: isImeiRegistered ? originalData.idLast6 : formData.idLast6,
+        id_last6: effectiveIdLast6,
         user_id: user?.id || null,
         email: user?.email || '',
         fcm_token: fcmToken,
