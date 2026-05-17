@@ -5046,13 +5046,12 @@ app.post('/api/get-owner-details-by-imei', verifyJwtToken, async (req, res) => {
     // 1) Always try to fetch owner row to obtain the canonical `role`
     try {
       if (ownerId) {
-        const { data: userRow, error: userErr } = await supabase.from('users').select('role, phone, whatsapp_enabled').eq('id', ownerId).maybeSingle();
+        const { data: userRow, error: userErr } = await supabase.from('users').select('role, phone').eq('id', ownerId).maybeSingle();
         if (userErr) {
           console.error('Error fetching users row for ownerId', ownerId, userErr);
         } else if (userRow) {
           role = userRow.role || null;
-          // If user row advertises whatsapp_enabled, consider it a candidate
-          whatsappEnabled = !!userRow.whatsapp_enabled;
+          // Note: `users.whatsapp_enabled` column may not exist; prefer report/business flags
           // Keep user phone as fallback if phone_reports doesn't have a number
           try {
             const decryptedUserPhone = decryptField(userRow.phone);
