@@ -4942,6 +4942,124 @@ app.get('/api/businesses/me', verifyJwtToken, async (req, res) => {
   }
 });
 
+// نقطة نهاية لإعادة التوجيه إلى واتساب المالك (تفك التشفير من الخادم فقط)
+// الرقم يبقى مقنعاً في الواجهة، وعند الضغط على زر واتساب يتم التوجيه عبر هذه النقطة
+const whatsappRedirectLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 دقيقة
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  trustProxy: TRUST_PROXY,
+  handler: (req, res) => res.status(429).json({ error: 'Too many WhatsApp redirect attempts, please try later.' })
+});
+
+app.get('/api/whatsapp-redirect/:imei', verifyJwtToken, whatsappRedirectLimiter, async (req, res) => {
+  try {
+    const requesterId = req.user?.id;
+    if (!requesterId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const imei = String(req.params.imei || '').trim();
+    if (!imei) return res.status(400).json({ error: 'IMEI is required' });
+
+    // البحث عن البلاغ المطابق للـ IMEI
+    const { data: allReports, error: reportError } = await supabase
+      .from('phone_reports')
+      .select('id, imei, user_id, phone_number, whatsapp, finder_user_id')
+      .order('id', { ascending: true });
+
+    if (reportError || !allReports || allReports.length === 0) {
+      return res.status(404).json({ error: 'لم يتم العثور على الهاتف في البلاغات' });
+    }
+
+    const normalizedIncoming = String(imei).replace(/\D/g, '');
+    let foundReport = null;
+    for (const r of allReports) {
+      let decrypted = null;
+      try { decrypted = decryptField(r.imei); } catch (e) {}
+      if (decrypted && decrypted.replace(/\D/g, '') === normalizedIncoming) {
+        foundReport = r;
+        break;
+      }
+    }
+
+    if (!foundReport) return res.status(404).json({ error: 'لم يتم العثور على البلاغ لهذا الـ IMEI' });
+
+    // تفويض: فقط المالك أو الواجد المعين يمكنه استخدام هذا الرابط
+    const isOwner = !!foundReport.user_id && foundReport.user_id === requesterId;
+    const isAssignedFinder = !!foundReport.finder_user_id && foundReport.finder_user_id === requesterId;
+    if (!isOwner && !isAssignedFinder) {
+      return res.status(403).json({ error: 'Forbidden: not authorized' });
+    }
+
+    // فك تشفير رقم الواتساب/الهاتف
+    let whatsappNumber = null;
+
+    // 1) من phone_reports.phone_number
+    if (!whatsappNumber && foundReport.phone_number) {
+      try {
+        whatsappNumber = decryptField(foundReport.phone_number);
+      } catch (e) {}
+    }
+
+    // 2) من phone_reports.whatsapp
+    if (!whatsappNumber && foundReport.whatsapp) {
+      try {
+        const v = foundReport.whatsapp;
+        whatsappNumber = (typeof v === 'string' && ['1','true','yes'].includes(v.trim().toLowerCase()))
+          ? whatsappNumber // whatsapp is just a boolean flag
+          : decryptField(v) || v;
+      } catch (e) {}
+    }
+
+    // 3) من جدول users
+    if (!whatsappNumber && foundReport.user_id) {
+      try {
+        const { data: userRow } = await supabase.from('users').select('phone').eq('id', foundReport.user_id).maybeSingle();
+        if (userRow && userRow.phone) whatsappNumber = decryptField(userRow.phone);
+      } catch (e) {}
+    }
+
+    // 4) من جدول businesses
+    if (!whatsappNumber && foundReport.user_id) {
+      try {
+        const { data: bizRow } = await supabase.from('businesses').select('phone').eq('user_id', foundReport.user_id).maybeSingle();
+        if (bizRow && bizRow.phone) whatsappNumber = decryptField(bizRow.phone);
+      } catch (e) {}
+    }
+
+    if (!whatsappNumber) {
+      return res.status(404).json({ error: 'رقم واتساب غير متوفر' });
+    }
+
+    // تنظيف الرقم: أرقام فقط
+    const cleanNumber = String(whatsappNumber).replace(/\D/g, '');
+    if (!cleanNumber) {
+      return res.status(404).json({ error: 'رقم واتساب غير صالح' });
+    }
+
+    // تسجيل عملية التوجيه للمراجعة
+    try {
+      await logAudit({
+        userId: requesterId,
+        action: 'whatsapp_redirect',
+        resourceType: 'phone_report',
+        resourceId: foundReport.id,
+        details: { imei_last_4: imei.slice(-4) },
+        ip: req.ip,
+        userAgent: req.headers['user-agent']
+      });
+    } catch (e) {
+      // لا نوقف العملية بسبب فشل التدقيق
+    }
+
+    // إعادة التوجيه إلى واتساب
+    return res.redirect(`https://wa.me/${cleanNumber}`);
+  } catch (err) {
+    console.error('خطأ في /api/whatsapp-redirect/:imei:', err);
+    return res.status(500).json({ error: 'خطأ في الخادم' });
+  }
+});
+
 app.post('/api/get-owner-email-by-imei', verifyJwtToken, async (req, res) => {
   try {
     const requesterId = req.user?.id;
