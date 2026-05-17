@@ -3069,10 +3069,11 @@ app.post('/api/update-finder-phone-by-imei', verifyJwtToken, async (req, res) =>
                   else console.log('Inserted users_plans notify counters for owner:', upsertData);
                 } else {
                   // existing row -> compute increments and update
+                  // استخدم Number() لضمان الجمع الرقمي وليس دمج النصوص (0+1=1 وليس 01)
                   const updates = {};
-                  if (notifyInApp) updates.used_notify_in_app = (usageRow.used_notify_in_app || 0) + 1;
-                  if (notifyEmail) updates.used_notify_email = (usageRow.used_notify_email || 0) + 1;
-                  if (notifyPush) updates.used_notify_push = (usageRow.used_notify_push || 0) + 1;
+                  if (notifyInApp) updates.used_notify_in_app = Number(usageRow.used_notify_in_app || 0) + 1;
+                  if (notifyEmail) updates.used_notify_email = Number(usageRow.used_notify_email || 0) + 1;
+                  if (notifyPush) updates.used_notify_push = Number(usageRow.used_notify_push || 0) + 1;
 
                   if (Object.keys(updates).length > 0) {
                     const { data: updatedData, error: updErr } = await supabase

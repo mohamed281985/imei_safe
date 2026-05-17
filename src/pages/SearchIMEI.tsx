@@ -260,51 +260,8 @@ const WelcomeSearch: React.FC = () => {
             throw new Error(t('finder_email_fetch_failed'));
           }
 
-          let imeiForNotification = phoneId || '';
-          // نفترض أن الخادم يعيد IMEI مفكوك التشفير عند الحاجة؛ لا نفك التشفير في الواجهة الأمامية.
-
-          // استخدام اللغة العربية دائماً للإشعار لأن صاحب الهاتف سجل بالعربية
-          // والأشعارات يجب أن تصل بلغة المستلم (صاحب الهاتف) وليس بلغة الواجد
-          const notificationTitle = arTranslations['notification_title_phone_found'] || 'تم العثور على هاتفك!';
-          const notificationBodyRaw = arTranslations['notification_body_phone_found'] || 'مبروك! تم العثور على هاتفك. للتواصل مع الشخص الذي وجده، يرجى الاتصال على الرقم: {{phone}}.';
-          const notificationBody = notificationBodyRaw.replace('{{phone}}', finderPhone);
-
-          const notificationPayload = {
-            title: notificationTitle,
-            body: notificationBody,
-            user_id: user.id,
-            finder_phone: finderPhone,
-            imei: imeiForNotification,
-            email: ownerEmailForNotification,
-            notification_type: 'phone_found',
-            is_read: false,
-            created_at: new Date().toISOString()
-          };
-
-          // استخدام دالة createNotification
-          let notificationData, notificationError;
-          try {
-            const { createNotification } = await import('../lib/notificationService');
-            const result = await createNotification(notificationPayload);
-            notificationData = result;
-          } catch (error) {
-            notificationError = error;
-          }
-
-          // التحقق إذا كان الخطأ بسبب سياسة الأمان
-          if (notificationError && notificationError.code === '42501') {
-            toast({
-              title: t('alert'),
-              description: t('warning_security_settings', { phone: finderPhone }),
-              variant: 'default'
-            });
-          } else if (notificationError) {
-            toast({
-              title: t('error'),
-              description: t('phone_saved_notification_error', { error: notificationError.message || t('not_available') }),
-              variant: 'destructive'
-            });
-          }
+          // الخادم يتكفل بإنشاء الإشعار في جدول notifications باستخدام service role
+          // لا نحتاج لإنشاء إشعار من الواجهة الأمامية (RLS يمنع ذلك)
         } catch (saveError) {
           if (saveError instanceof Error) {
             toast({

@@ -120,6 +120,9 @@ export default {
   "owner_name_label": "Nom du propriétaire",
   // Notification: téléphone enregistré sur un autre compte
   "this_phone_registered_to_another_account": "Ce téléphone est enregistré sur un autre compte et vous ne pouvez pas le signaler depuis ce compte.",
+  "this_phone_registered_to_another_account_cannot_report": "Ce téléphone est enregistré sur un autre compte. Vous ne pouvez pas le signaler depuis ce compte.",
+  "phone_not_registered_can_report": "Ce compte n'est pas enregistré chez nous. Vous pouvez signaler maintenant, et veuillez enregistrer le téléphone lorsque vous le trouvez.",
+  "share_whatsapp_number": "Partager votre numéro WhatsApp lorsque votre téléphone est trouvé",
   "phone_label": "Numéro de téléphone",
   "address_label": "Adresse du magasin",
   "business_type_label": "Type d'activité",
@@ -178,7 +181,7 @@ export default {
   "secure_storage_init_failed_desc": "Échec de l'initialisation du stockage sécurisé. La biométrie est indisponible.",
   "dashboard": "Tableau de bord",
   "lost_phones": "Téléphones perdus",
-  "report_lost_phone": "Signaler\nun téléphone perdu",
+  "report_lost_phone": "Avis de\nPerte",
   "search_imei": "Rechercher\nIMEI",
   "register_new_phone": "Enregistrer\nun nouveau téléphone",
   "welcome": "Bienvenue",

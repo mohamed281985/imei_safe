@@ -44,6 +44,7 @@ interface AccessoryFormData {
     phone?: string;
   };
   store_name: string;
+  countries: string;
 }
 
 const AddAccessoriesForm: React.FC = () => {
@@ -203,7 +204,13 @@ const AddAccessoriesForm: React.FC = () => {
           const data = response.data?.business;
 
           if (data) {
-            setFormData(prev => ({ ...prev, store_name: data.store_name || '', city: data.address || '', contact_methods: { ...prev.contact_methods, phone: data.phone || '' } }));
+            setFormData(prev => ({
+              ...prev,
+              store_name: data.store_name || '',
+              city: data.address || '',
+              contact_methods: { ...prev.contact_methods, phone: data.phone || '' },
+              countries: data.countries || data.country || ''
+            }));
           }
         } catch (err) {
           console.debug('Error fetching business data:', err);
@@ -215,7 +222,13 @@ const AddAccessoriesForm: React.FC = () => {
           const data = response.data?.user;
 
           if (data) {
-            setFormData(prev => ({ ...prev, store_name: data?.full_name || '', city: '', contact_methods: { ...prev.contact_methods, phone: data?.phone || '' } }));
+            setFormData(prev => ({
+              ...prev,
+              store_name: data?.full_name || '',
+              city: '',
+              contact_methods: { ...prev.contact_methods, phone: data?.phone || '' },
+              countries: data?.countries || data?.country || ''
+            }));
           }
         } catch (err) {
           console.debug('Error fetching user data:', err);
@@ -236,7 +249,8 @@ const AddAccessoriesForm: React.FC = () => {
     warranty_months: '0',
     city: '',
     contact_methods: {},
-    store_name: ''
+    store_name: '',
+    countries: ''
   });
 
   // استرجاع المسودة المحفوظة تلقائياً
@@ -254,6 +268,7 @@ const AddAccessoriesForm: React.FC = () => {
             store_name: parsed.formData.store_name || '',
             city: parsed.formData.city || '',
             contact_methods: { ...(parsed.formData.contact_methods || {}) },
+            countries: parsed.formData.countries || '',
           }
         : {};
 
@@ -344,6 +359,7 @@ const AddAccessoriesForm: React.FC = () => {
         city: formData.city,
         contact_methods: formData.contact_methods,
         store_name: formData.store_name,
+        countries: formData.countries,
         latitude: coords?.latitude,
         longitude: coords?.longitude,
         role: user?.role,
@@ -497,6 +513,7 @@ const AddAccessoriesForm: React.FC = () => {
         city: formData.city,
         contact_methods: formData.contact_methods,
         store_name: formData.store_name,
+        countries: formData.countries,
         status: 'pending',
         latitude: coords?.latitude,
         longitude: coords?.longitude,

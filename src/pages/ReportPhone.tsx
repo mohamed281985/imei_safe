@@ -741,11 +741,12 @@ const handleWhatsAppCheckboxChange = async () => {
           result.reporter_user_id = result.reporter_user_id ?? (checkResult.reporter_user_id ?? checkResult.userId ?? checkResult.reporterId);
         }
 
-        // حالة 1: هاتف جديد (غير مسجل)
+        // حالة 1: هاتف جديد (غير مسجل) - يمكن الإبلاغ مع تنبيه بالتسجيل
         if (!result.found) {
           resetFormForNewReport();
           setIsImeiRegistered(false);
           setIsImeiValid(true);
+          setActiveReportWarning('phone_not_registered_can_report');
           return;
         }
 
@@ -819,7 +820,7 @@ const handleWhatsAppCheckboxChange = async () => {
           return;
         }
 
-        // حالة 3: الهاتف مسجل لغير المالك
+        // حالة 3: الهاتف مسجل لغير المالك - منع البلاغ تماماً
         if (result.found && result.isRegistered && !inferredIsOwner) {
           setFormData(prev => (({
             ...initialFormDataRef.current,
@@ -850,10 +851,11 @@ const handleWhatsAppCheckboxChange = async () => {
           setIsImeiRegistered(true);
           setIsImeiValid(false);
           setIsReadOnly(true);
-          setActiveReportWarning('this_phone_registered_to_another_account');
+          // منع تقديم البلاغ تماماً - الهاتف مسجل لحساب آخر
+          setActiveReportWarning('this_phone_registered_to_another_account_cannot_report');
           toast({
             title: t('access_denied'),
-            description: t('this_phone_registered_to_another_account'),
+            description: t('this_phone_registered_to_another_account_cannot_report'),
             variant: 'destructive',
           });
           return;
@@ -1178,8 +1180,8 @@ const handleWhatsAppCheckboxChange = async () => {
 
         <form onSubmit={handleSubmit} className="space-y-6 px-1 pb-10 pt-0">
           <div className="max-w-5xl mx-auto space-y-6">
-            {/* شريط تقدم الخطوات الاحترافي */}
-            <div className="mb-8 px-2">
+            {/* شريط تقدم الخطوات الاحترافي - ثابت عند التمرير وخلف الإعلانات */}
+            <div className="mb-8 px-2 sticky top-0 z-0 bg-white/95 backdrop-blur-sm py-2 rounded-xl">
               <div className="flex items-center justify-between relative">
                 {[1, 2, 3, 4].map((step) => (
                   <React.Fragment key={step}>
@@ -1208,15 +1210,15 @@ const handleWhatsAppCheckboxChange = async () => {
                   </React.Fragment>
                 ))}
               </div>
-              <div className="flex justify-between mt-2 text-[10px] md:text-xs font-bold text-gray-600">
-                <span className={`w-1/4 text-center ${currentStep === 1 ? 'text-blue-600' : ''}`}>{t('step_device_info_title')}</span>
-                <span className={`w-1/4 text-center ${currentStep === 2 ? 'text-blue-600' : ''}`}>{t('step_personal_info_title')}</span>
-                <span className={`w-1/4 text-center ${currentStep === 3 ? 'text-blue-600' : ''}`}>{t('step_loss_details_title')}</span>
-                <span className={`w-1/4 text-center ${currentStep === 4 ? 'text-blue-600' : ''}`}>{t('step_attachments_title')}</span>
+              <div className="flex justify-between mt-2 text-[9px] md:text-[11px] font-bold text-gray-600 gap-1">
+                <span className={`w-1/4 text-center leading-tight break-words ${currentStep === 1 ? 'text-blue-600' : ''}`}>{t('step_device_info_title')}</span>
+                <span className={`w-1/4 text-center leading-tight break-words ${currentStep === 2 ? 'text-blue-600' : ''}`}>{t('step_personal_info_title')}</span>
+                <span className={`w-1/4 text-center leading-tight break-words ${currentStep === 3 ? 'text-blue-600' : ''}`}>{t('step_loss_details_title')}</span>
+                <span className={`w-1/4 text-center leading-tight break-words ${currentStep === 4 ? 'text-blue-600' : ''}`}>{t('step_attachments_title')}</span>
               </div>
             </div>
 
-            {activeReportWarning && activeReportWarning !== 'this_phone_registered_to_another_account' && (
+            {activeReportWarning && activeReportWarning !== 'this_phone_registered_to_another_account' && activeReportWarning !== 'this_phone_registered_to_another_account_cannot_report' && activeReportWarning !== 'phone_not_registered_can_report' && (
               <div
                 className="my-2 rounded-[28px] border border-red-200 bg-red-50/90 p-4 text-center shadow-sm"
               >
@@ -1226,12 +1228,22 @@ const handleWhatsAppCheckboxChange = async () => {
                 </p>
               </div>
             )}
-            {activeReportWarning === 'this_phone_registered_to_another_account' && (
+            {(activeReportWarning === 'this_phone_registered_to_another_account' || activeReportWarning === 'this_phone_registered_to_another_account_cannot_report') && (
               <div
-                className="my-2 rounded-[28px] border border-blue-200 bg-blue-50/90 p-4 text-center shadow-sm"
+                className="my-2 rounded-[28px] border border-red-200 bg-red-50/90 p-4 text-center shadow-sm"
               >
-                <AlertTriangle className="mx-auto mb-3 h-12 w-12 text-blue-500" />
-                <p className="text-blue-700 font-semibold text-base">
+                <AlertTriangle className="mx-auto mb-3 h-12 w-12 text-red-500" />
+                <p className="text-red-700 font-semibold text-base">
+                  {t(activeReportWarning)}
+                </p>
+              </div>
+            )}
+            {activeReportWarning === 'phone_not_registered_can_report' && (
+              <div
+                className="my-2 rounded-[28px] border border-green-200 bg-green-50/90 p-4 text-center shadow-sm"
+              >
+                <CheckCircle className="mx-auto mb-3 h-12 w-12 text-green-500" />
+                <p className="text-green-700 font-semibold text-base">
                   {t(activeReportWarning)}
                 </p>
               </div>

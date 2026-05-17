@@ -109,6 +109,9 @@ export default {
   "owner_name_label": "Owner Name",
   // Notification: phone registered to another account
   "this_phone_registered_to_another_account": "This phone is registered to another account and you cannot report it from this account.",
+  "this_phone_registered_to_another_account_cannot_report": "This phone is registered to another account. You cannot report it from this account.",
+  "phone_not_registered_can_report": "This account is not registered with us. You can report now, and please register the phone when you find it.",
+  "share_whatsapp_number": "Share your WhatsApp number when your phone is found",
   "phone_label": "Phone Number",
   "address_label": "Store Address",
   "business_type_label": "Business Type",
@@ -167,7 +170,7 @@ export default {
   "secure_storage_init_failed_desc": "Failed to initialize secure storage. Biometrics cannot be used at this time.",
   "dashboard": "Dashboard",
   "lost_phones": "Lost Phones",
-  "report_lost_phone": "Report Lost Phone",
+  "report_lost_phone": "Loss\nNotification",
   "search_imei": "Search IMEI",
   "register_new_phone": "Register New Phone",
   "welcome": "Hello",
