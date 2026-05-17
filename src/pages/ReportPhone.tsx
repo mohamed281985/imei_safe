@@ -1,5 +1,3 @@
-// ...existing code...
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 // متغير مرجعي للاحتفاظ بنتيجة الاستعلام الأخيرة
 const resultRef = { current: null };
@@ -23,6 +21,19 @@ import { supabase } from '@/lib/supabase'; // استيراد Supabase
 import { useAuth } from '../contexts/AuthContext';
 import CountryCodeSelector from '../components/CountryCodeSelector';
 import axiosInstance from '@/services/axiosInterceptor';
+
+// تعريف واجهة بيانات المستخدم الموسعة
+interface ExtendedUser {
+  id: string;
+  email?: string;
+  user_metadata?: {
+    role?: string;
+    name?: string;
+    phone?: string;
+    [key: string]: any;
+  };
+  [key: string]: any;
+}
 
 // تعريف واجهة البيانات للنموذجا
 interface FormData {
@@ -250,6 +261,138 @@ const ReportPhone: React.FC = () => {
   const reportImageInputRef = React.useRef<HTMLInputElement>(null);
   const receiptImageInputRef = React.useRef<HTMLInputElement>(null); // تم التغيير من phoneImageInputRef
 
+  // إضافة حالة لمربع اختيار مشاركة الواتساب
+  const [shareWhatsApp, setShareWhatsApp] = useState(false);
+  const [showUpgradeDialog, setShowUpgradeDialog] = useState(false);
+  
+  // إضافة حالة لتخزين دور المستخدم من قاعدة البيانات
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [isCheckingRole, setIsCheckingRole] = useState(false);
+
+  // دالة للتحقق من دور المستخدم من قاعدة البيانات
+  const checkUserRole = async () => {
+    if (!user || !user.email) {
+      setUserRole(null);
+      return;
+    }
+
+    setIsCheckingRole(true);
+    try {
+      // البحث في جدول users باستخدام البريد الإلكتروني دون مراعاة حالة الأحرف
+      const { data, error } = await supabase
+        .from('users')
+        .select('role')
+        .ilike('email', user.email) // استخدام ilike بدلاً من eq للمقارنة غير الحساسة لحالة الأحرف
+        .single();
+
+      if (error) {
+        console.error('خطأ في جلب دور المستخدم:', error);
+        // في حالة الخطأ، حاول استخدام user_metadata كخيار احتياطي
+        const extendedUser = user as ExtendedUser;
+        const fallbackRole = extendedUser.user_metadata?.role;
+        if (fallbackRole) {
+          console.log('استخدام الدور من user_metadata:', fallbackRole);
+          // التأكد من تحويل الدور إلى أحرف صغيرة
+          setUserRole(fallbackRole.toLowerCase());
+        } else {
+          setUserRole(null);
+        }
+        return;
+      }
+
+      if (data && data.role) {
+        console.log('دور المستخدم من قاعدة البيانات:', data.role);
+        // التأكد من تحويل الدور إلى أحرف صغيرة
+        setUserRole(data.role.toLowerCase());
+      } else {
+        // في حالة عدم وجود دور في قاعدة البيانات، حاول استخدام user_metadata
+        const extendedUser = user as ExtendedUser;
+        const fallbackRole = extendedUser.user_metadata?.role;
+        if (fallbackRole) {
+          console.log('استخدام الدور من user_metadata:', fallbackRole);
+          // التأكد من تحويل الدور إلى أحرف صغيرة
+          setUserRole(fallbackRole.toLowerCase());
+        } else {
+          setUserRole(null);
+        }
+      }
+    } catch (error) {
+      console.error('خطأ في جلب دور المستخدم:', error);
+      // في حالة الخطأ، حاول استخدام user_metadata كخيار احتياطي
+      const extendedUser = user as ExtendedUser;
+      const fallbackRole = extendedUser.user_metadata?.role;
+      if (fallbackRole) {
+        console.log('استخدام الدور من user_metadata:', fallbackRole);
+        // التأكد من تحويل الدور إلى أحرف صغيرة
+        setUserRole(fallbackRole.toLowerCase());
+      } else {
+        setUserRole(null);
+      }
+    } finally {
+      setIsCheckingRole(false);
+    }
+  };
+
+  // تحميل دور المستخدم عند تحميل المكون
+  useEffect(() => {
+    checkUserRole();
+  }, [user]);
+// دالة للتعامل مع تغيير مربع اختيار الواتساب
+const handleWhatsAppCheckboxChange = async () => {
+  console.log('=== بدء التحقق من دور المستخدم ===');
+  
+  if (!user) {
+    console.log('المستخدم غير مسجل الدخول');
+    toast({
+      title: t('error'),
+      description: t('must_be_logged_in'),
+      variant: 'destructive',
+    });
+    return;
+  }
+
+  // التحقق من دور المستخدم من قاعدة البيانات
+  if (isCheckingRole) {
+    console.log('جاري التحقق من دور المستخدم حالياً');
+    toast({
+      title: t('info'),
+      description: t('checking_user_role'),
+      variant: 'default',
+    });
+    return;
+  }
+
+  console.log('التحقق من دور المستخدم:', userRole);
+  console.log('نوع البيانات:', typeof userRole);
+  console.log('القيمة بعد التحويل للنص:', String(userRole));
+  
+  // تنظيف القيمة من المسافات الزائدة
+  const cleanedRole = userRole ? userRole.trim() : '';
+  console.log('الدور بعد التنظيف:', cleanedRole);
+  console.log('طول الدور الأصلي:', userRole ? userRole.length : 0);
+  console.log('طول الدور بعد التنظيف:', cleanedRole.length);
+  
+  // التحقق من الدور بشكل صريح
+  const isGoldUser = cleanedRole === 'gold_user' || cleanedRole === 'gold_business';
+  
+  console.log('هل المستخدم لديه دور ذهبي؟', isGoldUser);
+  console.log('مقارنة مع gold_user:', cleanedRole === 'gold_user');
+  console.log('مقارنة مع gold_business:', cleanedRole === 'gold_business');
+  
+  if (isGoldUser) {
+    // المستخدم لديه دور ذهبي، السماح بالمشاركة
+    console.log('المستخدم لديه دور ذهبي، السماح بالمشاركة');
+    setShareWhatsApp(!shareWhatsApp);
+  } else {
+    // المستخدم ليس لديه دور ذهبي، عرض نافذة الترقية
+    console.log('المستخدم ليس لديه دور ذهبي، عرض نافذة الترقية');
+    setShowUpgradeDialog(true);
+  }
+  
+  console.log('=== انتهى التحقق من دور المستخدم ===');
+};
+
+
   // دالة موحدة للتحقق من صحة الحقول
   const validateForm = (data: FormData, isImeiRegisteredStatus: boolean, actualDbPassword: string | null, currentFieldReadOnlyState: typeof fieldReadOnlyState): boolean => {
     // التحقق من الحقول المطلوبة
@@ -338,10 +481,10 @@ const ReportPhone: React.FC = () => {
     if (name === 'phoneNumber' && updatedValue.startsWith('0')) {
       updatedValue = updatedValue.replace(/^0+/, '');
     }
-    setFormData(prev => ({
+    setFormData(prev => (({
       ...prev,
       [name]: updatedValue
-    }));
+    })));
   };
 
   const updateImage = useCallback(async (file: File, fileType: ImageType, setPreview: React.Dispatch<React.SetStateAction<string | null>>) => {
@@ -539,7 +682,7 @@ const ReportPhone: React.FC = () => {
       setIsImeiRegistered(false);
       setDbPassword(null);
       setRegisteredPhoneEmail(null);
-      setFormData(prev => ({
+      setFormData(prev => (({
         ...initialFormDataRef.current,
         imei: prev.imei,
         phone_type: '',
@@ -552,10 +695,12 @@ const ReportPhone: React.FC = () => {
         lossTime: '',
         receiptImage: null,
         reportImage: null,
-      }));
+      })));
       setIsReadOnly(false);
       setActiveReportWarning(null);
       setIsImeiValid(false);
+      // إعادة تعيين حالة مشاركة الواتساب عند تغيير IMEI
+      setShareWhatsApp(false);
     };
 
     const fetchMaskedImeiInfo = async () => {
@@ -612,9 +757,10 @@ const ReportPhone: React.FC = () => {
         let inferredIsOwner = serverIsOwner;
         try {
           if (!inferredIsOwner && result.isTransferred && user) {
-            const userMeta: any = (user as any).user_metadata || {};
+            const extendedUser = user as ExtendedUser;
+            const userMeta = extendedUser.user_metadata || {};
             const currentMaskedName = maskName(userMeta.name || user.email || '');
-            const currentMaskedPhone = maskPhoneNumber(userMeta.phone || (user as any).phone || '');
+            const currentMaskedPhone = maskPhoneNumber(userMeta.phone || '');
             if ((result.maskedOwnerName && String(result.maskedOwnerName).trim() === currentMaskedName)
               || (result.maskedPhoneNumber && String(result.maskedPhoneNumber).trim() === currentMaskedPhone)) {
               inferredIsOwner = true;
@@ -643,7 +789,7 @@ const ReportPhone: React.FC = () => {
         }
 
         if (result.found && result.isRegistered && inferredIsOwner) {
-          setFormData(prev => ({
+          setFormData(prev => (({
             ...prev,
             ownerName: REGISTERED_IN_SYSTEM,
             phoneNumber: REGISTERED_IN_SYSTEM,
@@ -655,7 +801,7 @@ const ReportPhone: React.FC = () => {
             reportImage: null,
             password: '',
             confirmPassword: '',
-          }));
+          })));
           setReceiptImagePreview(null);
           setReportImagePreview(null);
           setFieldReadOnlyState({
@@ -675,7 +821,7 @@ const ReportPhone: React.FC = () => {
 
         // حالة 3: الهاتف مسجل لغير المالك
         if (result.found && result.isRegistered && !inferredIsOwner) {
-          setFormData(prev => ({
+          setFormData(prev => (({
             ...initialFormDataRef.current,
             imei: prev.imei,
             ownerName: '',
@@ -688,7 +834,7 @@ const ReportPhone: React.FC = () => {
             lossTime: '',
             receiptImage: null,
             reportImage: null,
-          }));
+          })));
           setReceiptImagePreview(null);
           setReportImagePreview(null);
           setRegisteredPhoneEmail(null);
@@ -924,6 +1070,7 @@ const ReportPhone: React.FC = () => {
         user_id: user?.id || null,
         email: user?.email || '',
         fcm_token: fcmToken,
+        whatsapp: shareWhatsApp, // إضافة حالة مشاركة الواتساب
       };
 
       // جلب التوكن من localStorage (Supabase)
@@ -1317,6 +1464,27 @@ const ReportPhone: React.FC = () => {
                     </div>
                   )}
 
+                  {/* إضافة مربع اختيار مشاركة الواتساب */}
+                  <div className="flex items-center space-x-2 space-x-reverse mb-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <input
+                      type="checkbox"
+                      id="shareWhatsApp"
+                      checked={shareWhatsApp}
+                      onChange={handleWhatsAppCheckboxChange}
+                      className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
+                      disabled={isReadOnly || isSubmitting || isCheckingRole}
+                    />
+                    <label htmlFor="shareWhatsApp" className="text-sm font-medium text-gray-700 cursor-pointer">
+                      {t('share_whatsapp_number')}
+                    </label>
+                    <Smartphone className="w-4 h-4 text-blue-600 ml-2" />
+                    {isCheckingRole && (
+                      <span className="text-xs text-blue-600 mr-2">
+                        {t('checking_user_role')}
+                      </span>
+                    )}
+                  </div>
+
                   <div className="space-y-4">
                     <h3 className="text-slate-800 text-lg font-semibold">{t('upload_images')}</h3>
                     {renderImageUpload(
@@ -1422,6 +1590,29 @@ const ReportPhone: React.FC = () => {
                 {isLoading || isSubmitting ? t('submitting') : t('submit_report')}
               </Button>
             </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* إضافة نافذة الترقية */}
+        <Dialog open={showUpgradeDialog} onOpenChange={setShowUpgradeDialog}>
+          <DialogContent className="sm:max-w-[400px] mx-auto px-4 bg-gradient-to-br from-blue-50 to-cyan-50 border-2 border-imei-cyan">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-bold text-blue-900">{t('upgrade_required')}</DialogTitle>
+              <DialogDescription className="text-gray-700">
+                {t('upgrade_to_share_whatsapp_description')}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-end mt-4">
+              <Button
+                onClick={() => {
+                  setShowUpgradeDialog(false);
+                  navigate('/upgrade');
+                }}
+                className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-bold"
+              >
+                {t('upgrade_now')}
+              </Button>
+            </div>
           </DialogContent>
         </Dialog>
       </div>

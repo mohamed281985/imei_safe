@@ -46,7 +46,7 @@ L.Icon.Default.mergeOptions({
 interface Product {
   id: string;
   title: string;
-  phone_type?: string; // ✅ تم التأكد من وجود الحقل
+  phone_type?: string;
   model?: string;
   category?: string;
   compatibility?: string;
@@ -95,7 +95,6 @@ const ProductDetails = () => {
     const fetchUserCurrency = async () => {
       setCurrencyLoading(true);
       
-      // جلب المستخدم الحالي من Supabase Auth
       const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
       
       if (authError) {
@@ -113,7 +112,6 @@ const ProductDetails = () => {
       console.log('Fetching currency for user ID:', authUser.id);
 
       try {
-        // 1. جلب بيانات البلد من جدول المستخدمين
         const { data: userData, error: userError } = await supabase
           .from('users')
           .select('countries')
@@ -134,10 +132,8 @@ const ProductDetails = () => {
 
         console.log('User country:', userData.countries);
         
-        // تنظيف اسم البلد
         const userCountryName = userData.countries.trim();
         
-        // 2. محاولة البحث في العمود العربي أولاً (لأن البيانات غالباً بالعربية)
         const { data: countryDataAr, error: countryErrorAr } = await supabase
           .from('countries')
           .select('currency_symbol')
@@ -145,11 +141,9 @@ const ProductDetails = () => {
           .maybeSingle();
 
         if (!countryErrorAr && countryDataAr?.currency_symbol) {
-          // تم العثور على العملة في العمود العربي
           console.log('Found currency in Arabic table:', countryDataAr.currency_symbol);
           setUserCurrencySymbol(countryDataAr.currency_symbol);
         } else {
-          // 3. إذا لم نجد في العمود العربي، نبحث في العمود الإنجليزي
           const { data: countryDataEn, error: countryErrorEn } = await supabase
             .from('countries')
             .select('currency_symbol')
@@ -157,11 +151,9 @@ const ProductDetails = () => {
             .maybeSingle();
 
           if (!countryErrorEn && countryDataEn?.currency_symbol) {
-            // تم العثور على العملة في العمود الإنجليزي
             console.log('Found currency in English table:', countryDataEn.currency_symbol);
             setUserCurrencySymbol(countryDataEn.currency_symbol);
           } else {
-            // 4. لم يتم العثور على البلد في أي من العمودين
             console.warn(`Currency symbol not found for country: ${userCountryName}`);
             console.log('Using default currency:', t('currency_short') || 'EGP');
             setUserCurrencySymbol(t('currency_short') || 'EGP');
@@ -175,7 +167,7 @@ const ProductDetails = () => {
     };
 
     fetchUserCurrency();
-  }, [language]); // يعاد التنفيذ عند تغيير اللغة فقط
+  }, [language]);
 
   const handleContactNow = async () => {
     if (!product) return;
@@ -219,7 +211,6 @@ const ProductDetails = () => {
         const whatsappWebLink = `https://wa.me/${cleanPhone}`;
 
         if (Capacitor.isNativePlatform()) {
-          // استخدام _system لفتح التطبيق مباشرة وتجنب فتح المتصفح الداخلي
           window.open(whatsappDeepLink, '_system');
         } else {
           window.location.href = whatsappDeepLink;
@@ -276,33 +267,57 @@ const ProductDetails = () => {
   const shareProduct = async () => {
     if (!product) return;
     const url = window.location.href;
+    
     try {
-      if (navigator.share) {
-        await navigator.share({ title: product.title, url });
-        return;
-      }
-
+      // استخدام Capacitor Share API على الهواتف
       if (Capacitor.isNativePlatform()) {
-        await Share.share({ title: product.title, text: product.description || '', url });
+        await Share.share({
+          title: product.title,
+          text: `${product.title}\n\n${product.description || ''}`,
+          url: url,
+          dialogTitle: 'مشاركة المنتج'
+        });
         return;
       }
 
-      // Fallback: copy to clipboard
+      // استخدام Web Share API على المتصفحات
+      if (navigator.share) {
+        await navigator.share({
+          title: product.title,
+          text: product.description || '',
+          url: url
+        });
+        return;
+      }
+
+      // Fallback: نسخ الرابط إلى الحافظة
       if (navigator.clipboard && navigator.clipboard.writeText) {
         await navigator.clipboard.writeText(url);
-        toast({ title: 'تم النسخ', description: 'تم نسخ رابط المنتج إلى الحافظة.' });
+        toast({ 
+          title: 'تم النسخ', 
+          description: 'تم نسخ رابط المنتج إلى الحافظة.' 
+        });
         return;
       }
 
-      // Last resort: open share URL in new tab
+      // Last resort: فتح الرابط في نافذة جديدة
       window.open(url, '_blank');
     } catch (err) {
       console.error('Share failed:', err);
+      
+      // محاولة نسخ الرابط كحل بديل
       try {
         await navigator.clipboard.writeText(url);
-        toast({ title: 'تم النسخ', description: 'تم نسخ رابط المنتج إلى الحافظة.' });
+        toast({ 
+          title: 'تم النسخ', 
+          description: 'تم نسخ رابط المنتج إلى الحافظة.' 
+        });
       } catch (e) {
-        alert('فشل في المشاركة.');
+        toast({ 
+          title: 'فشل المشاركة', 
+          description: 'لم نتمكن من مشاركة المنتج. يرجى المحاولة مرة أخرى.',
+          variant: 'destructive'
+        });
       }
     }
   };
@@ -473,7 +488,6 @@ const ProductDetails = () => {
               )}
             </Swiper>
             
-            {/* Elegant Platform Shadow */}
             <div className="absolute bottom-4 left-1/2 h-4 w-4/5 -translate-x-1/2 rounded-[100%] bg-[#0A84FF]/10 blur-xl"></div>
           </div>
         </div>
@@ -493,10 +507,8 @@ const ProductDetails = () => {
             
             <h2 className="text-3xl font-black text-gray-900 leading-tight">{product.title}</h2>
             
-            {/* ✅ التعديل: عرض الماركة والموديل معاً بشكل أنيق */}
             {(product.phone_type || product.model) && (
               <div className="flex items-center gap-2 text-2xl font-large text-black">
-                
                 {product.phone_type && product.model && (
                   <span className="text-black">•</span>
                 )}
@@ -628,14 +640,7 @@ const ProductDetails = () => {
           </button>
           
           <button
-            onClick={() => {
-              if (navigator.share) {
-                navigator.share({
-                  title: product.title,
-                  url: window.location.href
-                });
-              }
-            }}
+            onClick={shareProduct}
             className="flex flex-1 items-center justify-center gap-2 rounded-[20px] border border-[#0A84FF]/20 bg-white py-4 text-sm font-black text-[#0A84FF] shadow-sm transition-transform active:scale-95"
           >
             <Share2 className="h-5 w-5" />
@@ -645,6 +650,6 @@ const ProductDetails = () => {
       </div>
     </div>
   );
-}
+};
 
 export default ProductDetails;

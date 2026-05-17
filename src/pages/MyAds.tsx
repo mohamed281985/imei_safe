@@ -36,6 +36,7 @@ const MyAds: React.FC = () => {
   const [confirmAdId, setConfirmAdId] = useState<number | null>(null); // ⭐ تغيير النوع إلى number
 
   const handleDelete = async (idToDelete: number) => {
+    if (!user) return;
     setDeletingId(idToDelete);
     try {
       console.log(`[Delete] Attempting to delete ad with ID (Number): ${idToDelete}`);
@@ -43,7 +44,8 @@ const MyAds: React.FC = () => {
       const { error, count } = await supabase
         .from('publish_ad')
         .delete({ count: 'exact' })
-        .eq('id', idToDelete); // إرسال الرقم مباشرة
+        .eq('id', idToDelete)
+        .eq('user_id', user.id); // ⭐ أمان إضافي: الحذف فقط إذا كان المستخدم هو المالك
 
       if (error) {
         console.error('[Delete] Supabase Error:', error);
@@ -86,7 +88,8 @@ const MyAds: React.FC = () => {
           .select('id, ad_id, image_url, created_at, expires_at'); 
 
         if (user) {
-           // query = query.eq('user_id', user.id);
+          // ⭐ Security: Ensure users only fetch their own ads
+          query = query.eq('user_id', user.id);
         }
 
         const { data: publishAds, error } = await query.order('created_at', { ascending: false });
@@ -159,7 +162,6 @@ const MyAds: React.FC = () => {
                 key={ad.id}
                 className="relative rounded-xl p-4 border-4 flex flex-col gap-2 transition-all duration-300 bg-white/5 backdrop-blur-sm border-imei-cyan/30 bg-white/5"
               >
-                {/* منطق عرض شعار "تم الانتهاء" الملون */}
                 {isExpired(ad.expires_at) && (
                   <div
                     className="absolute top-4 left-1/2 -translate-x-1/2 z-50 px-8 py-2 rounded-lg shadow-2xl transform -rotate-2"
@@ -167,13 +169,10 @@ const MyAds: React.FC = () => {
                       background: 'linear-gradient(135deg, #1e3a8a 0%, #289c8e 100%)',
                       border: '2px solid rgba(255, 255, 255, 0.4)',
                       boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.5)',
-                      fontFamily: 'Impact, "Arial Black", sans-serif',
                       color: '#ffffff',
                       textShadow: '2px 2px 4px rgba(0,0,0,0.5)',
                       fontWeight: '900',
                       fontSize: '1.8rem',
-                      letterSpacing: '1px',
-                      whiteSpace: 'nowrap',
                     }}
                   >
                     {t('ad_ended') || 'تم الانتهاء'}
