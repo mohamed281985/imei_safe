@@ -5011,7 +5011,7 @@ app.post('/api/get-owner-details-by-imei', verifyJwtToken, async (req, res) => {
     console.log('/api/get-owner-details-by-imei called by', requesterId, 'imei:', imei);
     const { data: allReports, error: reportError } = await supabase
       .from('phone_reports')
-      .select('id, imei, user_id, phone_number')
+      .select('id, imei, user_id, phone_number, email')
       .order('id', { ascending: true });
 
     if (reportError || !allReports || allReports.length === 0) {
@@ -5033,6 +5033,8 @@ app.post('/api/get-owner-details-by-imei', verifyJwtToken, async (req, res) => {
     }
 
     if (!foundReport) return res.status(404).json({ error: 'لم يتم العثور على البلاغ لهذا الـ IMEI' });
+
+    console.log('Matched report:', { id: foundReport.id, user_id: foundReport.user_id, email: foundReport.email });
 
     const ownerId = foundReport.user_id;
 
@@ -5164,7 +5166,7 @@ app.get('/api/user-phones', verifyJwtToken, async (req, res) => {
       };
     });
 
-    res.json({ success: true, data: processedPhones });
+    return res.json({ success: true, data: processedPhones });
   } catch (error) {
     console.error('Error fetching user phones:', error);
     return sendError(res, 500, 'حدث خطأ في الخادم', error, { success: false });
