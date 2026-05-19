@@ -3775,9 +3775,15 @@ app.post('/api/ads/package-publish', verifyJwtToken, paymentLimiter, rateLimitMi
     };
 
     try {
+      console.log('package-publish: inserting ads_payment payload', JSON.stringify(insertObj, null, 2));
       const { data: inserted, error: insertErr } = await supabase.from('ads_payment').insert([insertObj]).select('id').single();
       if (insertErr) {
         console.error('package-publish: failed to insert ads_payment', insertErr);
+        try {
+          // more verbose insert error diagnostics when available
+          if (insertErr.details) console.error('insertErr.details:', insertErr.details);
+          if (insertErr.hint) console.error('insertErr.hint:', insertErr.hint);
+        } catch (diag) { /* ignore */ }
         return res.status(500).json({ error: 'Failed to create ad record' });
       }
 

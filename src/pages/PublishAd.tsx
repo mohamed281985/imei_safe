@@ -700,11 +700,25 @@ const PublishAd: React.FC = () => {
             merchantOrderId: paymentData.merchantOrderId
           };
 
+          // Acquire CSRF token (server sets httpOnly cookie and returns token)
+          let csrfToken: string | undefined;
+          try {
+            const csrfResp = await fetch(api('/api/csrf-token'), { credentials: 'include' });
+            if (csrfResp.ok) {
+              const csrfJson = await csrfResp.json().catch(() => ({}));
+              csrfToken = csrfJson?.csrfToken;
+            }
+          } catch (e) {
+            // ignore and continue; server may still accept if cookie already present
+          }
+
           const resp = await fetch(api('/api/ads/package-publish'), {
             method: 'POST',
+            credentials: 'include',
             headers: {
               'Content-Type': 'application/json',
-              ...(token ? { Authorization: `Bearer ${token}` } : {})
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+              ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {})
             },
             body: JSON.stringify(serverPayload)
           });
