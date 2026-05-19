@@ -154,6 +154,8 @@ const Dashboard: React.FC = () => {
   // حالات جديدة للإكسسوارات
   const [accessoryListings, setAccessoryListings] = useState<Accessory[]>([]);
   const [loadingAccessories, setLoadingAccessories] = useState(true);
+  const [sellersInCountryList, setSellersInCountryList] = useState<any[]>([]);
+  const [loadingSellersInCountry, setLoadingSellersInCountry] = useState(false);
 
   // ⭐ إضافة تبديل تلقائي للكروت
   useEffect(() => {
@@ -481,37 +483,54 @@ const Dashboard: React.FC = () => {
         const response = await axiosInstance.get<any[]>('/api/lost-phones');
         setDisplayedPhones(response.data);
 
-        // --- جلب معرفات البائعين في نفس دولة المستخدم ---
+        // --- جلب اسم دولة المستخدم ومعرفات البائعين في نفس الدولة ---
         let sellerIdsInUserCountry: string[] | null = null;
-        if (user?.id && detectedCurrency !== defaultCurrency) {
+        let userCountryName: string | null = null;
+        if (user?.id) {
           try {
             // جلب اسم دولة المستخدم من جدول users
-            const { data: currentUserData } = await supabase
+            const { data: currentUserData, error: currentUserError } = await supabase
               .from('users')
               .select('countries')
               .eq('id', user.id)
               .maybeSingle();
 
+            if (currentUserError) {
+              console.error('[Country Filter] Error fetching current user countries:', currentUserError);
+            }
+
             if (currentUserData?.countries) {
               const userCountry = currentUserData.countries.trim();
-              // جلب كل البائعين الذين دولتهم تطابق دولة المستخدم
-              const { data: sellersInCountry } = await supabase
+              userCountryName = userCountry;
+              console.debug('[Country Filter] userCountryName:', userCountryName);
+
+              // جلب كل البائعين الذين دولتهم تحتوي على اسم دولة المستخدم (تحسين المطابقة)
+              setLoadingSellersInCountry(true);
+              const { data: sellersInCountry, error: sellersError } = await supabase
                 .from('users')
-                .select('id')
-                .ilike('countries', userCountry);
+                .select('id, username, store_name, avatar_url, role, countries')
+                .ilike('countries', `%${userCountry}%`);
+
+              if (sellersError) {
+                console.error('[Country Filter] Error fetching sellers by country:', sellersError);
+              }
 
               if (sellersInCountry && sellersInCountry.length > 0) {
                 sellerIdsInUserCountry = sellersInCountry.map(s => s.id);
-                console.log(`[Country Filter] Found ${sellerIdsInUserCountry.length} sellers in user's country: ${userCountry}`);
+                setSellersInCountryList(sellersInCountry);
+                console.debug(`[Country Filter] Found ${sellerIdsInUserCountry.length} sellers in user's country: ${userCountry}`);
+              } else {
+                setSellersInCountryList([]);
               }
+              setLoadingSellersInCountry(false);
             }
           } catch (err) {
-            console.error('[Country Filter] Error fetching sellers by country:', err);
+            console.error('[Country Filter] Unexpected error fetching sellers by country:', err);
           }
         }
 
         // جلب الهواتف المعروضة للبيع مع بيانات الموقع
-        const { data: listings, error: listingsError } = await supabase
+        let phoneQuery: any = supabase
           .from('phones')
           .select(`
             *,
@@ -524,8 +543,21 @@ const Dashboard: React.FC = () => {
             latitude,
             longitude
           `)
-          .eq('status', 'active')
-          .order('created_at', { ascending: false });
+          .eq('status', 'active');
+
+        // تطبيق فلتر حسب بائعين الدولة إن وُجد
+        if (sellerIdsInUserCountry && sellerIdsInUserCountry.length > 0) {
+          phoneQuery = phoneQuery.in('seller_id', sellerIdsInUserCountry);
+          console.debug('[Country Filter] Applied seller_id filter for phones, count:', sellerIdsInUserCountry.length);
+        }
+
+        // تطبيق فلتر حسب عمود countries في حال توافر اسم الدولة للمستخدم
+        if (userCountryName) {
+          phoneQuery = phoneQuery.ilike('countries', `%${userCountryName}%`);
+          console.debug('[Country Filter] Applied countries ilike filter for phones:', userCountryName);
+        }
+
+        const { data: listings, error: listingsError } = await phoneQuery.order('created_at', { ascending: false });
 
         if (listingsError) {
           console.error('خطأ في جلب بيانات الهواتف المعروضة للبيع:', listingsError?.message || listingsError);
@@ -580,7 +612,7 @@ const Dashboard: React.FC = () => {
         }
 
         // جلب الإكسسوارات المعروضة للبيع
-        const { data: accessories, error: accessoriesError } = await supabase
+        let accessoryQuery: any = supabase
           .from('accessories')
           .select(`
             *,
@@ -592,8 +624,19 @@ const Dashboard: React.FC = () => {
             latitude,
             longitude
           `)
-          .eq('status', 'active')
-          .order('created_at', { ascending: false });
+          .eq('status', 'active');
+
+        if (sellerIdsInUserCountry && sellerIdsInUserCountry.length > 0) {
+          accessoryQuery = accessoryQuery.in('seller_id', sellerIdsInUserCountry);
+          console.debug('[Country Filter] Applied seller_id filter for accessories, count:', sellerIdsInUserCountry.length);
+        }
+
+        if (userCountryName) {
+          accessoryQuery = accessoryQuery.ilike('countries', `%${userCountryName}%`);
+          console.debug('[Country Filter] Applied countries ilike filter for accessories:', userCountryName);
+        }
+
+        const { data: accessories, error: accessoriesError } = await accessoryQuery.order('created_at', { ascending: false });
 
         if (accessoriesError) {
           console.error('خطأ في جلب بيانات الإكسسوارات:', accessoriesError?.message || accessoriesError);
@@ -1302,6 +1345,39 @@ const Dashboard: React.FC = () => {
             )}
           </div>
         </div>
+
+          {/* قسم البائعين في نفس دولة المستخدم */}
+          <div className="mb-5">
+            <div className="flex justify-between items-center mb-3">
+              <h2 className="text-black text-xl font-bold">{t('sellers_in_your_country') || 'البائعون في بلدك'}</h2>
+              <Link to="/sellers" className="text-black hover:text-imei-cyan/80 text-sm font-medium leading-none">
+                {t('view_all')}
+              </Link>
+            </div>
+            <div className="relative">
+              {loadingSellersInCountry ? (
+                <div className="text-center py-6">{t('loading')}</div>
+              ) : sellersInCountryList.length > 0 ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                  {sellersInCountryList.map(seller => (
+                    <Link key={seller.id} to={`/seller/${seller.id}`} className="flex flex-col items-center p-3 bg-white rounded-2xl shadow-md hover:shadow-lg transition">
+                      <div className="w-20 h-20 rounded-full bg-gray-100 overflow-hidden flex items-center justify-center mb-2">
+                        {seller.avatar_url ? (
+                          <img src={seller.avatar_url} alt={seller.username || seller.store_name} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="text-gray-400">{seller.username?.charAt(0)?.toUpperCase() || 'B'}</div>
+                        )}
+                      </div>
+                      <div className="text-sm font-bold text-gray-800 text-center truncate w-full">{seller.store_name || seller.username}</div>
+                      <div className="text-xs text-gray-500">{seller.role}</div>
+                    </Link>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-6 text-white/70">{t('no_sellers_in_country') || 'لا يوجد بائعون في بلدك'}</div>
+              )}
+            </div>
+          </div>
       </div>
 
       <Suspense fallback={<div>Loading...</div>}>

@@ -9,6 +9,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { useGeolocated } from 'react-geolocated';
 import { useToast } from '@/hooks/use-toast';
 import AdsOfferSlider from '@/components/advertisements/AdsOfferSlider';
+import PackageBadge from '@/components/PackageBadge';
 import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -40,11 +41,11 @@ interface AccessoryFormData {
   condition: 'new' | 'used';
   warranty_months: string;
   city: string;
+  country?: string;
   contact_methods: {
     phone?: string;
   };
   store_name: string;
-  countries: string;
 }
 
 const AddAccessoriesForm: React.FC = () => {
@@ -61,8 +62,6 @@ const AddAccessoriesForm: React.FC = () => {
   const [availableDurations, setAvailableDurations] = useState<string[]>([]);
   const [selectedDuration, setSelectedDuration] = useState('7');
   const [promotionPrice, setPromotionPrice] = useState<number | null>(null);
-  const [bonusBalance, setBonusBalance] = useState(0);
-  const [lastBonusId, setLastBonusId] = useState<string | null>(null);
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
   const { coords } = useGeolocated({
     positionOptions: {
@@ -135,58 +134,7 @@ const AddAccessoriesForm: React.FC = () => {
     setPromotionPrice(promotionPrices[selectedDuration] || null);
   }, [selectedDuration, promotionPrices]);
 
-  // Fetch user's bonus balance
-    // Fetch user's bonus balance
-  useEffect(() => {
-    if (!user?.id) return;
-
-    const fetchBonus = async () => {
-      try {
-        // Fetch all paid records for the user to find a valid bonus
-        const { data: allPaidRecords, error: fetchError } = await supabase
-          .from('ads_payment')
-          .select('id, bonus_offer, expires_at')
-          .eq('user_id', user.id)
-          .eq('is_paid', true)
-          .order('payment_date', { ascending: false });
-
-        if (fetchError) {
-          console.debug("Error fetching bonus data:", fetchError);
-          setBonusBalance(0);
-          setLastBonusId(null);
-          return;
-        }
-
-        if (allPaidRecords && allPaidRecords.length > 0) {
-          // Find the first record that has a valid, unexpired bonus
-          const recordWithBonus = allPaidRecords.find(record => {
-            const expiresAt = record.expires_at ? new Date(record.expires_at) : null;
-            const now = new Date();
-            return expiresAt && expiresAt > now && record.bonus_offer > 0;
-          });
-
-          if (recordWithBonus) {
-            setBonusBalance(recordWithBonus.bonus_offer);
-            setLastBonusId(recordWithBonus.id);
-          } else {
-            // No valid bonus found
-            setBonusBalance(0);
-            setLastBonusId(null);
-          }
-        } else {
-          // No paid records found
-          setBonusBalance(0);
-          setLastBonusId(null);
-        }
-      } catch (err) {
-        console.debug("Unexpected error fetching bonus:", err);
-        setBonusBalance(0);
-        setLastBonusId(null);
-      }
-    };
-
-    fetchBonus();
-  }, [user]);
+  // bonus logic removed: package/role will drive promotions
 
 
   // جلب اسم المتجر ورقم الهاتف من جدول businesses عند تحميل المكون
@@ -203,15 +151,28 @@ const AddAccessoriesForm: React.FC = () => {
           const response = await axiosInstance.get('/api/decrypted-user');
           const data = response.data?.business;
 
-          if (data) {
-            setFormData(prev => ({
-              ...prev,
-              store_name: data.store_name || '',
-              city: data.address || '',
-              contact_methods: { ...prev.contact_methods, phone: data.phone || '' },
-              countries: data.countries || data.country || ''
-            }));
+          let country = data?.countries || data?.country || '';
+          // fallback: read directly from users table if decrypted-user didn't include it
+          if (!country) {
+            try {
+              const { data: userRow, error: userErr } = await supabase
+                .from('users')
+                .select('countries')
+                .eq('id', user.id)
+                .maybeSingle();
+              if (!userErr && userRow?.countries) country = userRow.countries;
+            } catch (e) {
+              /* ignore */
+            }
           }
+
+          setFormData(prev => ({
+            ...prev,
+            store_name: data?.store_name || '',
+            city: data?.address || '',
+            country: country || '',
+            contact_methods: { ...prev.contact_methods, phone: data?.phone || '' }
+          }));
         } catch (err) {
           console.debug('Error fetching business data:', err);
         }
@@ -221,15 +182,27 @@ const AddAccessoriesForm: React.FC = () => {
           const response = await axiosInstance.get('/api/decrypted-user');
           const data = response.data?.user;
 
-          if (data) {
-            setFormData(prev => ({
-              ...prev,
-              store_name: data?.full_name || '',
-              city: '',
-              contact_methods: { ...prev.contact_methods, phone: data?.phone || '' },
-              countries: data?.countries || data?.country || ''
-            }));
+          let country = data?.countries || data?.country || '';
+          if (!country) {
+            try {
+              const { data: userRow, error: userErr } = await supabase
+                .from('users')
+                .select('countries')
+                .eq('id', user.id)
+                .maybeSingle();
+              if (!userErr && userRow?.countries) country = userRow.countries;
+            } catch (e) {
+              /* ignore */
+            }
           }
+
+          setFormData(prev => ({
+            ...prev,
+            store_name: data?.full_name || '',
+            city: '',
+            country: country || '',
+            contact_methods: { ...prev.contact_methods, phone: data?.phone || '' }
+          }));
         } catch (err) {
           console.debug('Error fetching user data:', err);
         }
@@ -248,9 +221,9 @@ const AddAccessoriesForm: React.FC = () => {
     condition: 'new',
     warranty_months: '0',
     city: '',
+    country: '',
     contact_methods: {},
-    store_name: '',
-    countries: ''
+    store_name: ''
   });
 
   // استرجاع المسودة المحفوظة تلقائياً
@@ -267,8 +240,8 @@ const AddAccessoriesForm: React.FC = () => {
         ? {
             store_name: parsed.formData.store_name || '',
             city: parsed.formData.city || '',
+            country: parsed.formData.country || '',
             contact_methods: { ...(parsed.formData.contact_methods || {}) },
-            countries: parsed.formData.countries || '',
           }
         : {};
 
@@ -357,9 +330,9 @@ const AddAccessoriesForm: React.FC = () => {
         condition: formData.condition,
         warranty_months: parseInt(formData.warranty_months),
         city: formData.city,
+        countries: formData.country,
         contact_methods: formData.contact_methods,
         store_name: formData.store_name,
-        countries: formData.countries,
         latitude: coords?.latitude,
         longitude: coords?.longitude,
         role: user?.role,
@@ -421,30 +394,8 @@ const AddAccessoriesForm: React.FC = () => {
 
       const normalPrice = normalPriceData?.amount || 0;
 
-      if (bonusBalance > 0 && normalPrice > 0) {
-        const amountToDeduct = Math.min(bonusBalance, normalPrice);
-        const bonusResp = await axiosInstance.post('https://imei-safe.me/paymob/publish-from-bonus', {
-          adData: {
-            accessory_id: accessoryData.id,
-            duration_days: 1,
-            type: 'normal',
-            image_url: null
-          }
-        });
-        if (!bonusResp?.data?.ok) throw new Error(bonusResp?.data?.error || t('bonus_deduction_failed'));
-
-        const remainingBonus = typeof bonusResp?.data?.remainingBonus === 'number'
-          ? bonusResp.data.remainingBonus
-          : Math.max(0, bonusBalance - amountToDeduct);
-        setBonusBalance(remainingBonus);
-        window.dispatchEvent(new CustomEvent('bonusUpdated'));
-        toast({ title: t('ad_published_successfully'), description: t('bonus_deducted', { amount: amountToDeduct.toString() }), variant: "default" });
-
-        // Publish accessory after successful paid-with-bonus posting
-        const { error: publishErr } = await supabase.from('accessories').update({ status: 'pending' }).eq('id', accessoryData.id);
-        if (publishErr) console.warn('failed to publish accessory after bonus payment', publishErr);
-
-      } else if (normalPrice > 0) {
+      // bonus system removed: always follow normal payment path or upgrade via package
+      if (normalPrice > 0) {
         const { data: paymentData, error: paymentError } = await supabase.from('ads_payment').insert({
           user_id: user.id,
           accessory_id: accessoryData.id,
@@ -511,9 +462,9 @@ const AddAccessoriesForm: React.FC = () => {
         condition: formData.condition,
         warranty_months: parseInt(formData.warranty_months),
         city: formData.city,
+        countries: formData.country,
         contact_methods: formData.contact_methods,
         store_name: formData.store_name,
-        countries: formData.countries,
         status: 'pending',
         latitude: coords?.latitude,
         longitude: coords?.longitude,
@@ -551,58 +502,28 @@ const AddAccessoriesForm: React.FC = () => {
         throw new Error(t('cannot_feature_ad_incomplete_data'));
       }
 
-      if (bonusBalance < (promotionPrice || 0)) {
-        // عند عدم وجود رصيد كافٍ، يتم فتح نافذة الترقية
-        setShowUpgradePrompt(true);
-        setIsFeatureModalOpen(false); // إغلاق نافذة التمييز
-        setLoading(false); // إيقاف التحميل
-        return; // إيقاف تنفيذ الدالة
+      // Role-based feature handling: use `role` instead of bonus system
+      const role = user?.role || 'free';
+      if (role.includes('gold') || role.includes('silver') || role.includes('business')) {
+        // privileged roles: directly mark as promoted
+        const { error: updateAccessoryError } = await supabase.from('accessories').update({ type: 'promotions' }).eq('id', accessoryData.id);
+        if (updateAccessoryError) throw updateAccessoryError;
+
+        const { error: publishErr } = await supabase.from('accessories').update({ status: 'pending' }).eq('id', accessoryData.id);
+        if (publishErr) console.warn('failed to set accessory pending after promotion', publishErr);
+
+        setIsFeatureModalOpen(false);
+        toast({ title: t('ad_published_and_featured_successfully'), description: t('ad_published_successfully') || '', variant: 'default' });
+        clearDraft();
+        navigate('/seller-dashboard');
+        return;
       }
 
-      // الحصول على URL للصورة الرئيسية
-      let mainImageUrl = '';
-      if (images.length > 0) {
-        const fileExt = images[0].name.split('.').pop();
-        const filePath = `${user.id}/${accessoryData.id}/${Math.random()}.${fileExt}`;
-        const { data: { publicUrl } } = supabase.storage.from('accessory-images').getPublicUrl(filePath);
-        mainImageUrl = publicUrl;
-      }
-
-      // 3.1 + 3.2 خصم البونص وإنشاء سجل الدفع عبر الخادم (بدل insert مباشر لتجنب RLS)
-      const bonusResp = await axiosInstance.post('https://imei-safe.me/paymob/publish-from-bonus', {
-        adData: {
-          accessory_id: accessoryData.id,
-          duration_days: parseInt(selectedDuration, 10),
-          type: 'promotions',
-          image_url: mainImageUrl
-        }
-      });
-      if (!bonusResp?.data?.ok) {
-        throw new Error(bonusResp?.data?.error || t('bonus_deduction_or_payment_record_failed'));
-      }
-
-      // 3.3. Update the 'type' in the 'accessories' table to 'promotions'
-      const { error: updateAccessoryError } = await supabase.from('accessories').update({ type: 'promotions' }).eq('id', accessoryData.id);
-      if (updateAccessoryError) throw updateAccessoryError;
-
-      // Publish accessory after successful promotion
-      const { error: publishErr } = await supabase.from('accessories').update({ status: 'pending' }).eq('id', accessoryData.id);
-      if (publishErr) console.warn('failed to set accessory pending after promotion', publishErr);
-
-      // 3.4. Update UI and navigate
-      const remainingBonus = typeof bonusResp?.data?.remainingBonus === 'number'
-        ? bonusResp.data.remainingBonus
-        : Math.max(0, bonusBalance - promotionPrice);
-      setBonusBalance(remainingBonus);
-      window.dispatchEvent(new CustomEvent('bonusUpdated'));
+      // Non-privileged users: open upgrade prompt to purchase package
+      setShowUpgradePrompt(true);
       setIsFeatureModalOpen(false);
-      toast({
-        title: t('ad_published_and_featured_successfully'),
-        description: t('bonus_deducted_for_feature', { amount: promotionPrice.toString() }),
-        variant: "default"
-      });
-      clearDraft();
-      navigate('/seller-dashboard');
+      setLoading(false);
+      return;
 
     } catch (err: any) {
       console.debug('Error in handleSubmitAndFeature for accessory:', err);
@@ -731,7 +652,20 @@ const AddAccessoriesForm: React.FC = () => {
                     <MapPin className="h-4 w-4 text-orange-500" />
                     {t('city')}
                   </label>
-                  <input name="city" value={formData.city} readOnly className={fieldClass} placeholder={t('fetched_automatically')} />
+                  <input
+                    name="city"
+                    value={formData.city}
+                    onChange={(e) => setFormData(prev => ({ ...prev, city: e.target.value }))}
+                    className={fieldClass}
+                    placeholder={t('fetched_automatically')}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                    <MapPin className="h-4 w-4 text-orange-500" />
+                    {t('country')}
+                  </label>
+                  <input name="country" value={formData.country || ''} readOnly className={fieldClass} placeholder={t('fetched_automatically')} />
                 </div>
                 <div className="sm:col-span-2">
                   <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
@@ -979,12 +913,8 @@ const AddAccessoriesForm: React.FC = () => {
                 </ul>
               </div>
 
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-center">
-                <div className="flex items-center justify-center gap-2">
-                  <Gift className="w-5 h-5 text-blue-600" />
-                  <span className="text-sm font-medium text-gray-700">{t('current_bonus_balance')}</span>
-                  <span className="text-lg font-bold text-blue-600">{Math.floor(bonusBalance).toLocaleString()} {t('currency_short')}</span>
-                </div>
+              <div className="mb-4">
+                <PackageBadge user={user} />
               </div>
 
               <div className="text-right space-y-2 text-gray-700 mb-6">
@@ -1018,7 +948,7 @@ const AddAccessoriesForm: React.FC = () => {
                 disabled={loading}
                 className="w-full inline-flex items-center justify-center px-8 py-4 border border-transparent text-lg font-bold rounded-xl shadow-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 transition-all transform hover:scale-105"
               >
-                {loading ? <Loader2 className="animate-spin h-6 w-6" /> : t('feature_now_with_bonus')}
+                {loading ? <Loader2 className="animate-spin h-6 w-6" /> : (t('feature_now') || t('feature_now_with_bonus'))}
               </button>
 
             </div>

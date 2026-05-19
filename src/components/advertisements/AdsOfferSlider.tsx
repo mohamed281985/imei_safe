@@ -15,15 +15,17 @@ interface adsoffar {
   imagesmall_url: string;
   mainimage_url?: string;
   all_users: string;
+  type?: string;
 }
 
 interface AdsOfferSliderProps {
   containerClassName?: string;
   onClose?: () => void;
   isUpgradePrompt?: boolean;
+  showHeader?: boolean;
 }
 
-const AdsOfferSlider = ({ containerClassName = '', onClose, isUpgradePrompt }: AdsOfferSliderProps) => {
+const AdsOfferSlider = ({ containerClassName = '', onClose, isUpgradePrompt, showHeader = true }: AdsOfferSliderProps) => {
   const [ads, setAds] = useState<adsoffar[]>([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
@@ -35,15 +37,33 @@ const AdsOfferSlider = ({ containerClassName = '', onClose, isUpgradePrompt }: A
 
     const filteredAds = adsList.filter(ad => {
       if (!ad.all_users) return false;
+      const raw = String(ad.all_users || '');
+      const adType = String(ad.type || '').toLowerCase();
+      const targetUsers = raw
+        .toLowerCase()
+        .split(/[,;|\s]+/) // accept commas, semicolons, pipes or spaces as separators
+        .map(u => u.trim())
+        .filter(u => u.length > 0);
 
-      const targetUsers = ad.all_users.toLowerCase()
-        .split(',')
-        .map(user => user.trim())
-        .filter(user => user.length > 0);
+      const normalizedRole = String(userRole || '').toLowerCase();
+      let roleCategory = '';
+      if (normalizedRole.includes('business')) roleCategory = 'business';
+      else if (normalizedRole.includes('user') || normalizedRole.includes('customer') || normalizedRole.includes('client')) roleCategory = 'user';
+
+
+      // Debug small info to help diagnose matching
+      console.debug('[AdsOfferSlider] ad id', ad.id, 'type', adType, 'targets', targetUsers, 'userRole', normalizedRole, 'roleCategory', roleCategory);
+
+      // First try matching against ad.type if it's provided (design: compare ad.type to user.role)
+      if (adType) {
+        if (adType === 'all') return true;
+        if (adType === normalizedRole) return true;
+        if (roleCategory && adType.includes(roleCategory)) return true;
+      }
 
       if (targetUsers.includes('all')) return true;
-      if ((userRole === 'silver_business' || userRole === 'free_business' || userRole === 'gold_business') && targetUsers.some(u => u.includes('business'))) return true;
-      if ((userRole === 'silver_user' || userRole === 'free_user' || userRole === 'gold_user') && targetUsers.some(u => u.includes('users') || u.includes('user'))) return true;
+      if (roleCategory && targetUsers.some(u => u.includes(roleCategory))) return true;
+      if (normalizedRole && targetUsers.some(u => u === normalizedRole || u.includes(normalizedRole))) return true;
 
       return false;
     });
@@ -52,6 +72,9 @@ const AdsOfferSlider = ({ containerClassName = '', onClose, isUpgradePrompt }: A
   };
 
   const cleanImageUrl = (url: string) => {
+    if (!url) return url;
+    // If the URL is relative or doesn't start with http(s), return as-is
+    if (!/^https?:\/\//i.test(url)) return url;
     try {
       const urlObj = new URL(url);
       const params = new URLSearchParams(urlObj.search);
@@ -73,6 +96,7 @@ const AdsOfferSlider = ({ containerClassName = '', onClose, isUpgradePrompt }: A
 
   useEffect(() => {
     setLoading(true);
+    console.debug('[AdsOfferSlider] user role:', user?.role);
 
     const fetchAds = async () => {
       try {
@@ -87,7 +111,9 @@ const AdsOfferSlider = ({ containerClassName = '', onClose, isUpgradePrompt }: A
         }
 
         if (data && data.length > 0) {
+          console.debug('[AdsOfferSlider] raw fetched ads count:', data.length);
           const freshFilteredAds = filterAdsByUser(data, user?.role);
+          console.debug('[AdsOfferSlider] filtered ads count:', freshFilteredAds.length, { freshFilteredAds });
           const cleanedAds = freshFilteredAds.map(ad => ({
             ...ad,
             imagesmall_url: cleanImageUrl(ad.imagesmall_url)
@@ -175,7 +201,7 @@ const AdsOfferSlider = ({ containerClassName = '', onClose, isUpgradePrompt }: A
                   <img
                     src={ad.imagesmall_url}
                     alt={`${t('offer')} ${ad.id}`}
-                    className="w-full h-[150px] object-cover"
+                    className="w-full h-[150px] object-contain bg-black/10"
                     loading="eager"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent p-0 m-0" />
@@ -209,7 +235,9 @@ const AdsOfferSlider = ({ containerClassName = '', onClose, isUpgradePrompt }: A
           </h2>
         </>
       ) : (
-        <h2 className="text-2xl md:text-3xl font-bold text-black mb-4 text-center select-none">{t('discover_special_offers')}</h2>
+        showHeader ? (
+          <h2 className="text-2xl md:text-3xl font-bold text-black mb-4 text-center select-none">{t('discover_special_offers')}</h2>
+        ) : null
       )}
 
       <div className="w-full max-w-6xl">

@@ -144,11 +144,29 @@ const PhonesForSale: React.FC = () => {
     const fetchPhoneListings = async () => {
       setLoading(true);
       try {
-        const { data, error, count } = await supabase
+        // determine user's country to filter listings
+        let userCountryName: string | null = null;
+        try {
+          if (user?.id) {
+            const { data: userData } = await supabase
+              .from('users')
+              .select('countries')
+              .eq('id', user.id)
+              .maybeSingle();
+            if (userData?.countries) userCountryName = userData.countries.trim();
+          }
+        } catch (e) {
+          console.debug('Error fetching user country for phone listings:', e);
+        }
+        // build query and apply country filter if available
+        let phoneQuery: any = supabase
           .from('phones')
           .select(`*, is_verified, phone_images(image_path, main_image)`, { count: 'exact' })
-          .eq('status', 'active')
-          .range((page - 1) * itemsPerPage, page * itemsPerPage - 1); // Fetch items for the current page
+          .eq('status', 'active');
+
+        if (userCountryName) phoneQuery = phoneQuery.ilike('countries', `%${userCountryName}%`);
+
+        const { data, error, count } = await phoneQuery.range((page - 1) * itemsPerPage, page * itemsPerPage - 1); // Fetch items for the current page
 
         if (error) throw error;
 

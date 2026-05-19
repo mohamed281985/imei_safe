@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import Logo from './Logo';
 import { X, Search, Plus, LogOut, User, Settings, Key, Gift, MessageCircle } from 'lucide-react';
+import PackageBadge from '@/components/PackageBadge';
 import Notifications from './Notifications';
 import NotificationBell from './NotificationBell';
 import { supabase } from '../lib/supabase';
@@ -23,7 +24,6 @@ const AppNavbar: React.FC = () => {
     newPassword: ''
   });
   const [isProcessing, setIsProcessing] = useState(false);
-  const [bonusBalance, setBonusBalance] = useState(0);
   const [supportNumber, setSupportNumber] = useState('');
   const [countryCode, setCountryCode] = useState('');
 
@@ -147,80 +147,7 @@ const AppNavbar: React.FC = () => {
     }
   };
 
-  // ⭐ جلب وتحديث رصيد البونص
-  useEffect(() => {
-    if (!user?.id) return;
-
-    // 1. جلب أحدث رصيد بونص من آخر عملية دفع ناجحة
-    const fetchBonus = async () => {
-      console.log("جاري جلب بيانات البونص للمستخدم:", user.id);
-      const { data: latestPaidRecord, error: fetchError } = await supabase
-        .from('ads_payment')
-        .select('id, user_id, bonus_offer, is_paid, payment_date')
-        .eq('user_id', user.id)
-        .eq('is_paid', true)
-        .order('payment_date', { ascending: false })
-        .limit(1);
-
-      // جلب جميع السجلات المدفوعة للمستخدم للبحث عن البونص وتاريخ الانتهاء
-      const { data: allPaidRecords, error: allRecordsError } = await supabase
-        .from('ads_payment')
-        .select('bonus_offer, expires_at')
-        .eq('user_id', user.id)
-        .eq('is_paid', true)
-        .order('payment_date', { ascending: false });
-
-      if (allRecordsError) {
-        console.error("خطأ في جلب سجلات الدفع:", allRecordsError);
-        setBonusBalance(0);
-        return;
-      }
-
-      if (allPaidRecords && allPaidRecords.length > 0) {
-        const recordWithBonus = allPaidRecords.find(record => record.bonus_offer != null && record.bonus_offer > 0);
-
-        if (recordWithBonus) {
-          const now = new Date();
-          const expiresAt = recordWithBonus.expires_at ? new Date(recordWithBonus.expires_at) : null;
-
-          // التحقق من أن الباقة لم تنتهِ صلاحيتها
-          if (expiresAt && expiresAt > now) {
-            const bonusValue = parseFloat(recordWithBonus.bonus_offer) || 0;
-            setBonusBalance(bonusValue);
-          } else {
-            // إذا انتهت الصلاحية، يتم تعيين الرصيد إلى صفر
-            setBonusBalance(0);
-          }
-        } else {
-          setBonusBalance(0);
-        }
-      } else {
-        setBonusBalance(0);
-      }
-    };
-
-    fetchBonus();
-
-    // 2. الاشتراك في التحديثات الفورية لجدول ads_payment
-    const channel = supabase
-      .channel(`user_payments_bonus_${user.id}`)
-      .on('postgres_changes', {
-        event: '*', // الاستماع للإنشاء والتحديث
-        schema: 'public',
-        table: 'ads_payment',
-        filter: `user_id=eq.${user.id}`
-      }, () => {
-        // عند حدوث أي تغيير في مدفوعات المستخدم، أعد حساب البونص
-        console.log('تغيير في مدفوعات المستخدم، إعادة حساب البونص...');
-        fetchBonus();
-      })
-      .subscribe();
-
-    // 3. إلغاء الاشتراك عند الخروج
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user]);
+  // bonus system removed: package/role will govern privileges
 
   return (
     <div className="relative">
@@ -232,11 +159,8 @@ const AppNavbar: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2 h-14 min-h-[3.5rem]">
-          <div className="bg-gradient-to-r from-orange-500 to-amber-500 rounded-xl py-1 flex items-center gap-2 shadow-lg transform transition-transform hover:scale-105 px-2 sm:px-4 h-10 min-h-[2.5rem] border border-blue-300">
-            <Gift className="w-5 h-5 text-white" />
-            <span className="text-white font-bold text-sm sm:text-base">
-              {bonusBalance > 0 ? t('bonus_x_egp', { amount: Math.floor(bonusBalance).toLocaleString() }) : t('no_bonus')}
-            </span>
+          <div>
+            <PackageBadge user={user} />
           </div>
           {/* تم إزالة زر القائمة المنسدلة */}
         </div>

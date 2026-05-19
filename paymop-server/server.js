@@ -3680,6 +3680,135 @@ app.post('/paymob/publish-from-bonus', paymentLimiter, rateLimitMiddleware({ win
   }
 });
 
+// Endpoint: Publish ad for package users (gold/silver) — server verifies package and inserts ad without opening payment gateway
+app.post('/api/ads/package-publish', verifyJwtToken, paymentLimiter, rateLimitMiddleware({ windowMs: 15 * 60 * 1000, max: 6 }), async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { adData, packageType, merchantOrderId } = req.body || {};
+    if (!adData || !packageType) return res.status(400).json({ error: 'adData and packageType are required' });
+
+    const normalizedPackage = String(packageType || '').toLowerCase().trim();
+    if (!normalizedPackage.includes('gold') && !normalizedPackage.includes('silver')) {
+      return res.status(400).json({ error: 'Invalid packageType' });
+    }
+
+    // 1) Quick check: user must have an active paid package or users_plans quota
+    let entitled = false;
+
+    try {
+      // Check latest paid package in ads_payment
+      const { data: latestPaid, error: latestErr } = await supabase
+        .from('ads_payment')
+        .select('id, type, is_paid, payment_date')
+        .eq('user_id', userId)
+        .eq('is_paid', true)
+        .order('payment_date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!latestErr && latestPaid && typeof latestPaid.type === 'string' && latestPaid.type.toLowerCase().includes(normalizedPackage.split('_')[0])) {
+        entitled = true;
+      }
+    } catch (e) {
+      console.warn('package-publish: error checking latestPaid', e);
+    }
+
+    // 2) Fallback: check users.role for business plan
+    if (!entitled) {
+      try {
+        const { data: userRec } = await supabase.from('users').select('role').eq('id', userId).maybeSingle();
+        const role = (userRec && userRec.role) ? String(userRec.role).toLowerCase() : '';
+        if (role.includes(normalizedPackage.split('_')[0]) || role.includes('business')) {
+          entitled = true;
+        }
+      } catch (e) {
+        console.warn('package-publish: error checking users.role', e);
+      }
+    }
+
+    // 3) Fallback: check users_plans quotas (attempt to find a publish quota)
+    let usersPlansRow = null;
+    if (!entitled) {
+      try {
+        const { data: up, error: upErr } = await supabase.from('users_plans').select('*').eq('user_id', userId).maybeSingle();
+        if (!upErr && up) {
+          usersPlansRow = up;
+          // try common quota column names
+          const possibleQuota = up.publish_ad ?? up.publish_ads ?? up.gold_ad ?? up.gold_ads ?? up.silver_ad ?? up.silver_ads ?? null;
+          // used counter variants
+          const usedCount = up.used_publish_ad ?? up.used_publish_ads ?? up.used_ads ?? up.used_publish ?? 0;
+          if (possibleQuota != null && Number(possibleQuota) > Number(usedCount)) {
+            entitled = true;
+          }
+        }
+      } catch (e) {
+        console.warn('package-publish: error checking users_plans', e);
+      }
+    }
+
+    if (!entitled) {
+      return res.status(403).json({ error: 'User is not entitled to publish via package' });
+    }
+
+    // Encrypt sensitive fields before storing
+    const adDataToStore = { ...adData };
+    if (Object.prototype.hasOwnProperty.call(adDataToStore, 'phone')) {
+      adDataToStore.phone = encryptFieldForStorage(adDataToStore.phone);
+    }
+
+    // Ensure package type stored uses server-normalized value
+    const serverType = normalizedPackage;
+
+    const insertObj = {
+      ...adDataToStore,
+      user_id: userId,
+      amount: 0,
+      type: serverType,
+      payment_status: 'package',
+      is_paid: true,
+      transaction: 'package_publish',
+      merchant_order_id: merchantOrderId || null,
+      upload_date: new Date().toISOString(),
+      expires_at: (() => { const d = new Date(); d.setDate(d.getDate() + (adData.duration_days || 0)); return d.toISOString(); })(),
+    };
+
+    try {
+      const { data: inserted, error: insertErr } = await supabase.from('ads_payment').insert([insertObj]).select('id').single();
+      if (insertErr) {
+        console.error('package-publish: failed to insert ads_payment', insertErr);
+        return res.status(500).json({ error: 'Failed to create ad record' });
+      }
+
+      // If users_plans row exists, attempt to increment used counter
+      try {
+        if (usersPlansRow && usersPlansRow.id) {
+          // determine used field name heuristic
+          const updates = {};
+          if (Object.prototype.hasOwnProperty.call(usersPlansRow, 'used_publish_ad')) updates.used_publish_ad = Number(usersPlansRow.used_publish_ad || 0) + 1;
+          else if (Object.prototype.hasOwnProperty.call(usersPlansRow, 'used_publish_ads')) updates.used_publish_ads = Number(usersPlansRow.used_publish_ads || 0) + 1;
+          else if (Object.prototype.hasOwnProperty.call(usersPlansRow, 'used_ads')) updates.used_ads = Number(usersPlansRow.used_ads || 0) + 1;
+
+          if (Object.keys(updates).length > 0) {
+            await supabase.from('users_plans').update(updates).eq('id', usersPlansRow.id);
+          }
+        }
+      } catch (updErr) {
+        console.warn('package-publish: failed to update users_plans usage counter', updErr);
+      }
+
+      return res.json({ ok: true, adId: inserted.id });
+    } catch (e) {
+      console.error('package-publish: unexpected error', e);
+      return res.status(500).json({ error: 'Server error' });
+    }
+  } catch (e) {
+    console.error('Error in /api/ads/package-publish:', e);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // نقطة نهاية لإنشاء الفواتير
 app.post("/paymob/create-invoice", async (req, res) => {
   // per-operation timeout guard

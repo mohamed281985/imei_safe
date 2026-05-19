@@ -376,8 +376,7 @@ const SpecialAd = () => {
           throw insertAdError;
         }
 
-        // إرسال حدث لتحديث البونص في AppNavbar
-        window.dispatchEvent(new CustomEvent('bonusUpdated'));
+        // bonus system removed — no bonus events
 
         toast({
           title: 'تم النشر من البونص',

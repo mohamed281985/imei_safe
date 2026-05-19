@@ -74,6 +74,7 @@ const AccessoriesForSalePage: React.FC = () => {
     const [selectedCondition, setSelectedCondition] = useState('all');
     const [priceRange, setPriceRange] = useState({ min: '', max: '' });
     const [sortBy, setSortBy] = useState('newest');
+    const [userCity, setUserCity] = useState(''); // إضافة حالة لحقل المدينة
     const { coords } = useGeolocated({ positionOptions: { enableHighAccuracy: true } });
 
     useEffect(() => {
@@ -81,6 +82,7 @@ const AccessoriesForSalePage: React.FC = () => {
             setLoading(true);
 
             // --- جلب عملة المستخدم ---
+            let userCountryName: string | null = null;
             if (user?.id) {
                 const { data: userData } = await supabase
                     .from('users')
@@ -89,26 +91,32 @@ const AccessoriesForSalePage: React.FC = () => {
                     .maybeSingle();
 
                 if (userData?.countries) {
-                    const userCountryName = userData.countries.trim();
+                    const countryName = userData.countries.trim();
                     const { data: countryData } = await supabase
                         .from('countries')
                         .select('currency_symbol')
-                        .ilike('name_en', userCountryName)
+                        .ilike('name_en', countryName)
                         .maybeSingle();
 
                     if (countryData?.currency_symbol) {
                         setUserCurrencySymbol(countryData.currency_symbol);
-                    } else if (userCountryName.toLowerCase() === 'kuwait') {
+                    } else if (countryName.toLowerCase() === 'kuwait') {
                         setUserCurrencySymbol(i18n.language === 'ar' ? 'د.ك' : 'KWD');
                     }
+                    // set the local variable for filtering below
+                    userCountryName = countryName;
                 }
             }
 
-            const { data, error } = await supabase
+            // build query and apply country filter if available
+            let query: any = supabase
                 .from('accessories')
                 .select(`*, accessory_images(image_path, main_image)`)
-                .eq('status', 'active')
-                .order('created_at', { ascending: false });
+                .eq('status', 'active');
+
+            if (userCountryName) query = query.ilike('countries', `%${userCountryName}%`);
+
+            const { data, error } = await query.order('created_at', { ascending: false });
 
             if (error) {
                 console.debug('Error fetching accessories:', error);
@@ -121,6 +129,40 @@ const AccessoriesForSalePage: React.FC = () => {
 
         fetchAccessories();
     }, [user?.id, i18n.language]);
+
+    useEffect(() => {
+        const fetchUserCity = async () => {
+            if (user?.id) {
+                const { data: userData } = await supabase
+                    .from('users')
+                    .select('city')
+                    .eq('id', user.id)
+                    .maybeSingle();
+
+                if (userData?.city) {
+                    setUserCity(userData.city);
+                }
+            }
+        };
+
+        fetchUserCity();
+    }, [user?.id]);
+
+    const handleCityChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const newCity = e.target.value;
+        setUserCity(newCity);
+
+        if (user?.id) {
+            const { error } = await supabase
+                .from('users')
+                .update({ city: newCity })
+                .eq('id', user.id);
+
+            if (error) {
+                console.error('Error updating city:', error);
+            }
+        }
+    };
 
     const getFilteredAccessories = () => {
         const filtered = accessories.filter(acc => {
@@ -170,6 +212,22 @@ const AccessoriesForSalePage: React.FC = () => {
         <PageContainer>
             <AppNavbar />
             <div className="p-4 mb-10">
+                {/* إضافة حقل إدخال المدينة */}
+                <div className="bg-white/80 backdrop-blur-lg rounded-xl p-3 mb-4 shadow-lg">
+                    <label htmlFor="user-city" className="block text-sm font-medium text-gray-700">
+                        {t('city')}
+                    </label>
+                    <input
+                        id="user-city"
+                        type="text"
+                        value={userCity}
+                        onChange={handleCityChange}
+                        className="w-full rounded-2xl border border-blue-300/50 bg-white px-4 py-3 text-sm text-slate-800 shadow-[0_2px_10px_rgba(37,99,235,0.08)] outline-none transition-all duration-300 placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-200/60 focus:shadow-[0_6px_18px_rgba(37,99,235,0.18)]"
+                        placeholder={t('enter_city')}
+                        readOnly={user?.role !== 'normal'} // اجعل الحقل للقراءة فقط إذا لم يكن المستخدم عاديًا
+                    />
+                </div>
+
                 {/* قسم البحث والفلترة */}
                 <div className="bg-white/80 backdrop-blur-lg rounded-xl p-3 mb-4 shadow-lg">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
