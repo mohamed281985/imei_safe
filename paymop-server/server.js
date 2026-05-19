@@ -844,6 +844,9 @@ app.post('/api/supabase-auth-webhook', async (req, res) => {
     const userId = user.id;
     const email = user.email || user.email_address || '';
     const metadata = user.user_metadata || {};
+    // Security: prevent accidental insertion of unwanted fields into `users` table
+    // e.g. `username` should not be stored as a top-level column on users here
+    try { if (metadata && typeof metadata === 'object') { delete metadata.username; } } catch (e) {}
 
     // Idempotency: do nothing if application user already exists
     const { data: existingUser, error: existingErr } = await supabase.from('users').select('id').eq('id', userId).maybeSingle();
@@ -978,6 +981,8 @@ app.post('/api/upload-image', verifyJwtToken, uploadImageLimiter, async (req, re
 app.post('/api/create-app-user', verifyJwtToken, createAppUserLimiter, async (req, res) => {
   try {
     const { id, email, metadata } = req.body || {};
+    // Ensure client-provided metadata cannot inject undesirable top-level columns into `users`
+    try { if (metadata && typeof metadata === 'object') { delete metadata.username; } } catch (e) {}
     if (process.env.NODE_ENV !== 'production') console.log('/api/create-app-user called with body:', JSON.stringify(req.body));
 
     // Require a valid UUID `id` coming from Supabase Auth (frontend should pass the auth user id)
@@ -9067,6 +9072,8 @@ async function pollConfirmedUsersOnce() {
 
         const email = user.email || user.email_address || '';
         const metadata = user.user_metadata || {};
+        // Prevent bringing `username` from auth metadata into application `users` rows
+        try { if (metadata && typeof metadata === 'object') { delete metadata.username; } } catch (e) {}
 
         const owner_name = metadata.full_name || metadata.owner_name || '';
         const store_name = metadata.store_name || '';
