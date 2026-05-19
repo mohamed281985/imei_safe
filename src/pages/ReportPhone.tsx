@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-// متغير مرجعي للاحتفاظ بنتيجة الاستعلام الأخيرة
-const resultRef = { current: null };
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '../contexts/LanguageContext';
 import imageCompression from 'browser-image-compression';
@@ -15,6 +14,7 @@ import ImageViewer from '@/components/ImageViewer';
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import PageAdvertisement from '@/components/advertisements/PageAdvertisement';
+import AdsOfferSlider from '@/components/advertisements/AdsOfferSlider';
 import { useScrollToTop } from '../hooks/useScrollToTop';
 import { supabase } from '@/lib/supabase'; // استيراد Supabase
 
@@ -163,6 +163,7 @@ const validateImageFile = (file: File): Promise<boolean> => {
 
 const ReportPhone: React.FC = () => {
   useScrollToTop();
+  const resultRef = useRef<any>(null);
   // حالة لتخزين القيم الأصلية
   const [originalData, setOriginalData] = useState({
     ownerName: '',
@@ -1218,7 +1219,7 @@ const handleWhatsAppCheckboxChange = async () => {
               </div>
             </div>
 
-            {activeReportWarning && activeReportWarning !== 'this_phone_registered_to_another_account' && activeReportWarning !== 'this_phone_registered_to_another_account_cannot_report' && activeReportWarning !== 'phone_not_registered_can_report' && (
+            {currentStep === 1 && activeReportWarning && activeReportWarning !== 'this_phone_registered_to_another_account' && activeReportWarning !== 'this_phone_registered_to_another_account_cannot_report' && activeReportWarning !== 'phone_not_registered_can_report' && (
               <div
                 className="my-2 rounded-[28px] border border-red-200 bg-red-50/90 p-4 text-center shadow-sm"
               >
@@ -1228,7 +1229,7 @@ const handleWhatsAppCheckboxChange = async () => {
                 </p>
               </div>
             )}
-            {(activeReportWarning === 'this_phone_registered_to_another_account' || activeReportWarning === 'this_phone_registered_to_another_account_cannot_report') && (
+            {currentStep === 1 && (activeReportWarning === 'this_phone_registered_to_another_account' || activeReportWarning === 'this_phone_registered_to_another_account_cannot_report') && (
               <div
                 className="my-2 rounded-[28px] border border-red-200 bg-red-50/90 p-4 text-center shadow-sm"
               >
@@ -1238,7 +1239,7 @@ const handleWhatsAppCheckboxChange = async () => {
                 </p>
               </div>
             )}
-            {activeReportWarning === 'phone_not_registered_can_report' && (
+            {currentStep === 1 && activeReportWarning === 'phone_not_registered_can_report' && (
               <div
                 className="my-2 rounded-[28px] border border-green-200 bg-green-50/90 p-4 text-center shadow-sm"
               >
@@ -1651,28 +1652,37 @@ const handleWhatsAppCheckboxChange = async () => {
           </DialogContent>
         </Dialog>
 
-        {/* إضافة نافذة الترقية */}
-        <Dialog open={showUpgradeDialog} onOpenChange={setShowUpgradeDialog}>
-          <DialogContent className="sm:max-w-[400px] mx-auto px-4 bg-gradient-to-br from-blue-50 to-cyan-50 border-2 border-imei-cyan">
-            <DialogHeader>
-              <DialogTitle className="text-2xl font-bold text-blue-900">{t('upgrade_required')}</DialogTitle>
-              <DialogDescription className="text-gray-700">
-                {t('upgrade_to_share_whatsapp_description')}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="flex justify-end mt-4">
-              <Button
-                onClick={() => {
-                  setShowUpgradeDialog(false);
-                  navigate('/upgrade');
-                }}
-                className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-bold"
-              >
-                {t('upgrade_now')}
-              </Button>
+        {/* ترقية: عرض المودال المخصص كـ portal */}
+        {showUpgradeDialog && createPortal(
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/30" onClick={() => setShowUpgradeDialog(false)} />
+            <div className="relative z-10 w-full max-w-lg mx-auto">
+              <div className="bg-green-100/30 backdrop-blur-2xl rounded-2xl shadow-2xl w-[95%] h-[95vh] max-w-lg mx-auto border border-white/0 relative overflow-hidden pt-[50px] bg-clip-padding">
+                <button onClick={() => setShowUpgradeDialog(false)} className="absolute top-3 right-3 bg-red-600 text-white rounded-full p-1.5 shadow-lg hover:bg-red-700 transition-colors z-10" aria-label="إغلاق">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-x"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                </button>
+
+                <div className="flex flex-col items-center justify-center h-full pt-10 pb-16 px-6">
+                  <div className="mb-12 animate-pulse">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-gem w-28 h-28 text-cyan-200 drop-shadow-[0_2px_5px_rgba(0,255,255,0.5)]">
+                      <path d="M6 3h12l4 6-10 13L2 9Z" />
+                      <path d="M11 3 8 9l4 13 4-13-3-6" />
+                      <path d="M2 9h20" />
+                    </svg>
+                  </div>
+
+                  <h2 className="text-4xl md:text-5xl font-extrabold text-center select-none mb-4 text-white font-sans [text-shadow:_0_4px_6px_rgba(0,0,0,0.6)] transform -skew-y-6 tracking-wider">UPGRADE NOW</h2>
+
+                  <h2 className="text-2xl md:text-3xl font-extrabold text-center select-none mb-8 text-white font-sans [text-shadow:_0_4px_6px_rgba(0,0,0,0.6)] transform -skew-y-5 tracking-wider">{t('upgrade_now')}</h2>
+
+                  <div className="w-full max-w-2xl px-4">
+                    <AdsOfferSlider isUpgradePrompt={false} showHeader={false} />
+                  </div>
+                </div>
+              </div>
             </div>
-          </DialogContent>
-        </Dialog>
+          </div>
+        , document.getElementById('modal-root') || document.body)}
       </div>
     </PageContainer>
   );

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useGeolocated } from 'react-geolocated';
@@ -32,7 +32,8 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 
 // Icons
-import { Upload, Store, Link as LinkIcon, CalendarDays, Send, MapPin, X, Phone, Gift } from 'lucide-react';
+import { Upload, Store, Link as LinkIcon, CalendarDays, Send, MapPin, X, Phone } from 'lucide-react';
+import PackageBadge from '@/components/PackageBadge';
 import { useScrollToTop } from '@/hooks/useScrollToTop';
 import AdImagePreviewModal from '../components/AdImagePreviewModal';
 
@@ -60,7 +61,195 @@ const PublishAd: React.FC = () => {
   // استخدام useRef لتتبع وضع التحديث
   const isUpdateModeRef = useRef(false);
   const [isUpdateMode, setIsUpdateMode] = useState(false);
-  const [bonusBalance, setBonusBalance] = useState(0);
+
+  // Track plan info fetched from DB (authoritative)
+  const [basePlanFromDB, setBasePlanFromDB] = useState<string | null>(null);
+  // Keep full normalized role from DB (e.g. 'gold_business') to match `plans.type`
+  const [normalizedRoleFromDB, setNormalizedRoleFromDB] = useState<string | null>(null);
+  const [isPlanLoading, setIsPlanLoading] = useState(false);
+
+  // Derive user's base plan from authoritative DB role (fallback to auth `user.role`)
+  const basePlan = useMemo(() => {
+    const source = basePlanFromDB ?? String(user?.role || 'free').toLowerCase().trim();
+    const raw = String(source).toLowerCase().trim();
+    const normalized = raw.replace(/[\s\-]+/g, '_');
+    const base = normalized.split('_')[0];
+    return base; // 'gold' | 'silver' | 'free' | others
+  }, [basePlanFromDB, user?.role]);
+  const isPackageUser = basePlan === 'gold' || basePlan === 'silver';
+
+  // Fetch authoritative role from `users` table to match PackageBadge behavior
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    const fetchRole = async () => {
+      setIsPlanLoading(true);
+      try {
+        const { data, error } = await supabase.from('users').select('role').eq('id', user.id).single();
+        if (cancelled) return;
+        if (error) {
+          console.error('PublishAd: error fetching user role from DB', error);
+          return;
+        }
+        const raw = String(data?.role ?? user.role ?? 'free').toLowerCase().trim();
+        const normalized = raw.replace(/[\s\-]+/g, '_');
+        const base = normalized.split('_')[0];
+        setNormalizedRoleFromDB(normalized);
+        setBasePlanFromDB(base);
+      } catch (err) {
+        if (!cancelled) console.error('PublishAd: unexpected error fetching role', err);
+      } finally {
+        if (!cancelled) setIsPlanLoading(false);
+      }
+    };
+    fetchRole();
+    return () => { cancelled = true; };
+  }, [user?.id, user?.role]);
+
+  // Number of publish ads included in the user's plan (from `plans.Publish_Ad` column)
+  const [packagePublishAdsCount, setPackagePublishAdsCount] = useState<number | null>(null);
+  // plan's Publish_Ad value and user's stored quota in users_plans
+  const [planPublishAdValue, setPlanPublishAdValue] = useState<number | null>(null);
+  const [userPlanQuotaValue, setUserPlanQuotaValue] = useState<number | null>(null);
+
+  // Derived remaining ads to display (plans.Publish_Ad - users_plans quota) with sensible fallbacks
+  const packagePublishAdsRemaining = useMemo(() => {
+    if (planPublishAdValue != null && userPlanQuotaValue != null) {
+      const diff = Number(planPublishAdValue) - Number(userPlanQuotaValue);
+      return Number.isFinite(diff) ? Math.max(0, diff) : null;
+    }
+    if (packagePublishAdsCount != null) return packagePublishAdsCount;
+    return null;
+  }, [planPublishAdValue, userPlanQuotaValue, packagePublishAdsCount]);
+
+  useEffect(() => {
+    if (!basePlan) return;
+    let cancelled = false;
+
+    const fetchPlanRow = async () => {
+      try {
+        // Build normalized role to attempt exact match against `plans.type`
+        const normalizedFull = normalizedRoleFromDB ?? String(user?.role || '').toLowerCase().trim().replace(/[\s\-]+/g, '_');
+        let row = null;
+
+        // Try exact match with full normalized role (e.g. 'gold_business')
+        if (normalizedFull) {
+          console.log('PublishAd: querying plans.type exact=', normalizedFull);
+          const exact = await supabase.from('plans').select('*').eq('type', normalizedFull).maybeSingle();
+          console.log('PublishAd: exact query result:', exact);
+          row = exact.data;
+        }
+
+        // Try ilike with full normalized role if exact not found
+        if (!row && normalizedFull) {
+          console.log('PublishAd: querying plans.type ilike %' + normalizedFull + '%');
+          const res2 = await supabase.from('plans').select('*').ilike('type', `%${normalizedFull}%`).maybeSingle();
+          console.log('PublishAd: ilike(full) result:', res2);
+          row = res2.data;
+        }
+
+        // Fallback to searching by base token (e.g. 'gold')
+        if (!row) {
+          console.log('PublishAd: querying plans.type ilike base token %' + basePlan + '%');
+          const res3 = await supabase.from('plans').select('*').ilike('type', `%${basePlan}%`).maybeSingle();
+          console.log('PublishAd: ilike(base) result:', res3);
+          row = res3.data;
+        }
+
+        console.log('PublishAd: selected plan row:', row);
+
+        // If DB queries didn't return a row, fetch all plans and try a local match
+        if (!row) {
+          try {
+            console.log('PublishAd: fetching all plans for local scan');
+            const allRes = await supabase.from('plans').select('*');
+            console.log('PublishAd: all plans result:', allRes);
+            const list = allRes.data || [];
+            const normalizedFullLocal = normalizedFull || '';
+            const found = list.find((r: any) => {
+              const typ = String(r.type || '').toLowerCase().trim();
+              return (
+                (normalizedFullLocal && typ.includes(normalizedFullLocal)) ||
+                (basePlan && typ.includes(basePlan))
+              );
+            });
+            console.log('PublishAd: found by local scan:', found);
+            row = found || null;
+            // If still not found and plans table seems empty, try users_plans as fallback
+            if (!row) {
+              try {
+                console.log('PublishAd: attempting fallback -> users_plans for user', user?.id);
+                if (user?.id) {
+                  const upRes = await supabase.from('users_plans').select('*').eq('user_id', user.id).maybeSingle();
+                  console.log('PublishAd: users_plans result:', upRes);
+                  const up = upRes.data;
+                  if (up) {
+                    // Try common column names
+                    const goldQuota = up.gold_ad ?? up.gold_ads ?? up.publish_ad ?? up.publishAd ?? null;
+                    const silverQuota = up.silver_ad ?? up.silver_ads ?? null;
+                    const quota = basePlan === 'gold' ? goldQuota : basePlan === 'silver' ? silverQuota : null;
+                    if (quota != null) {
+                      const qnum = Number(quota);
+                      if (Number.isFinite(qnum)) {
+                        console.log('PublishAd: using users_plans quota:', qnum);
+                        if (!cancelled) setPackagePublishAdsCount(qnum);
+                      }
+                    }
+                  }
+                }
+              } catch (upErr) {
+                console.error('PublishAd: users_plans fallback error', upErr);
+              }
+            }
+          } catch (scanErr) {
+            console.error('PublishAd: error scanning all plans', scanErr);
+          }
+        }
+
+        if (!row) {
+          if (!cancelled) setPackagePublishAdsCount(null);
+          return;
+        }
+
+        // Try common column name variants for Publish_Ad
+        const publishVal = row.Publish_Ad ?? row.publish_ad ?? row.publishAd ?? row.publish_ads ?? row.publishAds ?? null;
+        const num = publishVal != null ? Number(publishVal) : null;
+        if (!cancelled) setPackagePublishAdsCount(Number.isFinite(num) ? num : null);
+        if (!cancelled) setPlanPublishAdValue(Number.isFinite(num) ? num : null);
+      } catch (err) {
+        console.error('PublishAd: failed fetching plan row', err);
+        if (!cancelled) setPackagePublishAdsCount(null);
+      }
+    };
+
+    fetchPlanRow();
+    return () => { cancelled = true; };
+  }, [basePlan]);
+
+  // Fetch user's quota from users_plans to compute comparison diff
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    const fetchUserQuota = async () => {
+      try {
+        const upRes = await supabase.from('users_plans').select('*').eq('user_id', user.id).maybeSingle();
+        console.log('PublishAd: users_plans fetch for diff:', upRes);
+        const up = upRes.data;
+        if (up) {
+          const goldQuota = up.gold_ad ?? up.gold_ads ?? up.publish_ad ?? up.publishAd ?? null;
+          const silverQuota = up.silver_ad ?? up.silver_ads ?? null;
+          const quota = basePlan === 'gold' ? goldQuota : basePlan === 'silver' ? silverQuota : null;
+          const qnum = quota != null ? Number(quota) : null;
+          if (!cancelled) setUserPlanQuotaValue(Number.isFinite(qnum as number) ? (qnum as number) : null);
+        }
+      } catch (err) {
+        console.error('PublishAd: error fetching users_plans for diff', err);
+        if (!cancelled) setUserPlanQuotaValue(null);
+      }
+    };
+    fetchUserQuota();
+    return () => { cancelled = true; };
+  }, [user?.id, basePlan]);
 
   // دالة لجلب سعر الإعلان بناءً على المدة
   const fetchAdPrices = async () => {
@@ -258,59 +447,7 @@ const PublishAd: React.FC = () => {
     setAdPrice(prices[duration] || null);
   }, [duration, prices]);
 
-  // ⭐ جلب وتحديث رصيد البونص
-  useEffect(() => {
-    if (!user?.id) return;
-
-    // 1. جلب أحدث رصيد بونص بنفس شروط السيرفر (bonus_add + paid)
-    const fetchBonus = async () => {
-      console.log("جاري جلب بيانات البونص للمستخدم:", user.id);
-      const { data: bonusRecords, error: allRecordsError } = await supabase
-        .from('ads_payment')
-        .select('bonus_offer, expires_at, payment_date, transaction, payment_status, is_paid')
-        .eq('user_id', user.id)
-        .eq('transaction', 'bonus_add')
-        .eq('is_paid', true)
-        .eq('payment_status', 'paid')
-        .order('payment_date', { ascending: false });
-
-      if (allRecordsError) {
-        console.error("خطأ في جلب سجلات الدفع:", allRecordsError);
-        setBonusBalance(0);
-        return;
-      }
-
-      if (bonusRecords && bonusRecords.length > 0) {
-        const recordWithBonus = bonusRecords.find(record => record.bonus_offer != null && record.bonus_offer > 0);
-
-        if (recordWithBonus) {
-          const now = new Date();
-          const expiresAt = recordWithBonus.expires_at ? new Date(recordWithBonus.expires_at) : null;
-
-          // التحقق من أن الباقة لم تنتهِ صلاحيتها
-          if (expiresAt && expiresAt > now) {
-            const bonusValue = parseFloat(recordWithBonus.bonus_offer) || 0;
-            setBonusBalance(bonusValue);
-          } else {
-            // إذا انتهت الصلاحية، يتم تعيين الرصيد إلى صفر
-            setBonusBalance(0);
-          }
-        } else {
-          setBonusBalance(0);
-        }
-      } else {
-        setBonusBalance(0);
-      }
-    };
-
-    fetchBonus();
-
-    // Listener for bonus updates
-    const handleBonusUpdate = () => fetchBonus();
-    window.addEventListener('bonusUpdated', handleBonusUpdate);
-
-    return () => window.removeEventListener('bonusUpdated', handleBonusUpdate);
-  }, [user]);
+  // Bonus logic removed — package/subscription UI is used instead
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -485,7 +622,7 @@ const PublishAd: React.FC = () => {
 
       const durationDays = parseInt(duration, 10);
       if (!Number.isFinite(durationDays) || durationDays <= 0) {
-        throw new Error('مدة الإعلان غير صالحة');
+        throw new Error(t('invalid_ad_duration'));
       }
 
       // Build ad payload for bonus route.
@@ -504,58 +641,10 @@ const PublishAd: React.FC = () => {
         is_active: true
       };
 
-      // If user has enough bonus (displayed balance), call secure server endpoint to publish using bonus.
-      if (!isUpdateMode && bonusBalance > 0 && adPrice !== null && bonusBalance >= adPrice) {
-        try {
-          const bonusResp = await axiosInstance.post('https://imei-safe.me/paymob/publish-from-bonus', {
-            adData: adPayload
-          });
-          if (!bonusResp?.data?.ok) {
-            throw new Error(bonusResp?.data?.error || 'فشل في نشر الإعلان باستخدام البونص');
-          }
+      // Bonus-based publish removed; proceed with normal payment flow
 
-          window.dispatchEvent(new CustomEvent('bonusUpdated'));
-          toast({
-            title: t('ad_published_from_bonus'),
-            description: bonusResp?.data?.message || t('ad_published_successfully') || '',
-            variant: 'default'
-          });
-          goToMyAdsAfterDelay();
-          return;
-        } catch (err: any) {
-          const serverError = err?.response?.data?.error || err?.response?.data?.message || '';
-          console.error('Error publishing using bonus (client):', {
-            message: err?.message,
-            status: err?.response?.status,
-            data: err?.response?.data,
-            sentPayload: adPayload
-          });
-          const recoverableBonusError =
-            typeof serverError === 'string' &&
-            (
-              serverError.includes('No valid bonus balance available') ||
-              serverError.includes('Insufficient bonus balance') ||
-              serverError.includes('Unable to determine expected amount')
-            );
-
-          if (recoverableBonusError) {
-            // الرصيد الظاهر في الواجهة قد لا يطابق تحقق السيرفر؛ أكمل لمسار الدفع العادي
-            setBonusBalance(0);
-          } else {
-            toast({
-              title: t('error'),
-              description: serverError || err.message || t('bonus_deduction_error_desc'),
-              variant: 'destructive'
-            });
-            setIsLoading(false);
-            goToMyAdsAfterDelay();
-            return;
-          }
-        }
-      }
-
-      // 4. إذا لم يوجد بونص كافٍ، فتح بوابة الدفع بنفس منطق SpecialAd
-      const amount = prices[duration] || 0;
+      // Decide amount: package users (gold/silver) pay 0 here
+      const amount = isPackageUser ? 0 : (prices[duration] || 0);
       const fullAdData = {
         user_id: activeUser.id,
         store_name: storeName,
@@ -585,7 +674,58 @@ const PublishAd: React.FC = () => {
         redirect_url_success: `https://imei-safe.me/paymob/redirect-success`,
         redirect_url_failed: `https://imei-safe.me/paymob/redirect-failed`
       };
+      // If user is on a package (gold/silver), call server endpoint to verify and create the ad/payment
+      if (isPackageUser) {
+        try {
+          // Acquire a server-authorized token (if available) to let server validate subscription
+          let token: string | undefined;
+          try {
+            const sessionRes: any = await supabase.auth.getSession();
+            token = sessionRes?.data?.session?.access_token;
+          } catch (e) {
+            try {
+              // @ts-ignore
+              const sess = await supabase.auth.session();
+              // @ts-ignore
+              token = sess?.access_token;
+            } catch (e2) {
+              token = undefined;
+            }
+          }
 
+          const packageType = normalizedRoleFromDB ?? `${basePlan}_business`;
+          const serverPayload = {
+            adData: fullAdData,
+            packageType,
+            merchantOrderId: paymentData.merchantOrderId
+          };
+
+          const resp = await fetch(api('/api/ads/package-publish'), {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {})
+            },
+            body: JSON.stringify(serverPayload)
+          });
+
+          if (!resp.ok) {
+            const errJson = await resp.json().catch(() => ({}));
+            throw new Error(errJson.error || t('ad_publish_package_failed'));
+          }
+
+          toast({ title: t('success'), description: t('ad_published_package_success') });
+          goToMyAdsAfterDelay();
+          return; // done — server handled DB insertion and no payment gateway is required
+        } catch (err: any) {
+          console.error('Package publish error:', err);
+          toast({ title: t('error'), description: err.message || t('ad_publish_package_failed'), variant: 'destructive' });
+          goToMyAdsAfterDelay();
+          return;
+        }
+      }
+
+      // Regular (non-package) payment flow follows
       // أرفق طابع زمني واطلب توقيعًا من الخادم قبل إرسال بيانات الدفع
       const timestamp = Date.now();
       let signature = '';
@@ -598,7 +738,7 @@ const PublishAd: React.FC = () => {
           offerData: { type: fullAdData.type, duration_days: fullAdData.duration_days }
         });
       } catch (err) {
-        throw new Error('فشل الحصول على توقيع الدفع من الخادم');
+        throw new Error(t('failed_to_get_signature'));
       }
 
       const paymentPayload = { ...paymentData, timestamp, signature };
@@ -606,7 +746,7 @@ const PublishAd: React.FC = () => {
       const response = await axiosInstance.post('https://imei-safe.me/paymob/create-payment', paymentPayload);
       if (response.status !== 200) {
         const errorData = response.data;
-        throw new Error(errorData.error || 'فشل في إنشاء عملية الدفع');
+        throw new Error(errorData.error || t('failed_to_create_payment'));
       }
       const data = response.data;
       if (data.iframe_url) {
@@ -666,184 +806,230 @@ const PublishAd: React.FC = () => {
     <PageContainer>
       <div dir="rtl" className="min-h-screen flex justify-center items-start py-6 px-4" style={{ background: 'linear-gradient(180deg, #EAF6FF 0%, #FFFFFF 65%)' }}>
         <div className="w-full max-w-md">
+
           <div className="flex items-center justify-between mb-6 gap-4 mt-2">
             <div className="p-2 rounded-full bg-orange-400 text-white shadow-md">
               <BackButton />
             </div>
-            <h1 className="text-2xl font-extrabold text-center flex-1 text-gray-900">نشر الإعلان</h1>
-            <div className="rounded-xl py-1 px-3 flex items-center gap-2 shadow-md transform bg-gradient-to-r from-orange-500 to-orange-400">
-              <Gift className="w-5 h-5 text-white" />
-              <span className="text-white font-semibold text-sm">{bonusBalance > 0 ? `${Math.floor(bonusBalance).toLocaleString()} ${t('currency_short')}` : 'لا يوجد Bonus'}</span>
+            <h1 className="text-2xl font-extrabold text-center flex-1 text-gray-900">{t('publish_ad')}</h1>
+            <div className="flex flex-col items-center">
+              <PackageBadge user={user} />
             </div>
           </div>
 
-          {isLoading && (
-            <div className="flex justify-center my-4">
-              <div className="spinner border-4 border-imei-cyan border-t-transparent rounded-full w-10 h-10 animate-spin"></div>
-              <span className="ml-2 text-imei-cyan">{t('processing_payment')}</span>
+
+
+          {/* Premium Stats Card (GOLD VIP) - Improved Design */}
+          <div className="mt-2">
+            <div className="rounded-xl bg-gradient-to-br from-white/80 to-white/40 backdrop-blur-md border border-amber-200/50 shadow-lg overflow-hidden">
+              <div dir="rtl" className="p-3">
+                {/* Header with Package Info */}
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></div>
+                    <span className="text-xs font-medium text-amber-700">{t('package_status')}</span>
+                  </div>
+                  <div className="inline-flex items-center px-3 py-1 rounded-full bg-gradient-to-r from-amber-50 to-white border border-amber-200 text-amber-700 text-xs font-bold shadow-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-crown mr-1">
+                      <path d="m2 4 3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"></path>
+                    </svg>
+                    {t('package_total')}:&nbsp;{planPublishAdValue != null ? `${planPublishAdValue} ${t('ads')}` : packagePublishAdsCount != null ? `${packagePublishAdsCount} ${t('ads')}` : t('not_specified')}
+                  </div>
+                </div>
+
+                {/* Main Stats - Compact Layout */}
+                <div className="flex items-center justify-between gap-3 bg-white/50 rounded-lg p-2">
+                  {/* Remaining Ads */}
+                  <div className="flex-1 flex flex-col items-center justify-center">
+                    <div className="text-2xl font-extrabold text-amber-600">{packagePublishAdsRemaining != null ? packagePublishAdsRemaining : '—'}</div>
+                    <div className="text-[10px] text-gray-600 mt-0.5 font-medium">{t('package_remaining_ads')}</div>
+                  </div>
+
+                  {/* Vertical Divider */}
+                  <div className="w-px h-8 bg-gradient-to-b from-amber-200 to-transparent"></div>
+
+                  {/* Duration */}
+                  <div className="flex-1 flex flex-col items-center justify-center">
+                    <div className="text-2xl font-extrabold text-gray-900">{duration ? duration : '—'}</div>
+                    <div className="text-[10px] text-gray-600 mt-0.5 font-medium">{t('ad_duration_per_ad')}</div>
+                  </div>
+
+                  {/* Vertical Divider */}
+                  <div className="w-px h-8 bg-gradient-to-b from-amber-200 to-transparent"></div>
+
+                  {/* Package Expiry */}
+                  <div className="flex-1 flex flex-col items-center justify-center">
+                    <div className="text-xl font-bold text-gray-700">28</div>
+                    <div className="text-[10px] text-gray-600 mt-0.5 font-medium">{t('days_remaining')}</div>
+                  </div>
+                </div>
+              </div>
             </div>
-          )}
+          </div>
+
+
 
           <div className="mx-auto">
-              <form onSubmit={handleSubmit} className="space-y-6 pb-7">
-                {/* Image Upload */}
-                <div>
-                  <Label className="text-gray-800">{t('ad_image')}</Label>
-                  <div
-                    className="mt-2 flex flex-col items-center justify-center px-4 pt-6 pb-6 border-2 border-dotted rounded-lg cursor-pointer bg-white/40 border-[#0A84FF]/30 shadow-sm"
-                    onClick={() => fileInputRef.current?.click()}
-                    style={{ boxShadow: '0 6px 18px rgba(10,132,255,0.06)' }}
-                  >
-                    <div className="space-y-2 text-center w-full">
-                      {adImagePreview ? (
-                        <img src={adImagePreview} alt={t('ad_preview')} className="mx-auto h-44 w-auto rounded-lg shadow-inner" />
-                      ) : (
-                        <div className="mx-auto w-16 h-16 rounded-full bg-white flex items-center justify-center shadow-sm">
-                          <Upload className="h-8 w-8 text-[#0A84FF]" />
-                        </div>
-                      )}
-                      <div className="flex justify-center text-sm text-gray-700">
-                        <p className="pl-1">ارفع صورة</p>
+            <form onSubmit={handleSubmit} className="space-y-6 pb-7">
+              {/* Image Upload */}
+              <div>
+                <Label className="text-gray-800">{t('ad_image')}</Label>
+                <div
+                  className="mt-2 flex flex-col items-center justify-center px-4 pt-6 pb-6 border-2 border-dotted rounded-lg cursor-pointer bg-white/40 border-[#0A84FF]/30 shadow-sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{ boxShadow: '0 6px 18px rgba(10,132,255,0.06)' }}
+                >
+                  <div className="space-y-2 text-center w-full">
+                    {adImagePreview ? (
+                      <img src={adImagePreview} alt={t('ad_preview')} className="mx-auto h-44 w-auto rounded-lg shadow-inner" />
+                    ) : (
+                      <div className="mx-auto w-16 h-16 rounded-full bg-white flex items-center justify-center shadow-sm">
+                        <Upload className="h-8 w-8 text-[#0A84FF]" />
                       </div>
-                      <p className="text-xs text-gray-500">PNG, JPG حتى 5 ميجابايت</p>
+                    )}
+                    <div className="flex justify-center text-sm text-gray-700">
+                      <p className="pl-1">{t('click_to_upload')}</p>
+                    </div>
+                    <p className="text-xs text-gray-500">{t('image_format_hint')}</p>
+                  </div>
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  accept="image/png, image/jpeg"
+                  onChange={handleImageChange}
+                />
+
+                {/* Image Preview */}
+                {isEditing && adImagePreview ? (
+                  <div className="mt-6">
+                    <Label className="text-gray-700 mb-4 block">{t('crop_image')}</Label>
+                    <ReactCrop
+                      crop={crop}
+                      onChange={(c) => setCrop(c)}
+                      onComplete={(c) => setCompletedCrop(c)}
+                      keepSelection={true}
+                      circularCrop={false}
+                      minHeight={100}
+                      aspect={16 / 9}
+                      className="max-w-full bg-gray-900 rounded-lg overflow-hidden"
+                    >
+                      <img
+                        ref={imgRef}
+                        src={adImagePreview}
+                        alt={t('preview')}
+                        className="max-w-full"
+                      />
+                    </ReactCrop>
+                    <Button
+                      onClick={handleCropComplete}
+                      className="mt-4 bg-imei-cyan text-white hover:bg-imei-cyan/80"
+                    >
+                      {t('complete_crop')}
+                    </Button>
+                  </div>
+                ) : adImagePreview ? (
+                  <div className="mt-6">
+                    <Label className="text-gray-700 mb-4 block">{t('ad_preview')}</Label>
+
+                    {/* Featured Ad Preview */}
+                    <div className="mb-6">
+                      <h3 className="text-imei-cyan text-sm mb-2">{t('featured_ad_preview')}</h3>
+                      <div className="relative rounded-xl overflow-hidden border-2 border-imei-cyan/20 hover:border-imei-cyan/40 transition-all aspect-video">
+                        <img src={adImagePreview} alt={t('ad_image')} className="w-full aspect-video object-cover" />
+                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
+                          <div className="flex items-center gap-2">
+                            <Store className="h-4 w-4 text-imei-cyan" />
+                            <span className="text-gray-900 text-sm font-medium">{storeName || t('your_store_name')}</span>
+                          </div>
+                          {whatsapp && (
+                            <div className="flex items-center gap-2 mt-1">
+                              <LinkIcon className="h-4 w-4 text-imei-cyan" />
+                              <span className="text-gray-500 text-xs">{t('whatsapp_label')}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Regular Ad Preview */}
+                    <div>
+                      <h3 className="text-imei-cyan text-sm mb-2">{t('regular_ad_preview')}</h3>
+                      <div className="relative rounded-xl overflow-hidden border-2 border-imei-cyan/20 hover:border-imei-cyan/40 transition-all">
+                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
+                          <div className="flex items-center gap-2">
+                            <Store className="h-4 w-4 text-imei-cyan" />
+                            <span className="text-gray-900 text-sm font-medium">{storeName || t('your_store_name')}</span>
+                          </div>
+                          {whatsapp && (
+                            <div className="flex items-center gap-2 mt-1">
+                              <LinkIcon className="h-4 w-4 text-imei-cyan" />
+                              <span className="text-gray-500 text-xs">WhatsApp</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </div>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    className="hidden"
-                    accept="image/png, image/jpeg"
-                    onChange={handleImageChange}
+                ) : null}
+              </div>
+
+              {/* Store Name */}
+              <div>
+                <Label htmlFor="storeName" className="text-gray-700">{t('store_name')}</Label>
+                <div className="relative mt-2">
+                  <Store className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                  <Input
+                    id="storeName"
+                    value={storeName}
+                    onChange={(e) => setStoreName(e.target.value)}
+                    placeholder={t('enter_store_name')}
+                    required
+                    readOnly
+                    className="pl-10 bg-white text-black border-gray-300 focus:border-imei-cyan focus:ring-imei-cyan"
                   />
+                </div>
+              </div>
 
-                  {/* Image Preview */}
-                  {isEditing && adImagePreview ? (
-                    <div className="mt-6">
-                      <Label className="text-gray-700 mb-4 block">{t('crop_image')}</Label>
-                      <ReactCrop
-                        crop={crop}
-                        onChange={(c) => setCrop(c)}
-                        onComplete={(c) => setCompletedCrop(c)}
-                        keepSelection={true}
-                        circularCrop={false}
-                        minHeight={100}
-                        aspect={16 / 9}
-                        className="max-w-full bg-gray-900 rounded-lg overflow-hidden"
-                      >
-                        <img
-                          ref={imgRef}
-                          src={adImagePreview}
-                          alt={t('preview')}
-                          className="max-w-full"
-                        />
-                      </ReactCrop>
-                      <Button
-                        onClick={handleCropComplete}
-                        className="mt-4 bg-imei-cyan text-white hover:bg-imei-cyan/80"
-                      >
-                        {t('complete_crop')}
-                      </Button>
-                    </div>
-                  ) : adImagePreview ? (
-                    <div className="mt-6">
-                      <Label className="text-gray-700 mb-4 block">{t('ad_preview')}</Label>
+              {/* Phone Number */}
+              <div>
+                <Label htmlFor="phoneNumber" className="text-gray-700">{t('phone_label')}</Label>
+                <div className="relative mt-2">
+                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                  <Input
+                    id="phoneNumber"
+                    type="tel"
+                    value={phoneNumber}
+                    onChange={(e) => setPhoneNumber(e.target.value)}
+                    placeholder={t('phone_placeholder')}
+                    required
+                    readOnly
+                    className="pl-10 bg-white text-black border-gray-300 focus:border-imei-cyan focus:ring-imei-cyan"
+                  />
+                </div>
+              </div>
 
-                      {/* Featured Ad Preview */}
-                      <div className="mb-6">
-                        <h3 className="text-imei-cyan text-sm mb-2">{t('featured_ad_preview')}</h3>
-                        <div className="relative rounded-xl overflow-hidden border-2 border-imei-cyan/20 hover:border-imei-cyan/40 transition-all aspect-video">
-                          <img src={adImagePreview} alt={t('ad_image')} className="w-full aspect-video object-cover" />
-                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
-                            <div className="flex items-center gap-2">
-                              <Store className="h-4 w-4 text-imei-cyan" />
-                              <span className="text-gray-900 text-sm font-medium">{storeName || t('your_store_name')}</span>
-                            </div>
-                            {whatsapp && (
-                              <div className="flex items-center gap-2 mt-1">
-                                <LinkIcon className="h-4 w-4 text-imei-cyan" />
-                                <span className="text-gray-500 text-xs">WhatsApp</span>
-                              </div>
-                            )}
-                          </div>
+              {/* Ad Duration */}
+              <div className={!isUpdateMode ? 'block' : 'hidden'}>
+                <Label className="text-gray-700">{t('ad_duration')}</Label>
+                <RadioGroup
+                  defaultValue="7"
+                  className="mt-2 grid grid-cols-3 gap-4"
+                  value={duration}
+                  onValueChange={setDuration}
+                >
+                  {availableDurations.map((days) => (
+                    <Label key={days} htmlFor={`d${days}`} className="relative flex flex-col items-center justify-between rounded-xl border-2 border-gray-200 bg-white p-3 shadow-sm transition-all duration-200 hover:shadow-md [&:has([data-state=checked])]:border-orange-500 [&:has([data-state=checked])]:bg-orange-50 [&:has([data-state=checked])]:shadow-lg">
+                      <RadioGroupItem value={days} id={`d${days}`} className="sr-only" />
+                      <div className="w-full text-center mb-1">
+                        <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-[#E6F7FF] text-[#0A84FF] mb-1">
+                          <CalendarDays className="h-4 w-4" />
                         </div>
+                        <h3 className="text-base font-bold text-gray-800">{days} {t('days')}</h3>
                       </div>
 
-                      {/* Regular Ad Preview */}
-                      <div>
-                        <h3 className="text-imei-cyan text-sm mb-2">{t('regular_ad_preview')}</h3>
-                        <div className="relative rounded-xl overflow-hidden border-2 border-imei-cyan/20 hover:border-imei-cyan/40 transition-all">
-                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
-                            <div className="flex items-center gap-2">
-                              <Store className="h-4 w-4 text-imei-cyan" />
-                              <span className="text-gray-900 text-sm font-medium">{storeName || t('your_store_name')}</span>
-                            </div>
-                            {whatsapp && (
-                              <div className="flex items-center gap-2 mt-1">
-                                <LinkIcon className="h-4 w-4 text-imei-cyan" />
-                                <span className="text-gray-500 text-xs">WhatsApp</span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-
-                {/* Store Name */}
-                <div>
-                  <Label htmlFor="storeName" className="text-gray-700">{t('store_name')}</Label>
-                  <div className="relative mt-2">
-                    <Store className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                    <Input
-                      id="storeName"
-                      value={storeName}
-                      onChange={(e) => setStoreName(e.target.value)}
-                      placeholder={t('enter_store_name')}
-                      required
-                      readOnly
-                      className="pl-10 bg-white text-black border-gray-300 focus:border-imei-cyan focus:ring-imei-cyan"
-                    />
-                  </div>
-                </div>
-
-                {/* Phone Number */}
-                <div>
-                  <Label htmlFor="phoneNumber" className="text-gray-700">{t('phone_label')}</Label>
-                  <div className="relative mt-2">
-                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                    <Input
-                      id="phoneNumber"
-                      type="tel"
-                      value={phoneNumber}
-                      onChange={(e) => setPhoneNumber(e.target.value)}
-                      placeholder={t('phone_placeholder')}
-                      required
-                      readOnly
-                      className="pl-10 bg-white text-black border-gray-300 focus:border-imei-cyan focus:ring-imei-cyan"
-                    />
-                  </div>
-                </div>
-
-                {/* Ad Duration */}
-                <div className={!isUpdateMode ? 'block' : 'hidden'}>
-                  <Label className="text-gray-700">{t('ad_duration')}</Label>
-                  <RadioGroup
-                    defaultValue="7"
-                    className="mt-2 grid grid-cols-3 gap-4"
-                    value={duration}
-                    onValueChange={setDuration}
-                  >
-                    {availableDurations.map((days) => (
-                      <Label key={days} htmlFor={`d${days}`} className="relative flex flex-col items-center justify-between rounded-xl border-2 border-gray-200 bg-white p-3 shadow-sm transition-all duration-200 hover:shadow-md [&:has([data-state=checked])]:border-orange-500 [&:has([data-state=checked])]:bg-orange-50 [&:has([data-state=checked])]:shadow-lg">
-                        <RadioGroupItem value={days} id={`d${days}`} className="sr-only" />
-                        <div className="w-full text-center mb-1">
-                          <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-[#E6F7FF] text-[#0A84FF] mb-1">
-                            <CalendarDays className="h-4 w-4" />
-                          </div>
-                          <h3 className="text-base font-bold text-gray-800">{days} {t('days')}</h3>
-                        </div>
-                      
+                      {!isPackageUser && (
                         <div className="w-full mt-auto pt-2 border-t border-gray-100">
                           <div className="flex items-center justify-center gap-1 mb-1">
                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-credit-card text-gray-400">
@@ -856,71 +1042,71 @@ const PublishAd: React.FC = () => {
                             {prices[days] || 0} <span className="text-xs font-normal text-gray-500">{t('currency_short')}</span>
                           </div>
                         </div>
-                      </Label>
-                    ))}
-                  </RadioGroup>
+                      )}
+                    </Label>
+                  ))}
+                </RadioGroup>
 
-                  {/* Current Price Display */}
-                  {adPrice !== null && (
-                    <div className="mt-4 p-4 bg-gradient-to-r from-[#E6F7FF] to-white border border-white/30 rounded-xl text-center shadow-sm">
-                      <p className="text-gray-800 font-medium">
-                        الإجمالي: <span className="text-2xl font-extrabold text-gray-900">{adPrice} {t('currency_short')}</span>
-                      </p>
-                    </div>
-                  )}
-                </div>
+                {/* Current Price Display */}
+                {!isPackageUser && adPrice !== null && (
+                  <div className="mt-4 p-4 bg-gradient-to-r from-[#E6F7FF] to-white border border-white/30 rounded-xl text-center shadow-sm">
+                    <p className="text-gray-800 font-medium">
+                      الإجمالي: <span className="text-2xl font-extrabold text-gray-900">{adPrice} {t('currency_short')}</span>
+                    </p>
+                  </div>
+                )}
+              </div>
 
-                {/* Location Info */}
-                <div className="p-3 bg-gradient-to-r from-[#E6F7FF] to-white rounded-xl border border-white/30 shadow-sm flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-[#E6F7FF]">
-                      <MapPin className="h-5 w-5 text-[#0A84FF]" />
-                    </div>
-                    <div>
-                      <div className="text-sm font-medium text-gray-800">{coords ? 'تم تحديد الموقع بنجاح' : t('ad_location')}</div>
-                      <div className="text-xs text-gray-500">{coords ? `${coords.latitude?.toFixed(3)}, ${coords.longitude?.toFixed(3)}` : t('location_not_set')}</div>
-                    </div>
+              {/* Location Info */}
+              <div className="p-3 bg-gradient-to-r from-[#E6F7FF] to-white rounded-xl border border-white/30 shadow-sm flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-[#E6F7FF]">
+                    <MapPin className="h-5 w-5 text-[#0A84FF]" />
                   </div>
                   <div>
-                    <button type="button" onClick={handleChangeLocation} className="bg-white border border-[#0A84FF] text-[#0A84FF] px-3 py-2 rounded-lg shadow-sm">تغيير الموقع</button>
+                    <div className="text-sm font-medium text-gray-800">{coords ? t('location_set_success') : t('ad_location')}</div>
+                    <div className="text-xs text-gray-500">{coords ? `${coords.latitude?.toFixed(3)}, ${coords.longitude?.toFixed(3)}` : t('location_not_set')}</div>
                   </div>
                 </div>
-
-                {/* WhatsApp Checkbox */}
-                <div className="p-4 bg-white/40 border border-[#0A84FF]/20 rounded-xl shadow-sm">
-                  <div className="flex items-center space-x-3 space-x-reverse">
-                    <input
-                      id="whatsapp"
-                      type="checkbox"
-                      checked={whatsapp}
-                      onChange={(e) => setWhatsapp(e.target.checked)}
-                      className="h-5 w-5 rounded border-gray-300 text-[#0A84FF] focus:ring-[#0A84FF]"
-                    />
-                    <Label htmlFor="whatsapp" className="text-gray-800 font-bold cursor-pointer flex-1">
-                      السماح للعملاء بالتواصل عبر الواتساب
-                    </Label>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-2 mr-8">
-                    عند تفعيل هذا الخيار، سيظهر زر "تواصل الآن" في إعلانك لفتح محادثة واتساب مباشرة معك.
-                  </p>
+                <div>
+                  <button type="button" onClick={handleChangeLocation} className="bg-white border border-[#0A84FF] text-[#0A84FF] px-3 py-2 rounded-lg shadow-sm">{t('change_location')}</button>
                 </div>
+              </div>
 
-                {/* Submit Button */}
-                <div className="mt-3">
-                  <Button type="submit" className="w-full text-white mb-6 py-4 text-lg rounded-xl shadow-xl" style={{ background: 'linear-gradient(90deg,#0A84FF 0%,#005BFF 100%)' }} disabled={isLoading}>
-                    {isLoading ? (isUpdateMode ? t('updating') : t('publishing')) : (
-                      <>
-                        <Send className="mr-2 h-4 w-4 text-white" />
-                        {isUpdateMode ? t('update_and_edit_ad') : 'نشر الإعلان'}
-                      </>
-                    )}
-                  </Button>
+              {/* WhatsApp Checkbox */}
+              <div className="p-4 bg-white/40 border border-[#0A84FF]/20 rounded-xl shadow-sm">
+                <div className="flex items-center space-x-3 space-x-reverse">
+                  <input
+                    id="whatsapp"
+                    type="checkbox"
+                    checked={whatsapp}
+                    onChange={(e) => setWhatsapp(e.target.checked)}
+                    className="h-5 w-5 rounded border-gray-300 text-[#0A84FF] focus:ring-[#0A84FF]"
+                  />
+                  <Label htmlFor="whatsapp" className="text-gray-800 font-bold cursor-pointer flex-1">
+                    {t('allow_whatsapp_contact')}
+                  </Label>
                 </div>
-              </form>
+                <p className="text-xs text-gray-500 mt-2 mr-8">
+                  {t('allow_whatsapp_description')}
+                </p>
+              </div>
+
+              {/* Submit Button */}
+              <div className="mt-3">
+                <Button type="submit" className="w-full text-white mb-6 py-4 text-lg rounded-xl shadow-xl" style={{ background: 'linear-gradient(90deg,#0A84FF 0%,#005BFF 100%)' }} disabled={isLoading}>
+                  {isLoading ? (isUpdateMode ? t('updating') : t('publishing')) : (
+                    <>
+                      <Send className="mr-2 h-4 w-4 text-white" />
+                      {isUpdateMode ? t('update_and_edit_ad') : t('publish_ad')}
+                    </>
+                  )}
+                </Button>
+              </div>
+            </form>
           </div>
         </div>
       </div>
-
     </PageContainer>
   );
 };

@@ -45,6 +45,7 @@ interface PhoneFormData {
     [key: string]: string | undefined;
   };
   city: string;
+  country?: string;
   contact_methods: {
     phone?: string;
     whatsapp?: string;
@@ -71,8 +72,6 @@ const AddPhoneForm: React.FC = () => {
   const [availableDurations, setAvailableDurations] = useState<string[]>([]);
   const [selectedDuration, setSelectedDuration] = useState('7');
   const [promotionPrice, setPromotionPrice] = useState<number | null>(null);
-  const [bonusBalance, setBonusBalance] = useState(0);
-  const [lastBonusId, setLastBonusId] = useState<string | null>(null);
   const [phoneIdToFeature, setPhoneIdToFeature] = useState<string | null>(null);
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
 
@@ -146,57 +145,7 @@ const AddPhoneForm: React.FC = () => {
     setPromotionPrice(promotionPrices[selectedDuration] || null);
   }, [selectedDuration, promotionPrices]);
 
-  // Fetch user's bonus balance
-  useEffect(() => {
-    if (!user?.id) return;
-
-    const fetchBonus = async () => {
-      try {
-        // Fetch all paid records for the user to find a valid bonus
-        const { data: allPaidRecords, error: fetchError } = await supabase
-          .from('ads_payment')
-          .select('id, bonus_offer, expires_at')
-          .eq('user_id', user.id)
-          .eq('is_paid', true)
-          .order('payment_date', { ascending: false });
-
-        if (fetchError) {
-          console.error("Error fetching bonus data:", fetchError);
-          setBonusBalance(0);
-          setLastBonusId(null);
-          return;
-        }
-
-        if (allPaidRecords && allPaidRecords.length > 0) {
-          // Find the first record that has a valid, unexpired bonus
-          const recordWithBonus = allPaidRecords.find(record => {
-            const expiresAt = record.expires_at ? new Date(record.expires_at) : null;
-            const now = new Date();
-            return expiresAt && expiresAt > now && record.bonus_offer > 0;
-          });
-
-          if (recordWithBonus) {
-            setBonusBalance(recordWithBonus.bonus_offer);
-            setLastBonusId(recordWithBonus.id);
-          } else {
-            // No valid bonus found
-            setBonusBalance(0);
-            setLastBonusId(null);
-          }
-        } else {
-          // No paid records found
-          setBonusBalance(0);
-          setLastBonusId(null);
-        }
-      } catch (err) {
-        console.error("Unexpected error fetching bonus:", err);
-        setBonusBalance(0);
-        setLastBonusId(null);
-      }
-    };
-
-    fetchBonus();
-  }, [user]);
+  // bonus system removed: package/role will drive promotions
 
   const [imeiChecking, setImeiChecking] = useState(false);
   const isReported = imeiStatus === 'reported' || imeiStatus === 'not_registered';
@@ -214,14 +163,27 @@ const AddPhoneForm: React.FC = () => {
           const response = await axiosInstance.get('/api/decrypted-user');
           const data = response.data?.business;
 
-          if (data) {
-            setFormData(prev => ({
-              ...prev,
-              store_name: data.store_name || '',
-              city: data.address || '',
-              contact_methods: { ...prev.contact_methods, phone: data.phone || '' }
-            }));
+          let country = data?.countries || data?.country || '';
+          if (!country) {
+            try {
+              const { data: userRow, error: userErr } = await supabase
+                .from('users')
+                .select('countries')
+                .eq('id', user.id)
+                .maybeSingle();
+              if (!userErr && userRow?.countries) country = userRow.countries;
+            } catch (e) {
+              /* ignore */
+            }
           }
+
+          setFormData(prev => ({
+            ...prev,
+            store_name: data.store_name || '',
+            city: data.address || '',
+            country: country || '',
+            contact_methods: { ...prev.contact_methods, phone: data.phone || '' }
+          }));
         } catch (err) {
           console.error('Error fetching business data:', err);
         }
@@ -231,14 +193,27 @@ const AddPhoneForm: React.FC = () => {
           const response = await axiosInstance.get('/api/decrypted-user');
           const data = response.data?.user;
 
-          if (data) {
-            setFormData(prev => ({
-              ...prev,
-              store_name: data?.full_name || '',
-              city: '',
-              contact_methods: { ...prev.contact_methods, phone: data?.phone || '' }
-            }));
+          let country = data?.countries || data?.country || '';
+          if (!country) {
+            try {
+              const { data: userRow, error: userErr } = await supabase
+                .from('users')
+                .select('countries')
+                .eq('id', user.id)
+                .maybeSingle();
+              if (!userErr && userRow?.countries) country = userRow.countries;
+            } catch (e) {
+              /* ignore */
+            }
           }
+
+          setFormData(prev => ({
+            ...prev,
+            store_name: data?.full_name || '',
+            city: '',
+            country: country || '',
+            contact_methods: { ...prev.contact_methods, phone: data?.phone || '' }
+          }));
         } catch (err) {
           console.error('Error fetching user data:', err);
         }
@@ -257,6 +232,7 @@ const AddPhoneForm: React.FC = () => {
     warranty_months: '0',
     specs: {},
     city: '',
+    country: '',
     contact_methods: {},
     imei: '',
     store_name: ''
@@ -276,6 +252,7 @@ const AddPhoneForm: React.FC = () => {
         ? {
             store_name: parsed.formData.store_name || '',
             city: parsed.formData.city || '',
+            country: parsed.formData.country || '',
             contact_methods: { ...(parsed.formData.contact_methods || {}) },
           }
         : {};
@@ -379,6 +356,7 @@ const AddPhoneForm: React.FC = () => {
           warranty_months: parseInt(formData.warranty_months) || 0,
           specs: formData.specs,
           city: formData.city,
+          countries: formData.country,
           contact_methods: formData.contact_methods,
           imei: formData.imei, // send raw IMEI to server for encryption/storage
           store_name: formData.store_name,
@@ -445,57 +423,8 @@ const AddPhoneForm: React.FC = () => {
 
       const normalPrice = normalPriceData?.amount || 0;
 
-      // التحقق من وجود رصيد بونux كافٍ للخصم
-      if (bonusBalance > 0 && normalPrice > 0) {
-        // حساب المبلغ الذي سيتم خصمه
-        const amountToDeduct = Math.min(bonusBalance, normalPrice);
-        
-        // تحديث رصيد البونux
-        const newBonus = bonusBalance - amountToDeduct;
-        if (lastBonusId) {
-          const { error: updateBonusError } = await supabase
-            .from('ads_payment')
-            .update({
-              bonus_offer: newBonus,
-              payment_date: new Date().toISOString(),
-              is_paid: true,
-              payment_status: 'paid',
-              transaction: 'bonus_add',
-              Actual_bonus: bonusBalance
-            })
-            .eq('id', lastBonusId);
-          
-          if (updateBonusError) throw updateBonusError;
-        }
-
-        // تسجيل الدفعة باستخدام البونux
-        const { error: insertPaymentError } = await supabase
-          .from('ads_payment')
-          .insert({
-            user_id: user.id,
-            phone_id: phoneData.id,
-            amount: amountToDeduct,
-            duration_days: 1,
-            is_paid: true,
-            payment_status: 'paid_with_bonus',
-            type: 'normal',
-            transaction: 'ad_posting',
-            payment_date: new Date().toISOString(),
-          });
-
-        if (insertPaymentError) throw insertPaymentError;
-
-        // تحديث رصيد البونux في الواجهة
-        setBonusBalance(newBonus);
-
-        // عرض رسالة نجاح للمستخدم
-        toast({
-          title: t('ad_published_successfully'),
-          description: t('bonus_deducted', { amount: String(amountToDeduct) }),
-          variant: 'default'
-        });
-      } else if (normalPrice > 0) {
-        // إذا لم يكن هناك رصيد بونux كافٍ، سجل الدفعة كدفع عادي
+      // bonus system removed: always record a pending payment for normal posting
+      if (normalPrice > 0) {
         const { error: insertPaymentError } = await supabase
           .from('ads_payment')
           .insert({
@@ -512,7 +441,6 @@ const AddPhoneForm: React.FC = () => {
 
         if (insertPaymentError) throw insertPaymentError;
 
-        // عرض رسالة للمستخدم بوجوب سداد الرسوم
         toast({
           title: t('ad_published_successfully'),
           description: t('please_pay_fee', { price: String(normalPrice) }),
@@ -542,86 +470,7 @@ const AddPhoneForm: React.FC = () => {
     }
   };
 
-  const handleConfirmFeature = async (createdPhoneId: string) => {
-    if (!user || !createdPhoneId || promotionPrice === null) {
-      toast({ title: t('error'), description: t('cannot_feature_ad_incomplete_data'), variant: 'destructive' });
-      return;
-    }
-
-    if (bonusBalance < (promotionPrice || 0)) {
-      toast({ title: t('access_denied'), description: t('not_enough_bonus_to_proceed'), variant: 'destructive' });
-      // Here you would typically redirect to a payment page
-      return;
-    }
-
-    setLoading(true);
-    try {
-      // Fetch the main image for the phone to be featured
-      const { data: imageData, error: imageError } = await supabase
-        .from('phone_images')
-        .select('image_path')
-        .eq('phone_id', createdPhoneId)
-        .eq('main_image', true)
-        .single();
-
-      if (imageError || !imageData) {
-        throw new Error(t('main_image_not_found'));
-      }
-
-      const mainImageUrl = imageData.image_path;
-
-      // 1. Deduct from bonus
-      const newBonus = bonusBalance - promotionPrice;
-      if (lastBonusId) {
-        const { error: updateBonusError } = await supabase
-          .from('ads_payment')
-          .update({ bonus_offer: newBonus })
-          .eq('id', lastBonusId);
-        if (updateBonusError) throw updateBonusError;
-      }
-
-      // 2. Create a new record for the promotion in ads_payment
-      const expires_at = new Date();
-      expires_at.setDate(expires_at.getDate() + parseInt(selectedDuration, 10));
-
-      const { error: insertPromotionError } = await supabase
-        .from('ads_payment')
-        .insert({
-          user_id: user.id,
-          phone_id: createdPhoneId,
-          amount: promotionPrice,
-          duration_days: parseInt(selectedDuration, 10),
-          is_paid: true,
-          payment_status: 'paid_with_bonus',
-          type: 'promotions',
-          transaction: 'ad_promotion',
-          expires_at: expires_at.toISOString(),
-          payment_date: new Date().toISOString(),
-          image_url: mainImageUrl, // Add the image URL here
-        });
-
-      if (insertPromotionError) throw insertPromotionError;
-
-      // 3. Update UI
-      setBonusBalance(newBonus);
-      setIsFeatureModalOpen(false);
-      toast({
-        title: t('ad_published_from_bonus'),
-        description: t('bonus_deducted', { amount: String(promotionPrice) }),
-        variant: 'default'
-      });
-
-      // Optionally, navigate away or refresh data
-      clearDraft();
-      navigate('/seller-dashboard');
-
-    } catch (error: any) {
-      console.error("Error featuring ad with bonus:", error);
-      toast({ title: t('error'), description: error.message || t('error_occurred'), variant: 'destructive' });
-    } finally {
-      setLoading(false);
-    }
-  };
+  
 
   const handleSubmitAndFeature = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -660,6 +509,7 @@ const AddPhoneForm: React.FC = () => {
           warranty_months: parseInt(formData.warranty_months) || 0,
           specs: formData.specs,
           city: formData.city,
+          countries: formData.country,
           contact_methods: formData.contact_methods,
           imei: formData.imei,
           store_name: formData.store_name,
@@ -693,47 +543,30 @@ const AddPhoneForm: React.FC = () => {
         throw new Error(t('cannot_feature_ad_incomplete_data'));
       }
   
-      if (bonusBalance < (promotionPrice || 0)) {
-        // عند عدم وجود رصيد كافٍ، يتم فتح نافذة الترقية
-        setShowUpgradePrompt(true);
-        setIsFeatureModalOpen(false); // إغلاق نافذة التمييز
-        setLoading(false); // إيقاف التحميل
-        return; // إيقاف تنفيذ الدالة
-      }
-  
-      const mainImageUrl = (await supabase.storage.from('phone-images').getPublicUrl(`${user.id}/${phoneData.id}/` + images[0].name.split('.').pop())).data.publicUrl;
-  
-      // 3.1 + 3.2 خصم البونص وإنشاء سجل ads_payment عبر الخادم (لتجاوز RLS بأمان)
-      const bonusResp = await axiosInstance.post('https://imei-safe.me/paymob/publish-from-bonus', {
-        adData: {
-          phone_id: phoneData.id,
-          duration_days: parseInt(selectedDuration, 10),
-          type: 'promotions',
-          image_url: mainImageUrl
+      // Role-based promotions: privileged roles get promoted automatically
+      const role = user?.role || 'free';
+      if (role.includes('gold') || role.includes('silver') || role.includes('business')) {
+        try {
+          const { error: updatePhoneError } = await supabase.from('phones').update({ type: 'promotions' }).eq('id', phoneData.id);
+          if (updatePhoneError) throw updatePhoneError;
+          setIsFeatureModalOpen(false);
+          toast({ title: t('ad_published_and_featured_successfully'), description: t('ad_published_successfully') || '', variant: 'default' });
+          clearDraft();
+          navigate('/seller-dashboard');
+          return;
+        } catch (err: any) {
+          console.error('Error promoting phone for privileged role:', err);
+          setError(err.message || t('error_publishing_and_featuring_ad'));
+          setLoading(false);
+          return;
         }
-      });
-      if (!bonusResp?.data?.ok) {
-        throw new Error(bonusResp?.data?.error || t('bonus_deduction_failed'));
       }
-  
-      // 3.3. Update the 'type' in the 'phones' table to 'promotions'
-      const { error: updatePhoneError } = await supabase.from('phones').update({ type: 'promotions' }).eq('id', phoneData.id);
-      if (updatePhoneError) throw updatePhoneError;
-  
-      // 3.4. Update UI and navigate
-      const remainingBonus = typeof bonusResp?.data?.remainingBonus === 'number'
-        ? bonusResp.data.remainingBonus
-        : Math.max(0, bonusBalance - promotionPrice);
-      setBonusBalance(remainingBonus);
-      window.dispatchEvent(new CustomEvent('bonusUpdated'));
+
+      // Non-privileged: open upgrade prompt for package purchase
+      setShowUpgradePrompt(true);
       setIsFeatureModalOpen(false);
-      toast({
-        title: t('ad_published_and_featured_successfully'),
-        description: t('bonus_deducted', { amount: String(promotionPrice) }),
-        variant: 'default'
-      });
-      clearDraft();
-      navigate('/seller-dashboard');
+      setLoading(false);
+      return;
 
     } catch (err: any) {
       console.error('Error in handleSubmitAndFeature:', err);
@@ -974,7 +807,23 @@ const AddPhoneForm: React.FC = () => {
                   </label>
                   <div className="relative">
                     <MapPin className={`pointer-events-none absolute ${iconSidePos} top-3.5 h-4 w-4 text-orange-500`} />
-                    <input name="city" value={formData.city} readOnly className={`${fieldClass} ${iconSidePad}`} placeholder={t('auto_filled')} />
+                    <input
+                      name="city"
+                      value={formData.city}
+                      onChange={(e) => setFormData(prev => ({ ...prev, city: e.target.value }))}
+                      className={`${fieldClass} ${iconSidePad}`}
+                      placeholder={t('auto_filled')}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                    <MapPin className="h-4 w-4 text-orange-500" />
+                    {t('country')}
+                  </label>
+                  <div className="relative">
+                    <MapPin className={`pointer-events-none absolute ${iconSidePos} top-3.5 h-4 w-4 text-orange-500`} />
+                    <input name="country" value={formData.country || ''} readOnly className={`${fieldClass} ${iconSidePad}`} placeholder={t('auto_filled')} />
                   </div>
                 </div>
                 <div className="sm:col-span-2">
@@ -1323,13 +1172,7 @@ const AddPhoneForm: React.FC = () => {
                 </ul>
               </div>
 
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-center">
-                <div className="flex items-center justify-center gap-2">
-                  <Gift className="w-5 h-5 text-blue-600" />
-                  <span className="text-sm font-medium text-gray-700">{t('current_bonus_balance')}</span>
-                  <span className="text-lg font-bold text-blue-600">{Math.floor(bonusBalance).toLocaleString()} {t('currency')}</span>
-                </div>
-              </div>
+              {/* Package-based promotions: UI shows package via PackageBadge elsewhere; bonus UI removed */}
 
               <div className="text-right space-y-2 text-gray-700 mb-6">
                 <h3 className="font-bold text-lg">{t('select_feature_duration')}</h3>
@@ -1362,7 +1205,7 @@ const AddPhoneForm: React.FC = () => {
                 disabled={loading || isReported}
                 className="w-full inline-flex items-center justify-center px-8 py-4 border border-transparent text-lg font-bold rounded-xl shadow-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 transition-all transform hover:scale-105"
               >
-                {loading ? <Loader2 className="animate-spin h-6 w-6" /> : t('feature_now_with_bonus')}
+                {loading ? <Loader2 className="animate-spin h-6 w-6" /> : t('feature_now')}
               </button>
 
             </div>

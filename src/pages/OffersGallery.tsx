@@ -461,13 +461,7 @@ const OffersGallery = () => {
                                 if (!error) {
                                     console.log('تم تحديث transaction إلى bonus_add تلقائيًا بعد نجاح الدفع');
                                     // تحديث البونص في AppNavbar
-                                    const event = new CustomEvent('bonusUpdated', {
-                                        detail: {
-                                            hasBonus: true,
-                                            bonusAmount: 0 // سيتم تحديثه من الخادم
-                                        }
-                                    });
-                                    window.dispatchEvent(event);
+                                    // bonus system removed — no bonus events
                                 } else {
                                     console.log('فشل تحديث transaction بعد نجاح الدفع:', error.message);
                                 }
