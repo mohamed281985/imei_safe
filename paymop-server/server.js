@@ -6775,6 +6775,68 @@ app.post('/api/create-accessory', verifyJwtToken, async (req, res) => {
       console.error('Audit log failed for create-accessory:', e);
     }
 
+    // If client requested feature handling, create pending ads_payment and mark accessory as promotions
+    try {
+      const featureRequested = !!accessoryData.feature_request;
+      const featureDuration = Number(accessoryData.feature_promotion_duration || accessoryData.duration_days || 1);
+      if (featureRequested) {
+        // Fetch authoritative role from users table
+        let normalizedRole = (accessoryData.role || '').toString();
+        try {
+          const { data: userRow, error: userErr } = await supabase.from('users').select('role').eq('id', userId).maybeSingle();
+          if (!userErr && userRow && userRow.role) {
+            normalizedRole = String(userRow.role).toLowerCase().trim().replace(/[\s\-]+/g, '_');
+          } else if (accessoryData.role) {
+            normalizedRole = String(accessoryData.role).toLowerCase().trim().replace(/[\s\-]+/g, '_');
+          } else {
+            normalizedRole = 'free';
+          }
+        } catch (e) {
+          console.warn('create-accessory: failed fetching user role, falling back to payload role', e && e.message);
+        }
+
+        // Lookup promotion price for requested duration
+        let amount = 0;
+        try {
+          const { data: priceRow, error: priceErr } = await supabase.from('ads_price').select('amount').eq('type', 'promotions').eq('duration_days', featureDuration).maybeSingle();
+          if (!priceErr && priceRow && typeof priceRow.amount !== 'undefined') amount = priceRow.amount || 0;
+        } catch (e) {
+          console.warn('create-accessory: failed to fetch ads_price for promotions', e && e.message);
+        }
+
+        const expiresAt = (() => { const d = new Date(); d.setDate(d.getDate() + Number(featureDuration || 1)); return d.toISOString(); })();
+
+        try {
+          const paymentRow = {
+            user_id: userId,
+            accessory_id: inserted.id,
+            phone_id: null,
+            amount: amount || 0,
+            duration_days: Number(featureDuration || 1),
+            is_paid: false,
+            is_active: false,
+            payment_status: 'pending',
+            type: normalizedRole,
+            transaction: 'package_ad_sell',
+            payment_date: new Date().toISOString(),
+            image_url: null,
+            expires_at: expiresAt,
+          };
+
+          const { data: payData, error: payErr } = await supabase.from('ads_payment').insert([paymentRow]);
+          if (payErr) throw payErr;
+
+          // Update accessory record to mark as promotions and set expires_at
+          const { error: updErr } = await supabase.from('accessories').update({ type: 'promotions', expires_at: expiresAt, status: 'pending' }).eq('id', inserted.id);
+          if (updErr) console.warn('create-accessory: failed to update accessory after inserting ads_payment', updErr);
+        } catch (e) {
+          console.error('create-accessory: failed to insert ads_payment or update accessory for feature_request', e && (e.stack || e.message || e));
+        }
+      }
+    } catch (e) {
+      console.error('create-accessory: unexpected error in feature handling', e && (e.stack || e.message || e));
+    }
+
     return res.json({ success: true, accessory: inserted });
   } catch (err) {
     console.error('/api/create-accessory error:', err);

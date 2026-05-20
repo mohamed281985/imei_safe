@@ -72,6 +72,9 @@ const AddPhoneForm: React.FC = () => {
   const [availableDurations, setAvailableDurations] = useState<string[]>([]);
   const [selectedDuration, setSelectedDuration] = useState('7');
   const [promotionPrice, setPromotionPrice] = useState<number | null>(null);
+  // durations for normal sell postings (from ads_price where type='sell_phone')
+  const [sellDurations, setSellDurations] = useState<string[]>([]);
+  const [selectedSellDuration, setSelectedSellDuration] = useState<string>('1');
   const [phoneIdToFeature, setPhoneIdToFeature] = useState<string | null>(null);
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
 
@@ -116,6 +119,25 @@ const AddPhoneForm: React.FC = () => {
     };
 
     fetchPromotionPrices();
+    // fetch sell_phone durations
+    const fetchSellDurations = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('ads_price')
+          .select('duration_days')
+          .eq('type', 'sell_phone');
+
+        if (error) throw error;
+        if (data && Array.isArray(data)) {
+          const durs = data.map((r: any) => String(r.duration_days)).sort((a: string, b: string) => Number(a) - Number(b));
+          setSellDurations(durs);
+          if (durs.length > 0) setSelectedSellDuration(durs[0]);
+        }
+      } catch (err) {
+        console.error('Error fetching sell_phone durations:', err);
+      }
+    };
+    fetchSellDurations();
   }, []);
 
   // عند مغادرة الصفحة: قم بحذف المسودة من التخزين لضمان عدم استعادتها لاحقًا
@@ -365,6 +387,7 @@ const AddPhoneForm: React.FC = () => {
           latitude: coords?.latitude,
           longitude: coords?.longitude,
           role: user?.role,
+          duration_days: Number(selectedSellDuration || 1),
         };
 
         const res = await axiosInstance.post('/api/create-phone', payload);
@@ -431,7 +454,7 @@ const AddPhoneForm: React.FC = () => {
             user_id: user.id,
             phone_id: phoneData.id,
             amount: normalPrice,
-            duration_days: 1,
+            duration_days: Number(selectedSellDuration || 1),
             is_paid: false,
             payment_status: 'pending',
             type: 'normal',
@@ -518,6 +541,7 @@ const AddPhoneForm: React.FC = () => {
           latitude: coords?.latitude,
           longitude: coords?.longitude,
           role: user?.role,
+          duration_days: Number(selectedSellDuration || 1),
         };
 
         const res = await axiosInstance.post('/api/create-phone', payload);
@@ -1063,6 +1087,35 @@ const AddPhoneForm: React.FC = () => {
                   <p><span className="font-semibold text-slate-800">{t('preview_phone_label')}:</span> {[formData.phone_type, formData.model].filter(Boolean).join(' ') || t('not_available')}</p>
                   <p><span className="font-semibold text-slate-800">{t('preview_price_label')}:</span> {formData.price ? `${formData.price} ${t('currency')}` : t('not_available')}</p>
                   <p><span className="font-semibold text-slate-800">{t('preview_location_label')}:</span> {formData.city || t('not_available')}</p>
+                </div>
+
+                {/* Ad duration preview (from ads_price where type='sell_phone') */}
+                <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-slate-700">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs text-slate-600">{t('ad_duration_label') || 'مدة الإعلان'}</div>
+                      <div className="mt-1 font-semibold text-orange-500">{selectedSellDuration} {t('days') || 'يوم'}</div>
+                    </div>
+                    <div className="text-right">
+                      {sellDurations && sellDurations.length > 0 ? (
+                        <select
+                          value={selectedSellDuration}
+                          onChange={(e) => setSelectedSellDuration(e.target.value)}
+                          className="rounded-md border p-1 text-sm text-orange-500"
+                        >
+                          {sellDurations.map(d => (
+                            <option key={d} value={d}>{d} {t('days')}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <div className="text-xs text-slate-500">{t('loading') || 'جاري التحميل...'}</div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-2 text-[13px] text-slate-600">
+                    <span className="font-medium">{t('expires_on') || 'ينتهي بتاريخ'}:</span>{' '}
+                    {new Date(Date.now() + Number(selectedSellDuration || sellDurations[0] || 1) * 24 * 60 * 60 * 1000).toLocaleDateString()}
+                  </div>
                 </div>
               </div>
             </div>
