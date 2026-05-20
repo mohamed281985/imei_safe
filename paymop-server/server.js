@@ -6673,6 +6673,13 @@ app.post('/api/create-accessory', verifyJwtToken, async (req, res) => {
 
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
+  // Diagnostic: log minimal request shape to help debug 500s
+  try {
+    console.log('/api/create-accessory called by', userId, 'payloadKeys=', Object.keys(accessoryData));
+  } catch (e) {
+    // ignore logging failures
+  }
+
   try {
     // Ensure contact_methods is an object
     if (!accessoryData.contact_methods || typeof accessoryData.contact_methods !== 'object') accessoryData.contact_methods = {};
