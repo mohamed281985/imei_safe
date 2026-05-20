@@ -1094,14 +1094,14 @@ const AddPhoneForm: React.FC = () => {
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="text-xs text-slate-600">{t('ad_duration_label') || 'مدة الإعلان'}</div>
-                      <div className="mt-1 font-semibold text-orange-500">{selectedSellDuration} {t('days') || 'يوم'}</div>
+                      <div className="mt-1 font-semibold text-slate-900">{selectedSellDuration} {t('days') || 'يوم'}</div>
                     </div>
                     <div className="text-right">
                       {sellDurations && sellDurations.length > 0 ? (
                         <select
                           value={selectedSellDuration}
                           onChange={(e) => setSelectedSellDuration(e.target.value)}
-                          className="rounded-md border p-1 text-sm text-orange-500"
+                          className="rounded-md border p-1 text-sm"
                         >
                           {sellDurations.map(d => (
                             <option key={d} value={d}>{d} {t('days')}</option>
