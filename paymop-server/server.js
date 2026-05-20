@@ -6747,22 +6747,61 @@ app.post('/api/create-accessory', verifyJwtToken, async (req, res) => {
 
     // Ensure seller_id is set to token user
     accessoryData.seller_id = userId;
-
-    // Insert
-    let inserted;
+    // Insert (with lightweight server-side dedupe for rapid duplicate requests)
+    let inserted = null;
     try {
-      const insertRes = await supabase
-        .from('accessories')
-        .insert([accessoryData])
-        .select()
-        .maybeSingle();
-
-      if (insertRes.error) {
-        console.error('/api/create-accessory supabase insert error:', insertRes.error);
-        throw insertRes.error;
+      // Quick dedupe: if the same seller created an accessory with same title+price very recently, return it
+      let recent = null;
+      try {
+        if (accessoryData.title) {
+          const { data: recentAcc, error: recentErr } = await supabase
+            .from('accessories')
+            .select('id, created_at')
+            .eq('seller_id', userId)
+            .eq('title', accessoryData.title)
+            .eq('price', accessoryData.price)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (!recentErr && recentAcc && recentAcc.created_at) recent = recentAcc;
+        }
+      } catch (e) {
+        console.warn('create-accessory: dedupe lookup failed', e && e.message);
       }
 
-      inserted = insertRes.data;
+      if (recent) {
+        try {
+          const { data: existingRow, error: fetchErr } = await supabase
+            .from('accessories')
+            .select('*')
+            .eq('id', recent.id)
+            .maybeSingle();
+          if (!fetchErr && existingRow) {
+            const created = new Date(existingRow.created_at || recent.created_at || 0).getTime();
+            if (Date.now() - created < 5000) {
+              inserted = existingRow;
+              console.log('create-accessory: detected rapid duplicate, returning existing accessory id', inserted.id);
+            }
+          }
+        } catch (e) {
+          console.warn('create-accessory: failed to fetch recent accessory', e && e.message);
+        }
+      }
+
+      if (!inserted) {
+        const insertRes = await supabase
+          .from('accessories')
+          .insert([accessoryData])
+          .select()
+          .maybeSingle();
+
+        if (insertRes.error) {
+          console.error('/api/create-accessory supabase insert error:', insertRes.error);
+          throw insertRes.error;
+        }
+
+        inserted = insertRes.data;
+      }
     } catch (dbErr) {
       console.error('/api/create-accessory DB insert exception:', dbErr && (dbErr.stack || dbErr.message || dbErr));
       return sendError(res, 500, 'Database insert failed', process.env.NODE_ENV !== 'production' ? dbErr : undefined);
@@ -6823,12 +6862,41 @@ app.post('/api/create-accessory', verifyJwtToken, async (req, res) => {
             expires_at: expiresAt,
           };
 
-          const { data: payData, error: payErr } = await supabase.from('ads_payment').insert([paymentRow]);
-          if (payErr) throw payErr;
+          // Idempotent insert: skip if a package_ad_sell already exists for this accessory
+          try {
+            const { data: existingPay, error: existingErr } = await supabase
+              .from('ads_payment')
+              .select('id')
+              .eq('accessory_id', inserted.id)
+              .eq('transaction', 'package_ad_sell')
+              .eq('user_id', userId)
+              .limit(1)
+              .maybeSingle();
 
-          // Update accessory record to mark as promotions and set expires_at
-          const { error: updErr } = await supabase.from('accessories').update({ type: 'promotions', expires_at: expiresAt, status: 'pending' }).eq('id', inserted.id);
-          if (updErr) console.warn('create-accessory: failed to update accessory after inserting ads_payment', updErr);
+            if (existingErr) console.warn('create-accessory: ads_payment existence check error', existingErr);
+
+            if (!existingErr && existingPay && existingPay.id) {
+              console.log('create-accessory: existing package_ad_sell payment found, skipping insert, id=', existingPay.id);
+            } else {
+              const { data: payData, error: payErr } = await supabase.from('ads_payment').insert([paymentRow]);
+              if (payErr) throw payErr;
+            }
+          } catch (e) {
+            console.error('create-accessory: failed to insert ads_payment (idempotent flow)', e && (e.stack || e.message || e));
+          }
+
+          // Update accessory record to mark as promotions and set expires_at (only if not already promotions)
+          try {
+            const { data: accRow } = await supabase.from('accessories').select('id, type').eq('id', inserted.id).maybeSingle();
+            if (!accRow || accRow.type !== 'promotions') {
+              const { error: updErr } = await supabase.from('accessories').update({ type: 'promotions', expires_at: expiresAt, status: 'pending' }).eq('id', inserted.id);
+              if (updErr) console.warn('create-accessory: failed to update accessory after inserting ads_payment', updErr);
+            } else {
+              console.log('create-accessory: accessory already marked as promotions, skipping update');
+            }
+          } catch (e) {
+            console.warn('create-accessory: accessory update check failed', e && e.message);
+          }
         } catch (e) {
           console.error('create-accessory: failed to insert ads_payment or update accessory for feature_request', e && (e.stack || e.message || e));
         }
