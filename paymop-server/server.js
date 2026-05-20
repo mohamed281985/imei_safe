@@ -846,7 +846,7 @@ app.post('/api/supabase-auth-webhook', async (req, res) => {
     const metadata = user.user_metadata || {};
     // Security: prevent accidental insertion of unwanted fields into `users` table
     // e.g. `username` should not be stored as a top-level column on users here
-    try { if (metadata && typeof metadata === 'object') { delete metadata.username; } } catch (e) {}
+    try { if (metadata && typeof metadata === 'object') { delete metadata.username; } } catch (e) { }
 
     // Idempotency: do nothing if application user already exists
     const { data: existingUser, error: existingErr } = await supabase.from('users').select('id').eq('id', userId).maybeSingle();
@@ -982,7 +982,7 @@ app.post('/api/create-app-user', verifyJwtToken, createAppUserLimiter, async (re
   try {
     const { id, email, metadata } = req.body || {};
     // Ensure client-provided metadata cannot inject undesirable top-level columns into `users`
-    try { if (metadata && typeof metadata === 'object') { delete metadata.username; } } catch (e) {}
+    try { if (metadata && typeof metadata === 'object') { delete metadata.username; } } catch (e) { }
     if (process.env.NODE_ENV !== 'production') console.log('/api/create-app-user called with body:', JSON.stringify(req.body));
 
     // Require a valid UUID `id` coming from Supabase Auth (frontend should pass the auth user id)
@@ -5115,7 +5115,7 @@ app.post('/api/whatsapp-redirect', verifyJwtToken, whatsappRedirectLimiter, asyn
     let foundReport = null;
     for (const r of allReports) {
       let decrypted = null;
-      try { decrypted = decryptField(r.imei); } catch (e) {}
+      try { decrypted = decryptField(r.imei); } catch (e) { }
       if (decrypted && decrypted.replace(/\D/g, '') === normalizedIncoming) {
         foundReport = r;
         break;
@@ -5140,17 +5140,17 @@ app.post('/api/whatsapp-redirect', verifyJwtToken, whatsappRedirectLimiter, asyn
     if (!whatsappNumber && foundReport.phone_number) {
       try {
         whatsappNumber = decryptField(foundReport.phone_number);
-      } catch (e) {}
+      } catch (e) { }
     }
 
     // 2) من phone_reports.whatsapp
     if (!whatsappNumber && foundReport.whatsapp) {
       try {
         const v = foundReport.whatsapp;
-        whatsappNumber = (typeof v === 'string' && ['1','true','yes'].includes(v.trim().toLowerCase()))
+        whatsappNumber = (typeof v === 'string' && ['1', 'true', 'yes'].includes(v.trim().toLowerCase()))
           ? whatsappNumber // whatsapp is just a boolean flag
           : decryptField(v) || v;
-      } catch (e) {}
+      } catch (e) { }
     }
 
     // 3) من جدول users
@@ -5158,7 +5158,7 @@ app.post('/api/whatsapp-redirect', verifyJwtToken, whatsappRedirectLimiter, asyn
       try {
         const { data: userRow } = await supabase.from('users').select('phone').eq('id', foundReport.user_id).maybeSingle();
         if (userRow && userRow.phone) whatsappNumber = decryptField(userRow.phone);
-      } catch (e) {}
+      } catch (e) { }
     }
 
     // 4) من جدول businesses
@@ -5166,7 +5166,7 @@ app.post('/api/whatsapp-redirect', verifyJwtToken, whatsappRedirectLimiter, asyn
       try {
         const { data: bizRow } = await supabase.from('businesses').select('phone').eq('user_id', foundReport.user_id).maybeSingle();
         if (bizRow && bizRow.phone) whatsappNumber = decryptField(bizRow.phone);
-      } catch (e) {}
+      } catch (e) { }
     }
 
     if (!whatsappNumber) {
@@ -5440,14 +5440,14 @@ app.post('/api/get-owner-details-by-imei', verifyJwtToken, async (req, res) => {
 // نقطة نهاية لجلب الهواتف المسجلة للمستخدم الحالي مع فك تشفير IMEI
 app.get('/api/user-phones', verifyJwtToken, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user?.id;
 
-    // ✅ Ownership verification: يمكن فقط للمستخدم رؤية هواتفه الخاصة
+    // التحقق من التخويل: يمكن فقط للمستخدم رؤية هواتفه الخاصة
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized: No user ID' });
     }
 
-    // 1. جلب الهواتف التي يملكها المستخدم الحالي فقط
+    // جلب الهواتف التي يملكها المستخدم الحالي فقط
     const { data: phones, error } = await supabase
       .from('registered_phones')
       .select('id, imei, phone_type, registration_date, last_confirmed_at, status, user_id')
@@ -5464,6 +5464,18 @@ app.get('/api/user-phones', verifyJwtToken, async (req, res) => {
 
     if (reportsError) throw reportsError;
 
+    // إنشاء خريطة سريعة للبحث في البلاغات
+    const reportsMap = new Map();
+    if (reports && reports.length > 0) {
+      for (const report of reports) {
+        const decryptedImei = safeDecryptImei(report.imei);
+        if (decryptedImei) {
+          reportsMap.set(decryptedImei, true);
+        }
+      }
+    }
+
+    // دالة مساعدة لفك التشفير الآمن
     const safeDecryptImei = (value) => {
       if (!value) return '';
       try {
@@ -5474,11 +5486,17 @@ app.get('/api/user-phones', verifyJwtToken, async (req, res) => {
       }
     };
 
-    // 2. معالجة البيانات: فك التشفير لحساب hasActiveReport، ثم إرسال IMEI مشفّر ونسخة مخفية للواجهة
+    // معالجة البيانات: فك التشفير مرة واحدة فقط لكل هاتف
     const processedPhones = phones.map(phone => {
       const decryptedImei = safeDecryptImei(phone.imei);
-      const maskedImei = decryptedImei ? `${decryptedImei.substring(0, 4)}*******${decryptedImei.slice(-4)}` : 'غير متوفر';
+      const maskedImei = decryptedImei
+        ? decryptedImei.substring(0, 4) + '*******' + decryptedImei.slice(-4)
+        : 'غير متوفر';
+
       const encryptedImei = encryptAES(decryptedImei || '');
+
+      // البحث في الخريطة بدلاً من التكرار
+      const hasActiveReport = reportsMap.has(decryptedImei);
 
       return {
         id: phone.id,
@@ -5488,7 +5506,7 @@ app.get('/api/user-phones', verifyJwtToken, async (req, res) => {
         status: phone.status,
         imei_encrypted: encryptedImei,
         imei_masked: maskedImei,
-        hasActiveReport: reports ? reports.some(r => safeDecryptImei(r.imei) === decryptedImei) : false
+        hasActiveReport: hasActiveReport
       };
     });
 
@@ -5498,77 +5516,7 @@ app.get('/api/user-phones', verifyJwtToken, async (req, res) => {
     return sendError(res, 500, 'حدث خطأ في الخادم', error, { success: false });
   }
 });
-
-// نقطة نهاية لحل البلاغ (تغيير الحالة إلى resolved)
-app.post('/api/resolve-report', verifyJwtToken, async (req, res) => {
-  const { imei, imei_encrypted } = req.body;
-  const userId = req.user.id;
-
-  if (!userId) {
-    return res.status(401).json({ error: 'Unauthorized: No user ID' });
-  }
-
-  // ✅ Ownership verification: فقط مالك البلاغ يمكنه حله (التحقق أدناه)
-  if (!imei && !imei_encrypted) return res.status(400).json({ error: 'IMEI is required' });
-
-  try {
-    // جلب البلاغات النشطة للمستخدم
-    const { data: reports, error: fetchError } = await supabase
-      .from('phone_reports')
-      .select('id, imei')
-      .eq('user_id', userId)
-      .eq('status', 'active');
-
-    if (fetchError) throw fetchError;
-
-    // تحديد قيمة IMEI الهدف: نقبل IMEI نصي أو كـ { encryptedData, iv }
-    let targetImei = imei;
-    if (!targetImei && imei_encrypted && imei_encrypted.encryptedData && imei_encrypted.iv && imei_encrypted.authTag) {
-      try {
-        targetImei = decryptAES(imei_encrypted.encryptedData, imei_encrypted.iv, imei_encrypted.authTag);
-      } catch (e) {
-        console.error('Failed to decrypt provided imei_encrypted:', e);
-        return res.status(400).json({ error: 'Invalid encrypted IMEI' });
-      }
-    }
-
-    if (!targetImei) return res.status(400).json({ error: 'IMEI is required' });
-
-    // البحث عن البلاغ المطابق بفك التشفير
-    const targetReport = reports.find(r => decryptField(r.imei) === targetImei);
-
-    if (!targetReport) {
-      return res.status(404).json({ error: 'Active report not found for this IMEI' });
-    }
-
-    // تحديث الحالة
-    const { error: updateError } = await supabase
-      .from('phone_reports')
-      .update({ status: 'resolved' })
-      .eq('id', targetReport.id);
-
-    if (updateError) throw updateError;
-
-    // 📝 Audit Log: Record report resolution
-    await logAudit({
-      userId: userId,
-      action: 'resolve_report',
-      resourceType: 'phone_report',
-      resourceId: targetReport.id,
-      oldValues: { status: 'active' },
-      newValues: { status: 'resolved' },
-      details: { imei_last_4: targetImei.slice(-4) },
-      ip: req.ip,
-      userAgent: req.headers['user-agent']
-    });
-
-    res.json({ success: true, message: 'Report resolved successfully' });
-  } catch (error) {
-    console.error('Error resolving report:', error);
-    return sendError(res, 500, 'حدث خطأ في الخادم', error);
-  }
-});
-
+// نقطة نهاية للتحقق من كلمة مرور البلاغ
 // نقطة نهاية للتحقق من كلمة مرور البلاغ ومن ثم حل البلاغ بنفس النداء
 app.post('/api/verify-and-resolve-report', verifyJwtToken, async (req, res) => {
   const { reportId, password } = req.body;
@@ -9073,7 +9021,7 @@ async function pollConfirmedUsersOnce() {
         const email = user.email || user.email_address || '';
         const metadata = user.user_metadata || {};
         // Prevent bringing `username` from auth metadata into application `users` rows
-        try { if (metadata && typeof metadata === 'object') { delete metadata.username; } } catch (e) {}
+        try { if (metadata && typeof metadata === 'object') { delete metadata.username; } } catch (e) { }
 
         const owner_name = metadata.full_name || metadata.owner_name || '';
         const store_name = metadata.store_name || '';
