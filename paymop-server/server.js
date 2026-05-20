@@ -6752,167 +6752,63 @@ app.post('/api/create-accessory', verifyJwtToken, async (req, res) => {
       accessoryData.email = JSON.stringify({ encryptedData: enc.encryptedData, iv: enc.iv, authTag: enc.authTag });
     }
 
-    // Ensure seller_id is set to token user
+    // Instead of creating an accessory row now, create a pending ads_payment record.
     accessoryData.seller_id = userId;
-    // Insert (with lightweight server-side dedupe for rapid duplicate requests)
-    let inserted = null;
+
+    // Determine base role (gold/silver/free) from authoritative users table
+    let baseRole = 'free';
     try {
-      // Quick dedupe: if the same seller created an accessory with same title+price very recently, return it
-      let recent = null;
-      try {
-        if (accessoryData.title) {
-          const { data: recentAcc, error: recentErr } = await supabase
-            .from('accessories')
-            .select('id, created_at')
-            .eq('seller_id', userId)
-            .eq('title', accessoryData.title)
-            .eq('price', accessoryData.price)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          if (!recentErr && recentAcc && recentAcc.created_at) recent = recentAcc;
-        }
-      } catch (e) {
-        console.warn('create-accessory: dedupe lookup failed', e && e.message);
-      }
-
-      if (recent) {
-        try {
-          const { data: existingRow, error: fetchErr } = await supabase
-            .from('accessories')
-            .select('*')
-            .eq('id', recent.id)
-            .maybeSingle();
-          if (!fetchErr && existingRow) {
-            const created = new Date(existingRow.created_at || recent.created_at || 0).getTime();
-            if (Date.now() - created < 5000) {
-              inserted = existingRow;
-              console.log('create-accessory: detected rapid duplicate, returning existing accessory id', inserted.id);
-            }
-          }
-        } catch (e) {
-          console.warn('create-accessory: failed to fetch recent accessory', e && e.message);
-        }
-      }
-
-      if (!inserted) {
-        const insertRes = await supabase
-          .from('accessories')
-          .insert([accessoryData])
-          .select()
-          .maybeSingle();
-
-        if (insertRes.error) {
-          console.error('/api/create-accessory supabase insert error:', insertRes.error);
-          throw insertRes.error;
-        }
-
-        inserted = insertRes.data;
-      }
-    } catch (dbErr) {
-      console.error('/api/create-accessory DB insert exception:', dbErr && (dbErr.stack || dbErr.message || dbErr));
-      return sendError(res, 500, 'Database insert failed', process.env.NODE_ENV !== 'production' ? dbErr : undefined);
-    }
-
-    // Audit
-    try {
-      await logAudit({ userId, action: 'create_accessory', resourceType: 'accessory', resourceId: inserted?.id, ip: req.ip, userAgent: req.headers['user-agent'] });
-    } catch (e) {
-      console.error('Audit log failed for create-accessory:', e);
-    }
-
-    // If client requested feature handling, create pending ads_payment and mark accessory as promotions
-    try {
-      const featureRequested = !!accessoryData.feature_request;
-      const featureDuration = Number(accessoryData.feature_promotion_duration || accessoryData.duration_days || 1);
-      if (featureRequested) {
-        // Fetch authoritative role from users table
-        let normalizedRole = (accessoryData.role || '').toString();
-        try {
-          const { data: userRow, error: userErr } = await supabase.from('users').select('role').eq('id', userId).maybeSingle();
-          if (!userErr && userRow && userRow.role) {
-            normalizedRole = String(userRow.role).toLowerCase().trim().replace(/[\s\-]+/g, '_');
-          } else if (accessoryData.role) {
-            normalizedRole = String(accessoryData.role).toLowerCase().trim().replace(/[\s\-]+/g, '_');
-          } else {
-            normalizedRole = 'free';
-          }
-        } catch (e) {
-          console.warn('create-accessory: failed fetching user role, falling back to payload role', e && e.message);
-        }
-
-        // Lookup promotion price for requested duration
-        let amount = 0;
-        try {
-          const { data: priceRow, error: priceErr } = await supabase.from('ads_price').select('amount').eq('type', 'promotions').eq('duration_days', featureDuration).maybeSingle();
-          if (!priceErr && priceRow && typeof priceRow.amount !== 'undefined') amount = priceRow.amount || 0;
-        } catch (e) {
-          console.warn('create-accessory: failed to fetch ads_price for promotions', e && e.message);
-        }
-
-        const expiresAt = (() => { const d = new Date(); d.setDate(d.getDate() + Number(featureDuration || 1)); return d.toISOString(); })();
-
-        try {
-          const paymentRow = {
-            user_id: userId,
-            accessory_id: inserted.id,
-            phone_id: null,
-            amount: amount || 0,
-            duration_days: Number(featureDuration || 1),
-            is_paid: false,
-            is_active: false,
-            payment_status: 'pending',
-            type: normalizedRole,
-            transaction: 'package_ad_sell',
-            payment_date: new Date().toISOString(),
-            image_url: null,
-            expires_at: expiresAt,
-          };
-
-          // Idempotent insert: skip if a package_ad_sell already exists for this accessory
-          try {
-            const { data: existingPay, error: existingErr } = await supabase
-              .from('ads_payment')
-              .select('id')
-              .eq('accessory_id', inserted.id)
-              .eq('transaction', 'package_ad_sell')
-              .eq('user_id', userId)
-              .limit(1)
-              .maybeSingle();
-
-            if (existingErr) console.warn('create-accessory: ads_payment existence check error', existingErr);
-
-            if (!existingErr && existingPay && existingPay.id) {
-              console.log('create-accessory: existing package_ad_sell payment found, skipping insert, id=', existingPay.id);
-            } else {
-              const { data: payData, error: payErr } = await supabase.from('ads_payment').insert([paymentRow]);
-              if (payErr) throw payErr;
-            }
-          } catch (e) {
-            console.error('create-accessory: failed to insert ads_payment (idempotent flow)', e && (e.stack || e.message || e));
-          }
-
-          // Update accessory record to mark as promotions and set expires_at (only if not already promotions)
-          try {
-            const { data: accRow } = await supabase.from('accessories').select('id, type').eq('id', inserted.id).maybeSingle();
-            if (!accRow || accRow.type !== 'promotions') {
-              const { error: updErr } = await supabase.from('accessories').update({ type: 'promotions', expires_at: expiresAt, status: 'pending' }).eq('id', inserted.id);
-              if (updErr) console.warn('create-accessory: failed to update accessory after inserting ads_payment', updErr);
-            } else {
-              console.log('create-accessory: accessory already marked as promotions, skipping update');
-            }
-          } catch (e) {
-            console.warn('create-accessory: accessory update check failed', e && e.message);
-          }
-        } catch (e) {
-          console.error('create-accessory: failed to insert ads_payment or update accessory for feature_request', e && (e.stack || e.message || e));
-        }
+      const { data: userRow, error: userErr } = await supabase.from('users').select('role').eq('id', userId).maybeSingle();
+      if (!userErr && userRow && userRow.role) {
+        baseRole = String(userRow.role).toLowerCase().trim().split(/[\s_\-]+/)[0] || 'free';
       }
     } catch (e) {
-      console.error('create-accessory: unexpected error in feature handling', e && (e.stack || e.message || e));
+      // ignore and default to free
     }
 
-    return res.json({ success: true, accessory: inserted });
+    const targetType = `${baseRole}_accessory`;
+
+    // Store accessory payload (including image URLs uploaded by client) inside ads_payment.image_url as JSON string
+    const payloadBlob = JSON.stringify({ accessory: accessoryData });
+
+    let insertedPayment = null;
+    try {
+      const paymentRow = {
+        user_id: userId,
+        accessory_id: null,
+        phone_id: null,
+        amount: 0,
+        duration_days: Number(accessoryData.duration_days || 1),
+        is_paid: false,
+        is_active: false,
+        payment_status: 'pending',
+        type: targetType,
+        transaction: 'package_ad_sell',
+        payment_date: new Date().toISOString(),
+        image_url: payloadBlob,
+        expires_at: null
+      };
+
+      const { data: payData, error: payErr } = await supabase.from('ads_payment').insert([paymentRow]).select().maybeSingle();
+      if (payErr) {
+        console.error('create-accessory: failed to insert ads_payment', payErr);
+        throw payErr;
+      }
+      insertedPayment = payData;
+      console.log('create-accessory: created pending ads_payment id=', insertedPayment?.id);
+    } catch (e) {
+      console.error('/api/create-accessory DB insert exception (ads_payment):', e && (e.stack || e.message || e));
+      return sendError(res, 500, 'Database insert failed', process.env.NODE_ENV !== 'production' ? e : undefined);
+    }
+
+    // Audit: record pending ads_payment creation
+    try {
+      await logAudit({ userId, action: 'create_accessory_pending', resourceType: 'ads_payment', resourceId: insertedPayment?.id, ip: req.ip, userAgent: req.headers['user-agent'] });
+    } catch (e) {
+      console.error('Audit log failed for create-accessory (ads_payment):', e);
+    }
+
+    return res.json({ success: true, ads_payment: insertedPayment });
   } catch (err) {
     console.error('/api/create-accessory error:', err);
     return sendError(res, 500, 'Server error', err);
