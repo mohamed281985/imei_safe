@@ -30,10 +30,10 @@ const MyAds: React.FC = () => {
   
   const [myAds, setMyAds] = useState<AdDisplay[]>([]);
   const [loadingAds, setLoadingAds] = useState(false);
-  const [deletingId, setDeletingId] = useState<number | null>(null); // ⭐ تغيير النوع إلى number
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   
   const [confirmVisible, setConfirmVisible] = useState(false);
-  const [confirmAdId, setConfirmAdId] = useState<number | null>(null); // ⭐ تغيير النوع إلى number
+  const [confirmAdId, setConfirmAdId] = useState<number | null>(null);
 
   const handleDelete = async (idToDelete: number) => {
     if (!user) return;
@@ -45,7 +45,7 @@ const MyAds: React.FC = () => {
         .from('publish_ad')
         .delete({ count: 'exact' })
         .eq('id', idToDelete)
-        .eq('user_id', user.id); // ⭐ أمان إضافي: الحذف فقط إذا كان المستخدم هو المالك
+        .eq('user_id', user.id);
 
       if (error) {
         console.error('[Delete] Supabase Error:', error);
@@ -85,10 +85,9 @@ const MyAds: React.FC = () => {
       try {
         let query = supabase
           .from('publish_ad')
-          .select('id, ad_id, image_url, created_at, expires_at'); 
+          .select('id, ad_id, image_url, created_at, expires_at, user_id'); 
 
         if (user) {
-          // ⭐ Security: Ensure users only fetch their own ads
           query = query.eq('user_id', user.id);
         }
 
@@ -102,7 +101,9 @@ const MyAds: React.FC = () => {
         console.log('البيانات المستلمة من Supabase:', publishAds);
 
         if (publishAds) {
-          setMyAds(publishAds);
+          console.debug('[MyAds] fetched rows:', publishAds);
+          console.debug('[MyAds] current user id:', user?.id);
+          setMyAds(publishAds as any);
         }
       } catch (error) {
         console.error('Error fetching user ads:', error);
@@ -133,14 +134,6 @@ const MyAds: React.FC = () => {
       <div className="container mx-auto px-4 py-8" dir="rtl">
         <h1 className="text-3xl font-bold text-center mb-8" style={{ color: '#1e3a8a' }}>{t('my_ads') || 'إعلاناتي'}</h1>
         
-        {process.env.NODE_ENV === 'development' && (
-          <div className="mb-4 p-4 bg-yellow-100 border border-yellow-400 text-yellow-700 rounded">
-            <p>وضع التطوير: جاري جلب البيانات...</p>
-            <p>عدد الإعلانات المحملة: {myAds.length}</p>
-            <p>معرف المستخدم الحالي: {user?.id || 'غير مسجل'}</p>
-          </div>
-        )}
-
         {loadingAds ? (
           <div className="grid md:grid-cols-2 gap-6">
             {Array.from({ length: 4 }).map((_, i) => (
@@ -206,7 +199,6 @@ const MyAds: React.FC = () => {
                     className="flex-1 flex items-center justify-center gap-2 bg-red-600 text-white hover:bg-red-700"
                     disabled={deletingId === ad.id}
                     onClick={() => {
-                      // ⭐ التعديل الحاسم: تمرير ad.id (الرقم) وليس ad.ad_id
                       console.log('Delete Clicked. Passed ID:', ad.id);
                       setConfirmAdId(ad.id);
                       setConfirmVisible(true);

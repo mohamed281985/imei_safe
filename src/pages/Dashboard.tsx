@@ -480,8 +480,15 @@ const Dashboard: React.FC = () => {
 
       try {
         // جلب الهواتف المفقودة عن طريق API خادم يُفك التشفير ويعيد فقط الحقول المطلوبة
-        const response = await axiosInstance.get<any[]>('/api/lost-phones');
-        setDisplayedPhones(response.data);
+        let responseData: any[] = [];
+        try {
+          const response = await axiosInstance.get<any[]>('/api/lost-phones');
+          responseData = response?.data || [];
+        } catch (err: any) {
+          console.warn('[Lost Phones] Network or server error, skipping lost-phones fetch:', err?.message || err);
+          responseData = [];
+        }
+        setDisplayedPhones(responseData);
 
         // --- جلب اسم دولة المستخدم ومعرفات البائعين في نفس الدولة ---
         let sellerIdsInUserCountry: string[] | null = null;
@@ -506,9 +513,10 @@ const Dashboard: React.FC = () => {
 
               // جلب كل البائعين الذين دولتهم تحتوي على اسم دولة المستخدم (تحسين المطابقة)
               setLoadingSellersInCountry(true);
+              // Fetch basic user rows (avoid selecting non-existent columns like username/store_name)
               const { data: sellersInCountry, error: sellersError } = await supabase
                 .from('users')
-                .select('id, username, store_name, avatar_url, role, countries')
+                .select('id, role, countries')
                 .ilike('countries', `%${userCountry}%`);
 
               if (sellersError) {
@@ -517,7 +525,27 @@ const Dashboard: React.FC = () => {
 
               if (sellersInCountry && sellersInCountry.length > 0) {
                 sellerIdsInUserCountry = sellersInCountry.map(s => s.id);
-                setSellersInCountryList(sellersInCountry);
+
+                // Fetch store_name from businesses table for those users (if any)
+                try {
+                  const { data: bizRows, error: bizErr } = await supabase
+                    .from('businesses')
+                    .select('user_id, store_name')
+                    .in('user_id', sellerIdsInUserCountry || []);
+                  if (!bizErr && Array.isArray(bizRows) && bizRows.length > 0) {
+                    const bizMap: Record<string, string> = {};
+                    bizRows.forEach((b: any) => { bizMap[String(b.user_id)] = b.store_name || ''; });
+                    // attach store_name to user rows for UI
+                    const merged = sellersInCountry.map((u: any) => ({ ...u, store_name: bizMap[String(u.id)] || null }));
+                    setSellersInCountryList(merged);
+                  } else {
+                    setSellersInCountryList(sellersInCountry);
+                  }
+                } catch (mergeErr) {
+                  console.error('[Country Filter] Error fetching businesses for sellers:', mergeErr);
+                  setSellersInCountryList(sellersInCountry);
+                }
+
                 console.debug(`[Country Filter] Found ${sellerIdsInUserCountry.length} sellers in user's country: ${userCountry}`);
               } else {
                 setSellersInCountryList([]);
@@ -1346,38 +1374,7 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
 
-          {/* قسم البائعين في نفس دولة المستخدم */}
-          <div className="mb-5">
-            <div className="flex justify-between items-center mb-3">
-              <h2 className="text-black text-xl font-bold">{t('sellers_in_your_country') || 'البائعون في بلدك'}</h2>
-              <Link to="/sellers" className="text-black hover:text-imei-cyan/80 text-sm font-medium leading-none">
-                {t('view_all')}
-              </Link>
-            </div>
-            <div className="relative">
-              {loadingSellersInCountry ? (
-                <div className="text-center py-6">{t('loading')}</div>
-              ) : sellersInCountryList.length > 0 ? (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                  {sellersInCountryList.map(seller => (
-                    <Link key={seller.id} to={`/seller/${seller.id}`} className="flex flex-col items-center p-3 bg-white rounded-2xl shadow-md hover:shadow-lg transition">
-                      <div className="w-20 h-20 rounded-full bg-gray-100 overflow-hidden flex items-center justify-center mb-2">
-                        {seller.avatar_url ? (
-                          <img src={seller.avatar_url} alt={seller.username || seller.store_name} className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="text-gray-400">{seller.username?.charAt(0)?.toUpperCase() || 'B'}</div>
-                        )}
-                      </div>
-                      <div className="text-sm font-bold text-gray-800 text-center truncate w-full">{seller.store_name || seller.username}</div>
-                      <div className="text-xs text-gray-500">{seller.role}</div>
-                    </Link>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-6 text-white/70">{t('no_sellers_in_country') || 'لا يوجد بائعون في بلدك'}</div>
-              )}
-            </div>
-          </div>
+          {/* Sellers-in-country block removed per request */}
       </div>
 
       <Suspense fallback={<div>Loading...</div>}>
