@@ -797,7 +797,7 @@ const AddPhoneForm: React.FC = () => {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4" noValidate>
             <div className={`${cardClass} ${currentStep === 0 ? 'opacity-100 translate-y-0' : 'hidden opacity-0 -translate-y-1'}`}>
               <div className="mb-4 flex items-center gap-2 text-slate-800">
                 <Store className="h-5 w-5 text-orange-500" />

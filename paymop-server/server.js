@@ -6661,8 +6661,11 @@ app.post('/api/create-phone', verifyJwtToken, async (req, res) => {
 
     return res.json({ success: true, phone: data });
   } catch (error) {
-    console.error('/api/create-phone error:', error);
-    return sendError(res, 500, 'Server error', error);
+    console.error('/api/create-phone error:', error && (error.stack || error.message || error));
+    if (!res.headersSent) {
+      const safeMessage = process.env.NODE_ENV !== 'production' ? (error && (error.message || String(error))) : 'Server error while creating phone';
+      return res.status(500).json({ success: false, error: 'server_error', message: safeMessage });
+    }
   }
 });
 
