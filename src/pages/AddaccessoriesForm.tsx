@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import axiosInstance from '@/services/axiosInterceptor';
@@ -72,12 +72,8 @@ const AddAccessoriesForm: React.FC = () => {
   const [currentStep, setCurrentStep] = useState(0);
   const DRAFT_KEY = 'add-accessory-form-draft-v2';
 
-  // Sell durations for normal ad posting (same as AddPhoneForm)
-  const [sellDurations, setSellDurations] = useState<string[]>([]);
-  const [selectedSellDuration, setSelectedSellDuration] = useState<string>('1');
-
   // Fetch promotion prices
-  // Fetch promotion prices
+    // Fetch promotion prices
   useEffect(() => {
     const fetchPromotionPrices = async () => {
       try {
@@ -110,24 +106,6 @@ const AddAccessoriesForm: React.FC = () => {
     fetchPromotionPrices();
   }, []);
 
-  // Fetch sell durations (duration_days where type='sell_phone')
-  useEffect(() => {
-    const fetchSellDurations = async () => {
-      try {
-        const { data, error } = await supabase.from('ads_price').select('duration_days').eq('type', 'sell_phone');
-        if (error) throw error;
-        if (data && Array.isArray(data)) {
-          const durs = data.map((r: any) => String(r.duration_days)).sort((a: string, b: string) => Number(a) - Number(b));
-          setSellDurations(durs);
-          if (durs.length > 0) setSelectedSellDuration(durs[0]);
-        }
-      } catch (e) {
-        console.debug('Error fetching sell durations', e);
-      }
-    };
-    fetchSellDurations();
-  }, []);
-
   // عند مغادرة الصفحة: حذف المسودة من التخزين المحلي لتفادي استعادتها لاحقًا
   useEffect(() => {
     const handleBeforeUnload = () => {
@@ -151,57 +129,16 @@ const AddAccessoriesForm: React.FC = () => {
   }, []);
 
   // Update price when duration changes
-  // Update price when duration changes
+    // Update price when duration changes
   useEffect(() => {
     setPromotionPrice(promotionPrices[selectedDuration] || null);
   }, [selectedDuration, promotionPrices]);
 
   // bonus logic removed: package/role will drive promotions
 
-  // Authoritative role from DB (like PublishAd.tsx) to determine package users
-  const [basePlanFromDB, setBasePlanFromDB] = useState<string | null>(null);
-  const [normalizedRoleFromDB, setNormalizedRoleFromDB] = useState<string | null>(null);
-  const [isPlanLoading, setIsPlanLoading] = useState(false);
-
-  const basePlan = useMemo(() => {
-    const source = basePlanFromDB ?? String(user?.role || 'free').toLowerCase().trim();
-    const raw = String(source).toLowerCase().trim();
-    const normalized = raw.replace(/[\s\-]+/g, '_');
-    const base = normalized.split('_')[0];
-    return base; // 'gold' | 'silver' | 'free' | others
-  }, [basePlanFromDB, user?.role]);
-  const isPackageUser = basePlan === 'gold' || basePlan === 'silver';
-
-  useEffect(() => {
-    if (!user?.id) return;
-    let cancelled = false;
-    const fetchRole = async () => {
-      setIsPlanLoading(true);
-      try {
-        const { data, error } = await supabase.from('users').select('role').eq('id', user.id).single();
-        if (cancelled) return;
-        if (error) {
-          console.debug('AddAccessoriesForm: failed fetching user role', error);
-          return;
-        }
-        const raw = String(data?.role ?? user.role ?? 'free').toLowerCase().trim();
-        const normalized = raw.replace(/[\s\-]+/g, '_');
-        const base = normalized.split('_')[0];
-        setNormalizedRoleFromDB(normalized);
-        setBasePlanFromDB(base);
-      } catch (err) {
-        if (!cancelled) console.debug('AddAccessoriesForm: unexpected error fetching role', err);
-      } finally {
-        if (!cancelled) setIsPlanLoading(false);
-      }
-    };
-    fetchRole();
-    return () => { cancelled = true; };
-  }, [user?.id, user?.role]);
-
 
   // جلب اسم المتجر ورقم الهاتف من جدول businesses عند تحميل المكون
-  // جلب اسم المتجر ورقم الهاتف من جدول businesses عند تحميل المكون
+    // جلب اسم المتجر ورقم الهاتف من جدول businesses عند تحميل المكون
   useEffect(() => {
     const fetchUserData = async () => {
       if (!user) return;
@@ -301,11 +238,11 @@ const AddAccessoriesForm: React.FC = () => {
       // Preserve only basic info (step 1) if present; clear data for steps 2-4
       const preservedBasic = parsed?.formData
         ? {
-          store_name: parsed.formData.store_name || '',
-          city: parsed.formData.city || '',
-          country: parsed.formData.country || '',
-          contact_methods: { ...(parsed.formData.contact_methods || {}) },
-        }
+            store_name: parsed.formData.store_name || '',
+            city: parsed.formData.city || '',
+            country: parsed.formData.country || '',
+            contact_methods: { ...(parsed.formData.contact_methods || {}) },
+          }
         : {};
 
       setFormData(prev => ({
@@ -351,7 +288,7 @@ const AddAccessoriesForm: React.FC = () => {
     }
 
     setImages(prev => [...prev, ...files]);
-
+    
     // إنشاء previews للصور
     files.forEach(file => {
       const reader = new FileReader();
@@ -383,9 +320,6 @@ const AddAccessoriesForm: React.FC = () => {
       }
 
       // 1. إنشاء الإكسسوار عبر السيرفر (سيقوم السيرفر بتشفير الحقول الحساسة)
-      const roleForFeature = normalizedRoleFromDB ?? (user?.role || 'free');
-      const isPrivilegedRole = (roleForFeature && (roleForFeature.includes('gold') || roleForFeature.includes('silver'))) || (user?.role && (user.role.includes('gold') || user.role.includes('silver')));
-
       const createPayload = {
         title: formData.title,
         category: formData.category,
@@ -399,10 +333,6 @@ const AddAccessoriesForm: React.FC = () => {
         countries: formData.country,
         contact_methods: formData.contact_methods,
         store_name: formData.store_name,
-        duration_days: Number(selectedSellDuration || 1),
-        // Ask server to create package ads_payment and mark promoted if user is privileged
-        feature_request: isPrivilegedRole === true,
-        feature_promotion_duration: Number(selectedDuration || 1),
         latitude: coords?.latitude,
         longitude: coords?.longitude,
         role: user?.role,
@@ -471,7 +401,7 @@ const AddAccessoriesForm: React.FC = () => {
           accessory_id: accessoryData.id,
           phone_id: null,
           amount: normalPrice,
-          duration_days: Number(selectedSellDuration || 1),
+          duration_days: 1,
           is_paid: false,
           payment_status: 'pending',
           type: 'normal',
@@ -535,7 +465,6 @@ const AddAccessoriesForm: React.FC = () => {
         countries: formData.country,
         contact_methods: formData.contact_methods,
         store_name: formData.store_name,
-        duration_days: Number(selectedSellDuration || 1),
         status: 'pending',
         latitude: coords?.latitude,
         longitude: coords?.longitude,
@@ -560,19 +489,40 @@ const AddAccessoriesForm: React.FC = () => {
           throw uploadError;
         }
         const { data: { publicUrl } } = supabase.storage.from('accessory-images').getPublicUrl(filePath);
-        try {
-          await axiosInstance.post('/api/insert-accessory-image', { accessoryId: accessoryData.id, imageUrl: publicUrl, main_image: i === 0, order: i });
-        } catch (imgErr) {
-          await axiosInstance.post('/api/delete-accessory-if-failed', { accessoryId: accessoryData.id });
-          throw imgErr;
-        }
+          try {
+            await axiosInstance.post('/api/insert-accessory-image', { accessoryId: accessoryData.id, imageUrl: publicUrl, main_image: i === 0, order: i });
+          } catch (imgErr) {
+            await axiosInstance.post('/api/delete-accessory-if-failed', { accessoryId: accessoryData.id });
+            throw imgErr;
+          }
       }
 
-      // If we reach here, server will handle feature insertion when asked via `feature_request`.
+      // 3. Now that the accessory is created, apply the feature promotion directly
+      if (!user || !accessoryData.id || promotionPrice === null) {
+        throw new Error(t('cannot_feature_ad_incomplete_data'));
+      }
+
+      // Role-based feature handling: use `role` instead of bonus system
+      const role = user?.role || 'free';
+      if (role.includes('gold') || role.includes('silver') || role.includes('business')) {
+        // privileged roles: directly mark as promoted
+        const { error: updateAccessoryError } = await supabase.from('accessories').update({ type: 'promotions' }).eq('id', accessoryData.id);
+        if (updateAccessoryError) throw updateAccessoryError;
+
+        const { error: publishErr } = await supabase.from('accessories').update({ status: 'pending' }).eq('id', accessoryData.id);
+        if (publishErr) console.warn('failed to set accessory pending after promotion', publishErr);
+
+        setIsFeatureModalOpen(false);
+        toast({ title: t('ad_published_and_featured_successfully'), description: t('ad_published_successfully') || '', variant: 'default' });
+        clearDraft();
+        navigate('/seller-dashboard');
+        return;
+      }
+
+      // Non-privileged users: open upgrade prompt to purchase package
+      setShowUpgradePrompt(true);
       setIsFeatureModalOpen(false);
-      toast({ title: t('ad_published_and_featured_successfully'), description: t('ad_published_successfully') || '', variant: 'default' });
-      clearDraft();
-      navigate('/seller-dashboard');
+      setLoading(false);
       return;
 
     } catch (err: any) {
@@ -648,12 +598,13 @@ const AddAccessoriesForm: React.FC = () => {
                     key={step.title}
                     type="button"
                     onClick={() => setCurrentStep(index)}
-                    className={`group rounded-2xl border px-2 py-3 text-center transition-all duration-300 ${active
+                    className={`group rounded-2xl border px-2 py-3 text-center transition-all duration-300 ${
+                      active
                         ? 'border-blue-500 bg-blue-600 text-white shadow-lg shadow-blue-200'
                         : done
-                          ? 'border-orange-300 bg-orange-100 text-orange-800 shadow-sm'
-                          : 'border-slate-300 bg-slate-100 text-slate-700'
-                      }`}
+                        ? 'border-orange-300 bg-orange-100 text-orange-800 shadow-sm'
+                        : 'border-slate-300 bg-slate-100 text-slate-700'
+                    }`}
                   >
                     <div className="mx-auto mb-1 flex h-10 w-10 items-center justify-center rounded-full bg-white/35">
                       {done ? <CheckCircle2 className="h-5 w-5 text-orange-500" /> : <Icon className={`h-5 w-5 ${active ? 'text-orange-200' : 'text-orange-500'}`} />}
@@ -858,20 +809,6 @@ const AddAccessoriesForm: React.FC = () => {
                   <p><span className="font-semibold text-slate-800">{t('preview_price_label')}:</span> {formData.price ? `${formData.price} ${t('currency_short')}` : '—'}</p>
                   <p><span className="font-semibold text-slate-800">{t('preview_location_label')}:</span> {formData.city || '—'}</p>
                 </div>
-                <div className="rounded border p-3 bg-blue-50 mt-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-xs text-gray-600">{t('ad_duration_label') || 'Ad Duration'}</div>
-                      <div className="font-semibold text-orange-500">{selectedSellDuration} {t('days') || 'days'}</div>
-                    </div>
-                    <div>
-                      <select value={selectedSellDuration} onChange={e => setSelectedSellDuration(e.target.value)} className="border rounded p-1 text-orange-500">
-                        {sellDurations.map(d => <option key={d} value={d}>{d} {t('days')}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                  <div className="mt-2 text-sm text-gray-600">{t('expires_on') || 'Expires on'}: {new Date(Date.now() + Number(selectedSellDuration || 1) * 24 * 60 * 60 * 1000).toLocaleDateString()}</div>
-                </div>
               </div>
             </div>
 
@@ -918,19 +855,19 @@ const AddAccessoriesForm: React.FC = () => {
           </form>
         </div>
       </div>
-      {/* نافذة الترقية عند عدم وجود رصيد بونص كافٍ */}
-      {showUpgradePrompt && (
-        <div className="fixed inset-0 bg-gray-600/60 backdrop-blur-lg z-[100] flex flex-col items-center justify-center p-4">
-          <button
-            onClick={() => setShowUpgradePrompt(false)}
-            className="absolute top-5 right-5 text-white bg-black/50 rounded-full p-2 z-10"
-          >
-            <X size={24} />
-          </button>
-          <AdsOfferSlider isUpgradePrompt={true} onClose={() => setShowUpgradePrompt(false)} />
-        </div>
-      )}
-      {isFeatureModalOpen && (
+    {/* نافذة الترقية عند عدم وجود رصيد بونص كافٍ */}
+    {showUpgradePrompt && (
+      <div className="fixed inset-0 bg-gray-600/60 backdrop-blur-lg z-[100] flex flex-col items-center justify-center p-4">
+        <button
+          onClick={() => setShowUpgradePrompt(false)}
+          className="absolute top-5 right-5 text-white bg-black/50 rounded-full p-2 z-10"
+        >
+          <X size={24} />
+        </button>
+        <AdsOfferSlider isUpgradePrompt={true} onClose={() => setShowUpgradePrompt(false)} />
+      </div>
+    )}
+    {isFeatureModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-60 backdrop-blur-sm flex justify-center items-center z-50 p-4" onClick={() => setIsFeatureModalOpen(false)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg transform transition-all" onClick={(e) => e.stopPropagation()}>
             <div className="relative p-6 sm:p-8 text-center max-h-[80vh] overflow-y-auto">
@@ -1003,7 +940,7 @@ const AddAccessoriesForm: React.FC = () => {
               </div>
 
               <p className="text-gray-800 font-semibold mb-6">
-                ✨ {t('dont_let_ad_get_lost')}
+              ✨ {t('dont_let_ad_get_lost')}
               </p>
 
               <button
@@ -1017,7 +954,7 @@ const AddAccessoriesForm: React.FC = () => {
             </div>
           </div>
         </div>
-      )}
+    )}
     </>
   );
 };

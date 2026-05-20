@@ -6673,13 +6673,6 @@ app.post('/api/create-accessory', verifyJwtToken, async (req, res) => {
 
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-  // Diagnostic: log minimal request shape to help debug 500s
-  try {
-    console.log('/api/create-accessory called by', userId, 'payloadKeys=', Object.keys(accessoryData));
-  } catch (e) {
-    // ignore logging failures
-  }
-
   try {
     // Ensure contact_methods is an object
     if (!accessoryData.contact_methods || typeof accessoryData.contact_methods !== 'object') accessoryData.contact_methods = {};
@@ -6752,63 +6745,37 @@ app.post('/api/create-accessory', verifyJwtToken, async (req, res) => {
       accessoryData.email = JSON.stringify({ encryptedData: enc.encryptedData, iv: enc.iv, authTag: enc.authTag });
     }
 
-    // Instead of creating an accessory row now, create a pending ads_payment record.
+    // Ensure seller_id is set to token user
     accessoryData.seller_id = userId;
 
-    // Determine base role (gold/silver/free) from authoritative users table
-    let baseRole = 'free';
+    // Insert
+    let inserted;
     try {
-      const { data: userRow, error: userErr } = await supabase.from('users').select('role').eq('id', userId).maybeSingle();
-      if (!userErr && userRow && userRow.role) {
-        baseRole = String(userRow.role).toLowerCase().trim().split(/[\s_\-]+/)[0] || 'free';
+      const insertRes = await supabase
+        .from('accessories')
+        .insert([accessoryData])
+        .select()
+        .maybeSingle();
+
+      if (insertRes.error) {
+        console.error('/api/create-accessory supabase insert error:', insertRes.error);
+        throw insertRes.error;
       }
-    } catch (e) {
-      // ignore and default to free
+
+      inserted = insertRes.data;
+    } catch (dbErr) {
+      console.error('/api/create-accessory DB insert exception:', dbErr && (dbErr.stack || dbErr.message || dbErr));
+      return sendError(res, 500, 'Database insert failed', process.env.NODE_ENV !== 'production' ? dbErr : undefined);
     }
 
-    const targetType = `${baseRole}_accessory`;
-
-    // Store accessory payload (including image URLs uploaded by client) inside ads_payment.image_url as JSON string
-    const payloadBlob = JSON.stringify({ accessory: accessoryData });
-
-    let insertedPayment = null;
+    // Audit
     try {
-      const paymentRow = {
-        user_id: userId,
-        accessory_id: null,
-        phone_id: null,
-        amount: 0,
-        duration_days: Number(accessoryData.duration_days || 1),
-        is_paid: false,
-        is_active: false,
-        payment_status: 'pending',
-        type: targetType,
-        transaction: 'package_ad_sell',
-        payment_date: new Date().toISOString(),
-        image_url: payloadBlob,
-        expires_at: null
-      };
-
-      const { data: payData, error: payErr } = await supabase.from('ads_payment').insert([paymentRow]).select().maybeSingle();
-      if (payErr) {
-        console.error('create-accessory: failed to insert ads_payment', payErr);
-        throw payErr;
-      }
-      insertedPayment = payData;
-      console.log('create-accessory: created pending ads_payment id=', insertedPayment?.id);
+      await logAudit({ userId, action: 'create_accessory', resourceType: 'accessory', resourceId: inserted?.id, ip: req.ip, userAgent: req.headers['user-agent'] });
     } catch (e) {
-      console.error('/api/create-accessory DB insert exception (ads_payment):', e && (e.stack || e.message || e));
-      return sendError(res, 500, 'Database insert failed', process.env.NODE_ENV !== 'production' ? e : undefined);
+      console.error('Audit log failed for create-accessory:', e);
     }
 
-    // Audit: record pending ads_payment creation
-    try {
-      await logAudit({ userId, action: 'create_accessory_pending', resourceType: 'ads_payment', resourceId: insertedPayment?.id, ip: req.ip, userAgent: req.headers['user-agent'] });
-    } catch (e) {
-      console.error('Audit log failed for create-accessory (ads_payment):', e);
-    }
-
-    return res.json({ success: true, ads_payment: insertedPayment });
+    return res.json({ success: true, accessory: inserted });
   } catch (err) {
     console.error('/api/create-accessory error:', err);
     return sendError(res, 500, 'Server error', err);
