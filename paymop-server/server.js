@@ -846,7 +846,7 @@ app.post('/api/supabase-auth-webhook', async (req, res) => {
     const metadata = user.user_metadata || {};
     // Security: prevent accidental insertion of unwanted fields into `users` table
     // e.g. `username` should not be stored as a top-level column on users here
-    try { if (metadata && typeof metadata === 'object') { delete metadata.username; } } catch (e) {}
+    try { if (metadata && typeof metadata === 'object') { delete metadata.username; } } catch (e) { }
 
     // Idempotency: do nothing if application user already exists
     const { data: existingUser, error: existingErr } = await supabase.from('users').select('id').eq('id', userId).maybeSingle();
@@ -982,7 +982,7 @@ app.post('/api/create-app-user', verifyJwtToken, createAppUserLimiter, async (re
   try {
     const { id, email, metadata } = req.body || {};
     // Ensure client-provided metadata cannot inject undesirable top-level columns into `users`
-    try { if (metadata && typeof metadata === 'object') { delete metadata.username; } } catch (e) {}
+    try { if (metadata && typeof metadata === 'object') { delete metadata.username; } } catch (e) { }
     if (process.env.NODE_ENV !== 'production') console.log('/api/create-app-user called with body:', JSON.stringify(req.body));
 
     // Require a valid UUID `id` coming from Supabase Auth (frontend should pass the auth user id)
@@ -5115,7 +5115,7 @@ app.post('/api/whatsapp-redirect', verifyJwtToken, whatsappRedirectLimiter, asyn
     let foundReport = null;
     for (const r of allReports) {
       let decrypted = null;
-      try { decrypted = decryptField(r.imei); } catch (e) {}
+      try { decrypted = decryptField(r.imei); } catch (e) { }
       if (decrypted && decrypted.replace(/\D/g, '') === normalizedIncoming) {
         foundReport = r;
         break;
@@ -5140,17 +5140,17 @@ app.post('/api/whatsapp-redirect', verifyJwtToken, whatsappRedirectLimiter, asyn
     if (!whatsappNumber && foundReport.phone_number) {
       try {
         whatsappNumber = decryptField(foundReport.phone_number);
-      } catch (e) {}
+      } catch (e) { }
     }
 
     // 2) من phone_reports.whatsapp
     if (!whatsappNumber && foundReport.whatsapp) {
       try {
         const v = foundReport.whatsapp;
-        whatsappNumber = (typeof v === 'string' && ['1','true','yes'].includes(v.trim().toLowerCase()))
+        whatsappNumber = (typeof v === 'string' && ['1', 'true', 'yes'].includes(v.trim().toLowerCase()))
           ? whatsappNumber // whatsapp is just a boolean flag
           : decryptField(v) || v;
-      } catch (e) {}
+      } catch (e) { }
     }
 
     // 3) من جدول users
@@ -5158,7 +5158,7 @@ app.post('/api/whatsapp-redirect', verifyJwtToken, whatsappRedirectLimiter, asyn
       try {
         const { data: userRow } = await supabase.from('users').select('phone').eq('id', foundReport.user_id).maybeSingle();
         if (userRow && userRow.phone) whatsappNumber = decryptField(userRow.phone);
-      } catch (e) {}
+      } catch (e) { }
     }
 
     // 4) من جدول businesses
@@ -5166,7 +5166,7 @@ app.post('/api/whatsapp-redirect', verifyJwtToken, whatsappRedirectLimiter, asyn
       try {
         const { data: bizRow } = await supabase.from('businesses').select('phone').eq('user_id', foundReport.user_id).maybeSingle();
         if (bizRow && bizRow.phone) whatsappNumber = decryptField(bizRow.phone);
-      } catch (e) {}
+      } catch (e) { }
     }
 
     if (!whatsappNumber) {
@@ -5489,10 +5489,10 @@ app.get('/api/user-phones', verifyJwtToken, async (req, res) => {
     // معالجة البيانات: فك التشفير مرة واحدة فقط لكل هاتف
     const processedPhones = phones.map(phone => {
       const decryptedImei = safeDecryptImei(phone.imei);
-      const maskedImei = decryptedImei 
+      const maskedImei = decryptedImei
         ? decryptedImei.substring(0, 4) + '*******' + decryptedImei.slice(-4)
         : 'غير متوفر';
-      
+
       const encryptedImei = encryptAES(decryptedImei || '');
 
       // البحث في الخريطة بدلاً من التكرار
@@ -6632,6 +6632,17 @@ app.post('/api/create-phone', verifyJwtToken, async (req, res) => {
 
     let data, error;
     try {
+      // تحديد نوع الإعلان بناءً على دور المستخدم
+      const userRole = req.user?.role || 'free_user';
+      const adType = ['silver_business', 'gold_business', 'silver_user', 'gold_user'].includes(userRole)
+        ? 'promotions'
+        : 'normal';
+
+      // إضافة type و role إلى phoneData
+      phoneData.type = adType;
+      phoneData.role = userRole;
+
+      // ثم الإدراج
       const insertRes = await supabase
         .from('phones')
         .insert([phoneData])
@@ -9025,7 +9036,7 @@ async function pollConfirmedUsersOnce() {
         const email = user.email || user.email_address || '';
         const metadata = user.user_metadata || {};
         // Prevent bringing `username` from auth metadata into application `users` rows
-        try { if (metadata && typeof metadata === 'object') { delete metadata.username; } } catch (e) {}
+        try { if (metadata && typeof metadata === 'object') { delete metadata.username; } } catch (e) { }
 
         const owner_name = metadata.full_name || metadata.owner_name || '';
         const store_name = metadata.store_name || '';

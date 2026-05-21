@@ -388,6 +388,7 @@ const AddPhoneForm: React.FC = () => {
           longitude: coords?.longitude,
           role: user?.role,
           duration_days: Number(selectedSellDuration || 1),
+          ...(user?.role && ['silver_business','gold_business','silver_user','gold_user'].includes(user.role) ? { type: 'promotions' } : {}),
         };
 
         const res = await axiosInstance.post('/api/create-phone', payload);
@@ -1143,14 +1144,6 @@ const AddPhoneForm: React.FC = () => {
               ) : (
                 <div className="flex flex-wrap items-center gap-2">
                   <button
-                    type="button"
-                    disabled={loading || isReported}
-                    className="inline-flex items-center rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-orange-200 transition hover:bg-orange-600 disabled:opacity-50"
-                    onClick={() => setIsFeatureModalOpen(true)}
-                  >
-                    {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : t('feature_ad')}
-                  </button>
-                  <button
                     type="submit"
                     disabled={loading || isReported}
                     className="inline-flex items-center rounded-xl bg-blue-600 px-5 py-2 text-sm font-bold text-white shadow-lg shadow-blue-200 transition hover:bg-blue-700 disabled:opacity-50"
@@ -1178,7 +1171,8 @@ const AddPhoneForm: React.FC = () => {
     )}
 
 
-      {isFeatureModalOpen && (
+      {/* إخفاء نافذة التمييز إذا كان الدور Silver أو Gold */}
+      {isFeatureModalOpen && !['silver_business','gold_business','silver_user','gold_user'].includes(user?.role) && (
         <div className="fixed inset-0 bg-black bg-opacity-60 backdrop-blur-sm flex justify-center items-center z-50 p-4" onClick={() => setIsFeatureModalOpen(false)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg transform transition-all" onClick={(e) => e.stopPropagation()}>
             <div className="relative p-6 sm:p-8 text-center max-h-[80vh] overflow-y-auto">
