@@ -4942,7 +4942,7 @@ async function verifyJwtToken(req, res, next) {
     if (error || !user) {
       return res.status(401).json({ error: 'Unauthorized: Invalid token' });
     }
- // 2. جلب الدور (role) من جدول users في قاعدة البيانات
+    // 2. جلب الدور (role) من جدول users في قاعدة البيانات
     // ملاحظة: نستخدم service role client (supabase) لتجاوز قيود RLS
     const { data: appUserData, error: roleError } = await supabase
       .from('users')
@@ -4958,16 +4958,19 @@ async function verifyJwtToken(req, res, next) {
     req.user = {
       ...user,
       role: userRole // ⭐ هذا هو السطر المهم
+
     };
 
     next();
   } catch (error) {
     console.error('Error verifying JWT token:', error);
+    console.log('[verifyJwtToken] المستخدم:', user.id, 'الدور من قاعدة البيانات:', appUserData?.role);
+
     return res.status(401).json({ error: 'Unauthorized: Invalid token' });
   }
 }
-    // إضافة بيانات المستخدم إلى الطلب
-  
+// إضافة بيانات المستخدم إلى الطلب
+
 app.get('/api/get-contact-info', verifyJwtToken, async (req, res) => {
   try {
     const requesterId = req.user?.id;
@@ -6461,7 +6464,7 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
 app.post('/api/create-phone', verifyJwtToken, async (req, res) => {
   const phoneData = { ...req.body };
   const userId = req.user?.id;
-  
+
   const rawImei = typeof phoneData.imei === 'string' ? phoneData.imei : '';
 
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
