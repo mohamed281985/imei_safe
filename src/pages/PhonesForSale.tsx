@@ -240,6 +240,50 @@ const PhonesForSale: React.FC = () => {
     }
   };
 
+  // ⭐ دالة مساعدة لتحديد ألوان الكارت والشارات بناءً على العضوية (نفسها في Dashboard)
+  const getCardStyle = (role: string | undefined, type: string | undefined) => {
+    // الحالة الافتراضية (المجاني)
+    let borderColor = 'border-gray-100 shadow-gray-50';
+    let topBar = null;
+    let badge = null;
+
+    // الجولد
+    if (role === 'gold_business') {
+      borderColor = 'border-yellow-400 shadow-yellow-100';
+      if (type === 'promotions') {
+        topBar = <div className="h-1.5 bg-gradient-to-r from-yellow-400 to-amber-500"></div>;
+        badge = (
+          <div className="absolute top-1.5 left-1.5 bg-yellow-400/90 backdrop-blur-[2px] text-black text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10 flex items-center gap-0.5">
+            <Star className="w-2.5 h-2.5 text-black" /><span>PRO</span>
+          </div>
+        );
+      }
+    } 
+    // الفضي (التعديل المطلوب)
+    else if (role === 'silver_business') {
+      borderColor = 'border-gray-400 shadow-gray-200';
+      if (type === 'promotions') {
+        topBar = <div className="h-1.5 bg-gradient-to-r from-gray-300 to-gray-500"></div>;
+        badge = (
+          <div className="absolute top-1.5 left-1.5 bg-gray-400/90 backdrop-blur-[2px] text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10 flex items-center gap-0.5">
+            <Star className="w-2.5 h-2.5 text-white" /><span>PRO</span>
+          </div>
+        );
+      }
+    } 
+    // المجاني (للمميزة فقط)
+    else if (type === 'promotions') {
+      topBar = <div className="h-1.5 bg-gradient-to-r from-blue-500 to-blue-600"></div>;
+      badge = (
+        <div className="absolute top-1.5 left-1.5 bg-blue-600/90 backdrop-blur-[2px] text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10 flex items-center gap-0.5">
+          <Star className="w-2.5 h-2.5 text-white" /><span>PRO</span>
+        </div>
+      );
+    }
+
+    return { borderColor, topBar, badge };
+  };
+
   return (
     <PageContainer>
       <AppNavbar />
@@ -338,6 +382,9 @@ const PhonesForSale: React.FC = () => {
                 console.warn('Skipping phone due to missing title:', phone);
                 return null;
               }
+              
+              // ⭐ استخدام دالة getCardStyle
+              const style = getCardStyle(phone.role, phone.type);
 
               const titleParts = phone.title.split(' ');
               const brand = titleParts[0] || t('unknown_brand');
@@ -347,10 +394,10 @@ const PhonesForSale: React.FC = () => {
                 <Link
                   key={phone.id}
                   to={`/product/${phone.id}`}
-                  className={`relative bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 group flex flex-col h-[280px] ${phone.type === 'promotions' ? 'border-2 border-yellow-400 shadow-md shadow-yellow-100' : 'border border-gray-100'}`}
+                  className={`relative bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 group flex flex-col h-[280px] border-2 ${style.borderColor} ${phone.type === 'promotions' ? 'shadow-xl' : ''}`}
                 >
                   {/* الشريط العلوي للإعلانات المميزة */}
-                  {phone.type === 'promotions' && <div className="h-1.5 bg-gradient-to-r from-yellow-400 to-amber-500"></div>}
+                  {style.topBar}
 
                   <div className="relative w-full h-[200px] bg-gray-50">
                     {phone.phone_images?.[0]?.image_path ? (
@@ -406,12 +453,8 @@ const PhonesForSale: React.FC = () => {
                       </div>
                     )}
 
-                    {/* شارة "مميز" */}
-                    {phone.type === 'promotions' && (
-                      <div className="absolute top-1.5 left-1.5 bg-yellow-400/90 backdrop-blur-[2px] text-black text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10 flex items-center gap-0.5">
-                        <Star className="w-2.5 h-2.5 text-black" /><span>{t('featured')}</span>
-                      </div>
-                    )}
+                    {/* شارة PRO */}
+                    {style.badge}
 
                     {/* شارة الضمان */}
                     {phone.warranty_months > 0 && (

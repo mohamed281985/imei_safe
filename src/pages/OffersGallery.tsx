@@ -172,11 +172,11 @@ const OffersGallery = () => {
             console.log(t('ad_type'), adType);
             console.log(t('price_from_ads_offar'), price);
 
-            // 2. جلب السعر و duration_days و bonus_offer من جدول ads_price
-            console.log(t('fetching_price_duration_bonus'));
+            // 2. جلب السعر و duration_days من جدول ads_price (تم إزالة bonus_offer)
+            console.log(t('fetching_price_duration'));
             const { data: priceData, error: priceError } = await supabase
                 .from('ads_price')
-                .select('amount, duration_days, bonus_offer')
+                .select('amount, duration_days')
                 .eq('type', adType)
                 .maybeSingle();
 
@@ -199,12 +199,8 @@ const OffersGallery = () => {
             // استخدام duration_days من ads_price إذا كان موجوداً، وإلا من ads_offar
             const durationDays = (priceData && priceData.duration_days) ? priceData.duration_days : (offerData.duration_days || 1);
 
-            // استخدام bonus_offer من ads_price إذا كان موجوداً، وإلا من 0
-            const bonusOffer = (priceData && priceData.bonus_offer) ? priceData.bonus_offer : 0;
-
             console.log(t('final_price'), price);
             console.log(t('ad_duration_days'), durationDays);
-            console.log(t('bonus_offer'), bonusOffer);
 
             // ⭐ جلب بيانات العمل التجاري للمستخدم الحالي
             const { data: businessData, error: businessError } = await supabase
@@ -237,8 +233,6 @@ const OffersGallery = () => {
                     type: adType,
                     amount: price,
                     offer_id: offerIdNum,
-                    bonus_offer: bonusOffer,
-                    Actual_bonus: bonusOffer,
                     Actual_payment_date: new Date().toISOString()
                 },
                 redirect_url_success: `https://imei-safe.me/paymob/redirect-success`,
@@ -332,13 +326,12 @@ const OffersGallery = () => {
 
             const paymentData = paymentResponse.data;
             
-            // تحديث الحقول الجديدة مباشرة في قاعدة البيانات
+            // تحديث الحقول الجديدة مباشرة في قاعدة البيانات (تم إزالة Actual_bonus)
             if (paymentData.payment_id) {
                 try {
                     const { error: updateError } = await supabase
                         .from('ads_payment')
                         .update({
-                            Actual_bonus: bonusOffer,
                             Actual_payment_date: new Date().toISOString()
                         })
                         .eq('id', paymentData.payment_id);
@@ -353,79 +346,49 @@ const OffersGallery = () => {
                 }
             }
 
-            // دالة لتحديث transaction إلى bonus_add عند نجاح الدفع
-            const updateTransactionToBonusAdd = async (paymentIdFromServer?: string) => {
+            // دالة لتحديث دور المستخدم وتاريخ انتهاء الصلاحية
+            const updateUserRoleAndExpiry = async (paymentId: string) => {
                 try {
-                    if (paymentIdFromServer) {
-                        // التحقق من قيمة transaction و payment_status قبل التحديث
-                        const { data: paymentData, error: fetchError } = await supabase
-                            .from('ads_payment')
-                            .select('transaction, payment_status')
-                            .eq('id', paymentIdFromServer)
-                            .maybeSingle();
+                    // جلب بيانات الدفع للحصول على نوع الإعلان ومدة الصلاحية
+                    const { data: paymentData, error: paymentError } = await supabase
+                        .from('ads_payment')
+                        .select('type, duration_days')
+                        .eq('id', paymentId)
+                        .maybeSingle();
 
-                        if (fetchError) {
-                            console.error('Error fetching payment data:', fetchError);
-                            return;
-                        }
-
-                        console.log('بيانات السجل:', paymentData);
-
-                        // تحديث فقط إذا كان payment_status=paid و transaction null أو ليس bonus_add
-                        if (paymentData?.payment_status === 'paid' && (!paymentData.transaction || paymentData.transaction !== 'bonus_add')) {
-                            const { error } = await supabase
-                                .from('ads_payment')
-                                .update({ transaction: 'bonus_add' })
-                                .eq('id', paymentIdFromServer);
-
-                            if (!error) {
-                                console.log('تم تحديث transaction للسجل رقم', paymentIdFromServer, 'إلى bonus_add (من payment_id)');
-                            } else {
-                                console.log('فشل تحديث transaction باستخدام payment_id:', error.message);
-                            }
-                        } else {
-                            console.log('لم يتم تحديث transaction: السجل payment_status ليس paid أو transaction بالفئة bonus_add');
-                        }
+                    if (paymentError || !paymentData) {
+                        console.error('Error fetching payment data:', paymentError);
                         return;
                     }
 
-                    // fallback: البحث عن آخر سجل مدفوع
-                    const { data: lastPayment, error: fallbackError } = await supabase
-                        .from('ads_payment')
-                        .select('id, transaction, payment_status')
-                        .eq('user_id', user.id)
-                        .eq('payment_status', 'paid')
-                        .order('payment_date', { ascending: false })
-                        .limit(1)
-                        .maybeSingle();
+                    // حساب تاريخ انتهاء الصلاحية بناءً على مدة الاشتراك
+                    const currentDate = new Date();
+                    const expiryDate = new Date(currentDate);
+                    expiryDate.setDate(currentDate.getDate() + (paymentData.duration_days || 1));
 
-                    if (fallbackError) {
-                        console.error('Error fetching last payment:', fallbackError);
-                    }
+                    // تحديث دور المستخدم وتاريخ انتهاء الصلاحية
+                    const { error: updateError } = await supabase
+                        .from('users')
+                        .update({ 
+                            role: paymentData.type,
+                            expires_at: expiryDate.toISOString()
+                        })
+                        .eq('id', user.id);
 
-                    console.log('آخر سجل مدفوع:', lastPayment);
-
-                    // تحديث فقط إذا كان transaction null أو ليس bonus_add
-                    if (lastPayment?.id && (!lastPayment.transaction || lastPayment.transaction !== 'bonus_add')) {
-                        const { error } = await supabase
-                            .from('ads_payment')
-                            .update({ transaction: 'bonus_add' })
-                            .eq('id', lastPayment.id);
-
-                        if (!error) {
-                            console.log('تم تحديث transaction للسجل رقم', lastPayment.id, 'إلى bonus_add (fallback)');
-                        } else {
-                            console.log('فشل تحديث transaction للسجل:', error.message);
-                        }
+                    if (updateError) {
+                        console.error('Error updating user role and expiry:', updateError);
                     } else {
-                        console.log('لم يتم تحديث transaction: السجل غير موجود أو transaction بالفعل bonus_add');
+                        console.log('User role and expiry updated successfully');
+                        console.log('Role:', paymentData.type);
+                        console.log('Expires at:', expiryDate.toISOString());
                     }
                 } catch (error) {
-                    console.error('خطأ في تحديث transaction:', error);
+                    console.error('Error in updateUserRoleAndExpiry:', error);
                 }
             };
 
-            // دالة لمراقبة حالة الدفع وتحديث transaction عند نجاح الدفع
+            // دالة لمراقبة حالة الدفع (تم إزالة تحديث transaction إلى bonus_add)
+            // دالة لمراقبة حالة الدفع (الآن يتم تحديث الدور وتاريخ الانتهاء من السيرفر للأمان)
             const monitorPaymentStatus = async (paymentId: string) => {
                 const id = window.setInterval(async () => {
                     if (!paymentMonitorRef.current) paymentMonitorRef.current = id;
@@ -433,6 +396,7 @@ const OffersGallery = () => {
                         const { data: paymentRecord, error: fetchError } = await supabase
                             .from('ads_payment')
                             .select('payment_status, transaction, user_id')
+                            .select('payment_status')
                             .eq('id', paymentId)
                             .maybeSingle();
 
@@ -440,6 +404,10 @@ const OffersGallery = () => {
                             console.error('Error fetching payment record:', fetchError);
                             // إذا كان الخطأ 406، فهذا يعني غالباً أن السجل غير موجود أو RLS تمنع الوصول
                             return;
+                        if (paymentRecord?.payment_status === 'paid' && paymentMonitorRef.current) {
+                            clearInterval(paymentMonitorRef.current);
+                            paymentMonitorRef.current = null;
+                            console.log('Payment success detected');
                         }
 
                         console.log('فحص حالة الدفع:', paymentRecord);
@@ -451,21 +419,10 @@ const OffersGallery = () => {
                                 paymentMonitorRef.current = null;
                             }
 
-                            // تحديث transaction إلى bonus_add إذا لزم الأمر
-                            if (!paymentRecord.transaction || paymentRecord.transaction !== 'bonus_add') {
-                                const { error } = await supabase
-                                    .from('ads_payment')
-                                    .update({ transaction: 'bonus_add' })
-                                    .eq('id', paymentId);
+                            // تحديث دور المستخدم وتاريخ انتهاء الصلاحية
+                            await updateUserRoleAndExpiry(paymentId);
 
-                                if (!error) {
-                                    console.log('تم تحديث transaction إلى bonus_add تلقائيًا بعد نجاح الدفع');
-                                    // تحديث البونص في AppNavbar
-                                    // bonus system removed — no bonus events
-                                } else {
-                                    console.log('فشل تحديث transaction بعد نجاح الدفع:', error.message);
-                                }
-                            }
+                            console.log('تم الدفع بنجاح');
                         }
                     } catch (error) {
                         console.error('خطأ في مراقبة حالة الدفع:', error);
@@ -491,12 +448,7 @@ const OffersGallery = () => {
                     monitorPaymentStatus(paymentData.payment_id);
                 }
 
-                // الاستماع لنجاح الدفع عبر رسالة من صفحة الدفع (في حال تم دمج ذلك في صفحة الدفع)
-                window.addEventListener('message', async (event) => {
-                    if (event.data === 'payment_success') {
-                        await updateTransactionToBonusAdd(paymentData.payment_id);
-                    }
-                });
+                // تم إزالة الاستماع لرسالة payment_success وتحديث البونص
             } else if (paymentData.ok) {
                 // الخادم أنشأ سجل دفع لكن لم يعِد رابط بوابة الدفع
                 const pid = paymentData.payment_id ? `#${paymentData.payment_id}` : '';
@@ -505,7 +457,7 @@ const OffersGallery = () => {
                     if (popup && !popup.closed) popup.close();
                 } catch (e) { /* ignore */ }
                 setPayError(t('payment_created_but_no_gateway') || `تم إنشاء الدفع ${pid} لكن لم يتم إنشاء بوابة الدفع. الرجاء المحاولة لاحقًا أو التواصل مع الدعم.`);
-                // ابدأ مراقبة حالة الدفع إن وُجد payment_id لكي يتم تحديث transaction تلقائيًا عند الدفع
+                // ابدأ مراقبة حالة الدفع إن وُجد payment_id
                 if (paymentData.payment_id) {
                     monitorPaymentStatus(paymentData.payment_id);
                     // جرب استعلامًا ثانويًا للحصول على iframe_url المخزّن على الخادم

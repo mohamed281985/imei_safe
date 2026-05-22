@@ -9,6 +9,7 @@ export default {
   "web_browser": "Web browser",
   "operating_system": "Operating system",
   // Game
+  "pro": "Pro",
   "play_and_win": "Play and Win",
   "win_prizes_by_playing": "Win Prizes by Playing",
   "stop_at_target_time": "Press at 10:00 to win",

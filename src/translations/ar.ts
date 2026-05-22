@@ -10,6 +10,7 @@ export default {
   "operating_system": "نظام التشغيل",
   "virtual_device": "جهاز افتراضي",
   // Game
+  "pro": "برو",
   "play_and_win": "العب واكسب",
   "win_prizes_by_playing": "اكسب الجوائز عن طريق اللعب",
   "stop_at_target_time": "اضغط عند 10:00 لتربح",
