@@ -4296,8 +4296,19 @@ app.get('/paymob/redirect-success', async (req, res) => {
                 })
                 .eq('paymob_order_id', Number(orderId));
 
-              if (updateError) console.error('redirect-success fallback: failed to mark paid', updateError);
-              else console.log('redirect-success fallback: payment marked paid', { orderId, merchantOrderId });
+              if (updateError) {
+                console.error('redirect-success fallback: failed to mark paid', updateError);
+              } else {
+                console.log('redirect-success fallback: payment marked paid', { orderId, merchantOrderId });
+                // ⭐ تحديث دور المستخدم وتاريخ الانتهاء من السيرفر للأمان (Fallback)
+                if (existingAd.user_id && existingAd.type && !['publish', 'normal', 'ad_payment'].includes(existingAd.type)) {
+                  await supabase
+                    .from('users')
+                    .update({ role: existingAd.type, expires_at: expiresAt.toISOString() })
+                    .eq('id', existingAd.user_id);
+                  console.log(`[Redirect] Updated user ${existingAd.user_id} role to ${existingAd.type}`);
+                }
+              }
             } else {
               await supabase
                 .from('ads_payment')
@@ -4604,6 +4615,15 @@ app.post("/paymob/webhook", async (req, res) => {
                 console.log('لا يوجد بونص لإضافته أو لا يوجد معرّف مستخدم.');
               }
               // --- ⭐ نهاية: تحديث رصيد البونص للمستخدم ---
+
+              // ⭐ تحديث دور المستخدم وتاريخ الانتهاء من السيرفر عند نجاح الدفع (التحكم المركزي)
+              if (user_id && existingAd.type && !['publish', 'normal', 'ad_payment'].includes(existingAd.type)) {
+                await supabase
+                  .from('users')
+                  .update({ role: existingAd.type, expires_at: expiresAt.toISOString() })
+                  .eq('id', user_id);
+                console.log(`[Webhook] Updated user ${user_id} role to ${existingAd.type}`);
+              }
             }
           }
         } catch (dbError) {
@@ -4946,13 +4966,27 @@ async function verifyJwtToken(req, res, next) {
     // ملاحظة: نستخدم service role client (supabase) لتجاوز قيود RLS
     const { data: appUserData, error: roleError } = await supabase
       .from('users')
-      .select('role')
+      .select('role, expires_at')
       .eq('id', user.id)
       .maybeSingle();
 
     // 3. دمج الدور مع بيانات المستخدم
     // إذا لم يتم العثور على دور، نستخدم القيمة الافتراضية 'free_user'
-    const userRole = (appUserData && appUserData.role) ? appUserData.role : 'free_user';
+    let userRole = (appUserData && appUserData.role) ? appUserData.role : 'free_user';
+
+    // ⭐ التحقق من انتهاء صلاحية الباقة وتحويل الدور تلقائياً (Lazy Downgrade)
+    if (appUserData && appUserData.expires_at) {
+      const expiryDate = new Date(appUserData.expires_at);
+      if (new Date() > expiryDate && !userRole.startsWith('free_')) {
+        // تحديد الدور البديل بناءً على نوع الحساب (تجاري أم عادي)
+        const isBusiness = userRole.toLowerCase().includes('business');
+        userRole = isBusiness ? 'free_business' : 'free_user';
+        
+        // تحديث قاعدة البيانات لإلغاء الصلاحية المنتهية وإعادة الدور للافتراضي
+        await supabase.from('users').update({ role: userRole, expires_at: null }).eq('id', user.id);
+        console.log(`[Auth] User ${user.id} subscription expired. Reverted to ${userRole}`);
+      }
+    }
 
     // تحديث كائن req.user ليشمل الدور
     req.user = {

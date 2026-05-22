@@ -4,7 +4,8 @@ import { supabase } from '../lib/supabase';
 import axiosInstance from '@/services/axiosInterceptor';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { Upload, X, Loader2, Star, Zap, MapPin, Clock, Eye, Gift, CalendarDays, Store, Phone, MapPinned, ShieldCheck, Smartphone, Database, Palette, FileText, ImagePlus, ChevronRight, ChevronLeft, CheckCircle2, Wallet, Hash } from 'lucide-react';
+import { Upload, X, Loader2, Star, Zap, MapPin, Clock, Eye, Gift, CalendarDays, Store, Phone, MapPinned, ShieldCheck, Smartphone, Database, Palette, FileText, ImagePlus, ChevronRight, ChevronLeft, CheckCircle2, Wallet, Hash, Crown, Gem, User, ExternalLink } from 'lucide-react';
+import PackageBadge from '@/components/PackageBadge'; // تأكد من استيراد المكون
 
 import { useGeolocated } from 'react-geolocated';
 import { useToast } from '@/hooks/use-toast';
@@ -57,7 +58,7 @@ interface PhoneFormData {
 
 const AddPhoneForm: React.FC = () => {
   const navigate = useNavigate();
-  const { user } = useAuth(); // Make sure useAuth is imported from the correct path
+  const { user } = useAuth();
   const { toast } = useToast();
   const { t, language } = useLanguage();
   const isRtl = language === 'ar';
@@ -84,9 +85,39 @@ const AddPhoneForm: React.FC = () => {
     },
     userDecisionTimeout: 5000,
   });
-  const [imeiStatus, setImeiStatus] = useState<'' | 'verified' | 'reported' | 'not_registered'>('');
+  const [imeiStatus, setImeiStatus] = useState<'' | 'verified' | 'reported' | 'not_registered' | 'already_advertised'>('');
+  const [existingAdId, setExistingAdId] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(0);
   const DRAFT_KEY = 'add-phone-form-draft-v2';
+
+  // ⭐ إضافة حالة لتخزين دور المستخدم المحدث
+  const [currentUserRole, setCurrentUserRole] = useState<string>(user?.role || 'free_user');
+
+  // ⭐ جلب دور المستخدم من قاعدة البيانات عند تحميل الصفحة
+  useEffect(() => {
+    const fetchUserRole = async () => {
+      if (!user?.id) return;
+
+      try {
+        const { data, error } = await supabase
+          .from('users')
+          .select('role')
+          .eq('id', user.id)
+          .single();
+
+        if (error) {
+          console.error('Error fetching user role:', error);
+        } else if (data?.role) {
+          console.log('Fetched user role:', data.role);
+          setCurrentUserRole(data.role);
+        }
+      } catch (err) {
+        console.error('Unexpected error fetching user role:', err);
+      }
+    };
+
+    fetchUserRole();
+  }, [user?.id]);
 
   // Fetch promotion prices
   useEffect(() => {
@@ -171,6 +202,7 @@ const AddPhoneForm: React.FC = () => {
 
   const [imeiChecking, setImeiChecking] = useState(false);
   const isReported = imeiStatus === 'reported' || imeiStatus === 'not_registered';
+  const isAlreadyAdvertised = imeiStatus === 'already_advertised';
 
   // جلب اسم المتجر ورقم الهاتف من جدول businesses عند تحميل المكون
   useEffect(() => {
@@ -344,13 +376,18 @@ const AddPhoneForm: React.FC = () => {
     e.preventDefault();
     if (!user) return;
     
+    // ⭐ التحقق من حالة الإعلان السابق
+    if (imeiStatus === 'already_advertised') {
+      setError(t('phone_already_advertised'));
+      return;
+    }
+    
     // التحقق من حالة IMEI قبل الإرسال
     if (imeiStatus === 'reported') {
       setError(t('cannot_publish_reported_phone'));
       return;
     }
 
-    // Prevent submission if IMEI is not registered
     // Prevent submission if IMEI is not registered
     if (imeiStatus === 'not_registered') {
       setError(t('phone_not_registered_with_us'));
@@ -367,6 +404,9 @@ const AddPhoneForm: React.FC = () => {
         return;
       }
       try {
+        // حساب expires_at بناءً على مدة الإعلان
+        const duration = Number(selectedSellDuration || 1);
+        const expiresAt = new Date(Date.now() + duration * 24 * 60 * 60 * 1000).toISOString();
         const payload = {
           seller_id: user.id,
           title: formData.title,
@@ -387,7 +427,8 @@ const AddPhoneForm: React.FC = () => {
           latitude: coords?.latitude,
           longitude: coords?.longitude,
           role: user?.role,
-          duration_days: Number(selectedSellDuration || 1),
+          duration_days: duration,
+          expires_at: expiresAt,
           ...(user?.role && ['silver_business','gold_business','silver_user','gold_user'].includes(user.role) ? { type: 'promotions' } : {}),
         };
 
@@ -500,6 +541,11 @@ const AddPhoneForm: React.FC = () => {
     e.preventDefault();
     if (!user) {
       toast({ title: t('error'), description: t('must_be_logged_in'), variant: 'destructive' });
+      return;
+    }
+    // ⭐ التحقق من حالة الإعلان السابق
+    if (imeiStatus === 'already_advertised') {
+      setError(t('phone_already_advertised'));
       return;
     }
     if (imeiStatus === 'reported') {
@@ -649,6 +695,7 @@ const AddPhoneForm: React.FC = () => {
       } else {
         // Reset state while typing
         setImeiStatus('');
+        setExistingAdId(null);
         setError('');
       }
     } else {
@@ -664,12 +711,21 @@ const AddPhoneForm: React.FC = () => {
     try {
       setImeiChecking(true);
       setImeiStatus('');
+      setExistingAdId(null);
       setError('');
 
       const resp = await axiosInstance.post('/api/imei-masked-info', { imei: imeiValue });
       const info = resp?.data || {};
 
       if (info.found) {
+        // ⭐ التحقق من وجود إعلان سابق
+        if (info.hasActiveAd === true) {
+          setImeiStatus('already_advertised');
+          setExistingAdId(info.adId || null);
+          setError(t('phone_already_advertised_detail'));
+          return;
+        }
+
         if (info.hasActiveReport === true) {
           setImeiStatus('reported');
           setError(t('reported_phone_cannot_sell_detail'));
@@ -735,7 +791,7 @@ const AddPhoneForm: React.FC = () => {
   const totalSteps = steps.length;
   const atLastStep = currentStep === totalSteps - 1;
   const fieldClass =
-    'w-full rounded-2xl border border-blue-300/50 bg-white px-4 py-3 text-sm text-slate-800 shadow-[0_2px_10px_rgba(37,99,235,0.08)] outline-none transition-all duration-300 placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-200/60 focus:shadow-[0_6px_18px_rgba(37,99,235,0.18)]';
+    'w-full rounded-2xl border border-blue-300/50 bg-white px-4 py-3 text-sm text-slate-800 shadow-[0_2px_10px rgba(37,99,235,0.08)] outline-none transition-all duration-300 placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-200/60 focus:shadow-[0_6px_18px_rgba(37,99,235,0.18)]';
   const cardClass =
     'rounded-3xl border border-white/70 bg-white/70 backdrop-blur-xl p-5 sm:p-6 shadow-[0_10px_30px_rgba(15,23,42,0.08)] transition-all duration-500';
 
@@ -747,12 +803,22 @@ const AddPhoneForm: React.FC = () => {
     setCurrentStep(prev => Math.max(prev - 1, 0));
   };
 
+  // ⭐ تحديد الدور باستخدام المتغير المحدث
+  const userRole = currentUserRole || user?.role || 'free_user';
+  const isSilver = userRole === 'silver_business';
+  const isGold = userRole === 'gold_business';
+
   return (
     <>
       <div dir={isRtl ? 'rtl' : 'ltr'} className="min-h-screen bg-[#f4f8ff] px-4 py-5 sm:py-8">
         <div className="mx-auto w-full max-w-3xl">
-          <div className="mb-5 rounded-3xl border border-white/70 bg-blue-600 p-5 text-white shadow-[0_12px_30px_rgba(37,99,235,0.35)]">
-            <h1 className="text-xl font-bold sm:text-2xl">{t('add_new_phone')}</h1>
+          <div className="mb-5 rounded-3xl border border-white/70 bg-blue-600 p-5 text-white shadow-[0_12px_30px rgba(37,99,235,0.35)]">
+            <h1 className="text-xl font-bold sm:text-2xl flex items-center gap-3">
+              {t('add_new_phone')}
+              
+              {/* ⭐ استخدام مكون PackageBadge */}
+              <PackageBadge user={user} className="ml-2" />
+            </h1>
             <p className="mt-1 text-sm text-blue-100">{t('add_phone_subtitle')}</p>
           </div>
 
@@ -898,7 +964,7 @@ const AddPhoneForm: React.FC = () => {
                     <Hash className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-orange-500" />
                     <input
                       type="text"
-                      name="imei" // Keep name as imei
+                      name="imei"
                       required
                       value={formData.imei}
                       onChange={handleInputChange}
@@ -908,14 +974,33 @@ const AddPhoneForm: React.FC = () => {
                       onKeyDown={handleImeiKeyDown}
                       pattern="[0-9]{15}"
                       title={t('imei_15_digits_title')}
-                      className={`${fieldClass} pl-10 ${imeiStatus === 'verified' ? 'border-orange-300 ring-1 ring-orange-200' : imeiStatus === 'reported' || imeiStatus === 'not_registered' ? 'border-red-300 ring-1 ring-red-200' : ''}`}
+                      className={`${fieldClass} pl-10 ${imeiStatus === 'verified' ? 'border-orange-300 ring-1 ring-orange-200' : imeiStatus === 'reported' || imeiStatus === 'not_registered' || imeiStatus === 'already_advertised' ? 'border-red-300 ring-1 ring-red-200' : ''}`}
                       placeholder={t('imei_example')}
                       dir="ltr"
                     />
                     {imeiChecking && <Loader2 className="absolute right-3 top-3.5 h-4 w-4 animate-spin text-orange-500" />}
+                    
+                    {/* ⭐ زر عرض الإعلان السابق */}
+                    {isAlreadyAdvertised && existingAdId && (
+                      <div className="mt-2 flex items-center justify-between bg-orange-50 border border-orange-200 rounded-lg p-2">
+                        <div className="flex items-center gap-2 text-orange-700">
+                          <ShieldCheck className="h-4 w-4" />
+                          <span className="text-xs font-semibold">{t('phone_already_advertised')}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/product/${existingAdId}`)}
+                          className="inline-flex items-center gap-1 rounded-md bg-orange-100 px-2 py-1 text-xs font-bold text-orange-700 hover:bg-orange-200 transition-colors"
+                        >
+                          {t('view_existing_ad')}
+                          <ExternalLink className="h-3 w-3" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                   {imeiStatus === 'verified' && <p className="mt-1 text-xs text-orange-600">{t('verified_phone_safe_to_sell')}</p>}
                   {imeiStatus === 'reported' && <p className="mt-1 text-xs text-red-600">{t('reported_phone_cannot_sell')}</p>}
+                  {imeiStatus === 'already_advertised' && <p className="mt-1 text-xs text-red-600">{t('phone_already_advertised_detail')}</p>}
                 </div>
                 <div>
                   <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
@@ -924,7 +1009,7 @@ const AddPhoneForm: React.FC = () => {
                   </label>
                   <div className="relative">
                     <Smartphone className={`pointer-events-none absolute ${iconSidePos} top-3.5 h-4 w-4 text-orange-500`} />
-                    <input type="text" name="phone_type" required value={formData.phone_type} onChange={handleInputChange} readOnly={isReported} className={`${fieldClass} ${iconSidePad}`} placeholder={t('brand_example')} />
+                    <input type="text" name="phone_type" required value={formData.phone_type} onChange={handleInputChange} readOnly={isReported || isAlreadyAdvertised} className={`${fieldClass} ${iconSidePad}`} placeholder={t('brand_example')} />
                   </div>
                 </div>
                 <div>
@@ -934,7 +1019,7 @@ const AddPhoneForm: React.FC = () => {
                   </label>
                   <div className="relative">
                     <Database className={`pointer-events-none absolute ${iconSidePos} top-3.5 h-4 w-4 text-orange-500`} />
-                    <input type="text" name="model" required value={formData.model} onChange={handleInputChange} readOnly={isReported} className={`${fieldClass} ${iconSidePad}`} placeholder={t('model_example')} />
+                    <input type="text" name="model" required value={formData.model} onChange={handleInputChange} readOnly={isReported || isAlreadyAdvertised} className={`${fieldClass} ${iconSidePad}`} placeholder={t('model_example')} />
                   </div>
                 </div>
                 <div>
@@ -944,7 +1029,7 @@ const AddPhoneForm: React.FC = () => {
                   </label>
                   <div className="relative">
                     <Wallet className={`pointer-events-none absolute ${iconSidePos} top-3.5 h-4 w-4 text-orange-500`} />
-                    <input type="number" name="price" required min="0" value={formData.price} onChange={handleInputChange} readOnly={isReported} className={`${fieldClass} ${iconSidePad}`} placeholder="0" />
+                    <input type="number" name="price" required min="0" value={formData.price} onChange={handleInputChange} readOnly={isReported || isAlreadyAdvertised} className={`${fieldClass} ${iconSidePad}`} placeholder="0" />
                   </div>
                 </div>
                 <div>
@@ -952,7 +1037,7 @@ const AddPhoneForm: React.FC = () => {
                     <CheckCircle2 className="h-4 w-4 text-orange-500" />
                     {t('condition')}*
                   </label>
-                  <select name="condition" required value={formData.condition} onChange={handleInputChange} disabled={isReported} className={fieldClass}>
+                  <select name="condition" required value={formData.condition} onChange={handleInputChange} disabled={isReported || isAlreadyAdvertised} className={fieldClass}>
                     <option value="new">{t('new')}</option>
                     <option value="used">{t('used')}</option>
                     <option value="refurbished">{t('refurbished')}</option>
@@ -974,7 +1059,7 @@ const AddPhoneForm: React.FC = () => {
                   </label>
                   <div className="relative">
                     <Database className={`pointer-events-none absolute ${iconSidePos} top-3.5 h-4 w-4 text-orange-500`} />
-                    <input type="text" name="specs.ram" value={formData.specs.ram || ''} onChange={handleInputChange} readOnly={isReported} className={`${fieldClass} ${iconSidePad}`} placeholder={t('ram_example')} />
+                    <input type="text" name="specs.ram" value={formData.specs.ram || ''} onChange={handleInputChange} readOnly={isReported || isAlreadyAdvertised} className={`${fieldClass} ${iconSidePad}`} placeholder={t('ram_example')} />
                   </div>
                 </div>
                 <div>
@@ -984,7 +1069,7 @@ const AddPhoneForm: React.FC = () => {
                   </label>
                   <div className="relative">
                     <Database className={`pointer-events-none absolute ${iconSidePos} top-3.5 h-4 w-4 text-orange-500`} />
-                    <input type="text" name="specs.storage" value={formData.specs.storage || ''} onChange={handleInputChange} readOnly={isReported} className={`${fieldClass} ${iconSidePad}`} placeholder={t('storage_example')} />
+                    <input type="text" name="specs.storage" value={formData.specs.storage || ''} onChange={handleInputChange} readOnly={isReported || isAlreadyAdvertised} className={`${fieldClass} ${iconSidePad}`} placeholder={t('storage_example')} />
                   </div>
                 </div>
                 <div>
@@ -994,7 +1079,7 @@ const AddPhoneForm: React.FC = () => {
                   </label>
                   <div className="relative">
                     <Palette className={`pointer-events-none absolute ${iconSidePos} top-3.5 h-4 w-4 text-orange-500`} />
-                    <input type="text" name="specs.color" value={formData.specs.color || ''} onChange={handleInputChange} readOnly={isReported} className={`${fieldClass} ${iconSidePad}`} placeholder={t('color_example')} />
+                    <input type="text" name="specs.color" value={formData.specs.color || ''} onChange={handleInputChange} readOnly={isReported || isAlreadyAdvertised} className={`${fieldClass} ${iconSidePad}`} placeholder={t('color_example')} />
                   </div>
                 </div>
                 <div>
@@ -1004,7 +1089,7 @@ const AddPhoneForm: React.FC = () => {
                   </label>
                   <div className="relative">
                     <CalendarDays className={`pointer-events-none absolute ${iconSidePos} top-3.5 h-4 w-4 text-orange-500`} />
-                    <input type="number" name="warranty_months" min="0" value={formData.warranty_months} onChange={handleInputChange} readOnly={isReported} className={`${fieldClass} ${iconSidePad}`} placeholder="0" />
+                    <input type="number" name="warranty_months" min="0" value={formData.warranty_months} onChange={handleInputChange} readOnly={isReported || isAlreadyAdvertised} className={`${fieldClass} ${iconSidePad}`} placeholder="0" />
                   </div>
                 </div>
                 <div className="sm:col-span-2">
@@ -1020,7 +1105,7 @@ const AddPhoneForm: React.FC = () => {
                       required
                       value={formData.title}
                       onChange={handleInputChange}
-                      readOnly={isReported}
+                      readOnly={isReported || isAlreadyAdvertised}
                       className={`${fieldClass} ${iconSidePad}`}
                       placeholder={t('write_attractive_ad_title')}
                     />
@@ -1033,7 +1118,7 @@ const AddPhoneForm: React.FC = () => {
                   </label>
                   <div className="relative">
                     <FileText className={`pointer-events-none absolute ${iconSidePos} top-3.5 h-4 w-4 text-orange-500`} />
-                    <textarea name="description" required rows={4} value={formData.description} onChange={handleInputChange} readOnly={isReported} className={`${fieldClass} ${iconSidePad}`} placeholder={t('detailed_phone_description')} />
+                    <textarea name="description" required rows={4} value={formData.description} onChange={handleInputChange} readOnly={isReported || isAlreadyAdvertised} className={`${fieldClass} ${iconSidePad}`} placeholder={t('detailed_phone_description')} />
                   </div>
                 </div>
               </div>
@@ -1056,8 +1141,8 @@ const AddPhoneForm: React.FC = () => {
                   accept="image/*"
                   className="sr-only"
                   onChange={handleImageChange}
-                  required={!isReported && images.length === 0}
-                  disabled={isReported}
+                  required={!isReported && !isAlreadyAdvertised && images.length === 0}
+                  disabled={isReported || isAlreadyAdvertised}
                 />
                 <p className="mt-1 text-xs text-slate-500">{t('add_phone_images_hint')}</p>
               </div>
@@ -1070,7 +1155,7 @@ const AddPhoneForm: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => removeImage(index)}
-                        disabled={isReported}
+                        disabled={isReported || isAlreadyAdvertised}
                         className="absolute left-2 top-2 rounded-full bg-black/60 p-1 text-white transition hover:bg-black"
                       >
                         <X className="h-3 w-3" />
@@ -1136,7 +1221,8 @@ const AddPhoneForm: React.FC = () => {
                 <button
                   type="button"
                   onClick={nextStep}
-                  className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-l from-blue-600 to-blue-500 px-5 py-2 text-sm font-bold text-white shadow-[0_10px_20px_rgba(37,99,235,0.35)] transition hover:from-blue-700 hover:to-blue-600"
+                  disabled={isAlreadyAdvertised}
+                  className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-l from-blue-600 to-blue-500 px-5 py-2 text-sm font-bold text-white shadow-[0_10px_20px_rgba(37,99,235,0.35)] transition hover:from-blue-700 hover:to-blue-600 disabled:opacity-50"
                 >
                   {t('next')}
                   <ChevronLeft className="h-4 w-4" />
@@ -1145,7 +1231,7 @@ const AddPhoneForm: React.FC = () => {
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="submit"
-                    disabled={loading || isReported}
+                    disabled={loading || isReported || isAlreadyAdvertised}
                     className="inline-flex items-center rounded-xl bg-blue-600 px-5 py-2 text-sm font-bold text-white shadow-lg shadow-blue-200 transition hover:bg-blue-700 disabled:opacity-50"
                   >
                     {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : t('publish_ad')}
@@ -1249,7 +1335,7 @@ const AddPhoneForm: React.FC = () => {
 
               <button
                 onClick={handleSubmitAndFeature}
-                disabled={loading || isReported}
+                disabled={loading || isReported || isAlreadyAdvertised}
                 className="w-full inline-flex items-center justify-center px-8 py-4 border border-transparent text-lg font-bold rounded-xl shadow-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 transition-all transform hover:scale-105"
               >
                 {loading ? <Loader2 className="animate-spin h-6 w-6" /> : t('feature_now')}

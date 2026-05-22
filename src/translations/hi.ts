@@ -11,6 +11,7 @@ export default {
   "warranty": "वारंटी",
   "months": "महीने",
   // Game
+  "pro": "प्रो",
   "play_and_win": "खेलो और जीतो",
   "win_prizes_by_playing": "खेलकर पुरस्कार जीतो",
   "stop_at_target_time": "जीतने के लिए लक्ष्य समय पर टैप करें",

@@ -74,7 +74,7 @@ const AccessoriesForSalePage: React.FC = () => {
     const [selectedCondition, setSelectedCondition] = useState('all');
     const [priceRange, setPriceRange] = useState({ min: '', max: '' });
     const [sortBy, setSortBy] = useState('newest');
-    const [userCity, setUserCity] = useState(''); // إضافة حالة لحقل المدينة
+    const [userCity, setUserCity] = useState<string>(''); // إضافة حالة لحقل المدينة
     const { coords } = useGeolocated({ positionOptions: { enableHighAccuracy: true } });
 
     useEffect(() => {
@@ -208,6 +208,50 @@ const AccessoriesForSalePage: React.FC = () => {
 
     const filteredAccessories = getFilteredAccessories();
 
+    // ⭐ دالة مساعدة لتحديد ألوان الكارت والشارات بناءً على العضوية (نفسها في Dashboard و PhonesForSale)
+    const getCardStyle = (role: string | undefined, type: string | undefined) => {
+        // الحالة الافتراضية (المجاني)
+        let borderColor = 'border-gray-100 shadow-gray-50';
+        let topBar = null;
+        let badge = null;
+
+        // الجولد
+        if (role === 'gold_business') {
+            borderColor = 'border-yellow-400 shadow-yellow-100';
+            if (type === 'promotions') {
+                topBar = <div className="h-1.5 bg-gradient-to-r from-yellow-400 to-amber-500"></div>;
+                badge = (
+                    <div className="absolute top-1.5 left-1.5 bg-yellow-400/90 backdrop-blur-[2px] text-black text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10 flex items-center gap-0.5">
+                        <Star className="w-2.5 h-2.5 text-black" /><span>PRO</span>
+                    </div>
+                );
+            }
+        } 
+        // الفضي (التعديل المطلوب)
+        else if (role === 'silver_business') {
+            borderColor = 'border-gray-400 shadow-gray-200';
+            if (type === 'promotions') {
+                topBar = <div className="h-1.5 bg-gradient-to-r from-gray-300 to-gray-500"></div>;
+                badge = (
+                    <div className="absolute top-1.5 left-1.5 bg-gray-400/90 backdrop-blur-[2px] text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10 flex items-center gap-0.5">
+                        <Star className="w-2.5 h-2.5 text-white" /><span>PRO</span>
+                    </div>
+                );
+            }
+        } 
+        // المجاني (للمميزة فقط)
+        else if (type === 'promotions') {
+            topBar = <div className="h-1.5 bg-gradient-to-r from-blue-500 to-blue-600"></div>;
+            badge = (
+                <div className="absolute top-1.5 left-1.5 bg-blue-600/90 backdrop-blur-[2px] text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10 flex items-center gap-0.5">
+                    <Star className="w-2.5 h-2.5 text-white" /><span>PRO</span>
+                </div>
+            );
+        }
+
+        return { borderColor, topBar, badge };
+    };
+
     return (
         <PageContainer>
             <AppNavbar />
@@ -314,76 +358,79 @@ const AccessoriesForSalePage: React.FC = () => {
                     </div>
                 ) : (
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 px-2">
-                        {filteredAccessories.map((acc) => (
-                            <Link
-                                key={acc.id}
-                                to={`/product/${acc.id}`}
-                                className={`relative bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 group flex flex-col h-[280px] ${acc.type === 'promotions' ? 'border-2 border-yellow-400 shadow-md shadow-yellow-100' : 'border border-gray-100'}`}
-                            >
-                                {/* الشريط العلوي للإعلانات المميزة */}
-                                {acc.type === 'promotions' && <div className="h-1.5 bg-gradient-to-r from-yellow-400 to-amber-500"></div>}
+                        {filteredAccessories.map((acc) => {
+                            // ⭐ استخدام دالة getCardStyle
+                            const style = getCardStyle(acc.role, acc.type);
 
-                                <div className="relative w-full h-[200px] bg-gray-50">
-                                    {getAccessoryMainImage(acc) ? (
-                                        <img
-                                            src={getTransformedImageUrl(getAccessoryMainImage(acc))}
-                                            alt={acc.title}
-                                            className="absolute inset-0 w-full h-full object-cover opacity-0 transition-opacity duration-300"
-                                            loading="lazy"
-                                            onLoad={(e) => {
-                                              const target = e.target as HTMLImageElement;
-                                              target.classList.remove('opacity-0');
-                                              target.classList.add('opacity-100');
-                                            }}
-                                        />
-                                    ) : (
-                                        <div className="w-full h-full flex items-center justify-center bg-gray-100">
-                                          <Smartphone className="w-12 h-12 text-gray-300" />
+                            return (
+                                <Link
+                                    key={acc.id}
+                                    to={`/product/${acc.id}`}
+                                    className={`relative bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 group flex flex-col h-[280px] border-2 ${style.borderColor} ${acc.type === 'promotions' ? 'shadow-lg' : ''}`}
+                                >
+                                    {/* الشريط العلوي للإعلانات المميزة */}
+                                    {style.topBar}
+
+                                    <div className="relative w-full h-[200px] bg-gray-50">
+                                        {getAccessoryMainImage(acc) ? (
+                                            <img
+                                                src={getTransformedImageUrl(getAccessoryMainImage(acc))}
+                                                alt={acc.title}
+                                                className="absolute inset-0 w-full h-full object-cover opacity-0 transition-opacity duration-300"
+                                                loading="lazy"
+                                                onLoad={(e) => {
+                                                    const target = e.target as HTMLImageElement;
+                                                    target.classList.remove('opacity-0');
+                                                    target.classList.add('opacity-100');
+                                                }}
+                                            />
+                                        ) : (
+                                            <div className="w-full h-full flex items-center justify-center bg-gray-100">
+                                                <Smartphone className="w-12 h-12 text-gray-300" />
+                                            </div>
+                                        )}
+                                        {/* Placeholder */}
+                                        {!getAccessoryMainImage(acc) && (
+                                          <div className="phone-placeholder absolute inset-0 flex items-center justify-center transition-opacity duration-300">
+                                            <div className="p-4 rounded-full bg-gray-100">
+                                              <Smartphone className="w-8 h-8 text-gray-400" />
+                                            </div>
+                                          </div>
+                                        )}
+                                        
+                                        {/* شارة PRO */}
+                                        {style.badge}
+
+                                        <div className="absolute top-2 right-2 flex flex-col gap-2">
                                         </div>
-                                    )}
-                                    {/* Placeholder */}
-                                    {!getAccessoryMainImage(acc) && (
-                                      <div className="phone-placeholder absolute inset-0 flex items-center justify-center transition-opacity duration-300">
-                                        <div className="p-4 rounded-full bg-gray-100">
-                                          <Smartphone className="w-8 h-8 text-gray-400" />
-                                        </div>
-                                      </div>
-                                    )}
-                                    {/* شارة مميز */}
-                                    {acc.type === 'promotions' && (
-                                        <div className="absolute top-1.5 left-1.5 bg-yellow-400/90 backdrop-blur-[2px] text-black text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10 flex items-center gap-0.5">
-                                            <Star className="w-2.5 h-2.5 text-black" /><span>{t('featured')}</span>
-                                        </div>
-                                    )}
-                                    <div className="absolute top-2 right-2 flex flex-col gap-2">
                                     </div>
-                                </div>
-                                
-                                <div className="p-2.5 flex flex-col gap-1.5">
-                                  {/* Title */}
-                                  <h3 className="text-lg font-bold text-gray-800 truncate leading-tight mb-0.5">
-                                    {acc.title}
-                                  </h3>
+                                    
+                                    <div className="p-2.5 flex flex-col gap-1.5">
+                                        {/* Title */}
+                                        <h3 className="text-lg font-bold text-gray-800 truncate leading-tight mb-0.5">
+                                            {acc.title}
+                                        </h3>
 
-                                  {/* Category and Brand */}
-                                  <div className="flex items-center gap-1.5 text-xs text-gray-500 truncate font-medium">
-                                    {acc.category && <span>{acc.category}</span>}
-                                    {acc.category && acc.brand && <span className="w-0.5 h-0.5 rounded-full bg-gray-400"></span>}
-                                    {acc.brand && <span>{acc.brand}</span>}
-                                  </div>
+                                        {/* Category and Brand */}
+                                        <div className="flex items-center gap-1.5 text-xs text-gray-500 truncate font-medium">
+                                            {acc.category && <span>{acc.category}</span>}
+                                            {acc.category && acc.brand && <span className="w-0.5 h-0.5 rounded-full bg-gray-400"></span>}
+                                            {acc.brand && <span>{acc.brand}</span>}
+                                        </div>
 
-                                  {/* Price */}
-                                  <div className="mt-0.5 flex items-center justify-between">
-                                    <div className="text-purple-700 font-bold text-lg" dir="ltr">
-                                      {acc.price.toLocaleString(i18n.language === 'ar' ? 'ar-EG' : 'en-US')} <span className="text-sm font-normal text-bold">{userCurrencySymbol}</span>
+                                        {/* Price */}
+                                        <div className="mt-0.5 flex items-center justify-between">
+                                            <div className="text-purple-700 font-bold text-lg" dir="ltr">
+                                                {acc.price.toLocaleString(i18n.language === 'ar' ? 'ar-EG' : 'en-US')} <span className="text-sm font-normal text-bold">{userCurrencySymbol}</span>
+                                            </div>
+                                            <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${acc.condition === 'used' ? 'bg-orange-50 text-orange-700 border-orange-100' : 'bg-cyan-50 text-cyan-700 border-cyan-100'}`}>
+                                                {t(acc.condition)}
+                                            </span>
+                                        </div>
                                     </div>
-                                    <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${acc.condition === 'used' ? 'bg-orange-50 text-orange-700 border-orange-100' : 'bg-cyan-50 text-cyan-700 border-cyan-100'}`}>
-                                      {t(acc.condition)}
-                                    </span>
-                                  </div>
-                                </div>
-                            </Link>
-                        ))}
+                                </Link>
+                            );
+                        })}
                     </div>
                 )}
             </div>

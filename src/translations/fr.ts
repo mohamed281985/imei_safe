@@ -12,6 +12,7 @@ export default {
   "warranty": "Garantie",
   "months": "mois",
   // Game
+  "pro": "Pro",
   "play_and_win": "Jouer et gagner",
   "win_prizes_by_playing": "Gagnez des prix en jouant",
   "stop_at_target_time": "Appuyez à l'heure cible pour gagner",

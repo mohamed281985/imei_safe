@@ -49,7 +49,7 @@ interface Accessory {
   brand?: string;
   created_at?: string;
   warranty_months?: number;
-  type?: 'promotions' | 'normal';
+  type?: 'promotions' | 'normal' | 'promotion' | 'special' | 'featured';
 }
 
 // دالة مساعدة للحصول على الصورة الرئيسية للهاتف
@@ -610,28 +610,24 @@ const Dashboard: React.FC = () => {
             });
           }
 
-          // الترتيب النهائي: الإعلانات المميزة القريبة، ثم باقي المميزة، ثم حسب العضوية، ثم المسافة
-          const roleOrder = { 'gold_business': 1, 'silver_business': 2, 'free_business': 3 };
+          // ⭐ دالة مساعدة لتحديد أولوية العضوية
+          const getMembershipPriority = (role: string | undefined): number => {
+            if (role === 'gold_business') return 1; // الجولد له أعلى أولوية
+            if (role === 'silver_business') return 2; // الفضي يأتي ثانياً
+            return 3; // الباقي (المجاني) يأتي أخيراً
+          };
+
+          // الترتيب النهائي: أولاً حسب العضوية، ثم حسب المسافة
           sortedListings.sort((a, b) => {
-            const isAPromoted = a.type === 'promotions';
-            const isBPromoted = b.type === 'promotions';
-            const isANearby = (a.distance ?? Infinity) <= 10;
-            const isBNearby = (b.distance ?? Infinity) <= 10;
+            const priorityA = getMembershipPriority(a.role);
+            const priorityB = getMembershipPriority(b.role);
 
-            // 1. إعلان مميز وقريب في المقدمة
-            if (isAPromoted && isANearby && !(isBPromoted && isBNearby)) return -1;
-            if (isBPromoted && isBNearby && !(isAPromoted && isANearby)) return 1;
+            // 1. مقارنة الأولويات (الجولد قبل الفضي قبل المجاني)
+            if (priorityA !== priorityB) {
+              return priorityA - priorityB;
+            }
 
-            // 2. باقي الإعلانات المميزة
-            if (isAPromoted && !isBPromoted) return -1;
-            if (isBPromoted && !isAPromoted) return 1;
-
-            // 3. الترتيب حسب أولوية العضوية (الدور)
-            const orderA = roleOrder[a.role as keyof typeof roleOrder] || 4;
-            const orderB = roleOrder[b.role as keyof typeof roleOrder] || 4;
-            if (orderA !== orderB) return orderA - orderB;
-
-            // 4. إذا كانت العضوية متساوية، يتم الترتيب حسب المسافة (الأقرب أولاً)
+            // 2. إذا كانت الأولوية متساوية، نرتب حسب المسافة (الأقرب أولاً)
             return (a.distance ?? Infinity) - (b.distance ?? Infinity);
           });
 
@@ -680,30 +676,28 @@ const Dashboard: React.FC = () => {
               }
             });
           }
-          // الترتيب النهائي: الإعلانات المميزة القريبة، ثم باقي المميزة، ثم حسب العضوية، ثم المسافة
-          const roleOrder = { 'gold_business': 1, 'silver_business': 2, 'free_business': 3 };
+
+          // ⭐ دالة مساعدة لتحديد أولوية العضوية (نفسها المستخدمة للهواتف)
+          const getMembershipPriority = (role: string | undefined): number => {
+            if (role === 'gold_business') return 1;
+            if (role === 'silver_business') return 2;
+            return 3;
+          };
+
+          // الترتيب النهائي: أولاً حسب العضوية، ثم حسب المسافة
           sortedAccessories.sort((a, b) => {
-            const isAPromoted = a.type === 'promotions';
-            const isBPromoted = b.type === 'promotions';
-            const isANearby = (a.distance ?? Infinity) <= 10;
-            const isBNearby = (b.distance ?? Infinity) <= 10;
+            const priorityA = getMembershipPriority(a.role);
+            const priorityB = getMembershipPriority(b.role);
 
-            // 1. إعلان مميز وقريب في المقدمة
-            if (isAPromoted && isANearby && !(isBPromoted && isBNearby)) return -1;
-            if (isBPromoted && isBNearby && !(isAPromoted && isANearby)) return 1;
+            // 1. مقارنة الأولويات
+            if (priorityA !== priorityB) {
+              return priorityA - priorityB;
+            }
 
-            // 2. باقي الإعلانات المميزة
-            if (isAPromoted && !isBPromoted) return -1;
-            if (isBPromoted && !isAPromoted) return 1;
-
-            // 3. الترتيب حسب أولوية العضوية (الدور)
-            const orderA = roleOrder[a.role as keyof typeof roleOrder] || 4;
-            const orderB = roleOrder[b.role as keyof typeof roleOrder] || 4;
-            if (orderA !== orderB) return orderA - orderB;
-
-            // 4. إذا كانت العضوية متساوية، يتم الترتيب حسب المسافة (الأقرب أولاً)
+            // 2. إذا كانت الأولوية متساوية، نرتب حسب المسافة
             return (a.distance ?? Infinity) - (b.distance ?? Infinity);
           });
+
           console.debug('setting accessoryListings count:', sortedAccessories.length, 'sample:', sortedAccessories[0]);
           setAccessoryListings(sortedAccessories);
         }
@@ -938,6 +932,53 @@ const Dashboard: React.FC = () => {
     </div>
   );
 
+  // ⭐ دالة مساعدة لتحديد ألوان الكارت والشارات بناءً على العضوية (تم تحديثها)
+  const getCardStyle = (role: string | undefined, type: string | undefined) => {
+    // الحالة الافتراضية (المجاني)
+    let borderColor = 'border-gray-100 shadow-gray-50';
+    let topBar = null;
+    let badge = null;
+
+    // التحقق مما إذا كان النوع مميزاً (promotions, promotion, special, featured)
+    const isPromotion = type && ['promotions', 'promotion', 'special', 'featured'].includes(type.toLowerCase());
+
+    // الجولد
+    if (role === 'gold_business') {
+      borderColor = 'border-yellow-400 shadow-yellow-100';
+      if (isPromotion) {
+        topBar = <div className="h-1.5 bg-gradient-to-r from-yellow-400 to-amber-500"></div>;
+        badge = (
+          <div className="absolute top-2 left-1.5 bg-yellow-400/90 backdrop-blur-[2px] text-black text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10 flex items-center gap-0.5">
+            <Star className="w-2.5 h-2.5 text-black" /><span>PRO</span>
+          </div>
+        );
+      }
+    } 
+    // الفضي
+    else if (role === 'silver_business') {
+      borderColor = 'border-gray-400 shadow-gray-200';
+      if (isPromotion) {
+        topBar = <div className="h-1.5 bg-gradient-to-r from-gray-300 to-gray-500"></div>;
+        badge = (
+          <div className="absolute top-2 left-1.5 bg-gray-400/90 backdrop-blur-[2px] text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10 flex items-center gap-0.5">
+            <Star className="w-2.5 h-2.5 text-white" /><span>PRO</span>
+          </div>
+        );
+      }
+    } 
+    // المجاني (للمميزة فقط)
+    else if (isPromotion) {
+      topBar = <div className="h-1.5 bg-gradient-to-r from-blue-500 to-blue-600"></div>;
+      badge = (
+        <div className="absolute top-2 left-1.5 bg-blue-600/90 backdrop-blur-[2px] text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10 flex items-center gap-0.5">
+          <Star className="w-2.5 h-2.5 text-white" /><span>PRO</span>
+        </div>
+      );
+    }
+
+    return { borderColor, topBar, badge };
+  };
+
   return (
     <PageContainer>
 
@@ -1079,6 +1120,7 @@ const Dashboard: React.FC = () => {
 
                 >
                   {phoneListings.map((phone) => {
+                    const style = getCardStyle(phone.role, phone.type);
                     return (
                       <SwiperSlide
                         key={phone.id}
@@ -1088,10 +1130,10 @@ const Dashboard: React.FC = () => {
                         <Link
                           to={`/product/${phone.id}`}
                           onClick={() => incrementPhoneViews(phone.id)}
-                          className={`relative bg-white rounded-2xl overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300 group flex flex-col h-[280px] sm:h-[300px] md:h-[320px] lg:h-[280px] ${phone.type === 'promotions' ? 'border-2 border-yellow-400 shadow-xl shadow-yellow-100' : 'border border-gray-100 shadow-lg'}`}
+                          className={`relative bg-white rounded-2xl overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300 group flex flex-col h-[280px] sm:h-[300px] md:h-[320px] lg:h-[280px] border-2 ${style.borderColor} ${phone.type === 'promotions' ? 'shadow-xl' : ''}`}
                         >
                           {/* الشريط العلوي للإعلانات المميزة */}
-                          {phone.type === 'promotions' && <div className="h-1.5 bg-gradient-to-r from-yellow-400 to-amber-500"></div>}
+                          {style.topBar}
                           <div className="relative w-full h-[180px] sm:h-[200px] md:h-[220px] lg:h-[180px] bg-gray-50">
                             {phone.phone_images?.[0]?.image_path ? (
                               <>
@@ -1157,12 +1199,10 @@ const Dashboard: React.FC = () => {
                                 <Smartphone className="w-12 h-12 text-gray-300" />
                               </div>
                             )}
-                            {/* شارة "مميز" */}
-                            {phone.type === 'promotions' && (
-                              <div className="absolute top-2 left-1.5 bg-yellow-400/90 backdrop-blur-[2px] text-black text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10 flex items-center gap-0.5">
-                                <Star className="w-2.5 h-2.5 text-black" /><span>{t('featured')}</span>
-                              </div>
-                            )}
+                            
+                            {/* شارة PRO */}
+                            {style.badge}
+
                             {/* شارة الضمان */}
                             {phone.warranty_months > 0 && (
                               <div className="absolute bottom-1 right-1 bg-blue-600/90 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm">
@@ -1171,7 +1211,7 @@ const Dashboard: React.FC = () => {
                             )}
                             {/* شارة الحالة */}
                             {phone.condition && (
-                              <div className={`absolute bottom-1 left-1 text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm ${phone.condition === 'used' ? 'bg-orange-500/90 text-white' : 'bg-cyan-500/90 text-white'}`}>
+                              <div className={`absolute bottom-1 left-1 text-[12px] font-bold px-1.5 py-0.5 rounded shadow-sm ${phone.condition === 'used' ? 'bg-orange-500/90 text-white' : 'bg-cyan-500/90 text-white'}`}>
                                 {t(phone.condition)}
                               </div>
                             )}
@@ -1205,7 +1245,7 @@ const Dashboard: React.FC = () => {
                                 {phone.price.toLocaleString('en-US')} <span className="text-md font-bold text-black">{userCurrencySymbol}</span>
                               </div>
                               {(phone.is_verified === true || phone.is_verified === 'true') && (
-                                <span className="text-[10px] bg-green-50 text-green-700 px-1.5 py-0.5 rounded border border-green-100 font-medium">
+                                <span className="text-[13px] bg-green-50 text-green-700 px-1.5 py-0.5 rounded border border-green-100 font-bold ">
                                   {t('verified')}
                                 </span>
                               )}
@@ -1246,75 +1286,76 @@ const Dashboard: React.FC = () => {
                   }}
                   className="!static"
                 >
-                  {accessoryListings.map((acc) => (
-                    <SwiperSlide
-                      key={acc.id}
-                      onClick={() => navigate(`/product/${acc.id}`)}
-                      className="cursor-pointer"
-                    >
-                      <div className={`relative bg-blue-100 rounded-2xl overflow-hidden shadow-md hover:shadow-lg transition-all duration-300 group flex flex-col h-[280px] ring-1 ring-gray-300/50 ${acc.type === 'promotions' ? 'border-2 border-yellow-400 shadow-lg shadow-yellow-100' : 'border-2 border-gray-200'}`}>
-                        <Link
-                          to={`/product/${acc.id}`}
-                          className="flex flex-col h-full"
-                        >
-                          {/* الشريط العلوي للإعلانات المميزة */}
-                          {acc.type === 'promotions' && <div className="h-1.5 bg-gradient-to-r from-yellow-400 to-amber-500"></div>}
-                          <div className="relative w-full h-[200px] bg-gray-50">
-                            {acc.accessory_images?.[0]?.image_path ? (
-                              <img
-                                src={getTransformedAccessoryImageUrl(getAccessoryMainImage(acc))}
-                                alt={acc.title || 'صورة الإكسسوار'}
-                                className="absolute inset-0 w-full h-full object-cover"
-                                loading="lazy"
-                              />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center bg-gray-100">
-                                <Smartphone className="w-12 h-12 text-gray-300" />
-                              </div>
-                            )}
-                            {/* شارة "مميز" */}
-                            {acc.type === 'promotions' && (
-                              <div className="absolute top-2 left-1.5 bg-yellow-400/90 backdrop-blur-[2px] text-black text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10 flex items-center gap-0.5">
-                                <Star className="w-2.5 h-2.5 text-black" />
-                                <span>{t('featured')}</span>
-                              </div>
-                            )}
+                  {accessoryListings.map((acc) => {
+                    const style = getCardStyle(acc.role, acc.type);
+                    return (
+                      <SwiperSlide
+                        key={acc.id}
+                        onClick={() => navigate(`/product/${acc.id}`)}
+                        className="cursor-pointer"
+                      >
+                        <div className={`relative bg-blue-100 rounded-2xl overflow-hidden shadow-md hover:shadow-lg transition-all duration-300 group flex flex-col h-[280px] ring-1 ring-gray-300/50 border-2 ${style.borderColor} ${acc.type === 'promotions' ? 'shadow-lg' : ''}`}>
+                          
+                          {/* ⭐ FIX 1: Render topBar immediately inside the main card container */}
+                          {style.topBar}
 
-                            {/* شارة الضمان */}
-                            {acc.warranty_months && acc.warranty_months > 0 && (
-                              <div className="absolute bottom-1 right-1 bg-blue-600/90 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm">
-                                {t('warranty_months').replace('{months}', acc.warranty_months.toString())}
-                              </div>
-                            )}
-                          </div>
+                          <Link
+                            to={`/product/${acc.id}`}
+                            className="flex flex-col h-full"
+                          >
+                            <div className="relative w-full h-[200px] bg-gray-50">
+                              {acc.accessory_images?.[0]?.image_path ? (
+                                <img
+                                  src={getTransformedAccessoryImageUrl(getAccessoryMainImage(acc))}
+                                  alt={acc.title || 'صورة الإكسسوار'}
+                                  className="absolute inset-0 w-full h-full object-cover"
+                                  loading="lazy"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center bg-gray-100">
+                                  <Smartphone className="w-12 h-12 text-gray-300" />
+                                </div>
+                              )}
+                              
+                              {/* ⭐ FIX 2: Ensure badge is inside this relative container */}
+                              {style.badge}
 
-                          <div className="p-2.5 flex flex-col gap-2 bg-white">
-                            {/* Title */}
-                            <h3 className="text-xl font-bold text-gray-800 truncate leading-tight mb-0.5">
-                              {acc.title}
-                            </h3>
-
-                            {/* Category and Brand */}
-                            <div className="flex items-center gap-2 text-xl text-gray-500 truncate font-medium">
-                              {acc.category && <span>{acc.category}</span>}
-                              {acc.category && acc.brand && <span className="w-0.5 h-0.5 rounded-full bg-gray-400"></span>}
-                              {acc.brand && <span>{acc.brand}</span>}
+                              {/* شارة الضمان */}
+                              {acc.warranty_months && acc.warranty_months > 0 && (
+                                <div className="absolute bottom-1 right-1 bg-blue-600/90 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm">
+                                  {t('warranty_months').replace('{months}', acc.warranty_months.toString())}
+                                </div>
+                              )}
                             </div>
 
-                            {/* Price */}
-                            <div className="mt-0.5 flex items-center justify-between">
-                              <div className="text-purple-700 font-bold text-lg" dir="ltr"> {/* تم تغيير dir إلى ltr لضمان عرض العملة بشكل صحيح */}
-                                {acc.price.toLocaleString('en-US')} <span className="text-xs font-normal text-gray-500">{userCurrencySymbol}</span>
+                            <div className="p-2.5 flex flex-col gap-2 bg-white">
+                              {/* Title */}
+                              <h3 className="text-xl font-bold text-gray-800 truncate leading-tight mb-0.5">
+                                {acc.title}
+                              </h3>
+
+                              {/* Category and Brand */}
+                              <div className="flex items-center gap-2 text-xl text-gray-500 truncate font-medium">
+                                {acc.category && <span>{acc.category}</span>}
+                                {acc.category && acc.brand && <span className="w-0.5 h-0.5 rounded-full bg-gray-400"></span>}
+                                {acc.brand && <span>{acc.brand}</span>}
                               </div>
-                              <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${acc.condition === 'used' ? 'bg-orange-50 text-orange-700 border-orange-100' : 'bg-cyan-50 text-cyan-700 border-cyan-100'}`}>
-                                {t(acc.condition)}
-                              </span>
+
+                              {/* Price */}
+                              <div className="mt-0.5 flex items-center justify-between">
+                                <div className="text-purple-700 font-bold text-lg" dir="ltr"> {/* تم تغيير dir إلى ltr لضمان عرض العملة بشكل صحيح */}
+                                  {acc.price.toLocaleString('en-US')} <span className="text-xs font-normal text-gray-500">{userCurrencySymbol}</span>
+                                </div>
+                                <span className={`text-[13px] px-1.5 py-0.5 rounded border font-medium ${acc.condition === 'used' ? 'bg-orange-50 text-orange-700 border-orange-100' : 'bg-cyan-50 text-cyan-700 border-cyan-100'}`}>
+                                  {t(acc.condition)}
+                                </span>
+                              </div>
                             </div>
-                          </div>
-                        </Link>
-                      </div>
-                    </SwiperSlide>
-                  ))}
+                          </Link>
+                        </div>
+                      </SwiperSlide>
+                    );
+                  })}
                 </Swiper>
               ) : (
                 <div className="col-span-2 lg:col-span-4 text-center py-8 text-white/70">
@@ -1362,9 +1403,7 @@ const Dashboard: React.FC = () => {
                           key={safeKey}
                           imei={t('lost')}
                           phoneType={phone?.phone_type || phone?.phoneType}
-                        />t('lost')
-                        phoneType={phone?.phone_type || phone?.phoneType}
-
+                        />
                       </div>
                     );
                   })()}
