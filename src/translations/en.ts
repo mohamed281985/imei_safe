@@ -566,6 +566,7 @@ export default {
   "imei_registered_to_you_error": "This phone is already registered to your account and cannot be registered again.",
   "imei_registered_to_another_account_with_report": "This phone is registered to another account and has an active report.",
   "imei_registered_to_another_account": "This phone is registered to another account.",
+  "imei_already_reported_by_your_account": "This device has already been reported from your account",
 
   
   "imei_already_reported_as_lost_detail": "This phone is already reported as lost, a new report cannot be submitted.",
@@ -1165,6 +1166,10 @@ export default {
   "package_remaining_ads": "Remaining from your package",
   "ad_duration_per_ad": "Ad duration per ad",
   "days_remaining": "Days remaining",
+  "my_package": "My Package",
+  "remaining_ads": "Remaining Ads",
+  "total_ads": "Total Ads",
+  "expiry_date": "Expiry Date",
   "image_format_hint": "PNG, JPG up to 5MB",
   "location_set_success": "Location set successfully",
   "change_location": "Change location",

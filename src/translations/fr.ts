@@ -572,6 +572,7 @@ export default {
   "imei_already_exists_data_prefilled": "L'IMEI existe déjà, certaines données ont été pré-remplies.",
   "imei_registered_to_you_error": "Ce téléphone est déjà enregistré sur votre compte et ne peut pas être enregistré à nouveau.",
   "imei_registered_to_another_account_with_report": "Ce téléphone est enregistré sur un autre compte et fait l'objet d'un rapport actif.",
+  "imei_already_reported_by_your_account": "Cet appareil a déjà été signalé depuis votre compte",
   "imei_registered_to_another_account": "Ce téléphone est enregistré sur un autre compte.",
   "imei_already_reported_as_lost_detail": "Ce téléphone est déjà signalé comme perdu, un nouveau rapport ne peut pas être soumis.",
   "id_last6_invalid": "Vous devez saisir correctement les 6 derniers chiffres de la carte d'identité",

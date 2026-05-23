@@ -130,8 +130,8 @@ const PackageBadge: React.FC<Props> = ({ user = null, className = '' }) => {
         return (
           <PlanCard
             id="GOLD"
-            title="GOLD VIP"
-            arabic="عضو ذهبي VIP"
+            title="GOLD"
+            arabic="عضو ذهبي"
             Icon={Crown}
             gradientClass="bg-gradient-to-br from-yellow-400 to-amber-400"
             glow="0 8px 20px rgba(250,204,21,0.16)"

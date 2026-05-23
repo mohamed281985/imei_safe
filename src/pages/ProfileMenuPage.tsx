@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { User, PlusSquare, Search, Sparkles, LogOut, MessageSquare, Key, Globe, Fingerprint, Gift, Phone } from 'lucide-react';
+import { User, PlusSquare, Search, Sparkles, LogOut, MessageSquare, Key, Globe, Fingerprint, Gift, Phone, Award, Crown, ChevronLeft, Shield, FileText } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -11,47 +11,33 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useScrollToTop } from '../hooks/useScrollToTop';
 import CountryCodeSelector from '@/components/CountryCodeSelector';
+import PageContainer from '../components/PageContainer';
+import AppNavbar from '../components/AppNavbar';
+// Types for our component state
+interface PackageInfo {
+    planType: string;
+    expiresAt: string;
+    daysRemaining: number;
+    publishAdsCount: number;
+    publishedAdsCount: number;
+    remainingAds: number;
+}
 
-// إبقاء نفس عناصر القائمة الأصلية
-const menuItems = [
-    {
-        to: '/dashboard',
-        icon: <User className="w-7 h-7 text-imei-cyan" />,
-        label: 'الرئيسية',
-        color: 'bg-imei-cyan/10',
-    },
-    {
-        to: '/report',
-        icon: <PlusSquare className="w-7 h-7 text-orange-500" />,
-        label: 'بلاغ هاتف مفقود',
-        color: 'bg-orange-500/10',
-    },
-    {
-        to: '/search',
-        icon: <Search className="w-7 h-7 text-green-500" />,
-        label: 'بحث برقم IMEI',
-        color: 'bg-green-500/10',
-    },
-    {
-        to: '/support',
-        icon: <Sparkles className="w-7 h-7 text-yellow-500" />,
-        label: 'الدعم الفني',
-        color: 'bg-yellow-500/10',
-    },
-    {
-        to: '/rewards',
-        icon: <Gift className="w-7 h-7 text-purple-500" />,
-        label: 'مكافآتي',
-        color: 'bg-purple-500/10',
-    },
-    {
-        to: '/logout',
-        icon: <LogOut className="w-7 h-7 text-rose-500" />,
-        label: 'تسجيل خروج',
-        color: 'bg-rose-500/10',
-    },
-];
+interface RewardsInfo {
+    count: number;
+    totalValue: number;
+    claimedCount: number;
+}
 
+interface PhoneInfo {
+    name: string;
+    capabilities: string[];
+}
+
+// Constants
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? 'https://imei-safe.me' : '');
+
+// Main component
 const ProfileMenuPage: React.FC = () => {
     useScrollToTop();
     const { t, changeLanguage } = useLanguage();
@@ -59,6 +45,7 @@ const ProfileMenuPage: React.FC = () => {
     const navigate = useNavigate();
     const { toast } = useToast();
 
+    // State variables
     const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
     const [forgotPasswordData, setForgotPasswordData] = useState({
         imei: '',
@@ -68,47 +55,65 @@ const ProfileMenuPage: React.FC = () => {
     const [showLanguageModal, setShowLanguageModal] = useState(false);
     const [showChangePhoneModal, setShowChangePhoneModal] = useState(false);
     const [newPhone, setNewPhone] = useState('');
-    // countryCode stores digits only (e.g. '20')
     const [countryCode, setCountryCode] = useState('+');
     const [verificationLast6, setVerificationLast6] = useState('');
     const [verificationPassword, setVerificationPassword] = useState('');
     const [isUpdatingPhone, setIsUpdatingPhone] = useState(false);
     const [isBiometricEnabled, setIsBiometricEnabled] = useState(false);
-    const phoneNameRef = useRef(`phone_${Math.random().toString(36).slice(2,9)}`);
-    const last6NameRef = useRef(`last6_${Math.random().toString(36).slice(2,9)}`);
-    const pwdNameRef = useRef(`pwd_${Math.random().toString(36).slice(2,9)}`);
-    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? 'https://imei-safe.me' : '');
 
-    // derived display for country code input (show leading +)
-    const displayedCountryCode = countryCode ? (String(countryCode).startsWith('+') ? String(countryCode) : `+${String(countryCode).replace(/^0+/, '')}`) : '+20';
+    // Refs
+    const phoneNameRef = useRef(`phone_${Math.random().toString(36).slice(2, 9)}`);
+    const last6NameRef = useRef(`last6_${Math.random().toString(36).slice(2, 9)}`);
+    const pwdNameRef = useRef(`pwd_${Math.random().toString(36).slice(2, 9)}`);
 
-    // إعلان المتغيرات الخاصة بالجهاز
-    const [phoneInfo, setPhoneInfo] = useState<{ name: string, capabilities: string[] } | null>(null);
+    // Data state
+    const [phoneInfo, setPhoneInfo] = useState<PhoneInfo | null>(null);
     const [supportNumber, setSupportNumber] = useState('');
-    const [rewardsInfo, setRewardsInfo] = useState({ count: 0, totalValue: 0, claimedCount: 0 });
+    const [rewardsInfo, setRewardsInfo] = useState<RewardsInfo>({
+        count: 0,
+        totalValue: 0,
+        claimedCount: 0
+    });
+    const [packageInfo, setPackageInfo] = useState<PackageInfo>({
+        planType: '',
+        expiresAt: '',
+        daysRemaining: 0,
+        publishAdsCount: 0,
+        publishedAdsCount: 0,
+        remainingAds: 0
+    });
 
-    // تحديد معلومات الجهاز باستخدام مكتبات خارجية
+    // Display format for country code
+    const displayedCountryCode = countryCode
+        ? (String(countryCode).startsWith('+') ? String(countryCode) : `+${String(countryCode).replace(/^0+/, '')}`)
+        : '+20';
+
+    // Fetch device information
     useEffect(() => {
         const getDeviceInfo = async () => {
             try {
                 const info = await Device.getInfo();
                 const deviceName = `${info.manufacturer} ${info.model}`;
                 const capabilities = [];
+
                 if (info.platform !== 'web') {
                     capabilities.push(t('mobile_device'));
                 } else {
                     capabilities.push(t('web_browser'));
                 }
+
                 capabilities.push(`${t('operating_system')}: ${info.operatingSystem} ${info.osVersion}`);
+
                 if (info.isVirtual) {
                     capabilities.push(t('virtual_device'));
                 }
+
                 setPhoneInfo({
                     name: deviceName,
                     capabilities
                 });
             } catch (error) {
-                console.error('خطأ في تحليل معلومات الجهاز:', error);
+                console.error('Error getting device info:', error);
                 setPhoneInfo({
                     name: 'جوال',
                     capabilities: ['جوال', 'إمكانية الاتصال اللاسلكي']
@@ -117,127 +122,231 @@ const ProfileMenuPage: React.FC = () => {
         };
 
         getDeviceInfo();
-    }, []);
+    }, [t]);
 
-    // جلب بيانات المكافآت من قاعدة البيانات
+    // Fetch rewards information
     useEffect(() => {
         const fetchRewardsInfo = async () => {
             if (!user) return;
-            
+
             try {
-                // جلب جميع المكافآت الخاصة بالمستخدم
                 const { data, error } = await supabase
                     .from('user_rewards')
                     .select('*')
                     .eq('user_id', user.id);
-                
+
                 if (error) {
-                    console.error('خطأ في جلب بيانات المكافآت:', error);
+                    console.error('Error fetching rewards:', error);
                     return;
                 }
-                
+
                 if (data && data.length > 0) {
-                    // حساب عدد المكافآت الإجمالي
                     const totalRewards = data.length;
-                    
-                    // حساب عدد المكافآت المستردة
                     const claimedRewards = data.filter(reward => reward.claimed).length;
-                    
-                    // حساب القيمة الإجمالية للمكافآت غير المستردة
                     let totalValue = 0;
+
                     data.forEach(reward => {
                         if (!reward.claimed && reward.prizes) {
                             totalValue += parseInt(reward.prizes || '0');
                         }
                     });
-                    
+
                     setRewardsInfo({
                         count: totalRewards,
-                        totalValue: totalValue,
+                        totalValue,
                         claimedCount: claimedRewards
                     });
                 }
             } catch (err) {
-                console.error('خطأ في جلب بيانات المكافآت:', err);
+                console.error('Error fetching rewards:', err);
             }
         };
-        
+
         fetchRewardsInfo();
     }, [user]);
 
-    // جلب معلومات الدعم الفني من قاعدة البيانات
+    // Fetch support information
     useEffect(() => {
         const fetchSupportInfo = async () => {
             try {
-                console.log('جاري جلب بيانات الدعم الفني...');
-
-                // جلب رقم الهاتف ورمز الدولة فقط
                 const { data, error } = await supabase
                     .from('support')
                     .select('phone, cun');
 
                 if (error) {
-                    console.error('خطأ في جلب بيانات الدعم الفني:', error);
+                    console.error('Error fetching support info:', error);
                     return;
                 }
 
-                // طباعة البيانات المسترجعة للتصحيح
-                console.log('بيانات الدعم الفني المسترجعة:', data);
-
-                // إذا كانت هناك بيانات، خذ السجل الأول
                 if (data && data.length > 0) {
                     const firstRecord = data[0];
-                    console.log('السجل الأول:', firstRecord);
-
                     setSupportNumber(firstRecord.phone || '');
                     setCountryCode(firstRecord.cun || '');
-
-                    console.log('تم تحديث معلومات الدعم الفني:', {
-                        phone: firstRecord.phone,
-                        cun: firstRecord.cun
-                    });
                 } else {
-                    console.log('لا توجد بيانات في جدول الدعم الفني');
-                    // جرب استخدام قيم افتراضية للتصحيح
                     setSupportNumber('1234567890');
                     setCountryCode('20');
                 }
             } catch (err) {
-                console.error('خطأ في جلب بيانات الدعم الفني:', err);
+                console.error('Error fetching support info:', err);
             }
         };
 
         fetchSupportInfo();
     }, []);
 
-    // التحقق من حالة البصمة عند تحميل الصفحة
+    // Fetch package information
+    useEffect(() => {
+        const fetchPackageInfo = async () => {
+            if (!user?.id) return;
+
+            try {
+                // Get user role and expiration date
+                const { data: userData, error: userError } = await supabase
+                    .from('users')
+                    .select('role, expires_at')
+                    .eq('id', user.id)
+                    .maybeSingle();
+
+                if (userError || !userData) {
+                    console.error('Error fetching user data:', userError);
+                    return;
+                }
+
+                // Determine plan type
+                const rawRole = String(userData.role || '').toLowerCase().trim();
+                const normalizedRole = rawRole.replace(/[\s\-]+/g, '_');
+                const basePlan = normalizedRole.split('_')[0];
+
+                // Get plan information
+                let plan = null;
+                const normalizedFull = normalizedRole || String(user?.role || '').toLowerCase().trim().replace(/[\s\-]+/g, '_');
+
+                // Try exact match with full normalized role
+                if (normalizedFull) {
+                    const exact = await supabase.from('plans').select('*').eq('type', normalizedFull).maybeSingle();
+                    plan = exact.data;
+                }
+
+                // Try ilike with full normalized role if exact not found
+                if (!plan && normalizedFull) {
+                    const res2 = await supabase.from('plans').select('*').ilike('type', `%${normalizedFull}%`).maybeSingle();
+                    plan = res2.data;
+                }
+
+                // Fallback to searching by base token
+                if (!plan) {
+                    const res3 = await supabase.from('plans').select('*').ilike('type', `%${basePlan}%`).maybeSingle();
+                    plan = res3.data;
+                }
+
+                // If DB queries didn't return a row, fetch all plans and try local match
+                if (!plan) {
+                    try {
+                        const allRes = await supabase.from('plans').select('*');
+                        const list = allRes.data || [];
+                        const found = list.find((r: any) => {
+                            const typ = String(r.type || '').toLowerCase().trim();
+                            return (
+                                (normalizedFull && typ.includes(normalizedFull)) ||
+                                (basePlan && typ.includes(basePlan))
+                            );
+                        });
+                        plan = found || null;
+                    } catch (scanErr) {
+                        console.error('Error in local search:', scanErr);
+                    }
+                }
+
+                // Try users_plans as fallback
+                if (!plan) {
+                    try {
+                        const upRes = await supabase.from('users_plans').select('*').eq('user_id', user.id).maybeSingle();
+                        const up = upRes.data;
+
+                        if (up) {
+                            const goldQuota = up.gold_ad ?? up.gold_ads ?? up.publish_ad ?? up.publishAd ?? null;
+                            const silverQuota = up.silver_ad ?? up.silver_ads ?? null;
+                            const quota = basePlan === 'gold' ? goldQuota : basePlan === 'silver' ? silverQuota : null;
+
+                            if (quota != null) {
+                                const qnum = Number(quota);
+                                if (Number.isFinite(qnum)) {
+                                    plan = { Publish_Ad: qnum };
+                                }
+                            }
+                        }
+                    } catch (upErr) {
+                        console.error('Error in users_plans search:', upErr);
+                    }
+                }
+
+                // Get published ads count
+                const { count: publishedCount, error: adsError } = await supabase
+                    .from('publish_ad')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('user_id', user.id);
+
+                if (adsError) {
+                    console.error('Error fetching published ads count:', adsError);
+                    return;
+                }
+
+                // Calculate remaining ads
+                const publishVal = plan?.Publish_Ad ?? plan?.publish_ad ?? plan?.publishAd ?? plan?.publish_ads ?? plan?.publishAds ?? null;
+                const publishAdsCount = publishVal != null ? Number(publishVal) : 0;
+                const remainingAds = Math.max(0, publishAdsCount - (publishedCount || 0));
+
+                // Calculate remaining days
+                let daysRemaining = 0;
+                if (userData.expires_at) {
+                    const expiryDate = new Date(userData.expires_at);
+                    const today = new Date();
+                    const diffTime = expiryDate.getTime() - today.getTime();
+                    daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                }
+
+                setPackageInfo({
+                    planType: basePlan.toUpperCase(),
+                    expiresAt: userData.expires_at || '',
+                    daysRemaining: Math.max(0, daysRemaining),
+                    publishAdsCount,
+                    publishedAdsCount: publishedCount || 0,
+                    remainingAds
+                });
+            } catch (err) {
+                console.error('Error fetching package info:', err);
+            }
+        };
+
+        fetchPackageInfo();
+    }, [user?.id]);
+
+    // Check biometric status on page load
     useEffect(() => {
         if (!(window as any).SecureStorage) {
             return;
         }
 
         const ss = new (window as any).SecureStorage(
-            () => {},
-            () => {},
+            () => { },
+            () => { },
             'my_app_storage'
         );
 
         ss.get(
             (token: string) => {
-                // إذا وجدنا توكن، فهذا يعني أن البصمة مفعلة
                 if (token) {
                     setIsBiometricEnabled(true);
                 }
             },
             () => {
-                // إذا لم نجد توكن، فالبصمة غير مفعلة
                 setIsBiometricEnabled(false);
             },
             'biometricAuthToken'
         );
     }, []);
 
-    // Clear sensitive fields whenever change-phone modal opens
+    // Clear sensitive fields when change-phone modal opens
     useEffect(() => {
         if (showChangePhoneModal) {
             setNewPhone('');
@@ -246,13 +355,13 @@ const ProfileMenuPage: React.FC = () => {
         }
     }, [showChangePhoneModal]);
 
-    // معالجة تسجيل الخروج
+    // Handle logout
     const handleLogout = () => {
         logout();
         navigate('/login');
     };
 
-    // معالجة فتح الدعم الفني
+    // Handle support click
     const handleSupport = () => {
         if (!supportNumber) {
             toast({
@@ -263,12 +372,12 @@ const ProfileMenuPage: React.FC = () => {
             return;
         }
 
-        // فتح رابط واتساب مع رقم الدعم الفني مع رمز الدولة
         const fullNumber = countryCode ? `${countryCode}${supportNumber}` : supportNumber;
         const whatsappUrl = `https://wa.me/${fullNumber}`;
         window.open(whatsappUrl, '_blank');
     };
 
+    // Handle language change
     const handleLanguageChange = (lang: 'ar' | 'en' | 'fr' | 'hi') => {
         changeLanguage(lang);
         setShowLanguageModal(false);
@@ -277,6 +386,7 @@ const ProfileMenuPage: React.FC = () => {
         });
     };
 
+    // Toggle biometric authentication
     const toggleBiometric = async () => {
         if (!(window as any).SecureStorage) {
             toast({ title: 'خطأ', description: 'هذه الميزة غير مدعومة على جهازك.', variant: 'destructive' });
@@ -284,7 +394,7 @@ const ProfileMenuPage: React.FC = () => {
         }
 
         const ss = new (window as any).SecureStorage(
-            () => {},
+            () => { },
             (error: any) => {
                 toast({ title: 'خطأ فني', description: 'فشل تهيئة وحدة التخزين الآمنة.', variant: 'destructive' });
             },
@@ -332,6 +442,7 @@ const ProfileMenuPage: React.FC = () => {
         }
     };
 
+    // Handle forgot password
     const handleForgotPassword = async () => {
         const imeiNormalized = String(forgotPasswordData.imei || '').replace(/\D/g, '');
 
@@ -347,7 +458,7 @@ const ProfileMenuPage: React.FC = () => {
         setIsProcessing(true);
 
         try {
-            // جلب CSRF token قبل أي طلب POST محمي
+            // Get CSRF token before any protected POST request
             const csrfResp = await fetch(`${API_BASE_URL}/api/csrf-token`, {
                 method: 'GET',
                 credentials: 'include'
@@ -366,7 +477,7 @@ const ProfileMenuPage: React.FC = () => {
                 throw new Error('فشل جلب CSRF token');
             }
 
-            // استدعاء الخادم فقط (التحقق والتشفير يتمان في السيرفر)
+            // Call server only (verification and encryption done on server)
             const { data: { session } } = await supabase.auth.getSession();
             const token = session?.access_token;
             const resp = await fetch(`${API_BASE_URL}/api/reset-registered-phone-password`, {
@@ -383,7 +494,7 @@ const ProfileMenuPage: React.FC = () => {
                 })
             });
 
-            // parsing آمن: بعض الردود قد تكون فارغة أو ليست JSON
+            // Safe parsing: some responses may be empty or not JSON
             const raw = await resp.text();
             let payload: any = {};
             if (raw) {
@@ -414,31 +525,33 @@ const ProfileMenuPage: React.FC = () => {
         }
     };
 
+    // Handle phone update
     const handleUpdatePhone = async () => {
         const phoneVal = newPhone?.trim();
         const last6 = verificationLast6?.trim();
         const pwd = verificationPassword;
 
-            // normalize phone to E.164 using countryCode state (countryCode may be like '20' or '+20')
-            function normalizePhone(raw: string, ccRaw: string) {
-                if (!raw) return '';
-                const trimmed = String(raw).trim();
-                // keep digits
-                let digits = trimmed.replace(/\D/g, '');
-                // if raw started with +, preserve full digits as E.164
-                if (trimmed.startsWith('+')) return '+' + digits;
-                // normalize country code
-                let cc = String(ccRaw || '').toString();
-                cc = cc.replace(/\D/g, '').replace(/^0+/, '');
-                if (!cc) cc = '20';
-                // keep leading zero in national number (important for countries like Egypt)
-                // only remove trunk zero if it's followed by another zero (e.g., 00 -> 0)
-                if (digits.startsWith('00')) {
-                    digits = digits.replace(/^0+/, '0');
-                }
-                return '+' + cc + digits;
+        // Normalize phone to E.164 using countryCode state
+        function normalizePhone(raw: string, ccRaw: string) {
+            if (!raw) return '';
+            const trimmed = String(raw).trim();
+            // Keep digits only
+            let digits = trimmed.replace(/\D/g, '');
+            // If raw started with +, preserve full digits as E.164
+            if (trimmed.startsWith('+')) return '+' + digits;
+            // Normalize country code
+            let cc = String(ccRaw || '').toString();
+            cc = cc.replace(/\D/g, '').replace(/^0+/, '');
+            if (!cc) cc = '20';
+            // Keep leading zero in national number (important for countries like Egypt)
+            // Only remove trunk zero if it's followed by another zero (e.g., 00 -> 0)
+            if (digits.startsWith('00')) {
+                digits = digits.replace(/^0+/, '0');
             }
-            const normalizedPhone = normalizePhone(phoneVal || '', countryCode || '20');
+            return '+' + cc + digits;
+        }
+
+        const normalizedPhone = normalizePhone(phoneVal || '', countryCode || '20');
 
         if (!phoneVal || normalizedPhone.length < 7) {
             toast({ title: t('error'), description: t('invalid_phone_number') || 'Invalid phone number', variant: 'destructive' });
@@ -462,7 +575,7 @@ const ProfileMenuPage: React.FC = () => {
                 throw new Error('غير مصرح. الرجاء تسجيل الدخول مرة أخرى');
             }
 
-            // جلب CSRF token من الخادم
+            // Get CSRF token from server
             const csrfResp = await fetch(`${API_BASE_URL}/api/csrf-token`, { method: 'GET', credentials: 'include' });
             const csrfRaw = await csrfResp.text();
             let csrfPayload: any = {};
@@ -483,10 +596,10 @@ const ProfileMenuPage: React.FC = () => {
                     'X-CSRF-Token': csrfToken
                 },
                 body: JSON.stringify({
-                        newPhone: normalizedPhone,
-                        last6,
-                        password: pwd
-                    })
+                    newPhone: normalizedPhone,
+                    last6,
+                    password: pwd
+                })
             });
 
             const raw = await resp.text();
@@ -499,7 +612,7 @@ const ProfileMenuPage: React.FC = () => {
                 throw new Error(payload?.error || payload?.message || `فشل تحديث رقم الهاتف (${resp.status})`);
             }
 
-            // نجاح: الخادم يجب أن يتحقق ويشفّر ويحدّث الجداول المطلوبة
+            // Success: server should verify, encrypt, and update required tables
             toast({ title: t('success'), description: t('phone_updated_successfully') || 'تم تحديث رقم الهاتف' });
             setShowChangePhoneModal(false);
             setVerificationLast6('');
@@ -513,320 +626,436 @@ const ProfileMenuPage: React.FC = () => {
     };
 
     return (
-        <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-[#289c8e] to-[#1a7468] px-3 pt-6 pb-[30px]">
-            <div className="w-full max-w-md bg-white/95 backdrop-blur-sm rounded-2xl shadow-2xl border border-[#289c8e]/30 p-6">
-                <h2 className="text-2xl font-bold text-[#289c8e] mb-6 text-center">
-                    {t('my_account')}
-                </h2>
 
-                {/* بيانات المستخدم */}
-                {user && (
-                    <div className="mb-6 flex flex-col items-center justify-center">
-                        <div className="w-16 h-16 rounded-full bg-[#289c8e]/20 flex items-center justify-center mb-2">
-                            <User className="w-10 h-10 text-[#289c8e]" />
-                        </div>
-                        <div className="text-gray-800 text-lg font-bold">
-                            {user.username || user.email}
-                        </div>
-                        <div className="text-[#289c8e]/80 text-sm">
-                            {user.email}
+            <PageContainer  >
+                <div className="px-3 sm:px-6 lg:px-8">
+
+                    <AppNavbar />
+                    <div>
+                        {/* User Info Card */}
+                        {user && (
+                            <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-lg p-5 mb-6">
+                                <div className="flex items-center gap-4 mb-4">
+                                    <div className="w-16 h-16 rounded-full bg-[#289c8e]/20 flex items-center justify-center flex-shrink-0">
+                                        <User className="w-8 h-8 text-[#289c8e]" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2">
+                                            <h2 className="text-lg font-bold text-gray-900 truncate">
+                                                {user.username || user.email}
+                                            </h2>
+                                            <Shield className="w-4 h-4 text-[#289c8e]" />
+                                        </div>
+                                        <p className="text-sm text-gray-500 truncate">{user.email}</p>
+                                    </div>
+                                </div>
+
+                                {/* Package Info */}
+                                {packageInfo.planType && (
+                                    <div className="mt-4 p-3 rounded-xl  shadow-lg bg-[#289c8e]/10 border border-[#289c8e]/20">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <div className="flex items-center gap-2">
+                                                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${packageInfo.planType === 'GOLD'
+                                                    ? 'bg-gradient-to-br from-yellow-400 to-amber-400'
+                                                    : packageInfo.planType === 'SILVER'
+                                                        ? 'bg-gradient-to-br from-slate-200 to-emerald-200'
+                                                        : 'bg-gradient-to-br from-blue-400 to-blue-300'
+                                                    }`}>
+                                                    {packageInfo.planType === 'GOLD' ? (
+                                                        <Crown className="w-4 h-4 text-white" />
+                                                    ) : packageInfo.planType === 'SILVER' ? (
+                                                        <Award className="w-4 h-4 text-white" />
+                                                    ) : (
+                                                        <Gift className="w-4 h-4 text-white" />
+                                                    )}
+                                                </div>
+                                                <span className="font-bold text-gray-800">
+                                                    {packageInfo.planType === 'GOLD' ? 'GOLD VIP' : packageInfo.planType === 'SILVER' ? 'SILVER' : 'FREE'}
+                                                </span>
+                                            </div>
+                                            {packageInfo.expiresAt && (
+                                                <span className="text-sm text-gray-600">
+                                                    تنتهي في {packageInfo.daysRemaining} يوم
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        <div className="grid grid-cols-3 gap-2">
+                                            <div className="text-center bg-white/50 rounded-lg p-2">
+                                                <div className="text-lg font-bold text-[#289c8e]">{packageInfo.remainingAds}</div>
+                                                <div className="text-xs text-gray-500">المتبقي</div>
+                                            </div>
+                                            <div className="text-center bg-white/50 rounded-lg p-2">
+                                                <div className="text-lg font-bold text-green-600">{packageInfo.daysRemaining}</div>
+                                                <div className="text-xs text-gray-500">أيام</div>
+                                            </div>
+                                            <div className="text-center bg-white/50 rounded-lg p-2">
+                                                <div className="text-lg font-bold text-purple-600">{packageInfo.publishAdsCount}</div>
+                                                <div className="text-xs text-gray-500">الإجمالي</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Rewards Section */}
+                        <div className="mb-6">
+                            <h3 className="text-lg font-bold text-blue-600 mb-3">المكافآت</h3>
+                            <div className="grid grid-cols-3 gap-3">
+                                <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-4 text-center">
+                                    <div className="w-10 h-10 rounded-full bg-[#289c8e]/20 flex items-center justify-center mx-auto mb-2">
+                                        <Gift className="w-5 h-5 text-[#289c8e]" />
+                                    </div>
+                                    <div className="text-xl font-bold text-gray-800">{rewardsInfo.count - rewardsInfo.claimedCount}</div>
+                                    <div className="text-xs text-gray-500">المتاح</div>
+                                </div>
+                                <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-4 text-center">
+                                    <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-2">
+                                        <Sparkles className="w-5 h-5 text-green-600" />
+                                    </div>
+                                    <div className="text-xl font-bold text-gray-800">{rewardsInfo.claimedCount}</div>
+                                    <div className="text-xs text-gray-500">المستخدمة</div>
+                                </div>
+                                <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-4 text-center">
+                                    <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center mx-auto mb-2">
+                                        <Award className="w-5 h-5 text-purple-600" />
+                                    </div>
+                                    <div className="text-xl font-bold text-gray-800">{rewardsInfo.count}</div>
+                                    <div className="text-xs text-gray-500">الإجمالي</div>
+                                </div>
+                            </div>
                         </div>
 
-                        {/* معلومات الجهاز */}
-                        {phoneInfo && (
-                            <div className="mt-4 w-full bg-[#289c8e]/10 rounded-xl p-4 border border-[#289c8e]/20">
-                                <div className="flex items-center justify-between mb-2">
-                                    <h3 className="font-bold text-gray-800">{t('device_type')}:</h3>
-                                    <span className="text-gray-700">{phoneInfo.name}</span>
+                        {/* Settings Section */}
+                        <div className="mb-6">
+                            <h3 className="text-lg font-bold text-blue-600 mb-3">الإعدادات</h3>
+                            <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg overflow-hidden">
+                                {/* Language */}
+                                <button
+                                    onClick={() => setShowLanguageModal(true)}
+                                    className="w-full flex items-center justify-between p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                                            <Globe className="w-5 h-5 text-blue-600" />
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="font-medium text-gray-800">تغيير اللغة</div>
+                                            <div className="text-xs text-gray-500">العربية، الإنجليزية، الفرنسية</div>
+                                        </div>
+                                    </div>
+                                    <ChevronLeft className="w-5 h-5 text-gray-400" />
+                                </button>
+
+                                {/* Biometric */}
+                                <button
+                                    onClick={toggleBiometric}
+                                    className="w-full flex items-center justify-between p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isBiometricEnabled ? 'bg-green-100' : 'bg-gray-100'}`}>
+                                            <Fingerprint className={`w-5 h-5 ${isBiometricEnabled ? 'text-green-600' : 'text-gray-600'}`} />
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="font-medium text-gray-800">
+                                                {isBiometricEnabled ? 'إلغاء تفعيل البصمة' : 'تفعيل البصمة'}
+                                            </div>
+                                            <div className="text-xs text-gray-500">
+                                                {isBiometricEnabled ? 'مفعل حالياً' : 'غير مفعل'}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <ChevronLeft className="w-5 h-5 text-gray-400" />
+                                </button>
+
+                                {/* Forgot Password */}
+                                <button
+                                    onClick={() => setShowForgotPasswordModal(true)}
+                                    className="w-full flex items-center justify-between p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
+                                            <Key className="w-5 h-5 text-purple-600" />
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="font-medium text-gray-800">نسيت كلمة المرور</div>
+                                            <div className="text-xs text-gray-500">إعادة تعيين كلمة مرور الجهاز</div>
+                                        </div>
+                                    </div>
+                                    <ChevronLeft className="w-5 h-5 text-gray-400" />
+                                </button>
+
+                                {/* Change Phone */}
+                                <button
+                                    onClick={() => {
+                                        setNewPhone('');
+                                        setVerificationLast6('');
+                                        setVerificationPassword('');
+                                        setShowChangePhoneModal(true);
+                                    }}
+                                    className="w-full flex items-center justify-between p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full bg-cyan-100 flex items-center justify-center">
+                                            <Phone className="w-5 h-5 text-cyan-600" />
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="font-medium text-gray-800">تغيير رقم الهاتف</div>
+                                            <div className="text-xs text-gray-500">تحديث رقم الاتصال الخاص بك</div>
+                                        </div>
+                                    </div>
+                                    <ChevronLeft className="w-5 h-5 text-gray-400" />
+                                </button>
+
+                                {/* Support */}
+                                <button
+                                    onClick={handleSupport}
+                                    className="w-full flex items-center justify-between p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full bg-yellow-100 flex items-center justify-center">
+                                            <MessageSquare className="w-5 h-5 text-yellow-600" />
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="font-medium text-gray-800">الدعم الفني</div>
+                                            <div className="text-xs text-gray-500">تواصل معنا عبر واتساب</div>
+                                        </div>
+                                    </div>
+                                    <ChevronLeft className="w-5 h-5 text-gray-400" />
+                                </button>
+
+                                {/* Logout */}
+                                <button
+                                    onClick={handleLogout}
+                                    className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                                            <LogOut className="w-5 h-5 text-red-600" />
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="font-medium text-gray-800">تسجيل الخروج</div>
+                                            <div className="text-xs text-gray-500">تسجيل الخروج من حسابك</div>
+                                        </div>
+                                    </div>
+                                    <ChevronLeft className="w-5 h-5 text-gray-400" />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Legal Information Section */}
+                        <div className="mb-24">
+                            <h3 className="text-lg font-bold text-blue-600 mb-3">معلومات قانونية</h3>
+                            <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg overflow-hidden ">
+                                <Link
+                                    to="/privacy-policy"
+                                    className="w-full flex items-center justify-between p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                                            <Shield className="w-5 h-5 text-blue-600" />
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="font-medium text-gray-800">سياسة الخصوصية</div>
+                                            <div className="text-xs text-gray-500">تعرف على كيفية حماية بياناتك</div>
+                                        </div>
+                                    </div>
+                                    <ChevronLeft className="w-5 h-5 text-gray-400" />
+                                </Link>
+                                <Link
+                                    to="/terms-of-use"
+                                    className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                                            <FileText className="w-5 h-5 text-blue-600" />
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="font-medium text-gray-800">شروط الاستخدام</div>
+                                            <div className="text-xs text-gray-500">القواعد والشروط المنظمة</div>
+                                        </div>
+                                    </div>
+                                    <ChevronLeft className="w-5 h-5 text-gray-400" />
+                                </Link>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Bottom Navigation */}
+                    <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm shadow-lg border-t border-white/20">
+                        <div className="flex justify-around py-3">
+                            <Link to="/dashboard" className="flex flex-col items-center text-gray-500">
+                                <PlusSquare className="w-6 h-6 mb-1" />
+                                <span className="text-xs">الرئيسية</span>
+                            </Link>
+                            <Link to="/Search" className="flex flex-col items-center text-gray-500">
+                                <Search className="w-6 h-6 mb-1" />
+                                <span className="text-xs">بحث</span>
+                            </Link>
+                            <Link to="/rewards" className="flex flex-col items-center text-gray-500">
+                                <Gift className="w-6 h-6 mb-1" />
+                                <span className="text-xs">مكافآتي</span>
+                            </Link>
+                            <Link to="/profile" className="flex flex-col items-center text-[#289c8e]">
+                                <User className="w-6 h-6 mb-1" />
+                                <span className="text-xs">حسابي</span>
+                            </Link>
+                        </div>
+                    </div>
+
+                    {/* Forgot Password Modal */}
+                    <Dialog open={showForgotPasswordModal} onOpenChange={setShowForgotPasswordModal}>
+                        <DialogContent className="bg-white rounded-2xl shadow-xl p-6 max-w-md mx-auto">
+                            <DialogHeader className="text-center mb-4">
+                                <DialogTitle className="text-xl font-bold text-gray-900">إعادة تعيين كلمة المرور</DialogTitle>
+                                <DialogDescription className="text-gray-600 mt-2">
+                                    أدخل رقم IMEI وكلمة المرور الجديدة للجهاز
+                                </DialogDescription>
+                            </DialogHeader>
+
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">رقم IMEI</label>
+                                    <Input
+                                        type="text"
+                                        value={forgotPasswordData.imei}
+                                        onChange={(e) => setForgotPasswordData(prev => ({
+                                            ...prev,
+                                            imei: e.target.value.replace(/\D/g, '')
+                                        }))}
+                                        className="w-full rounded-lg border-gray-300 focus:border-[#289c8e] focus:ring-[#289c8e]"
+                                        maxLength={15}
+                                        placeholder="أدخل رقم IMEI"
+                                    />
                                 </div>
 
                                 <div>
-                                    <h3 className="font-bold text-gray-800 mb-1">{t('capabilities')}:</h3>
-                                    <div className="flex flex-wrap gap-1">
-                                        {phoneInfo.capabilities.map((capability, index) => (
-                                            <span key={index} className="bg-[#289c8e]/20 text-[#289c8e] text-xs px-2 py-1 rounded-full">
-                                                {t(capability)}
-                                            </span>
-                                        ))}
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">كلمة المرور الجديدة</label>
+                                    <Input
+                                        type="password"
+                                        value={forgotPasswordData.newPassword}
+                                        onChange={(e) => setForgotPasswordData(prev => ({
+                                            ...prev,
+                                            newPassword: e.target.value
+                                        }))}
+                                        className="w-full rounded-lg border-gray-300 focus:border-[#289c8e] focus:ring-[#289c8e]"
+                                        placeholder="أدخل كلمة المرور الجديدة"
+                                    />
+                                </div>
+                            </div>
+
+                            <DialogFooter className="gap-3 mt-6">
+                                <Button onClick={() => setShowForgotPasswordModal(false)} variant="outline" className="flex-1 rounded-lg">
+                                    إلغاء
+                                </Button>
+                                <Button onClick={handleForgotPassword} disabled={isProcessing} className="flex-1 bg-[#289c8e] hover:bg-[#1a7468] rounded-lg">
+                                    {isProcessing ? 'جاري المعالجة...' : 'تحديث كلمة المرور'}
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
+
+                    {/* Change Phone Modal */}
+                    <Dialog open={showChangePhoneModal} onOpenChange={setShowChangePhoneModal}>
+                        <DialogContent className="bg-white rounded-2xl shadow-xl p-6 max-w-md mx-auto">
+                            <DialogHeader className="text-center mb-4">
+                                <DialogTitle className="text-xl font-bold text-gray-900">تغيير رقم الهاتف</DialogTitle>
+                                <DialogDescription className="text-gray-600 mt-2">
+                                    أدخل رقم الهاتف الجديد مع معلومات التحقق
+                                </DialogDescription>
+                            </DialogHeader>
+
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">رقم الهاتف الجديد</label>
+                                    <div className="flex gap-2">
+                                        <CountryCodeSelector
+                                            value={displayedCountryCode}
+                                            onChange={(code) => setCountryCode(code)}
+                                        />
+                                        <Input
+                                            type="tel"
+                                            value={newPhone}
+                                            onChange={(e) => setNewPhone(e.target.value)}
+                                            className="flex-1 rounded-lg border-gray-300 focus:border-[#289c8e] focus:ring-[#289c8e]"
+                                            placeholder="10 1234 5678"
+                                            name={phoneNameRef.current}
+                                            autoComplete="tel"
+                                            inputMode="tel"
+                                        />
                                     </div>
                                 </div>
-                            </div>
-                        )}
-                        
-                        {/* معلومات المكافآت */}
-                        <div className="mt-4 w-full bg-purple-500/10 rounded-xl p-3 border border-purple-500/20">
-                            <div className="flex items-center justify-between mb-3">
-                                <h3 className="font-bold text-gray-800 flex items-center gap-2">
-                                    <Gift className="w-5 h-5 text-purple-500" />
-                                    {t('my_rewards')}
-                                </h3>
-                                <Link to="/rewards" className="text-purple-600 hover:text-purple-700 text-sm font-medium">
-                                    {t('view_all')}
-                                </Link>
-                            </div>
-                             
-                            <div className="grid grid-cols-3 gap-2 mt-3">
-                                <div className="text-center bg-white/50 rounded-lg p-2">
-                                    <div className="text-xl font-bold text-purple-600">{rewardsInfo.count}</div>
-                                    <div className="text-xs text-gray-600">{t('total_rewards')}</div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">آخر 6 أرقام من البطاقة</label>
+                                    <Input
+                                        type="text"
+                                        value={verificationLast6}
+                                        onChange={(e) => setVerificationLast6(e.target.value.replace(/\D/g, ''))}
+                                        className="w-full rounded-lg border-gray-300 focus:border-[#289c8e] focus:ring-[#289c8e]"
+                                        placeholder="123456"
+                                        maxLength={6}
+                                        name={last6NameRef.current}
+                                        autoComplete="off"
+                                        inputMode="numeric"
+                                    />
                                 </div>
-                                <div className="text-center bg-white/50 rounded-lg p-2">
-                                    <div className="text-xl font-bold text-green-600">{rewardsInfo.claimedCount}</div>
-                                    <div className="text-xs text-gray-600">{t('claimed_rewards')}</div>
-                                </div>
-                                <div className="text-center bg-white/50 rounded-lg p-2">
-                                    <div className="text-xl font-bold text-orange-600">{rewardsInfo.count - rewardsInfo.claimedCount}</div>
-                                    <div className="text-xs text-gray-600">{t('available_rewards')}</div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">كلمة المرور الحالية</label>
+                                    <Input
+                                        type="password"
+                                        value={verificationPassword}
+                                        onChange={(e) => setVerificationPassword(e.target.value)}
+                                        className="w-full rounded-lg border-gray-300 focus:border-[#289c8e] focus:ring-[#289c8e]"
+                                        placeholder="أدخل كلمة المرور الحالية"
+                                        name={pwdNameRef.current}
+                                        autoComplete="new-password"
+                                    />
                                 </div>
                             </div>
-                             
-                            {rewardsInfo.totalValue > 0 && (
-                                <div className="mt-3 p-2 bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-lg text-center">
-                                    <div className="text-sm text-gray-700">{t('total_rewards_value')}:</div>
-                                    <div className="text-xl font-bold text-purple-700">{rewardsInfo.totalValue} {t('points')}</div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                )}
 
-                {/* قائمة العناصر */}
-                <div className="space-y-3">
-                    {/* زر تغيير اللغة */}
-                    <button
-                        onClick={() => setShowLanguageModal(true)}
-                        className="flex items-center gap-4 px-5 py-3 rounded-xl shadow-md bg-blue-500/10 hover:bg-[#289c8e]/20 hover:scale-[1.03] transition-transform duration-200 w-full"
-                    >
-                        <div className="flex items-center justify-center w-12 h-12 rounded-full bg-white/10 shadow-inner">
-                            <Globe className="w-7 h-7 text-blue-500" />
-                        </div>
-                        <span className="text-lg font-semibold text-gray-800">
-                            {t('change_language')}
-                        </span>
-                    </button>
+                            <DialogFooter className="gap-3 mt-6">
+                                <Button onClick={() => setShowChangePhoneModal(false)} variant="outline" className="flex-1 rounded-lg">
+                                    إلغاء
+                                </Button>
+                                <Button onClick={handleUpdatePhone} disabled={isUpdatingPhone} className="flex-1 bg-[#289c8e] hover:bg-[#1a7468] rounded-lg">
+                                    {isUpdatingPhone ? 'جاري المعالجة...' : 'تحديث رقم الهاتف'}
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
 
-                    {/* زر تفعيل/إلغاء البصمة */}
-                    <button
-                        onClick={toggleBiometric}
-                        className={`flex items-center gap-4 px-5 py-3 rounded-xl shadow-md hover:scale-[1.03] transition-all duration-200 w-full ${isBiometricEnabled ? 'bg-green-500/10 hover:bg-green-500/20' : 'bg-gray-500/10 hover:bg-gray-500/20'}`}
-                    >
-                        <div className="flex items-center justify-center w-12 h-12 rounded-full bg-white/10 shadow-inner">
-                            <Fingerprint className={`w-7 h-7 ${isBiometricEnabled ? 'text-green-500' : 'text-gray-500'}`} />
-                        </div>
-                        <div className="flex flex-col text-right">
-                            <span className="text-lg font-semibold text-gray-800">
-                                {isBiometricEnabled ? t('disable_biometric') : t('enable_biometric')}
-                            </span>
-                            <span className="text-xs text-gray-500">{isBiometricEnabled ? t('status_enabled') : t('status_disabled')}</span>
-                        </div>
-                    </button>
-
-                    {/* زر نسيت كلمة المرور */}
-                    <button
-                        onClick={() => setShowForgotPasswordModal(true)}
-                        className="flex items-center gap-4 px-5 py-3 rounded-xl shadow-md bg-purple-500/10 hover:bg-[#289c8e]/20 hover:scale-[1.03] transition-transform duration-200 w-full"
-                    >
-                        <div className="flex items-center justify-center w-12 h-12 rounded-full bg-white/10 shadow-inner">
-                            <Key className="w-7 h-7 text-purple-500" />
-                        </div>
-                        <span className="text-lg font-semibold text-gray-800">
-                            {t('forgot_device_password')}
-                        </span>
-                    </button>
-
-                    {/* زر الدعم الفني */}
-                    <button
-                        onClick={handleSupport}
-                        className="flex items-center gap-4 px-5 py-3 rounded-xl shadow-md bg-yellow-500/10 hover:bg-[#289c8e]/20 hover:scale-[1.03] transition-transform duration-200 w-full"
-                    >
-                        <div className="flex items-center justify-center w-12 h-12 rounded-full bg-white/10 shadow-inner">
-                            <MessageSquare className="w-7 h-7 text-yellow-500" />
-                        </div>
-                        <span className="text-lg font-semibold text-gray-800">
-                            {t('technical_support')}
-                        </span>
-                    </button>
-
-                    {/* زر تغيير رقم الهاتف */}
-                    <button
-                        onClick={() => {
-                                // Open modal with empty fields (do not prefill sensitive data)
-                                setNewPhone('');
-                                setVerificationLast6('');
-                                setVerificationPassword('');
-                                setShowChangePhoneModal(true);
-                            }}
-                        className="flex items-center gap-4 px-5 py-3 rounded-xl shadow-md bg-cyan-500/10 hover:bg-[#289c8e]/20 hover:scale-[1.03] transition-transform duration-200 w-full"
-                    >
-                        <div className="flex items-center justify-center w-12 h-12 rounded-full bg-white/10 shadow-inner">
-                            <Phone className="w-7 h-7 text-cyan-500" />
-                        </div>
-                        <span className="text-lg font-semibold text-gray-800">{t('change_phone_number')}</span>
-                    </button>
-
-                    {/* زر تسجيل الخروج */}
-                    <button
-                        onClick={handleLogout}
-                        className="flex items-center gap-4 px-5 py-3 rounded-xl shadow-md bg-rose-500/10 hover:bg-[#289c8e]/20 hover:scale-[1.03] transition-transform duration-200 w-full"
-                    >
-                        <div className="flex items-center justify-center w-12 h-12 rounded-full bg-white/10 shadow-inner">
-                            <LogOut className="w-7 h-7 text-rose-500" />
-                        </div>
-                        <span className="text-lg font-semibold text-gray-800">
-                            {t('logout')}
-                        </span>
-                    </button>
+                    {/* Language Modal */}
+                    <Dialog open={showLanguageModal} onOpenChange={setShowLanguageModal}>
+                        <DialogContent className="bg-white rounded-2xl shadow-xl p-6 max-w-md mx-auto">
+                            <DialogHeader className="text-center mb-4">
+                                <DialogTitle className="text-xl font-bold text-gray-900">تغيير اللغة</DialogTitle>
+                            </DialogHeader>
+                            <div className="flex flex-col gap-3">
+                                <Button onClick={() => handleLanguageChange('ar')} className="w-full justify-start bg-[#289c8e]/10 hover:bg-[#289c8e]/20 text-[#289c8e] rounded-lg py-3">
+                                    <span className="mr-3">🇸🇦</span> العربية
+                                </Button>
+                                <Button onClick={() => handleLanguageChange('en')} className="w-full justify-start bg-[#289c8e]/10 hover:bg-[#289c8e]/20 text-[#289c8e] rounded-lg py-3">
+                                    <span className="mr-3">🇺🇸</span> English
+                                </Button>
+                                <Button onClick={() => handleLanguageChange('fr')} className="w-full justify-start bg-[#289c8e]/10 hover:bg-[#289c8e]/20 text-[#289c8e] rounded-lg py-3">
+                                    <span className="mr-3">🇫🇷</span> Français
+                                </Button>
+                                <Button onClick={() => handleLanguageChange('hi')} className="w-full justify-start bg-[#289c8e]/10 hover:bg-[#289c8e]/20 text-[#289c8e] rounded-lg py-3">
+                                    <span className="mr-3">🇮🇳</span> हिन्दी
+                                </Button>
+                            </div>
+                            <DialogFooter className="mt-6">
+                                <Button onClick={() => setShowLanguageModal(false)} variant="outline" className="w-full rounded-lg">
+                                    إغلاق
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
                 </div>
-            </div>
 
-            {/* Modal لنسيت كلمة المرور */}
-            {showForgotPasswordModal && (
-                <Dialog open={showForgotPasswordModal} onOpenChange={setShowForgotPasswordModal}>
-                    <DialogContent className="bg-imei-darker border-imei-cyan/30">
-                        <DialogHeader className="text-center">
-                            <DialogTitle className="text-white text-center">{t('reset_password')}</DialogTitle>
-                            <DialogDescription className="text-gray-300 text-center">
-                                {t('device_password_not_login')}
-                            </DialogDescription>
-                        </DialogHeader>
+            </PageContainer>
 
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-white mb-2">IMEI</label>
-                                <Input
-                                    type="text"
-                                    value={forgotPasswordData.imei}
-                                    onChange={(e) => setForgotPasswordData(prev => ({
-                                        ...prev,
-                                        imei: e.target.value.replace(/\D/g, '')
-                                    }))}
-                                    className="input-field w-full"
-                                    maxLength={15}
-                                    placeholder={t('enter_imei')}
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-white mb-2">{t('buyer_new_password')}</label>
-                                <Input
-                                    type="password"
-                                    value={forgotPasswordData.newPassword}
-                                    onChange={(e) => setForgotPasswordData(prev => ({
-                                        ...prev,
-                                        newPassword: e.target.value
-                                    }))}
-                                    className="input-field w-full"
-                                    placeholder={t('enter_password')}
-                                />
-                            </div>
-                        </div>
-
-                        <DialogFooter className="gap-3">
-                            <Button onClick={() => setShowForgotPasswordModal(false)} variant="outline" className="border-imei-cyan/30 text-white">
-                                {t('cancel')}
-                            </Button>
-                            <Button onClick={handleForgotPassword} disabled={isProcessing} className="bg-orange-500 hover:bg-orange-600 text-white border-orange-500">
-                                {isProcessing ? t('processing') : t('update_password')}
-                            </Button>
-                        </DialogFooter>
-                    </DialogContent>
-                </Dialog>
-            )}
-            {/* Modal لتغيير رقم الهاتف */}
-            <Dialog open={showChangePhoneModal} onOpenChange={setShowChangePhoneModal}>
-                <DialogContent className="bg-white/90 backdrop-blur-lg text-gray-800 w-[90%] sm:max-w-md border-2 border-orange-400 shadow-2xl rounded-2xl">
-                        <DialogHeader className="text-center">
-                            <DialogTitle className="text-2xl font-bold text-gray-900 text-center">{t('change_phone_number')}</DialogTitle>
-                            <DialogDescription className="text-gray-600 text-center">{t('enter_new_phone')}</DialogDescription>
-                        </DialogHeader>
-
-                    <div className="space-y-4 pt-4">
-                        <div>
-                            <label className="block text-gray-700 mb-2">{t('phone_number')}</label>
-                            <div className="flex gap-2">
-                                <CountryCodeSelector
-                                    value={displayedCountryCode}
-                                    onChange={(code) => setCountryCode(code)}
-                                />
-                                <Input
-                                    type="tel"
-                                    value={newPhone}
-                                    onChange={(e) => setNewPhone(e.target.value)}
-                                    className="input-field flex-1"
-                                    placeholder={t('phone_placeholder') || '10 1234 5678'}
-                                    name={phoneNameRef.current}
-                                    autoComplete="tel"
-                                    inputMode="tel"
-                                />
-                            </div>
-                        </div>
-                        <div>
-                            <label className="block text-gray-700 mb-2">{t('id_last_6_from_card') || 'Last 6 Digits'}</label>
-                            <Input
-                                type="text"
-                                value={verificationLast6}
-                                onChange={(e) => setVerificationLast6(e.target.value.replace(/\D/g, ''))}
-                                className="input-field w-full"
-                                placeholder="123456"
-                                maxLength={6}
-                                name={last6NameRef.current}
-                                autoComplete="off"
-                                inputMode="numeric"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-gray-700 mb-2">{t('current_login_password') || 'Current login password'}</label>
-                            <Input
-                                type="password"
-                                value={verificationPassword}
-                                onChange={(e) => setVerificationPassword(e.target.value)}
-                                className="input-field w-full"
-                                placeholder={t('enter_password')}
-                                name={pwdNameRef.current}
-                                autoComplete="new-password"
-                            />
-                        </div>
-                    </div>
-
-                    <DialogFooter className="gap-3">
-                        <Button onClick={() => setShowChangePhoneModal(false)} variant="outline" className="border-orange-500 text-orange-600 hover:bg-orange-50 hover:border-orange-600">
-                            {t('cancel')}
-                        </Button>
-                        <Button onClick={handleUpdatePhone} disabled={isUpdatingPhone} className="bg-imei-cyan hover:bg-imei-cyan-dark text-white">
-                            {isUpdatingPhone ? t('processing') : t('update_phone')}
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-
-            {/* Modal لتغيير اللغة */}
-            <Dialog open={showLanguageModal} onOpenChange={setShowLanguageModal}>
-                <DialogContent className="bg-imei-darker border-imei-cyan/30">
-                    <DialogHeader className="text-center">
-                        <DialogTitle className="text-white text-center">{t('change_language')}</DialogTitle>
-                    </DialogHeader>
-                    <div className="flex flex-col gap-3 pt-4">
-                        <Button onClick={() => handleLanguageChange('ar')} className="bg-imei-cyan hover:bg-imei-cyan-dark text-white">
-                            {t('language_arabic')}
-                        </Button>
-                        <Button onClick={() => handleLanguageChange('en')} className="bg-imei-cyan hover:bg-imei-cyan-dark text-white">
-                            {t('language_english')}
-                        </Button>
-                        <Button onClick={() => handleLanguageChange('fr')} className="bg-imei-cyan hover:bg-imei-cyan-dark text-white">
-                            {t('language_french')}
-                        </Button>
-                        <Button onClick={() => handleLanguageChange('hi')} className="bg-imei-cyan hover:bg-imei-cyan-dark text-white">
-                            {t('language_hindi')}
-                        </Button>
-                    </div>
-                    <DialogFooter>
-                        <Button onClick={() => setShowLanguageModal(false)} variant="outline" className="border-imei-cyan/30 text-white w-full">
-                            {t('close')}
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-        </div>
     );
 };
 

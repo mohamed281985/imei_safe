@@ -572,6 +572,7 @@ export default {
   "imei_registered_to_another_account": "هذا الهاتف مسجل لحساب آخر.",
   // ... other translations ...
   
+  "imei_already_reported_by_your_account": "تم الإبلاغ عن هذا الجهاز من حسابك مسبقاً",
   "imei_already_reported_as_lost_detail": "هذا الهاتف مبلغ عنه كمفقود بالفعل، لا يمكن تقديم بلاغ جديد.",
   // "id_last6_invalid": "يجب إدخال آخر 6 أرقام من البطاقة بشكل صحيح",
   "phone_registered_enter_password": "هذا الهاتف مسجل. يرجى إدخال كلمة المرور لإثبات الملكية.",
@@ -1170,6 +1171,10 @@ export default {
   "package_remaining_ads": "متبقي من إعلاناتك",
   "ad_duration_per_ad": "مدة الإعلان لكل إعلان",
   "days_remaining": "أيام متبقية",
+  "my_package": "باقتي",
+  "remaining_ads": "الإعلانات المتبقية",
+  "total_ads": "إجمالي الإعلانات",
+  "expiry_date": "تاريخ الانتهاء",
   "image_format_hint": "PNG, JPG حتى 5 ميجابايت",
   "location_set_success": "تم تحديد الموقع بنجاح",
   "change_location": "تغيير الموقع",

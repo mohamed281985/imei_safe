@@ -1,0 +1,87 @@
+export function registerProfileRoutes({
+  app,
+  supabase,
+  sendError,
+  decryptField,
+  isDevelopment,
+  devBypassToken,
+}) {
+  app.get('/api/decrypted-user', async (req, res) => {
+    try {
+      let userId = null;
+
+      const authHeader = req.headers['authorization'];
+      if (authHeader && String(authHeader).startsWith('Bearer ')) {
+        const token = String(authHeader).slice(7);
+        const { data: authData, error: authErr } = await supabase.auth.getUser(token);
+        if (authErr) {
+          console.error('/api/decrypted-user auth error:', authErr?.message || authErr);
+          return res.status(401).json({ error: 'Failed to verify token', details: authErr?.message });
+        }
+        if (!authData || !authData.user) {
+          console.error('/api/decrypted-user auth data missing');
+          return res.status(401).json({ error: 'Unauthorized - no user data' });
+        }
+        userId = authData.user.id;
+      } else if (isDevelopment && devBypassToken && req.headers['x-api-key'] === devBypassToken) {
+        userId = req.query.user_id;
+        if (!userId) return res.status(400).json({ error: 'missing user_id (dev bypass)' });
+      } else {
+        return res.status(401).json({ error: 'Unauthorized - missing auth' });
+      }
+
+      const { data: userRow, error: userErr } = await supabase.from('users').select('*').eq('id', userId).maybeSingle();
+      if (userErr) {
+        console.error('/api/decrypted-user users fetch error:', userErr?.message || userErr);
+        return res.status(500).json({ error: 'Failed to fetch user data', details: userErr?.message });
+      }
+
+      const { data: businessRow, error: businessErr } = await supabase.from('businesses').select('*').eq('user_id', userId).maybeSingle();
+      if (businessErr) {
+        console.error('/api/decrypted-user businesses fetch error:', businessErr?.message || businessErr);
+        return res.status(500).json({ error: 'Failed to fetch business data', details: businessErr?.message });
+      }
+
+      const out = { user: null, business: null };
+
+      if (userRow) {
+        try {
+          out.user = {
+            id: userRow.id,
+            email: userRow.email || null,
+            full_name: decryptField(userRow.full_name),
+            phone: decryptField(userRow.phone),
+            id_last6: decryptField(userRow.id_last6),
+            role: userRow.role || null
+          };
+        } catch (error) {
+          console.error('/api/decrypted-user user decrypt error:', error?.message || error);
+          return res.status(500).json({ error: 'Failed to decrypt user data', details: error?.message });
+        }
+      }
+
+      if (businessRow) {
+        try {
+          out.business = {
+            id: businessRow.id,
+            email: businessRow.email || null,
+            store_name: businessRow.store_name || null,
+            owner_name: decryptField(businessRow.owner_name),
+            phone: decryptField(businessRow.phone),
+            address: decryptField(businessRow.address),
+            business_type: businessRow.business_type || null,
+            id_last6: decryptField(businessRow.id_last6)
+          };
+        } catch (error) {
+          console.error('/api/decrypted-user business decrypt error:', error?.message || error);
+          return res.status(500).json({ error: 'Failed to decrypt business data', details: error?.message });
+        }
+      }
+
+      return res.json(out);
+    } catch (error) {
+      console.error('/api/decrypted-user error:', error?.message || error);
+      return sendError(res, 500, 'Server error', error);
+    }
+  });
+}

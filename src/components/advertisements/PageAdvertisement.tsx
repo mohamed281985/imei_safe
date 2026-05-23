@@ -121,8 +121,7 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
     }
 
     // ===== الفلترة والترتيب حسب الموقع الجغرافي =====
-    const globalAds = mergedAds.filter(ad => ad.latitude == null && ad.longitude == null);
-    let fetchedAds: AdDisplay[] = globalAds;
+    let fetchedAds: AdDisplay[] = [];
 
     if (coords) {
       const nearbyAds = mergedAds
@@ -134,17 +133,12 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
         .sort((a, b) => a.distance - b.distance);
 
       // أولاً، حاول العثور على إعلانات في نطاق 3 كم
-      const inRangeAds = nearbyAds.filter(ad => ad.distance <= 3);
+      fetchedAds = nearbyAds.filter(ad => ad.distance <= 3);
 
       // إذا لم يتم العثور على إعلانات في نطاق 3 كم، حاول البحث حتى 30 كم
-      let finalNearbyAds = inRangeAds;
-      if (inRangeAds.length === 0 && nearbyAds.length > 0) {
-        finalNearbyAds = nearbyAds.filter(ad => ad.distance <= 30);
+      if (fetchedAds.length === 0 && nearbyAds.length > 0) {
+        fetchedAds = nearbyAds.filter(ad => ad.distance <= 30);
       }
-
-      const allAds = [...finalNearbyAds, ...globalAds];
-      const uniqueAds = Array.from(new Map(allAds.map(ad => [ad.id, ad])).values());
-      fetchedAds = uniqueAds;
     }
 
     if (fetchedAds && fetchedAds.length > 0) {

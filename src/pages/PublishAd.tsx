@@ -108,19 +108,20 @@ const PublishAd: React.FC = () => {
 
   // Number of publish ads included in the user's plan (from `plans.Publish_Ad` column)
   const [packagePublishAdsCount, setPackagePublishAdsCount] = useState<number | null>(null);
-  // plan's Publish_Ad value and user's stored quota in users_plans
-  const [planPublishAdValue, setPlanPublishAdValue] = useState<number | null>(null);
-  const [userPlanQuotaValue, setUserPlanQuotaValue] = useState<number | null>(null);
+  // الأيام المتبقية للباقة
+  const [packageDaysRemaining, setPackageDaysRemaining] = useState<number | null>(null);
+  // عدد الإعلانات المنشورة فعلياً
+  const [publishedAdsCount, setPublishedAdsCount] = useState<number | null>(null);
 
-  // Derived remaining ads to display (plans.Publish_Ad - users_plans quota) with sensible fallbacks
+  // Derived remaining ads to display (plans.Publish_Ad - published ads count)
   const packagePublishAdsRemaining = useMemo(() => {
-    if (planPublishAdValue != null && userPlanQuotaValue != null) {
-      const diff = Number(planPublishAdValue) - Number(userPlanQuotaValue);
+    if (packagePublishAdsCount != null && publishedAdsCount != null) {
+      const diff = Number(packagePublishAdsCount) - Number(publishedAdsCount);
       return Number.isFinite(diff) ? Math.max(0, diff) : null;
     }
     if (packagePublishAdsCount != null) return packagePublishAdsCount;
     return null;
-  }, [planPublishAdValue, userPlanQuotaValue, packagePublishAdsCount]);
+  }, [packagePublishAdsCount, publishedAdsCount]);
 
   useEffect(() => {
     if (!basePlan) return;
@@ -215,7 +216,6 @@ const PublishAd: React.FC = () => {
         const publishVal = row.Publish_Ad ?? row.publish_ad ?? row.publishAd ?? row.publish_ads ?? row.publishAds ?? null;
         const num = publishVal != null ? Number(publishVal) : null;
         if (!cancelled) setPackagePublishAdsCount(Number.isFinite(num) ? num : null);
-        if (!cancelled) setPlanPublishAdValue(Number.isFinite(num) ? num : null);
       } catch (err) {
         console.error('PublishAd: failed fetching plan row', err);
         if (!cancelled) setPackagePublishAdsCount(null);
@@ -226,7 +226,33 @@ const PublishAd: React.FC = () => {
     return () => { cancelled = true; };
   }, [basePlan]);
 
-  // Fetch user's quota from users_plans to compute comparison diff
+  // Fetch published ads count to calculate remaining ads
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    const fetchPublishedAdsCount = async () => {
+      try {
+        const { count, error } = await supabase
+          .from('publish_ad')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+
+        if (error) {
+          console.error('PublishAd: error fetching published ads count:', error);
+          return;
+        }
+
+        if (!cancelled) {
+          setPublishedAdsCount(count || 0);
+        }
+      } catch (err) {
+        console.error('PublishAd: error fetching published ads count:', err);
+        if (!cancelled) setPublishedAdsCount(null);
+      }
+    };
+    fetchPublishedAdsCount();
+    return () => { cancelled = true; };
+  }, [user?.id]);
   useEffect(() => {
     if (!user?.id) return;
     let cancelled = false;
@@ -240,16 +266,56 @@ const PublishAd: React.FC = () => {
           const silverQuota = up.silver_ad ?? up.silver_ads ?? null;
           const quota = basePlan === 'gold' ? goldQuota : basePlan === 'silver' ? silverQuota : null;
           const qnum = quota != null ? Number(quota) : null;
-          if (!cancelled) setUserPlanQuotaValue(Number.isFinite(qnum as number) ? (qnum as number) : null);
+          if (!cancelled) setPackagePublishAdsCount(Number.isFinite(qnum) ? qnum : null);
         }
       } catch (err) {
         console.error('PublishAd: error fetching users_plans for diff', err);
-        if (!cancelled) setUserPlanQuotaValue(null);
       }
     };
     fetchUserQuota();
     return () => { cancelled = true; };
   }, [user?.id, basePlan]);
+
+  // Fetch package expiry date and calculate remaining days
+  useEffect(() => {
+    if (!user?.id || !isPackageUser) return;
+    let cancelled = false;
+    const fetchPackageExpiry = async () => {
+      try {
+        // جلب expires_at من جدول users
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('expires_at')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (userError) {
+          console.error('PublishAd: error fetching user expires_at:', userError);
+          return;
+        }
+
+        if (!userData?.expires_at) {
+          console.log('PublishAd: no expires_at found for user');
+          return;
+        }
+
+        // حساب الأيام المتبقية من expires_at فقط
+        const expiryDate = new Date(userData.expires_at);
+        const today = new Date();
+        const diffTime = expiryDate.getTime() - today.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        if (!cancelled) {
+          setPackageDaysRemaining(Math.max(0, diffDays));
+        }
+      } catch (err) {
+        console.error('PublishAd: error calculating package days remaining:', err);
+        if (!cancelled) setPackageDaysRemaining(null);
+      }
+    };
+    fetchPackageExpiry();
+    return () => { cancelled = true; };
+  }, [user?.id, isPackageUser]);
 
   // دالة لجلب سعر الإعلان بناءً على المدة
   const fetchAdPrices = async () => {
@@ -728,7 +794,10 @@ const PublishAd: React.FC = () => {
             throw new Error(errJson.error || t('ad_publish_package_failed'));
           }
 
-          toast({ title: t('success'), description: t('ad_published_package_success') });
+          toast({ 
+            title: t('success'), 
+            description: 'تم إرسال إعلانك بنجاح! سيتم مراجعته ونشره في أقرب وقت.' 
+          });
           goToMyAdsAfterDelay();
           return; // done — server handled DB insertion and no payment gateway is required
         } catch (err: any) {
@@ -769,11 +838,17 @@ const PublishAd: React.FC = () => {
         } else {
           window.open(data.iframe_url, '_blank', 'noopener,noreferrer');
         }
-        toast({ title: t('redirecting_to_payment'), description: t('redirecting_to_payment_desc') });
+        toast({ 
+          title: t('redirecting_to_payment'), 
+          description: 'بعد إتمام الدفع، سيتم مراجعة إعلانك ونشره في أقرب وقت.' 
+        });
         goToMyAdsAfterDelay();
       } else if (data.payment_url) {
         window.open(data.payment_url, '_blank', 'noopener,noreferrer');
-        toast({ title: t('redirecting_to_payment'), description: t('redirecting_to_payment_desc') });
+        toast({ 
+          title: t('redirecting_to_payment'), 
+          description: 'بعد إتمام الدفع، سيتم مراجعة إعلانك ونشره في أقرب وقت.' 
+        });
         goToMyAdsAfterDelay();
       } else {
         toast({ title: t('error'), description: t('payment_link_error'), variant: 'destructive' });
@@ -818,7 +893,7 @@ const PublishAd: React.FC = () => {
 
   return (
     <PageContainer>
-      <div dir="rtl" className="min-h-screen flex justify-center items-start py-6 px-4" style={{ background: 'linear-gradient(180deg, #EAF6FF 0%, #FFFFFF 65%)' }}>
+      <div dir="rtl" className="min-h-screen flex justify-center items-start py-6 px-4">
         <div className="w-full max-w-md">
 
           <div className="flex items-center justify-between mb-6 gap-4 mt-2">
@@ -847,7 +922,7 @@ const PublishAd: React.FC = () => {
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-crown mr-1">
                       <path d="m2 4 3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14"></path>
                     </svg>
-                    {t('package_total')}:&nbsp;{planPublishAdValue != null ? `${planPublishAdValue} ${t('ads')}` : packagePublishAdsCount != null ? `${packagePublishAdsCount} ${t('ads')}` : t('not_specified')}
+                    {t('package_total')}:&nbsp;{packagePublishAdsCount != null ? `${packagePublishAdsCount} ${t('ads')}` : t('not_specified')}
                   </div>
                 </div>
 
@@ -873,7 +948,9 @@ const PublishAd: React.FC = () => {
 
                   {/* Package Expiry */}
                   <div className="flex-1 flex flex-col items-center justify-center">
-                    <div className="text-xl font-bold text-gray-700">28</div>
+                    <div className="text-xl font-bold text-gray-700">
+                      {isPackageUser ? (packageDaysRemaining !== null ? packageDaysRemaining : '—') : '-'}
+                    </div>
                     <div className="text-[10px] text-gray-600 mt-0.5 font-medium">{t('days_remaining')}</div>
                   </div>
                 </div>
