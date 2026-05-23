@@ -1569,7 +1569,8 @@ registerNotificationRoutes({
   verifyJwtToken,
   sendError,
   sendFCMNotificationV1,
-  getFCMTokenByImei
+  getFCMTokenByImei,
+  searchImeiLimiter
 });
 
 // --- دوال Paymob ---
