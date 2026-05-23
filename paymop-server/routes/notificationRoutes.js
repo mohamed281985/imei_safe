@@ -4,7 +4,8 @@ export function registerNotificationRoutes({
   verifyJwtToken,
   sendError,
   sendFCMNotificationV1,
-  getFCMTokenByImei
+  getFCMTokenByImei,
+  searchImeiLimiter
 }) {
 app.post('/api/send-fcm-v1', verifyJwtToken, async (req, res) => {
   try {
