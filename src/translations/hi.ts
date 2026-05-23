@@ -565,6 +565,7 @@ export default {
   "imei_registered_to_you_error": "यह फ़ोन पहले से आपके खाते में पंजीकृत है और इसे फिर से पंजीकृत नहीं किया जा सकता।",
   "imei_registered_to_another_account_with_report": "यह फ़ोन एक दूसरे खाते में पंजीकृत है और इसके खिलाफ एक सक्रिय रिपोर्ट है।",
   "imei_registered_to_another_account": "यह फ़ोन एक दूसरे खाते में पंजीकृत है।",
+  "imei_already_reported_by_your_account": "यह डिवाइस आपके खाते से पहले ही रिपोर्ट किया जा चुका है",
   "imei_already_reported_as_lost_detail": "यह फोन पहले से ही खोया हुआ रिपोर्ट किया गया है, नई रिपोर्ट जमा नहीं की जा सकती।",
   "id_last6_invalid": "आपको आईडी के अंतिम 6 अंक सही ढंग से दर्ज करने होंगे",
   "phone_registered_enter_password": "यह फोन पंजीकृत है। स्वामित्व साबित करने के लिए कृपया पासवर्ड दर्ज करें।",

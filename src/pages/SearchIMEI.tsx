@@ -480,8 +480,8 @@ const WelcomeSearch: React.FC = () => {
       <AppNavbar />
       <PageAdvertisement pageName="welcomesearch" />
 
-      <div className="min-h-screen bg-slate-50 pb-10">
-        <div className="container mx-auto px-4 py-6 max-w-4xl">
+      <div className="min-h-screen bg-slate-50 pb-6">
+        <div className="container mx-auto px-2 py-6 max-w-4xl">
           {/* Header Section */}
           <div className="bg-white rounded-2xl shadow-sm p-4 mb-6 border border-slate-200">
             <div className="flex items-center justify-between">
@@ -505,7 +505,7 @@ const WelcomeSearch: React.FC = () => {
 
           {/* Search Card */}
           {searchResult !== 'found' && (
-            <div className="bg-white rounded-3xl shadow-lg p-6 mb-8 border border-slate-100">
+            <div className="bg-white rounded-3xl shadow-lg p-5 8 mb-8 border border-slate-100">
               <div className="mb-6 text-center">
                 <h2 className="text-2xl font-bold text-blue-600 mb-2">
                   {t('search_imei_title')}
@@ -543,10 +543,11 @@ const WelcomeSearch: React.FC = () => {
                 </div>
 
                 <Button
-                  type="submit"
-                  className="w-full h-14 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white font-bold text-lg rounded-xl shadow-lg shadow-orange-500/30 transition-all duration-300 flex items-center justify-center gap-2"
-                  disabled={isSearching || !imei}
-                >
+                 type="submit"
+className="w-full h-14 bg-orange-500 text-white font-bold text-lg rounded-xl shadow-lg shadow-orange-500/30  flex items-center justify-center gap-2"
+disabled={isSearching || !imei}
+>
+
                   {isSearching ? (
                     <>
                       <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>

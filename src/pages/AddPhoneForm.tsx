@@ -1180,7 +1180,7 @@ const AddPhoneForm: React.FC = () => {
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="text-xs text-slate-600">{t('ad_duration_label') || 'مدة الإعلان'}</div>
-                      <div className="mt-1 font-semibold text-slate-900">{selectedSellDuration} {t('days') || 'يوم'}</div>
+                      <div className="mt-1 font-bold text-orange-500">{selectedSellDuration} {t('days') || 'يوم'}</div>
                     </div>
                     <div className="text-right">
                       {sellDurations && sellDurations.length > 0 ? (

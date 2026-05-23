@@ -154,8 +154,6 @@ const Dashboard: React.FC = () => {
   // حالات جديدة للإكسسوارات
   const [accessoryListings, setAccessoryListings] = useState<Accessory[]>([]);
   const [loadingAccessories, setLoadingAccessories] = useState(true);
-  const [sellersInCountryList, setSellersInCountryList] = useState<any[]>([]);
-  const [loadingSellersInCountry, setLoadingSellersInCountry] = useState(false);
 
   // ⭐ إضافة تبديل تلقائي للكروت
   useEffect(() => {
@@ -490,8 +488,7 @@ const Dashboard: React.FC = () => {
         }
         setDisplayedPhones(responseData);
 
-        // --- جلب اسم دولة المستخدم ومعرفات البائعين في نفس الدولة ---
-        let sellerIdsInUserCountry: string[] | null = null;
+        // --- جلب اسم دولة المستخدم للفلترة ---
         let userCountryName: string | null = null;
         if (user?.id) {
           try {
@@ -507,53 +504,11 @@ const Dashboard: React.FC = () => {
             }
 
             if (currentUserData?.countries) {
-              const userCountry = currentUserData.countries.trim();
-              userCountryName = userCountry;
+              userCountryName = currentUserData.countries.trim();
               console.debug('[Country Filter] userCountryName:', userCountryName);
-
-              // جلب كل البائعين الذين دولتهم تحتوي على اسم دولة المستخدم (تحسين المطابقة)
-              setLoadingSellersInCountry(true);
-              // Fetch basic user rows (avoid selecting non-existent columns like username/store_name)
-              const { data: sellersInCountry, error: sellersError } = await supabase
-                .from('users')
-                .select('id, role, countries')
-                .ilike('countries', `%${userCountry}%`);
-
-              if (sellersError) {
-                console.error('[Country Filter] Error fetching sellers by country:', sellersError);
-              }
-
-              if (sellersInCountry && sellersInCountry.length > 0) {
-                sellerIdsInUserCountry = sellersInCountry.map(s => s.id);
-
-                // Fetch store_name from businesses table for those users (if any)
-                try {
-                  const { data: bizRows, error: bizErr } = await supabase
-                    .from('businesses')
-                    .select('user_id, store_name')
-                    .in('user_id', sellerIdsInUserCountry || []);
-                  if (!bizErr && Array.isArray(bizRows) && bizRows.length > 0) {
-                    const bizMap: Record<string, string> = {};
-                    bizRows.forEach((b: any) => { bizMap[String(b.user_id)] = b.store_name || ''; });
-                    // attach store_name to user rows for UI
-                    const merged = sellersInCountry.map((u: any) => ({ ...u, store_name: bizMap[String(u.id)] || null }));
-                    setSellersInCountryList(merged);
-                  } else {
-                    setSellersInCountryList(sellersInCountry);
-                  }
-                } catch (mergeErr) {
-                  console.error('[Country Filter] Error fetching businesses for sellers:', mergeErr);
-                  setSellersInCountryList(sellersInCountry);
-                }
-
-                console.debug(`[Country Filter] Found ${sellerIdsInUserCountry.length} sellers in user's country: ${userCountry}`);
-              } else {
-                setSellersInCountryList([]);
-              }
-              setLoadingSellersInCountry(false);
             }
           } catch (err) {
-            console.error('[Country Filter] Unexpected error fetching sellers by country:', err);
+            console.error('[Country Filter] Unexpected error fetching user country:', err);
           }
         }
 
@@ -573,13 +528,7 @@ const Dashboard: React.FC = () => {
           `)
           .eq('status', 'active');
 
-        // تطبيق فلتر حسب بائعين الدولة إن وُجد
-        if (sellerIdsInUserCountry && sellerIdsInUserCountry.length > 0) {
-          phoneQuery = phoneQuery.in('seller_id', sellerIdsInUserCountry);
-          console.debug('[Country Filter] Applied seller_id filter for phones, count:', sellerIdsInUserCountry.length);
-        }
-
-        // تطبيق فلتر حسب عمود countries في حال توافر اسم الدولة للمستخدم
+        // تطبيق فلتر حسب عمود countries فقط (مثل صفحة PhonesForSale)
         if (userCountryName) {
           phoneQuery = phoneQuery.ilike('countries', `%${userCountryName}%`);
           console.debug('[Country Filter] Applied countries ilike filter for phones:', userCountryName);
@@ -592,12 +541,7 @@ const Dashboard: React.FC = () => {
           setPhoneListings([]);
         } else {
           console.debug('تم جلب بيانات الهواتف المعروضة للبيع');
-          // فلترة الهواتف حسب دولة البائع
           let sortedListings = listings || [];
-          if (sellerIdsInUserCountry && sellerIdsInUserCountry.length > 0) {
-            sortedListings = sortedListings.filter(phone => sellerIdsInUserCountry!.includes(phone.seller_id));
-            console.log(`[Country Filter] Filtered phones to ${sortedListings.length} in user's country`);
-          }
 
           // فرز حسب الموقع إذا كانت الإحداثيات متاحة
           if (coords?.latitude && coords?.longitude) {
@@ -650,11 +594,7 @@ const Dashboard: React.FC = () => {
           `)
           .eq('status', 'active');
 
-        if (sellerIdsInUserCountry && sellerIdsInUserCountry.length > 0) {
-          accessoryQuery = accessoryQuery.in('seller_id', sellerIdsInUserCountry);
-          console.debug('[Country Filter] Applied seller_id filter for accessories, count:', sellerIdsInUserCountry.length);
-        }
-
+        // تطبيق فلتر حسب عمود countries فقط (مثل صفحة PhonesForSale)
         if (userCountryName) {
           accessoryQuery = accessoryQuery.ilike('countries', `%${userCountryName}%`);
           console.debug('[Country Filter] Applied countries ilike filter for accessories:', userCountryName);
@@ -953,7 +893,7 @@ const Dashboard: React.FC = () => {
           </div>
         );
       }
-    } 
+    }
     // الفضي
     else if (role === 'silver_business') {
       borderColor = 'border-gray-400 shadow-gray-200';
@@ -965,7 +905,7 @@ const Dashboard: React.FC = () => {
           </div>
         );
       }
-    } 
+    }
     // المجاني (للمميزة فقط)
     else if (isPromotion) {
       topBar = <div className="h-1.5 bg-gradient-to-r from-blue-500 to-blue-600"></div>;
@@ -999,12 +939,9 @@ const Dashboard: React.FC = () => {
         {showLocationRequest && <LocationPermissionRequest />}
 
         <div className="w-full mx-auto px-4">
-          <div className="mb-5">
-            <h2 className="pt-5 pb-2 mb-2 text-xl font-bold text-black">
-              {user?.username ? `👋 ${user.username}` : t('welcome')}
-            </h2>
+          <div className="mb-1">
 
-            <div className="grid grid-cols-4 gap-2 text-center">
+            <div className="grid grid-cols-4 gap-2 text-center mt-6 mb-6">
 
               {/* Icon 1: Report Lost Phone */}
               <Link
@@ -1072,7 +1009,7 @@ const Dashboard: React.FC = () => {
           <div className="mb-5">
             <div className="flex justify-between items-center mb-3 pt-5">
               <h2 className="text-black text-xl font-bold">{t('Phones')}</h2>
-              <Link to="/phones-for-sale" className="text-black hover:text-imei-cyan/80 text-sm font-medium leading-none">
+              <Link to="/phones-for-sale" className="text-black hover:text-imei-cyan/80 text-sm font-bold leading-none">
                 {t('view_all')}
               </Link>
             </div>
@@ -1132,6 +1069,8 @@ const Dashboard: React.FC = () => {
                           onClick={() => incrementPhoneViews(phone.id)}
                           className={`relative bg-white rounded-2xl overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300 group flex flex-col h-[280px] sm:h-[300px] md:h-[320px] lg:h-[280px] border-2 ${style.borderColor} ${phone.type === 'promotions' ? 'shadow-xl' : ''}`}
                         >
+
+
                           {/* الشريط العلوي للإعلانات المميزة */}
                           {style.topBar}
                           <div className="relative w-full h-[180px] sm:h-[200px] md:h-[220px] lg:h-[180px] bg-gray-50">
@@ -1199,7 +1138,7 @@ const Dashboard: React.FC = () => {
                                 <Smartphone className="w-12 h-12 text-gray-300" />
                               </div>
                             )}
-                            
+
                             {/* شارة PRO */}
                             {style.badge}
 
@@ -1268,7 +1207,7 @@ const Dashboard: React.FC = () => {
           <div className="mb-5">
             <div className="flex justify-between items-center mb-3">
               <h2 className="text-black text-xl font-bold">{t('accessories')}</h2>
-              <Link to="/accessories-for-sale" className="text-black hover:text-imei-cyan/80 text-sm font-medium leading-none">
+              <Link to="/accessories-for-sale" className="text-black hover:text-imei-cyan/80 text-sm font-bold leading-none">
                 {t('view_all')}
               </Link>
             </div>
@@ -1295,7 +1234,7 @@ const Dashboard: React.FC = () => {
                         className="cursor-pointer"
                       >
                         <div className={`relative bg-blue-100 rounded-2xl overflow-hidden shadow-md hover:shadow-lg transition-all duration-300 group flex flex-col h-[280px] ring-1 ring-gray-300/50 border-2 ${style.borderColor} ${acc.type === 'promotions' ? 'shadow-lg' : ''}`}>
-                          
+
                           {/* ⭐ FIX 1: Render topBar immediately inside the main card container */}
                           {style.topBar}
 
@@ -1316,16 +1255,24 @@ const Dashboard: React.FC = () => {
                                   <Smartphone className="w-12 h-12 text-gray-300" />
                                 </div>
                               )}
-                              
+
                               {/* ⭐ FIX 2: Ensure badge is inside this relative container */}
                               {style.badge}
 
                               {/* شارة الضمان */}
                               {acc.warranty_months && acc.warranty_months > 0 && (
+                                
                                 <div className="absolute bottom-1 right-1 bg-blue-600/90 text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm">
                                   {t('warranty_months').replace('{months}', acc.warranty_months.toString())}
-                                </div>
+                                  
+                                </div> 
                               )}
+                                {/* شارة الحالة */}
+                            {acc.condition && (
+                              <div className={`absolute bottom-1 left-1 text-[12px] font-bold px-1.5 py-0.5 rounded shadow-sm ${acc.condition === 'used' ? 'bg-orange-500/90 text-white' : 'bg-cyan-500/90 text-white'}`}>
+                                {t(acc.condition)}
+                              </div>
+                            )}
                             </div>
 
                             <div className="p-2.5 flex flex-col gap-2 bg-white">
@@ -1346,9 +1293,7 @@ const Dashboard: React.FC = () => {
                                 <div className="text-purple-700 font-bold text-lg" dir="ltr"> {/* تم تغيير dir إلى ltr لضمان عرض العملة بشكل صحيح */}
                                   {acc.price.toLocaleString('en-US')} <span className="text-xs font-normal text-gray-500">{userCurrencySymbol}</span>
                                 </div>
-                                <span className={`text-[13px] px-1.5 py-0.5 rounded border font-medium ${acc.condition === 'used' ? 'bg-orange-50 text-orange-700 border-orange-100' : 'bg-cyan-50 text-cyan-700 border-cyan-100'}`}>
-                                  {t(acc.condition)}
-                                </span>
+                              
                               </div>
                             </div>
                           </Link>
@@ -1393,7 +1338,7 @@ const Dashboard: React.FC = () => {
               <div className="text-center text-white/70 py-8">{t('loading_lost_phones')}</div>
             ) : (
               <>
-                <div className="flex justify-center">
+                <div className="flex justify-center mb-7">
                   {displayedPhones.length > 0 && (() => {
                     const phone = displayedPhones[phoneIndex] || displayedPhones[0];
                     const safeKey = phone?.id ?? phone?.imei ?? phoneIndex;
@@ -1413,7 +1358,7 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
 
-          {/* Sellers-in-country block removed per request */}
+        {/* Sellers-in-country block removed per request */}
       </div>
 
       <Suspense fallback={<div>Loading...</div>}>

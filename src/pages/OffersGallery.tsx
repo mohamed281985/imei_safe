@@ -404,6 +404,7 @@ const OffersGallery = () => {
                             console.error('Error fetching payment record:', fetchError);
                             // إذا كان الخطأ 406، فهذا يعني غالباً أن السجل غير موجود أو RLS تمنع الوصول
                             return;
+                        }
                         if (paymentRecord?.payment_status === 'paid' && paymentMonitorRef.current) {
                             clearInterval(paymentMonitorRef.current);
                             paymentMonitorRef.current = null;
@@ -500,10 +501,11 @@ const OffersGallery = () => {
 
     return (
         <div className="fixed inset-0 w-full h-full bg-black flex flex-col items-center justify-center z-50" style={{ padding: 0, margin: 0 }}>
-            <div className="absolute bottom-16 left-0 w-full flex flex-col items-center z-20 px-4">
-                <button className="bg-red-500 text-white font-bold py-3 px-6 rounded-lg shadow-lg" onClick={handleOfferPayment} disabled={isPaying}>اشترك في العرض</button>
-                {payError && <div className="text-red-500 mt-4 text-xl text-center max-w-[80%]">{payError}</div>}
-            </div>
+            <div className="absolute bottom-10 left-0 w-full flex flex-col items-center z-10 px-4">
+    <button className="bg-red-500 text-white font-bold py-3 px-6 rounded-lg shadow-lg" onClick={handleOfferPayment} disabled={isPaying}>اشترك في العرض</button>
+    {payError && <div className="text-red-500 mt-4 text-xl text-center max-w-[80%]">{payError}</div>}
+</div>
+
             <img
                 src={imageUrl}
                 alt={t('offer_image')}
