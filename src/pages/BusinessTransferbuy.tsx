@@ -1069,9 +1069,16 @@ const BusinessTransferBuy: React.FC = () => {
     if (!user) return;
     try {
       const meta = (user as any).user_metadata || {};
+      // لا تضع الإيميل في خانة الاسم أبداً
       if (!buyerName || String(buyerName).trim() === '') {
-        const fallbackName = meta.name || meta.full_name || user.email || '';
-        if (fallbackName) setBuyerName(fallbackName);
+        const fallbackName = meta.name || meta.full_name || meta.display_name || '';
+        if (fallbackName && typeof fallbackName === 'string' && fallbackName.trim() !== '') {
+          setBuyerName(fallbackName);
+        } else if (meta.phone || meta.phone_number) {
+          // إذا لم يوجد اسم، استخدم رقم الهاتف فقط
+          setBuyerName(meta.phone || meta.phone_number);
+        }
+        // لا تستخدم الإيميل أبداً كاسم
       }
       if (!buyerPhone || String(buyerPhone).trim() === '') {
         const rawPhone = meta.phone || meta.phone_number || (user as any).phone || '';
@@ -1084,10 +1091,10 @@ const BusinessTransferBuy: React.FC = () => {
         const fallbackEmail = meta.email || user.email || '';
         if (fallbackEmail) setBuyerEmail(fallbackEmail);
       }
-        if (!buyerIdLast6 || String(buyerIdLast6).trim() === '') {
-          const fallbackId = meta.id_last6 || '';
-          if (fallbackId) setBuyerIdLast6(fallbackId);
-        }
+      if (!buyerIdLast6 || String(buyerIdLast6).trim() === '') {
+        const fallbackId = meta.id_last6 || '';
+        if (fallbackId) setBuyerIdLast6(fallbackId);
+      }
     } catch (err) {
       console.debug('buyer fallback populate error:', err);
     }

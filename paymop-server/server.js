@@ -5426,6 +5426,15 @@ registerOwnershipRoutes({
   clearAuthFailures
 });
 
+// مسار للحصول على بيانات المشتري
+registerBuyerInfoRoutes({
+  app,
+  supabase,
+  verifyJwtToken,
+  sendError,
+  decryptField
+});
+
 // نقطة نهاية للتحقق من حدود الاستخدام
 app.post('/api/check-limit', verifyJwtToken, async (req, res) => {
   const { type, consumeBonusOnLimit = false } = req.body; // 'search_imei', 'register_phone', 'search_history', 'print_history', 'game'
