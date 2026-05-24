@@ -24,6 +24,7 @@ import { registerNotificationRoutes } from './routes/notificationRoutes.js';
 import { registerOwnershipRoutes } from './routes/ownershipRoutes.js';
 import { registerProfileRoutes } from './routes/profileRoutes.js';
 import { registerReportRoutes } from './routes/reportRoutes.js';
+import { registerBuyerInfoRoutes } from './routes/buyerInfoRoutes.js';
 
 // =================================================================
 // 1. الإعدادات الأولية وتحميل متغيرات البيئة (يجب أن تكون في البداية)
