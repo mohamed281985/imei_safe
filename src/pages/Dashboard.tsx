@@ -1290,8 +1290,8 @@ const Dashboard: React.FC = () => {
 
                               {/* Price */}
                               <div className="mt-0.5 flex items-center justify-between">
-                                <div className="text-purple-700 font-bold text-lg" dir="ltr"> {/* تم تغيير dir إلى ltr لضمان عرض العملة بشكل صحيح */}
-                                  {acc.price.toLocaleString('en-US')} <span className="text-xs font-normal text-gray-500">{userCurrencySymbol}</span>
+                                <div className="text-purple-700 font-bold text-base sm:text-lg" dir="ltr"> {/* تم تغيير dir إلى ltr لضمان عرض العملة بشكل صحيح */}
+                                  {acc.price.toLocaleString('en-US')}<span className="text-md font-bold text-black">{userCurrencySymbol}</span>
                                 </div>
                               
                               </div>
