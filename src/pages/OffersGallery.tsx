@@ -363,8 +363,7 @@ const OffersGallery = () => {
 
                     // حساب تاريخ انتهاء الصلاحية بناءً على مدة الاشتراك
                     const currentDate = new Date();
-                    const expiryDate = new Date(currentDate);
-                    expiryDate.setDate(currentDate.getDate() + (paymentData.duration_days || 1));
+                    const expiryDate = new Date(currentDate.getTime() + (paymentData.duration_days || 1) * 24 * 60 * 60 * 1000);
 
                     // تحديث دور المستخدم وتاريخ انتهاء الصلاحية
                     const { error: updateError } = await supabase

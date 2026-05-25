@@ -1,3 +1,10 @@
+import localAdImage from '@/assets/images/ads/default_ad.jpeg';
+import { useEffect, useState } from 'react';
+import { supabase } from '@/lib/supabase';
+import { useLanguage } from '@/contexts/LanguageContext';
+import { Capacitor } from '@capacitor/core';
+import axiosInstance from '@/services/axiosInterceptor';
+
 // دالة تحويل الدرجات إلى راديان
 function deg2rad(deg: number) {
   return deg * (Math.PI / 180);
@@ -16,13 +23,6 @@ function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon
   const d = R * c;
   return d;
 }
-
-import localAdImage from '@/assets/images/ads/default_ad.jpeg';
-import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
-import { useLanguage } from '@/contexts/LanguageContext';
-import { Capacitor } from '@capacitor/core';
-import axiosInstance from '@/services/axiosInterceptor';
 
 // ⭐ واجهة الإعلان المدمج (من publish_ad + ads_payment)
 interface AdDisplay {
@@ -43,8 +43,25 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
   const [ads, setAds] = useState<AdDisplay[]>([]);
   const [currentAdIndex, setCurrentAdIndex] = useState(0);
   const [showLocalAd, setShowLocalAd] = useState(true);
+  const [lastShownIndex, setLastShownIndex] = useState<number | null>(null);
 
   const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || 'https://imei-safe.me';
+
+  // دالة لخلق ترتيب عشوائي مع عدم تكرار الصور المتتالية
+  const getRandomAdIndex = (currentIndex: number, lastIndex: number | null) => {
+    if (ads.length <= 1) return 0;
+    
+    const availableIndices = ads.map((_, index) => index);
+    
+    // إذا كان هناك آخر فهرس معروض، نستبعده من الاختيار
+    if (lastIndex !== null) {
+      availableIndices.splice(lastIndex, 1);
+    }
+    
+    // اختيار فهرس عشوائي من الفهارس المتاحة
+    const randomIndex = Math.floor(Math.random() * availableIndices.length);
+    return availableIndices[randomIndex];
+  };
 
   useEffect(() => {
     // ⭐ مفتاح إصدار الكاش - تغييره يبطل الكاش القديم
@@ -158,18 +175,6 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
     });
   };
 
-  useEffect(() => {
-    if (!ads || ads.length <= 1) return;
-
-    const timer = setInterval(() => {
-      setCurrentAdIndex((prevIndex) => {
-        return (prevIndex + 1) % ads.length;
-      });
-    }, 2000);
-
-    return () => clearInterval(timer);
-  }, [ads.length]); // الاعتماد على الطول يكفي لتشغيل المؤقت
-
   // تأثير منفصل لتحميل الصور مسبقاً عند تغير قائمة الإعلانات فقط
   useEffect(() => {
     if (ads.length > 0) {
@@ -205,6 +210,21 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
     }
   };
 
+  // تأثير لتحديث الإعلان بشكل عشوائي
+  useEffect(() => {
+    if (!ads || ads.length <= 1) return;
+
+    const timer = setInterval(() => {
+      setCurrentAdIndex(prevIndex => {
+        const newIndex = getRandomAdIndex(prevIndex, lastShownIndex);
+        setLastShownIndex(newIndex);
+        return newIndex;
+      });
+    }, 2000);
+
+    return () => clearInterval(timer);
+  }, [ads.length]);
+
   if (showLocalAd) {
     return (
       <div className="sticky top-1 z-10">
@@ -218,7 +238,6 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
 
   return (
     <div className="sticky top-1 z-10">
-      {/* ⭐ تغيير: إظهار الإعلان الحالي فقط بدلاً من جميع الإعلانات */}
       {currentAdIndex < ads.length && (
         <div className="rounded-lg overflow-hidden shadow-[0_5px_8px_rgba(0,0,0,0.6)] w-full aspect-video relative bg-gray-100 mb-3 ring-1 ring-black/5">
           <div
