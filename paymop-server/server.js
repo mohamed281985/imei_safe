@@ -2272,7 +2272,7 @@ app.post('/api/ads/package-publish', verifyJwtToken, paymentLimiter, rateLimitMi
         .eq('user_id', userId)
         .eq('is_paid', true)
         .eq('type', normalizedPackage)
-        .order('payment_date', { ascending: true })
+        .order('payment_date', { ascending: false }) // جلب أحدث تاريخ دفع لبداية الدورة الحالية
         .limit(1)
         .maybeSingle();
       if (!firstPaidErr && firstPaid && firstPaid.payment_date) {
@@ -2313,11 +2313,13 @@ app.post('/api/ads/package-publish', verifyJwtToken, paymentLimiter, rateLimitMi
     try {
       const { data: adsList, error: countErr } = await supabase
         .from('ads_payment')
-        .select('id, status, upload_date')
+        .select('id, status, upload_date, expires_at')
         .eq('user_id', userId)
         .gte('upload_date', packageStartDate);
       if (!countErr && Array.isArray(adsList)) {
-        currentAdsCount = adsList.filter(ad => ad.status === 'pending' || ad.status === 'approved').length;
+        currentAdsCount = adsList.filter(ad => {
+          return ad.status === 'pending' || ad.status === 'approved';
+        }).length;
       }
       console.log(`[PACKAGE-PUBLISH] userId=${userId} | currentAdsCount=${currentAdsCount} | maxAdsAllowed=${maxAdsAllowed} | packageStartDate=${packageStartDate}`);
     } catch (e) {

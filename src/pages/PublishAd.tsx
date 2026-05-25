@@ -110,18 +110,20 @@ const PublishAd: React.FC = () => {
   const [packagePublishAdsCount, setPackagePublishAdsCount] = useState<number | null>(null);
   // الأيام المتبقية للباقة
   const [packageDaysRemaining, setPackageDaysRemaining] = useState<number | null>(null);
-  // عدد الإعلانات المنشورة فعلياً (من جدول users_plans)
-  const [publishedAdsFromPlan, setPublishedAdsFromPlan] = useState<number | null>(null);
+  // عدد الإعلانات المنشورة فعلياً (pending + approved وغير منتهية الصلاحية) من جدول ads_payment
+  const [actualPublishedAdsCount, setActualPublishedAdsCount] = useState<number | null>(null);
+  // تاريخ بداية الباقة (لعد الإعلانات المنشورة ضمنها)
+  const [packageStartDate, setPackageStartDate] = useState<string | null>(null);
 
   // Derived remaining ads to display (plans.Publish_Ad - published ads count from users_plans)
   const packagePublishAdsRemaining = useMemo(() => {
-    if (packagePublishAdsCount != null && publishedAdsFromPlan != null) {
-      const diff = Number(packagePublishAdsCount) - Number(publishedAdsFromPlan);
+    if (packagePublishAdsCount != null && actualPublishedAdsCount != null) {
+      const diff = Number(packagePublishAdsCount) - Number(actualPublishedAdsCount);
       return Number.isFinite(diff) ? Math.max(0, diff) : null;
     }
     if (packagePublishAdsCount != null) return packagePublishAdsCount;
-    return null;
-  }, [packagePublishAdsCount, publishedAdsFromPlan]);
+    return null; // If actual count is not available, show max allowed
+  }, [packagePublishAdsCount, actualPublishedAdsCount]);
 
   useEffect(() => {
     if (!basePlan) return;
@@ -190,43 +192,78 @@ const PublishAd: React.FC = () => {
         const publishVal = row.Publish_Ad ?? row.publish_ad ?? row.publishAd ?? row.publish_ads ?? row.publishAds ?? null;
         const num = publishVal != null ? Number(publishVal) : null;
         if (!cancelled) setPackagePublishAdsCount(Number.isFinite(num) ? num : null);
+
+        // Get plan duration for fallback packageStartDate calculation
+        const planDuration = row?.duration_days ? Number(row.duration_days) : 30; // Default to 30 days
+
+        // --- 2. Determine packageStartDate ---
+        let calculatedPackageStartDate: string | null = null;
+        // Try to get the earliest payment date for the current package type
+        const { data: firstPaid, error: firstPaidErr } = await supabase
+          .from('ads_payment')
+          .select('payment_date')
+          .eq('user_id', user.id)
+          .eq('is_paid', true)
+          .eq('type', normalizedFull) // Use normalizedFull for specific package type
+          .order('payment_date', { ascending: false }) // جلب أحدث دفعة لتبدأ العد منها
+          .limit(1)
+          .maybeSingle();
+
+        if (!firstPaidErr && firstPaid && firstPaid.payment_date) {
+          calculatedPackageStartDate = firstPaid.payment_date;
+        } else {
+          // Fallback: use user's expires_at and plan duration
+          const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('expires_at')
+            .eq('id', user.id)
+            .maybeSingle();
+
+          if (!userError && userData?.expires_at) {
+            const expiresAt = new Date(userData.expires_at);
+            const start = new Date(expiresAt);
+            start.setDate(start.getDate() - planDuration);
+            calculatedPackageStartDate = start.toISOString();
+          }
+        }
+        if (cancelled) return;
+        setPackageStartDate(calculatedPackageStartDate);
+
+        // --- 3. Count actual published ads (pending + approved, not expired) ---
+        if (calculatedPackageStartDate) {
+          const { data: adsList, error: countErr } = await supabase
+            .from('ads_payment')
+            .select('id, status, upload_date, expires_at')
+            .eq('user_id', user.id)
+            .gte('upload_date', calculatedPackageStartDate);
+
+          if (!countErr && Array.isArray(adsList)) {
+            const count = adsList.filter(ad => {
+              return ad.status === 'pending' || ad.status === 'approved';
+            }).length;
+            if (!cancelled) setActualPublishedAdsCount(count);
+          } else {
+            if (!cancelled) setActualPublishedAdsCount(0);
+            console.error('PublishAd: error counting user ads from ads_payment', countErr);
+          }
+        } else {
+          if (!cancelled) setActualPublishedAdsCount(0); // Cannot determine count without start date
+        }
       } catch (err) {
         console.error('PublishAd: failed fetching plan row', err);
-        if (!cancelled) setPackagePublishAdsCount(null);
+        if (!cancelled) {
+          setPackagePublishAdsCount(null);
+          setActualPublishedAdsCount(null);
+          setPackageStartDate(null);
+        }
+      } finally {
+        if (!cancelled) setIsPlanLoading(false);
       }
     };
 
     fetchPlanRow();
-    return () => { cancelled = true; };
-  }, [basePlan]);
-
-  // Fetch published ads count from users_plans table
-  useEffect(() => {
-    if (!user?.id) return;
-    let cancelled = false;
-    const fetchPublishedAdsFromPlan = async () => {
-      try {
-        const upRes = await supabase.from('users_plans').select('*').eq('user_id', user.id).maybeSingle();
-        console.log('PublishAd: users_plans fetch for published ads:', upRes);
-        const up = upRes.data;
-        if (up) {
-          // جلب عدد الإعلانات المنشورة بناءً على دور المستخدم من أعمدة gold_ad أو silver_ad
-          const publishedAds = basePlan === 'gold' 
-            ? (up.gold_ad ?? up.gold_ads ?? null) 
-            : basePlan === 'silver' 
-              ? (up.silver_ad ?? up.silver_ads ?? null) 
-              : null;
-          
-          const publishedNum = publishedAds != null ? Number(publishedAds) : null;
-          if (!cancelled) setPublishedAdsFromPlan(Number.isFinite(publishedNum) ? publishedNum : null);
-        }
-      } catch (err) {
-        console.error('PublishAd: error fetching users_plans for published ads', err);
-      }
-    };
-    fetchPublishedAdsFromPlan();
-    return () => { cancelled = true; };
-  }, [user?.id, basePlan]);
+    return () => { cancelled = true; }; // Cleanup function
+  }, [user?.id, basePlan, normalizedRoleFromDB]); // Dependencies
 
   // Fetch package expiry date and calculate remaining days
   useEffect(() => {
