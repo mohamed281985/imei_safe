@@ -1745,11 +1745,11 @@ app.get("/", (req, res) => {
       health: "/health - فحص حالة السيرفر",
       create_payment: "POST /paymob/create-payment - إنشاء عملية دفع",
       create_invoice: "POST /paymob/create-invoice - إنشاء فاتورة",
-      webhook: "POST /paymob/webhook - استقبال إشعارات الدفع",      send_fcm: "POST /api/send-fcm-v1 - إرسال إشعار FCM",
+      webhook: "POST /paymob/webhook - استقبال إشعارات الدفع", send_fcm: "POST /api/send-fcm-v1 - إرسال إشعار FCM",
       send_notification: "POST /api/send-notification - إرسال إشعار من هاتف لآخر",
       send_notification_by_imei: "POST /api/send-notification-by-imei - إرسال إشعار باستخدام IMEI",
       get_finder_phone: "POST /api/get-finder-phone - جلب رقم هاتف الواجد",
-      update_fcm_token: "POST /api/update-fcm-token - تحديث توكن الإشعارات للمستخدم",      update_finder_phone_by_imei: "POST /api/update-finder-phone-by-imei - تحديث رقم هاتف الواجد باستخدام IMEI"
+      update_fcm_token: "POST /api/update-fcm-token - تحديث توكن الإشعارات للمستخدم", update_finder_phone_by_imei: "POST /api/update-finder-phone-by-imei - تحديث رقم هاتف الواجد باستخدام IMEI"
     },
     environment_status: {
       api_key: !!PAYMOB_API_KEY ? "✅ متوفر" : "❌ مفقود",
@@ -2068,7 +2068,7 @@ app.post("/paymob/create-payment", paymentLimiter, rateLimitMiddleware({ windowM
 
       try {
         const { data: insertedAd, error: adError } = await supabase
-          .from(tableName)
+          .from('ads_payment')
           .insert([adInsertData])
           .select('id, status')
           .single();
@@ -3203,7 +3203,7 @@ app.post("/paymob/webhook", async (req, res) => {
                     silver_ad: String(existingAd.type || '').toLowerCase().includes('silver') ? 0 : undefined,
                     gold_ad: String(existingAd.type || '').toLowerCase().includes('gold') ? 0 : undefined
                   }, { onConflict: 'id' });
-                
+
                 if (upsertErr) console.error('[Webhook] Failed to upsert users_plans:', upsertErr);
                 else console.log(`[Webhook] users_plans updated/created for user ${user_id}`);
               }
@@ -3564,7 +3564,7 @@ async function verifyJwtToken(req, res, next) {
         // تحديد الدور البديل بناءً على نوع الحساب (تجاري أم عادي)
         const isBusiness = userRole.toLowerCase().includes('business');
         userRole = isBusiness ? 'free_business' : 'free_user';
-        
+
         // تحديث قاعدة البيانات لإلغاء الصلاحية المنتهية وإعادة الدور للافتراضي
         await supabase.from('users').update({ role: userRole, expires_at: null }).eq('id', user.id);
         console.log(`[Auth] User ${user.id} subscription expired. Reverted to ${userRole}`);
