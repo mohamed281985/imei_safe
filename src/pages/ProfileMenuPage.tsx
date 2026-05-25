@@ -282,21 +282,49 @@ const ProfileMenuPage: React.FC = () => {
                     }
                 }
 
-                // Get published ads count
-                const { count: publishedCount, error: adsError } = await supabase
-                    .from('publish_ad')
-                    .select('*', { count: 'exact', head: true })
-                    .eq('user_id', user.id);
+                // --- 2. Determine packageStartDate (Latest payment for current cycle) ---
+                let packageStartDate: string | null = null;
+                const { data: latestPaid, error: latestPaidErr } = await supabase
+                    .from('ads_payment')
+                    .select('payment_date')
+                    .eq('user_id', user.id)
+                    .eq('is_paid', true)
+                    .eq('type', normalizedFull)
+                    .order('payment_date', { ascending: false }) // جلب أحدث دفعة لتبدأ الدورة منها
+                    .limit(1)
+                    .maybeSingle();
 
-                if (adsError) {
-                    console.error('Error fetching published ads count:', adsError);
-                    return;
+                if (!latestPaidErr && latestPaid && latestPaid.payment_date) {
+                    packageStartDate = latestPaid.payment_date;
+                } else {
+                    // Fallback: use user's expires_at and plan duration
+                    const planDuration = plan?.duration_days ? Number(plan.duration_days) : 30;
+                    if (userData.expires_at) {
+                        const expiresAt = new Date(userData.expires_at);
+                        const start = new Date(expiresAt);
+                        start.setDate(start.getDate() - planDuration);
+                        packageStartDate = start.toISOString();
+                    }
+                }
+
+                // --- 3. Count actual published ads (pending + approved) since package start ---
+                let actualPublishedCount = 0;
+                if (packageStartDate) {
+                    const { data: adsList, error: countErr } = await supabase
+                        .from('ads_payment')
+                        .select('id, status, upload_date')
+                        .eq('user_id', user.id)
+                        .gte('upload_date', packageStartDate);
+
+                    if (!countErr && Array.isArray(adsList)) {
+                        actualPublishedCount = adsList.filter(ad => ad.status === 'pending' || ad.status === 'approved').length;
+                    }
                 }
 
                 // Calculate remaining ads
                 const publishVal = plan?.Publish_Ad ?? plan?.publish_ad ?? plan?.publishAd ?? plan?.publish_ads ?? plan?.publishAds ?? null;
                 const publishAdsCount = publishVal != null ? Number(publishVal) : 0;
-                const remainingAds = Math.max(0, publishAdsCount - (publishedCount || 0));
+                const remainingAds = Math.max(0, publishAdsCount - actualPublishedCount);
 
                 // Calculate remaining days
                 let daysRemaining = 0;
@@ -312,7 +340,7 @@ const ProfileMenuPage: React.FC = () => {
                     expiresAt: userData.expires_at || '',
                     daysRemaining: Math.max(0, daysRemaining),
                     publishAdsCount,
-                    publishedAdsCount: publishedCount || 0,
+                    publishedAdsCount: actualPublishedCount,
                     remainingAds
                 });
             } catch (err) {
