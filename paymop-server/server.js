@@ -3195,7 +3195,9 @@ app.post("/paymob/webhook", async (req, res) => {
                     used_game: 0,
                     used_notify_in_app: 0,
                     used_notify_email: 0,
-                    used_notify_push: 0
+                    used_notify_push: 0,
+                    silver_ad: String(existingAd.type || '').toLowerCase().includes('silver') ? 0 : undefined,
+                    gold_ad: String(existingAd.type || '').toLowerCase().includes('gold') ? 0 : undefined
                   }, { onConflict: 'id' });
                 
                 if (upsertErr) console.error('[Webhook] Failed to upsert users_plans:', upsertErr);
@@ -3562,6 +3564,33 @@ async function verifyJwtToken(req, res, next) {
         // تحديث قاعدة البيانات لإلغاء الصلاحية المنتهية وإعادة الدور للافتراضي
         await supabase.from('users').update({ role: userRole, expires_at: null }).eq('id', user.id);
         console.log(`[Auth] User ${user.id} subscription expired. Reverted to ${userRole}`);
+
+        // ⭐ تحديث جدول users_plans: تغيير role إلى المجاني وتصفير كل عدادات الاستخدام
+        try {
+          const { error: planUpdateErr } = await supabase
+            .from('users_plans')
+            .update({
+              role: userRole,
+              used_search_imei: 0,
+              used_register_phone: 0,
+              used_search_history: 0,
+              used_print_history: 0,
+              used_game: 0,
+              used_notify_in_app: 0,
+              used_notify_email: 0,
+              used_notify_push: 0,
+              silver_ad: 0,
+              gold_ad: 0
+            })
+            .eq('id', user.id);
+          if (planUpdateErr) {
+            console.error('[Auth] Failed to reset users_plans on expiry:', planUpdateErr);
+          } else {
+            console.log(`[Auth] users_plans reset to ${userRole} for user ${user.id}`);
+          }
+        } catch (planErr) {
+          console.error('[Auth] Exception resetting users_plans on expiry:', planErr);
+        }
       }
     }
 
