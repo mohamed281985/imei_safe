@@ -2304,6 +2304,8 @@ app.post('/api/ads/package-publish', verifyJwtToken, paymentLimiter, rateLimitMi
     // Ensure package type stored uses server-normalized value
     const serverType = normalizedPackage;
 
+    // حذف الحقول التي قد تسبب مشاكل مع المشغلات (triggers) في قاعدة البيانات
+    // is_active يُفعّل trigger_copy_ad الذي يفشل بسبب عدم توافق أنواع الأعمدة (text vs uuid)
     const insertObj = {
       ...adDataToStore,
       user_id: userId,
@@ -2311,6 +2313,7 @@ app.post('/api/ads/package-publish', verifyJwtToken, paymentLimiter, rateLimitMi
       type: serverType,
       payment_status: 'package',
       is_paid: true,
+      is_active: false,
       transaction: 'package_publish',
       merchant_order_id: merchantOrderId || null,
       upload_date: new Date().toISOString(),
