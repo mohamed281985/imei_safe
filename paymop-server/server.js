@@ -2302,20 +2302,21 @@ app.post('/api/ads/package-publish', verifyJwtToken, paymentLimiter, rateLimitMi
     // 3) عدّ الإعلانات الحالية (pending + approved) للمستخدم منذ بداية الباقة
     let currentAdsCount = 0;
     try {
-      const { count, error: countErr } = await supabase
+      const { data: adsList, error: countErr } = await supabase
         .from('ads_payment')
-        .select('id', { count: 'exact', head: true })
+        .select('id, status, upload_date')
         .eq('user_id', userId)
-        .in('status', ['pending', 'approved'])
         .gte('upload_date', packageStartDate);
-      if (!countErr && typeof count === 'number') {
-        currentAdsCount = count;
+      if (!countErr && Array.isArray(adsList)) {
+        currentAdsCount = adsList.filter(ad => ad.status === 'pending' || ad.status === 'approved').length;
       }
+      console.log(`[PACKAGE-PUBLISH] userId=${userId} | currentAdsCount=${currentAdsCount} | maxAdsAllowed=${maxAdsAllowed} | packageStartDate=${packageStartDate}`);
     } catch (e) {
       console.warn('package-publish: error counting user ads', e);
     }
 
     if (currentAdsCount >= maxAdsAllowed) {
+      console.log(`[PACKAGE-PUBLISH] منع النشر: المستخدم وصل للحد الأقصى (${currentAdsCount}/${maxAdsAllowed})`);
       return res.status(403).json({ error: 'لقد وصلت للحد الأقصى للإعلانات المسموح بها في باقتك. لا يمكنك نشر إعلان جديد حتى انتهاء أو حذف إعلان سابق.' });
     }
 
