@@ -2262,35 +2262,41 @@ app.post('/api/ads/package-publish', verifyJwtToken, paymentLimiter, rateLimitMi
       return res.status(400).json({ error: 'تعذر تحديد الحد الأقصى للإعلانات المسموح بها للباقة' });
     }
 
-    // 2) جلب تاريخ أحدث اشتراك مدفوع (أو بداية الباقة)
+    // 2) جلب تاريخ بداية الباقة الفعلي
     let packageStartDate = null;
     try {
-      const { data: latestPaid, error: latestErr } = await supabase
+      // جلب أقدم دفعة مدفوعة لنفس الباقة (تاريخ البداية)
+      const { data: firstPaid, error: firstPaidErr } = await supabase
         .from('ads_payment')
         .select('payment_date')
         .eq('user_id', userId)
         .eq('is_paid', true)
         .eq('type', normalizedPackage)
-        .order('payment_date', { ascending: false })
+        .order('payment_date', { ascending: true })
         .limit(1)
         .maybeSingle();
-      if (!latestErr && latestPaid && latestPaid.payment_date) {
-        packageStartDate = latestPaid.payment_date;
+      if (!firstPaidErr && firstPaid && firstPaid.payment_date) {
+        packageStartDate = firstPaid.payment_date;
       }
     } catch (e) {
       console.warn('package-publish: error fetching package start date', e);
     }
 
     if (!packageStartDate) {
-      // fallback: جلب expires_at من جدول users
+      // fallback: جلب expires_at من جدول users ومدة الباقة الكاملة من plans
       try {
         const { data: userRec } = await supabase.from('users').select('expires_at').eq('id', userId).maybeSingle();
-        if (userRec && userRec.expires_at) {
-          // نعتبر بداية الباقة قبل مدة الباقة من expires_at
-          const durationDays = adData.duration_days || 7;
+        if (userRec && userRec.expires_at && maxAdsAllowed) {
+          // مدة الباقة الكاملة (مثلاً 30 يوم أو 90 يوم) يجب أن تكون معرفة في plans (مثلاً planRow.duration_days)
+          // إذا لم توجد، نستخدم 30 يوم افتراضيًا
+          let planDuration = 30;
+          try {
+            const { data: planRow } = await supabase.from('plans').select('duration_days').eq('type', normalizedPackage).maybeSingle();
+            if (planRow && planRow.duration_days) planDuration = Number(planRow.duration_days);
+          } catch {}
           const expiresAt = new Date(userRec.expires_at);
           const start = new Date(expiresAt);
-          start.setDate(start.getDate() - durationDays);
+          start.setDate(start.getDate() - planDuration);
           packageStartDate = start.toISOString();
         }
       } catch (e) {
