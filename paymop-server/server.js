@@ -2239,17 +2239,20 @@ app.post('/api/ads/package-publish', verifyJwtToken, paymentLimiter, rateLimitMi
       return res.status(400).json({ error: 'Invalid packageType' });
     }
 
-    // 1) جلب الحد الأقصى من جدول plans
+    // 1) جلب الحد الأقصى من جدول plans بناءً على type المستخدم وعمود Publish_Ad فقط
     let maxAdsAllowed = null;
     try {
       const { data: planRow, error: planErr } = await supabase
         .from('plans')
-        .select('*')
-        .ilike('type', `%${normalizedPackage}%`)
+        .select('type, Publish_Ad')
+        .eq('type', normalizedPackage)
         .maybeSingle();
       if (!planErr && planRow) {
-        maxAdsAllowed = planRow.Publish_Ad ?? planRow.publish_ad ?? planRow.publishAd ?? planRow.publish_ads ?? planRow.publishAds ?? null;
+        maxAdsAllowed = planRow.Publish_Ad;
         if (maxAdsAllowed != null) maxAdsAllowed = Number(maxAdsAllowed);
+        console.log(`[PACKAGE-PUBLISH] نوع الباقة من plans: ${planRow.type} | الحد الأقصى: ${maxAdsAllowed}`);
+      } else {
+        console.warn(`[PACKAGE-PUBLISH] لم يتم العثور على باقة مطابقة في plans للنوع: ${normalizedPackage}`);
       }
     } catch (e) {
       console.warn('package-publish: error fetching plan', e);
