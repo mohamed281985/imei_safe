@@ -183,7 +183,7 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
     }
   }, [ads]);
 
-  // ⭐ التفاعل: الحصول على الرابط النهائي من الخادم وفتحه مباشرة
+  // ⭐ Modified: التفاعل: الحصول على الرابط النهائي من الخادم وفتحه مباشرة
   const openAdRedirect = async (id: string) => {
     try {
       // جلب الرابط الحقيقي أولاً لتجنب فتح المتصفح لمجرد معالجة التوجيه
@@ -192,10 +192,12 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
 
       if (targetUrl) {
         if (Capacitor.isNativePlatform()) {
-          // فتح الرابط (واتساب أو غيره) مباشرة في النظام
+          // ⭐ Modified: فتح الرابط في المتصفح الخارجي أو تطبيق النظام (مثل WhatsApp)
+          // استخدام '_system' يضمن فتح الرابط خارج الـ WebView
           window.open(targetUrl, '_system');
         } else {
-          window.location.href = targetUrl;
+          // على الويب: استخدام window.open بدلاً من location.href لضمان الفتح في نافذة جديدة
+          window.open(targetUrl, '_blank', 'noopener,noreferrer');
         }
       }
     } catch (error) {
@@ -203,9 +205,10 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
       // fallback: استخدام رابط التوجيه التقليدي من الخادم
       const apiUrl = `${API_BASE_URL.replace(/\/+$/, '')}/api/ad-redirect/${id}`;
       if (Capacitor.isNativePlatform()) {
+        // ⭐ Modified: نفس التعديل هنا لضمان الفتح الصحيح في حالة الخطأ
         window.open(apiUrl, '_system');
       } else {
-        window.location.href = apiUrl;
+        window.open(apiUrl, '_blank', 'noopener,noreferrer');
       }
     }
   };
