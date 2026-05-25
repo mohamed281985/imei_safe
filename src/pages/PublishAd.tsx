@@ -110,18 +110,18 @@ const PublishAd: React.FC = () => {
   const [packagePublishAdsCount, setPackagePublishAdsCount] = useState<number | null>(null);
   // الأيام المتبقية للباقة
   const [packageDaysRemaining, setPackageDaysRemaining] = useState<number | null>(null);
-  // عدد الإعلانات المنشورة فعلياً
-  const [publishedAdsCount, setPublishedAdsCount] = useState<number | null>(null);
+  // عدد الإعلانات المنشورة فعلياً (من جدول users_plans)
+  const [publishedAdsFromPlan, setPublishedAdsFromPlan] = useState<number | null>(null);
 
-  // Derived remaining ads to display (plans.Publish_Ad - published ads count)
+  // Derived remaining ads to display (plans.Publish_Ad - published ads count from users_plans)
   const packagePublishAdsRemaining = useMemo(() => {
-    if (packagePublishAdsCount != null && publishedAdsCount != null) {
-      const diff = Number(packagePublishAdsCount) - Number(publishedAdsCount);
+    if (packagePublishAdsCount != null && publishedAdsFromPlan != null) {
+      const diff = Number(packagePublishAdsCount) - Number(publishedAdsFromPlan);
       return Number.isFinite(diff) ? Math.max(0, diff) : null;
     }
     if (packagePublishAdsCount != null) return packagePublishAdsCount;
     return null;
-  }, [packagePublishAdsCount, publishedAdsCount]);
+  }, [packagePublishAdsCount, publishedAdsFromPlan]);
 
   useEffect(() => {
     if (!basePlan) return;
@@ -176,32 +176,6 @@ const PublishAd: React.FC = () => {
             });
             console.log('PublishAd: found by local scan:', found);
             row = found || null;
-            // If still not found and plans table seems empty, try users_plans as fallback
-            if (!row) {
-              try {
-                console.log('PublishAd: attempting fallback -> users_plans for user', user?.id);
-                if (user?.id) {
-                  const upRes = await supabase.from('users_plans').select('*').eq('user_id', user.id).maybeSingle();
-                  console.log('PublishAd: users_plans result:', upRes);
-                  const up = upRes.data;
-                  if (up) {
-                    // Try common column names
-                    const goldQuota = up.gold_ad ?? up.gold_ads ?? up.publish_ad ?? up.publishAd ?? null;
-                    const silverQuota = up.silver_ad ?? up.silver_ads ?? null;
-                    const quota = basePlan === 'gold' ? goldQuota : basePlan === 'silver' ? silverQuota : null;
-                    if (quota != null) {
-                      const qnum = Number(quota);
-                      if (Number.isFinite(qnum)) {
-                        console.log('PublishAd: using users_plans quota:', qnum);
-                        if (!cancelled) setPackagePublishAdsCount(qnum);
-                      }
-                    }
-                  }
-                }
-              } catch (upErr) {
-                console.error('PublishAd: users_plans fallback error', upErr);
-              }
-            }
           } catch (scanErr) {
             console.error('PublishAd: error scanning all plans', scanErr);
           }
@@ -226,53 +200,31 @@ const PublishAd: React.FC = () => {
     return () => { cancelled = true; };
   }, [basePlan]);
 
-  // Fetch published ads count to calculate remaining ads
+  // Fetch published ads count from users_plans table
   useEffect(() => {
     if (!user?.id) return;
     let cancelled = false;
-    const fetchPublishedAdsCount = async () => {
-      try {
-        const { count, error } = await supabase
-          .from('publish_ad')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', user.id)
-
-        if (error) {
-          console.error('PublishAd: error fetching published ads count:', error);
-          return;
-        }
-
-        if (!cancelled) {
-          setPublishedAdsCount(count || 0);
-        }
-      } catch (err) {
-        console.error('PublishAd: error fetching published ads count:', err);
-        if (!cancelled) setPublishedAdsCount(null);
-      }
-    };
-    fetchPublishedAdsCount();
-    return () => { cancelled = true; };
-  }, [user?.id]);
-  useEffect(() => {
-    if (!user?.id) return;
-    let cancelled = false;
-    const fetchUserQuota = async () => {
+    const fetchPublishedAdsFromPlan = async () => {
       try {
         const upRes = await supabase.from('users_plans').select('*').eq('user_id', user.id).maybeSingle();
-        console.log('PublishAd: users_plans fetch for diff:', upRes);
+        console.log('PublishAd: users_plans fetch for published ads:', upRes);
         const up = upRes.data;
         if (up) {
-          const goldQuota = up.gold_ad ?? up.gold_ads ?? up.publish_ad ?? up.publishAd ?? null;
-          const silverQuota = up.silver_ad ?? up.silver_ads ?? null;
-          const quota = basePlan === 'gold' ? goldQuota : basePlan === 'silver' ? silverQuota : null;
-          const qnum = quota != null ? Number(quota) : null;
-          if (!cancelled) setPackagePublishAdsCount(Number.isFinite(qnum) ? qnum : null);
+          // جلب عدد الإعلانات المنشورة بناءً على دور المستخدم من أعمدة gold_ad أو silver_ad
+          const publishedAds = basePlan === 'gold' 
+            ? (up.gold_ad ?? up.gold_ads ?? null) 
+            : basePlan === 'silver' 
+              ? (up.silver_ad ?? up.silver_ads ?? null) 
+              : null;
+          
+          const publishedNum = publishedAds != null ? Number(publishedAds) : null;
+          if (!cancelled) setPublishedAdsFromPlan(Number.isFinite(publishedNum) ? publishedNum : null);
         }
       } catch (err) {
-        console.error('PublishAd: error fetching users_plans for diff', err);
+        console.error('PublishAd: error fetching users_plans for published ads', err);
       }
     };
-    fetchUserQuota();
+    fetchPublishedAdsFromPlan();
     return () => { cancelled = true; };
   }, [user?.id, basePlan]);
 
