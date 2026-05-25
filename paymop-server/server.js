@@ -2845,6 +2845,25 @@ app.get('/paymob/redirect-success', async (req, res) => {
                     .update({ role: existingAd.type, expires_at: expiresAt.toISOString() })
                     .eq('id', existingAd.user_id);
                   console.log(`[Redirect] Updated user ${existingAd.user_id} role to ${existingAd.type}`);
+
+                  // ⭐ تحديث أو إنشاء سجل في users_plans وتصفير العدادات (Fallback)
+                  await supabase
+                    .from('users_plans')
+                    .upsert({
+                      id: existingAd.user_id,
+                      user_id: existingAd.user_id,
+                      role: existingAd.type,
+                      used_search_imei: 0,
+                      used_register_phone: 0,
+                      used_search_history: 0,
+                      used_print_history: 0,
+                      used_game: 0,
+                      used_notify_in_app: 0,
+                      used_notify_email: 0,
+                      used_notify_push: 0,
+                      silver_ad: 0,
+                      gold_ad: 0
+                    }, { onConflict: 'id' });
                 }
               }
             } else {
@@ -3161,6 +3180,26 @@ app.post("/paymob/webhook", async (req, res) => {
                   .update({ role: existingAd.type, expires_at: expiresAt.toISOString() })
                   .eq('id', user_id);
                 console.log(`[Webhook] Updated user ${user_id} role to ${existingAd.type}`);
+
+                // ⭐ تحديث أو إنشاء سجل في users_plans وتصفير العدادات
+                const { error: upsertErr } = await supabase
+                  .from('users_plans')
+                  .upsert({
+                    id: user_id,
+                    user_id: user_id,
+                    role: existingAd.type,
+                    used_search_imei: 0,
+                    used_register_phone: 0,
+                    used_search_history: 0,
+                    used_print_history: 0,
+                    used_game: 0,
+                    used_notify_in_app: 0,
+                    used_notify_email: 0,
+                    used_notify_push: 0
+                  }, { onConflict: 'id' });
+                
+                if (upsertErr) console.error('[Webhook] Failed to upsert users_plans:', upsertErr);
+                else console.log(`[Webhook] users_plans updated/created for user ${user_id}`);
               }
             }
           }

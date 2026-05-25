@@ -499,7 +499,7 @@ export default {
   "terms": "Terms and Conditions",
   "privacy": "Privacy Policy",
   "faq": "FAQ",
-  "support": "Support",
+
   "feedback": "Send Feedback",
   "language": "Language",
   "theme": "Theme",
@@ -1160,7 +1160,6 @@ export default {
   "reliable_database_desc": "Comprehensive and continuously updated database",
   "high_accuracy_desc": "Highly accurate and reliable results",
   "back_to_search": "Back to Search",
-  "publish_ad": "Publish Ad",
   "package_status": "Package status",
   "package_total": "Total package",
   "package_remaining_ads": "Remaining from your package",
@@ -1168,7 +1167,6 @@ export default {
   "days_remaining": "Days remaining",
   "my_package": "My Package",
   "remaining_ads": "Remaining Ads",
-  "total_ads": "Total Ads",
   "expiry_date": "Expiry Date",
   "image_format_hint": "PNG, JPG up to 5MB",
   "location_set_success": "Location set successfully",
@@ -1176,7 +1174,6 @@ export default {
   "allow_whatsapp_contact": "Allow customers to contact via WhatsApp",
   "allow_whatsapp_description": "When enabled, a 'Contact Now' button will appear on your ad to open a WhatsApp chat.",
   "whatsapp_label": "WhatsApp",
-  "click_to_upload": "Click to upload",
   "invalid_ad_duration": "Invalid ad duration",
   "failed_to_get_signature": "Failed to obtain payment signature from server",
   "failed_to_create_payment": "Failed to create payment",
@@ -1184,7 +1181,17 @@ export default {
   "package_remaining_label": "Remaining:",
   "ads": "ads",
   "not_specified": "Not specified",
-  "update_and_edit_ad": "Update and Edit Ad",
-  "publishing": "Publishing...",
-  "updating": "Updating...",
+  "privacy_policy": "Privacy Policy",
+"learn_how_we_protect": "Learn how we protect your data",
+"terms_of_use": "Terms of Use",
+"rules_and_terms": "Governing rules and terms",
+"legal_info": "Legal Information",
+"expires_at": "Expires on",
+"support": "Technical Support",
+"contact_us_whatsapp": "Contact us via WhatsApp",
+
+
+
+
+
 };

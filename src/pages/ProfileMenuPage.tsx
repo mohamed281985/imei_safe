@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { User, PlusSquare, Search, Sparkles, LogOut, MessageSquare, Key, Globe, Fingerprint, Gift, Phone, Award, Crown, ChevronLeft, Shield, FileText } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -40,7 +40,8 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD 
 // Main component
 const ProfileMenuPage: React.FC = () => {
     useScrollToTop();
-    const { t, changeLanguage } = useLanguage();
+    const { t, language, changeLanguage } = useLanguage();
+
     const { user, logout } = useAuth();
     const navigate = useNavigate();
     const { toast } = useToast();
@@ -82,6 +83,7 @@ const ProfileMenuPage: React.FC = () => {
         publishedAdsCount: 0,
         remainingAds: 0
     });
+    
 
     // Display format for country code
     const displayedCountryCode = countryCode
@@ -389,14 +391,14 @@ const ProfileMenuPage: React.FC = () => {
     // Toggle biometric authentication
     const toggleBiometric = async () => {
         if (!(window as any).SecureStorage) {
-            toast({ title: 'خطأ', description: 'هذه الميزة غير مدعومة على جهازك.', variant: 'destructive' });
+toast({ title: t('error'), description: t('biometric_not_supported'), variant: 'destructive' });
             return;
         }
 
         const ss = new (window as any).SecureStorage(
             () => { },
             (error: any) => {
-                toast({ title: 'خطأ فني', description: 'فشل تهيئة وحدة التخزين الآمنة.', variant: 'destructive' });
+toast({ title: t('error'), description: t('biometric_init_failed'), variant: 'destructive' });
             },
             'my_app_storage'
         );
@@ -406,10 +408,10 @@ const ProfileMenuPage: React.FC = () => {
             ss.remove(
                 () => {
                     setIsBiometricEnabled(false);
-                    toast({ title: 'تم بنجاح', description: 'تم إلغاء تفعيل الدخول بالبصمة.' });
+toast({ title: t('success'), description: t('biometric_disabled_success') });
                 },
                 (error: any) => {
-                    toast({ title: 'خطأ', description: 'فشل إلغاء تفعيل البصمة.', variant: 'destructive' });
+                    toast({ title: t('error'), description: t('biometric_disable_failed'), variant: 'destructive' });
                 },
                 'biometricAuthToken'
             );
@@ -419,22 +421,23 @@ const ProfileMenuPage: React.FC = () => {
             const refreshToken = session?.refresh_token;
 
             if (!refreshToken) {
-                toast({ title: 'خطأ', description: 'لا يمكن تفعيل البصمة. يرجى تسجيل الدخول مرة أخرى.', variant: 'destructive' });
+toast({ title: t('error'), description: t('biometric_login_required'), variant: 'destructive' });
                 return;
             }
 
             ss.set(
                 () => {
                     setIsBiometricEnabled(true);
-                    toast({ title: 'تم بنجاح', description: 'تم تفعيل الدخول بالبصمة.' });
+toast({ title: t('success'), description: t('biometric_enabled_success') });
                 },
                 (error: any) => {
-                    toast({
-                        title: 'خطأ في تفعيل البصمة',
-                        description: 'فشل حفظ بيانات الدخول بالبصمة. قد تحتاج إلى إعداد قفل شاشة على جهازك.',
-                        variant: 'destructive',
-                        duration: 7000
-                    });
+                   toast({
+    title: t('error'),
+    description: t('biometric_enable_failed'),
+    variant: 'destructive',
+    duration: 7000
+});
+
                 },
                 'biometricAuthToken',
                 refreshToken
@@ -670,28 +673,28 @@ const ProfileMenuPage: React.FC = () => {
                                                     )}
                                                 </div>
                                                 <span className="font-bold text-gray-800">
-                                                    {packageInfo.planType === 'GOLD' ? 'GOLD VIP' : packageInfo.planType === 'SILVER' ? 'SILVER' : 'FREE'}
+                                                    {packageInfo.planType === 'GOLD' ? t('gold_vip') : packageInfo.planType === 'SILVER' ? t('silver') : t('free')}
                                                 </span>
                                             </div>
                                             {packageInfo.expiresAt && (
-                                                <span className="text-sm text-gray-600">
-                                                    تنتهي في {packageInfo.daysRemaining} يوم
-                                                </span>
+                                            <span className="text-sm text-gray-600">
+                                               {t('expires_at')} {new Date(packageInfo.expiresAt).toLocaleDateString(language === 'ar' ? 'ar-EG' : language === 'fr' ? 'fr-FR' : language === 'hi' ? 'hi-IN' : 'en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                                             </span>
                                             )}
                                         </div>
 
                                         <div className="grid grid-cols-3 gap-2">
                                             <div className="text-center bg-white/50 rounded-lg p-2">
                                                 <div className="text-lg font-bold text-[#289c8e]">{packageInfo.remainingAds}</div>
-                                                <div className="text-xs text-gray-500">المتبقي</div>
+                                                <div className="text-xs text-gray-500">{t('remaining_ads')}</div>
                                             </div>
                                             <div className="text-center bg-white/50 rounded-lg p-2">
                                                 <div className="text-lg font-bold text-green-600">{packageInfo.daysRemaining}</div>
-                                                <div className="text-xs text-gray-500">أيام</div>
+                                                <div className="text-xs text-gray-500">{t('days_remaining')}</div>
                                             </div>
                                             <div className="text-center bg-white/50 rounded-lg p-2">
                                                 <div className="text-lg font-bold text-purple-600">{packageInfo.publishAdsCount}</div>
-                                                <div className="text-xs text-gray-500">الإجمالي</div>
+                                                <div className="text-xs text-gray-500">{t('total_ads')}</div>
                                             </div>
                                         </div>
                                     </div>
@@ -701,35 +704,35 @@ const ProfileMenuPage: React.FC = () => {
 
                         {/* Rewards Section */}
                         <div className="mb-6">
-                            <h3 className="text-lg font-bold text-blue-600 mb-3">المكافآت</h3>
+                            <h3 className="text-lg font-bold text-blue-600 mb-3">{t('rewards')}</h3>
                             <div className="grid grid-cols-3 gap-3">
                                 <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-4 text-center">
                                     <div className="w-10 h-10 rounded-full bg-[#289c8e]/20 flex items-center justify-center mx-auto mb-2">
                                         <Gift className="w-5 h-5 text-[#289c8e]" />
                                     </div>
                                     <div className="text-xl font-bold text-gray-800">{rewardsInfo.count - rewardsInfo.claimedCount}</div>
-                                    <div className="text-xs text-gray-500">المتاح</div>
+                                    <div className="text-xs text-gray-500">{t('available')}</div>
                                 </div>
                                 <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-4 text-center">
                                     <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-2">
                                         <Sparkles className="w-5 h-5 text-green-600" />
                                     </div>
                                     <div className="text-xl font-bold text-gray-800">{rewardsInfo.claimedCount}</div>
-                                    <div className="text-xs text-gray-500">المستخدمة</div>
+                                    <div className="text-xs text-gray-500">{t('used')}</div>
                                 </div>
                                 <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-4 text-center">
                                     <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center mx-auto mb-2">
                                         <Award className="w-5 h-5 text-purple-600" />
                                     </div>
                                     <div className="text-xl font-bold text-gray-800">{rewardsInfo.count}</div>
-                                    <div className="text-xs text-gray-500">الإجمالي</div>
+                                    <div className="text-xs text-gray-500">{t('total')}</div>
                                 </div>
                             </div>
                         </div>
 
                         {/* Settings Section */}
                         <div className="mb-6">
-                            <h3 className="text-lg font-bold text-blue-600 mb-3">الإعدادات</h3>
+                            <h3 className="text-lg font-bold text-blue-600 mb-3">{t('settings')}</h3>
                             <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg overflow-hidden">
                                 {/* Language */}
                                 <button
@@ -741,8 +744,8 @@ const ProfileMenuPage: React.FC = () => {
                                             <Globe className="w-5 h-5 text-blue-600" />
                                         </div>
                                         <div className="text-right">
-                                            <div className="font-medium text-gray-800">تغيير اللغة</div>
-                                            <div className="text-xs text-gray-500">العربية، الإنجليزية، الفرنسية</div>
+                                            <div className="font-medium text-gray-800">{t('change_language')}</div>
+                                            <div className="text-xs text-gray-500">{t('languages_list')}</div>
                                         </div>
                                     </div>
                                     <ChevronLeft className="w-5 h-5 text-gray-400" />
@@ -757,14 +760,15 @@ const ProfileMenuPage: React.FC = () => {
                                         <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isBiometricEnabled ? 'bg-green-100' : 'bg-gray-100'}`}>
                                             <Fingerprint className={`w-5 h-5 ${isBiometricEnabled ? 'text-green-600' : 'text-gray-600'}`} />
                                         </div>
-                                        <div className="text-right">
-                                            <div className="font-medium text-gray-800">
-                                                {isBiometricEnabled ? 'إلغاء تفعيل البصمة' : 'تفعيل البصمة'}
-                                            </div>
-                                            <div className="text-xs text-gray-500">
-                                                {isBiometricEnabled ? 'مفعل حالياً' : 'غير مفعل'}
-                                            </div>
-                                        </div>
+                                   <div className="text-right">
+    <div className="font-medium text-gray-800">
+        {isBiometricEnabled ? t('disable_biometric') : t('enable_biometric')}
+    </div>
+    <div className="text-xs text-gray-500">
+        {isBiometricEnabled ? t('biometric_enabled') : t('biometric_disabled')}
+    </div>
+</div>
+
                                     </div>
                                     <ChevronLeft className="w-5 h-5 text-gray-400" />
                                 </button>
@@ -779,8 +783,8 @@ const ProfileMenuPage: React.FC = () => {
                                             <Key className="w-5 h-5 text-purple-600" />
                                         </div>
                                         <div className="text-right">
-                                            <div className="font-medium text-gray-800">نسيت كلمة المرور</div>
-                                            <div className="text-xs text-gray-500">إعادة تعيين كلمة مرور الجهاز</div>
+                                            <div className="font-medium text-gray-800">{t('forgot_password')}</div>
+                                            <div className="text-xs text-gray-500">{t('reset_device_password')}</div>
                                         </div>
                                     </div>
                                     <ChevronLeft className="w-5 h-5 text-gray-400" />
@@ -801,8 +805,8 @@ const ProfileMenuPage: React.FC = () => {
                                             <Phone className="w-5 h-5 text-cyan-600" />
                                         </div>
                                         <div className="text-right">
-                                            <div className="font-medium text-gray-800">تغيير رقم الهاتف</div>
-                                            <div className="text-xs text-gray-500">تحديث رقم الاتصال الخاص بك</div>
+                                            <div className="font-medium text-gray-800">{t('change_phone_number')}</div>
+                                            <div className="text-xs text-gray-500">{t('update_contact_number')}</div>
                                         </div>
                                     </div>
                                     <ChevronLeft className="w-5 h-5 text-gray-400" />
@@ -818,8 +822,8 @@ const ProfileMenuPage: React.FC = () => {
                                             <MessageSquare className="w-5 h-5 text-yellow-600" />
                                         </div>
                                         <div className="text-right">
-                                            <div className="font-medium text-gray-800">الدعم الفني</div>
-                                            <div className="text-xs text-gray-500">تواصل معنا عبر واتساب</div>
+                                            <div className="font-medium text-gray-800">{t('support')}</div>
+                                            <div className="text-xs text-gray-500">{t('contact_us_whatsapp')}</div>
                                         </div>
                                     </div>
                                     <ChevronLeft className="w-5 h-5 text-gray-400" />
@@ -835,8 +839,8 @@ const ProfileMenuPage: React.FC = () => {
                                             <LogOut className="w-5 h-5 text-red-600" />
                                         </div>
                                         <div className="text-right">
-                                            <div className="font-medium text-gray-800">تسجيل الخروج</div>
-                                            <div className="text-xs text-gray-500">تسجيل الخروج من حسابك</div>
+                                            <div className="font-medium text-gray-800">{t('logout')}</div>
+                                            <div className="text-xs text-gray-500">{t('logout_from_account')}</div>
                                         </div>
                                     </div>
                                     <ChevronLeft className="w-5 h-5 text-gray-400" />
@@ -846,7 +850,7 @@ const ProfileMenuPage: React.FC = () => {
 
                         {/* Legal Information Section */}
                         <div className="mb-24">
-                            <h3 className="text-lg font-bold text-blue-600 mb-3">معلومات قانونية</h3>
+                            <h3 className="text-lg font-bold text-blue-600 mb-3">{t('legal_info')}</h3>
                             <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg overflow-hidden ">
                                 <Link
                                     to="/privacy-policy"
@@ -857,8 +861,8 @@ const ProfileMenuPage: React.FC = () => {
                                             <Shield className="w-5 h-5 text-blue-600" />
                                         </div>
                                         <div className="text-right">
-                                            <div className="font-medium text-gray-800">سياسة الخصوصية</div>
-                                            <div className="text-xs text-gray-500">تعرف على كيفية حماية بياناتك</div>
+                                            <div className="font-medium text-gray-800">{t('privacy_policy')}</div>
+                                            <div className="text-xs text-gray-500">{t('learn_how_we_protect')}</div>
                                         </div>
                                     </div>
                                     <ChevronLeft className="w-5 h-5 text-gray-400" />
@@ -872,8 +876,8 @@ const ProfileMenuPage: React.FC = () => {
                                             <FileText className="w-5 h-5 text-blue-600" />
                                         </div>
                                         <div className="text-right">
-                                            <div className="font-medium text-gray-800">شروط الاستخدام</div>
-                                            <div className="text-xs text-gray-500">القواعد والشروط المنظمة</div>
+                                            <div className="font-medium text-gray-800">{t('terms_of_use')}</div>
+                                            <div className="text-xs text-gray-500">{t('rules_and_terms')}</div>
                                         </div>
                                     </div>
                                     <ChevronLeft className="w-5 h-5 text-gray-400" />
@@ -887,19 +891,19 @@ const ProfileMenuPage: React.FC = () => {
                         <div className="flex justify-around py-3">
                             <Link to="/dashboard" className="flex flex-col items-center text-gray-500">
                                 <PlusSquare className="w-6 h-6 mb-1" />
-                                <span className="text-xs">الرئيسية</span>
+                                <span className="text-xs">{t('home')}</span>
                             </Link>
                             <Link to="/Search" className="flex flex-col items-center text-gray-500">
                                 <Search className="w-6 h-6 mb-1" />
-                                <span className="text-xs">بحث</span>
+                                <span className="text-xs">{t('search')}</span>
                             </Link>
                             <Link to="/rewards" className="flex flex-col items-center text-gray-500">
                                 <Gift className="w-6 h-6 mb-1" />
-                                <span className="text-xs">مكافآتي</span>
+                                <span className="text-xs">{t('my_rewards')}</span>
                             </Link>
                             <Link to="/profile" className="flex flex-col items-center text-[#289c8e]">
                                 <User className="w-6 h-6 mb-1" />
-                                <span className="text-xs">حسابي</span>
+                                <span className="text-xs">{t('my_account')}</span>
                             </Link>
                         </div>
                     </div>
@@ -908,15 +912,15 @@ const ProfileMenuPage: React.FC = () => {
                     <Dialog open={showForgotPasswordModal} onOpenChange={setShowForgotPasswordModal}>
                         <DialogContent className="bg-white rounded-2xl shadow-xl p-6 max-w-md mx-auto">
                             <DialogHeader className="text-center mb-4">
-                                <DialogTitle className="text-xl font-bold text-gray-900">إعادة تعيين كلمة المرور</DialogTitle>
+                                <DialogTitle className="text-xl font-bold text-gray-900">{t('reset_password')}</DialogTitle>
                                 <DialogDescription className="text-gray-600 mt-2">
-                                    أدخل رقم IMEI وكلمة المرور الجديدة للجهاز
+                                    {t('enter_imei_and_new_password')}
                                 </DialogDescription>
                             </DialogHeader>
 
                             <div className="space-y-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">رقم IMEI</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">{t('imei_number')}</label>
                                     <Input
                                         type="text"
                                         value={forgotPasswordData.imei}
@@ -926,12 +930,12 @@ const ProfileMenuPage: React.FC = () => {
                                         }))}
                                         className="w-full rounded-lg border-gray-300 focus:border-[#289c8e] focus:ring-[#289c8e]"
                                         maxLength={15}
-                                        placeholder="أدخل رقم IMEI"
+                                        placeholder={t('enter_imei')}
                                     />
                                 </div>
 
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">كلمة المرور الجديدة</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">{t('new_password')}</label>
                                     <Input
                                         type="password"
                                         value={forgotPasswordData.newPassword}
@@ -940,17 +944,17 @@ const ProfileMenuPage: React.FC = () => {
                                             newPassword: e.target.value
                                         }))}
                                         className="w-full rounded-lg border-gray-300 focus:border-[#289c8e] focus:ring-[#289c8e]"
-                                        placeholder="أدخل كلمة المرور الجديدة"
+                                        placeholder={t('enter_new_password')}
                                     />
                                 </div>
                             </div>
 
                             <DialogFooter className="gap-3 mt-6">
                                 <Button onClick={() => setShowForgotPasswordModal(false)} variant="outline" className="flex-1 rounded-lg">
-                                    إلغاء
+                                    {t('cancel')}
                                 </Button>
                                 <Button onClick={handleForgotPassword} disabled={isProcessing} className="flex-1 bg-[#289c8e] hover:bg-[#1a7468] rounded-lg">
-                                    {isProcessing ? 'جاري المعالجة...' : 'تحديث كلمة المرور'}
+                                    {isProcessing ? t('processing') : t('update_password')}
                                 </Button>
                             </DialogFooter>
                         </DialogContent>
@@ -960,15 +964,15 @@ const ProfileMenuPage: React.FC = () => {
                     <Dialog open={showChangePhoneModal} onOpenChange={setShowChangePhoneModal}>
                         <DialogContent className="bg-white rounded-2xl shadow-xl p-6 max-w-md mx-auto">
                             <DialogHeader className="text-center mb-4">
-                                <DialogTitle className="text-xl font-bold text-gray-900">تغيير رقم الهاتف</DialogTitle>
+                                <DialogTitle className="text-xl font-bold text-gray-900">{t('change_phone_number')}</DialogTitle>
                                 <DialogDescription className="text-gray-600 mt-2">
-                                    أدخل رقم الهاتف الجديد مع معلومات التحقق
+                                    {t('enter_new_phone_and_verification')}
                                 </DialogDescription>
                             </DialogHeader>
 
                             <div className="space-y-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">رقم الهاتف الجديد</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">{t('new_phone_number')}</label>
                                     <div className="flex gap-2">
                                         <CountryCodeSelector
                                             value={displayedCountryCode}
@@ -979,7 +983,7 @@ const ProfileMenuPage: React.FC = () => {
                                             value={newPhone}
                                             onChange={(e) => setNewPhone(e.target.value)}
                                             className="flex-1 rounded-lg border-gray-300 focus:border-[#289c8e] focus:ring-[#289c8e]"
-                                            placeholder="10 1234 5678"
+                                            placeholder={t('phone_placeholder')}
                                             name={phoneNameRef.current}
                                             autoComplete="tel"
                                             inputMode="tel"
@@ -987,13 +991,13 @@ const ProfileMenuPage: React.FC = () => {
                                     </div>
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">آخر 6 أرقام من البطاقة</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">{t('last6_from_card')}</label>
                                     <Input
                                         type="text"
                                         value={verificationLast6}
                                         onChange={(e) => setVerificationLast6(e.target.value.replace(/\D/g, ''))}
                                         className="w-full rounded-lg border-gray-300 focus:border-[#289c8e] focus:ring-[#289c8e]"
-                                        placeholder="123456"
+                                        placeholder={t('last6_placeholder')}
                                         maxLength={6}
                                         name={last6NameRef.current}
                                         autoComplete="off"
@@ -1001,13 +1005,13 @@ const ProfileMenuPage: React.FC = () => {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">كلمة المرور الحالية</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">{t('current_password')}</label>
                                     <Input
                                         type="password"
                                         value={verificationPassword}
                                         onChange={(e) => setVerificationPassword(e.target.value)}
                                         className="w-full rounded-lg border-gray-300 focus:border-[#289c8e] focus:ring-[#289c8e]"
-                                        placeholder="أدخل كلمة المرور الحالية"
+                                        placeholder={t('enter_current_password')}
                                         name={pwdNameRef.current}
                                         autoComplete="new-password"
                                     />
@@ -1016,10 +1020,10 @@ const ProfileMenuPage: React.FC = () => {
 
                             <DialogFooter className="gap-3 mt-6">
                                 <Button onClick={() => setShowChangePhoneModal(false)} variant="outline" className="flex-1 rounded-lg">
-                                    إلغاء
+                                    {t('cancel')}
                                 </Button>
                                 <Button onClick={handleUpdatePhone} disabled={isUpdatingPhone} className="flex-1 bg-[#289c8e] hover:bg-[#1a7468] rounded-lg">
-                                    {isUpdatingPhone ? 'جاري المعالجة...' : 'تحديث رقم الهاتف'}
+                                    {isUpdatingPhone ? t('processing') : t('update_phone')}
                                 </Button>
                             </DialogFooter>
                         </DialogContent>
@@ -1029,7 +1033,7 @@ const ProfileMenuPage: React.FC = () => {
                     <Dialog open={showLanguageModal} onOpenChange={setShowLanguageModal}>
                         <DialogContent className="bg-white rounded-2xl shadow-xl p-6 max-w-md mx-auto">
                             <DialogHeader className="text-center mb-4">
-                                <DialogTitle className="text-xl font-bold text-gray-900">تغيير اللغة</DialogTitle>
+                                <DialogTitle className="text-xl font-bold text-gray-900">{t('change_language')}</DialogTitle>
                             </DialogHeader>
                             <div className="flex flex-col gap-3">
                                 <Button onClick={() => handleLanguageChange('ar')} className="w-full justify-start bg-[#289c8e]/10 hover:bg-[#289c8e]/20 text-[#289c8e] rounded-lg py-3">
@@ -1047,7 +1051,7 @@ const ProfileMenuPage: React.FC = () => {
                             </div>
                             <DialogFooter className="mt-6">
                                 <Button onClick={() => setShowLanguageModal(false)} variant="outline" className="w-full rounded-lg">
-                                    إغلاق
+                                    {t('close')}
                                 </Button>
                             </DialogFooter>
                         </DialogContent>

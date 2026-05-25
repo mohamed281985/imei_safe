@@ -506,7 +506,6 @@ export default {
   "terms": "Conditions générales",
   "privacy": "Politique de confidentialité",
   "faq": "FAQ",
-  "support": "Support",
   "feedback": "Envoyer des retours",
   "language": "Langue",
   "theme": "Thème",
@@ -1171,7 +1170,6 @@ export default {
   "reliable_database_desc": "Base de données complète et continuellement mise à jour",
   "high_accuracy_desc": "Résultats hautement précis et fiables",
   "back_to_search": "Retour à la recherche",
-  "publish_ad": "Publier l'annonce",
   "package_status": "État du forfait",
   "package_total": "Total du forfait",
   "package_remaining_ads": "Restant de votre forfait",
@@ -1183,7 +1181,6 @@ export default {
   "allow_whatsapp_contact": "Autoriser les clients à contacter via WhatsApp",
   "allow_whatsapp_description": "Lorsque activé, un bouton 'Contacter maintenant' apparaîtra sur votre annonce pour ouvrir une discussion WhatsApp.",
   "whatsapp_label": "WhatsApp",
-  "click_to_upload": "Cliquez pour télécharger",
   "invalid_ad_duration": "Durée d'annonce invalide",
   "failed_to_get_signature": "Échec de l'obtention de la signature de paiement depuis le serveur",
   "failed_to_create_payment": "Échec de la création du paiement",
@@ -1191,12 +1188,20 @@ export default {
   "package_remaining_label": "Restant :",
   "ads": "annonces",
   "not_specified": "Non spécifié",
-  "update_and_edit_ad": "Mettre à jour et modifier l'annonce",
-  "publishing": "Publication...",
-  "updating": "Mise à jour...",
   "error_in_image_dimensions": "Dimensions d'image invalides",
   "please_upload_landscape_image": "Veuillez télécharger une image en format paysage",
   "ad_published_package_success": "Annonce publiée via votre forfait",
   "ad_publish_package_failed": "Impossible de publier l'annonce via le forfait",
   // Remaining translations (appended)
+  "privacy_policy": "Politique de Confidentialité",
+"learn_how_we_protect": "Découvrez comment nous protégeons vos données",
+"terms_of_use": "Conditions d'Utilisation",
+"rules_and_terms": "Règles et conditions régissant",
+"legal_info": "Informations Légales",
+"expires_at": "Expire le",
+"support": "Support Technique",
+"contact_us_whatsapp": "Contactez-nous via WhatsApp",
+
+
+
 }
