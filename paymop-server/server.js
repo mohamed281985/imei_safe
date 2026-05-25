@@ -2313,11 +2313,16 @@ app.post('/api/ads/package-publish', verifyJwtToken, paymentLimiter, rateLimitMi
     try {
       const { data: adsList, error: countErr } = await supabase
         .from('ads_payment')
-        .select('id, status, upload_date')
+        .select('id, status, upload_date, expires_at')
         .eq('user_id', userId)
         .gte('upload_date', packageStartDate);
       if (!countErr && Array.isArray(adsList)) {
-        currentAdsCount = adsList.filter(ad => ad.status === 'pending' || ad.status === 'approved').length;
+        const now = new Date();
+        currentAdsCount = adsList.filter(ad => {
+          const isValidStatus = ad.status === 'pending' || ad.status === 'approved';
+          const isNotExpired = !ad.expires_at || new Date(ad.expires_at) > now;
+          return isValidStatus && isNotExpired;
+        }).length;
       }
       console.log(`[PACKAGE-PUBLISH] userId=${userId} | currentAdsCount=${currentAdsCount} | maxAdsAllowed=${maxAdsAllowed} | packageStartDate=${packageStartDate}`);
     } catch (e) {
@@ -6077,11 +6082,3 @@ process.on('unhandledRejection', (reason, promise) => {
 setInterval(() => {
   process.stdout.write('.');
 }, 60 * 1000).unref();
-
-
-
-
-
-
-
-
