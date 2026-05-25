@@ -2070,7 +2070,7 @@ app.post("/paymob/create-payment", paymentLimiter, rateLimitMiddleware({ windowM
         const { data: insertedAd, error: adError } = await supabase
           .from(tableName)
           .insert([adInsertData])
-          .select('id')
+          .select('id, status')
           .single();
 
         if (adError) {
