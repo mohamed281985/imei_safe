@@ -2356,17 +2356,15 @@ app.post('/api/ads/package-publish', verifyJwtToken, paymentLimiter, rateLimitMi
       if (insertErr) {
         console.error('package-publish: failed to insert ads_payment', insertErr);
         try {
-          // more verbose insert error diagnostics when available
           if (insertErr.details) console.error('insertErr.details:', insertErr.details);
           if (insertErr.hint) console.error('insertErr.hint:', insertErr.hint);
         } catch (diag) { /* ignore */ }
         return res.status(500).json({ error: 'Failed to create ad record' });
       }
 
-      // If users_plans row exists, attempt to increment used counter
-      try {
-        if (usersPlansRow && usersPlansRow.id) {
-          // determine used field name heuristic
+      // تحديث عداد الاستخدام فقط إذا كان usersPlansRow معرفًا
+      if (typeof usersPlansRow !== 'undefined' && usersPlansRow && usersPlansRow.id) {
+        try {
           const updates = {};
           if (Object.prototype.hasOwnProperty.call(usersPlansRow, 'used_publish_ad')) updates.used_publish_ad = Number(usersPlansRow.used_publish_ad || 0) + 1;
           else if (Object.prototype.hasOwnProperty.call(usersPlansRow, 'used_publish_ads')) updates.used_publish_ads = Number(usersPlansRow.used_publish_ads || 0) + 1;
@@ -2375,9 +2373,9 @@ app.post('/api/ads/package-publish', verifyJwtToken, paymentLimiter, rateLimitMi
           if (Object.keys(updates).length > 0) {
             await supabase.from('users_plans').update(updates).eq('id', usersPlansRow.id);
           }
+        } catch (updErr) {
+          console.warn('package-publish: failed to update users_plans usage counter', updErr);
         }
-      } catch (updErr) {
-        console.warn('package-publish: failed to update users_plans usage counter', updErr);
       }
 
       return res.json({ ok: true, adId: inserted.id });
