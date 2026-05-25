@@ -679,6 +679,7 @@ const PublishAd: React.FC = () => {
         type: 'publish',
         amount: amount,
         is_active: true, // تعيين الإعلان كنشط
+        status: 'pending', 
         Actual_payment_date: new Date().toISOString()
       };
       const paymentData = {

@@ -2227,6 +2227,7 @@ app.post('/paymob/publish-from-bonus', paymentLimiter, rateLimitMiddleware({ win
 // Endpoint: Publish ad for package users (gold/silver) — server verifies package and inserts ad without opening payment gateway
 app.post('/api/ads/package-publish', verifyJwtToken, paymentLimiter, rateLimitMiddleware({ windowMs: 15 * 60 * 1000, max: 6 }), async (req, res) => {
   try {
+
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
@@ -2238,63 +2239,87 @@ app.post('/api/ads/package-publish', verifyJwtToken, paymentLimiter, rateLimitMi
       return res.status(400).json({ error: 'Invalid packageType' });
     }
 
-    // 1) Quick check: user must have an active paid package or users_plans quota
-    let entitled = false;
-
+    // 1) جلب الحد الأقصى من جدول plans
+    let maxAdsAllowed = null;
     try {
-      // Check latest paid package in ads_payment
+      const { data: planRow, error: planErr } = await supabase
+        .from('plans')
+        .select('*')
+        .ilike('type', `%${normalizedPackage}%`)
+        .maybeSingle();
+      if (!planErr && planRow) {
+        maxAdsAllowed = planRow.Publish_Ad ?? planRow.publish_ad ?? planRow.publishAd ?? planRow.publish_ads ?? planRow.publishAds ?? null;
+        if (maxAdsAllowed != null) maxAdsAllowed = Number(maxAdsAllowed);
+      }
+    } catch (e) {
+      console.warn('package-publish: error fetching plan', e);
+    }
+
+    if (!maxAdsAllowed || !Number.isFinite(maxAdsAllowed)) {
+      return res.status(400).json({ error: 'تعذر تحديد الحد الأقصى للإعلانات المسموح بها للباقة' });
+    }
+
+    // 2) جلب تاريخ أحدث اشتراك مدفوع (أو بداية الباقة)
+    let packageStartDate = null;
+    try {
       const { data: latestPaid, error: latestErr } = await supabase
         .from('ads_payment')
-        .select('id, type, is_paid, payment_date')
+        .select('payment_date')
         .eq('user_id', userId)
         .eq('is_paid', true)
+        .eq('type', normalizedPackage)
         .order('payment_date', { ascending: false })
         .limit(1)
         .maybeSingle();
-
-      if (!latestErr && latestPaid && typeof latestPaid.type === 'string' && latestPaid.type.toLowerCase().includes(normalizedPackage.split('_')[0])) {
-        entitled = true;
+      if (!latestErr && latestPaid && latestPaid.payment_date) {
+        packageStartDate = latestPaid.payment_date;
       }
     } catch (e) {
-      console.warn('package-publish: error checking latestPaid', e);
+      console.warn('package-publish: error fetching package start date', e);
     }
 
-    // 2) Fallback: check users.role for business plan
-    if (!entitled) {
+    if (!packageStartDate) {
+      // fallback: جلب expires_at من جدول users
       try {
-        const { data: userRec } = await supabase.from('users').select('role').eq('id', userId).maybeSingle();
-        const role = (userRec && userRec.role) ? String(userRec.role).toLowerCase() : '';
-        if (role.includes(normalizedPackage.split('_')[0]) || role.includes('business')) {
-          entitled = true;
+        const { data: userRec } = await supabase.from('users').select('expires_at').eq('id', userId).maybeSingle();
+        if (userRec && userRec.expires_at) {
+          // نعتبر بداية الباقة قبل مدة الباقة من expires_at
+          const durationDays = adData.duration_days || 7;
+          const expiresAt = new Date(userRec.expires_at);
+          const start = new Date(expiresAt);
+          start.setDate(start.getDate() - durationDays);
+          packageStartDate = start.toISOString();
         }
       } catch (e) {
-        console.warn('package-publish: error checking users.role', e);
+        console.warn('package-publish: error fallback fetching expires_at', e);
       }
     }
 
-    // 3) Fallback: check users_plans quotas (attempt to find a publish quota)
-    let usersPlansRow = null;
-    if (!entitled) {
-      try {
-        const { data: up, error: upErr } = await supabase.from('users_plans').select('*').eq('user_id', userId).maybeSingle();
-        if (!upErr && up) {
-          usersPlansRow = up;
-          // try common quota column names
-          const possibleQuota = up.publish_ad ?? up.publish_ads ?? up.gold_ad ?? up.gold_ads ?? up.silver_ad ?? up.silver_ads ?? null;
-          // used counter variants
-          const usedCount = up.used_publish_ad ?? up.used_publish_ads ?? up.used_ads ?? up.used_publish ?? 0;
-          if (possibleQuota != null && Number(possibleQuota) > Number(usedCount)) {
-            entitled = true;
-          }
-        }
-      } catch (e) {
-        console.warn('package-publish: error checking users_plans', e);
-      }
+    if (!packageStartDate) {
+      return res.status(400).json({ error: 'تعذر تحديد تاريخ بداية الباقة' });
     }
 
-    if (!entitled) {
-      return res.status(403).json({ error: 'User is not entitled to publish via package' });
+    // 3) عدّ الإعلانات الحالية (pending + approved) للمستخدم منذ بداية الباقة
+    let currentAdsCount = 0;
+    try {
+      const { count, error: countErr } = await supabase
+        .from('ads_payment')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .in('status', ['pending', 'approved'])
+        .gte('upload_date', packageStartDate);
+      if (!countErr && typeof count === 'number') {
+        currentAdsCount = count;
+      }
+    } catch (e) {
+      console.warn('package-publish: error counting user ads', e);
     }
+
+    if (currentAdsCount >= maxAdsAllowed) {
+      return res.status(403).json({ error: 'لقد وصلت للحد الأقصى للإعلانات المسموح بها في باقتك. لا يمكنك نشر إعلان جديد حتى انتهاء أو حذف إعلان سابق.' });
+    }
+
+    // ...باقي الكود كما هو (إدراج الإعلان)
 
     // Encrypt sensitive fields before storing
     const adDataToStore = { ...adData };
