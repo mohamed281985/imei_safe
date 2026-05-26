@@ -799,64 +799,6 @@ app.post('/api/encrypt', async (req, res) => {
   }
 });
 
-// ⭐ نقطة نهاية لجلب الرابط الحقيقي للإعلان مع فك تشفير رقم الهاتف لفتح الواتساب
-app.get('/api/ad-website-decrypted-public/:id', async (req, res) => {
-  try {
-    const adId = req.params.id;
-    if (!adId) {
-      return res.status(400).json({ error: 'Ad ID is required' });
-    }
-
-    // البحث في ads_payment مباشرة (المصدر الرئيسي للبيانات)
-    const { data: ad, error: fetchError } = await supabase
-      .from('ads_payment')
-      .select('id, phone, is_active, is_paid, payment_status, expires_at, whatsapp, website_url')
-      .eq('id', adId)
-      .maybeSingle();
-
-    if (fetchError) {
-      console.error('Error fetching ad for decryption:', fetchError);
-      return res.status(500).json({ error: 'Database error' });
-    }
-
-    if (!ad) {
-      return res.status(404).json({ error: 'Ad not found' });
-    }
-
-    // ⭐ تحسين: جعل التحقق أكثر مرونة ليشمل الإعلانات من الباقات (package)
-    // الإعلانات المنشورة عبر الباقات تأخذ حالة payment_status = 'package'
-    const isValid = ad.is_paid === true && (ad.payment_status === 'paid' || ad.payment_status === 'package');
-    
-    if (!isValid) {
-      return res.status(404).json({ error: 'Ad not available' });
-    }
-
-    // التحقق من أن الإعلان لم ينتهِ
-    if (ad.expires_at && new Date(ad.expires_at) <= new Date()) {
-      return res.status(404).json({ error: 'Ad expired' });
-    }
-
-    // فك تشفير رقم الهاتف من ads_payment
-    const decryptedPhone = decryptField(ad.phone);
-    let targetUrl = ad.website_url;
-
-    // ⭐ الحل: إذا كان عمود whatsapp مفعلاً، نقوم بتنسيقه كرابط واتساب مباشر باستخدام الرقم المفكوك
-    if (ad.whatsapp === true || String(ad.whatsapp).toLowerCase() === 'true' || ad.whatsapp === 1) {
-      if (decryptedPhone) {
-        targetUrl = `https://wa.me/${String(decryptedPhone).trim().replace(/\D/g, '')}`;
-      }
-    } else if (targetUrl && /^\+?[0-9]{8,15}$/.test(String(targetUrl).trim())) {
-      // إذا كان الرابط المخزن يبدو كرقم هاتف، نحوله لواتساب أيضاً كـ Fallback
-      targetUrl = `https://wa.me/${String(targetUrl).trim().replace(/\D/g, '')}`;
-    }
-
-    return res.json({ success: true, website_url: targetUrl });
-  } catch (err) {
-    console.error('Error in /api/ad-website-decrypted-public/:id:', err);
-    return res.status(500).json({ error: 'Server error' });
-  }
-});
-
 // Webhook: Supabase Auth -> call this when a user confirms email.
 // Configure Supabase Auth webhooks to send events to this URL.
 // For security, set SUPABASE_WEBHOOK_SECRET in .env and send it in header 'x-webhook-secret'.
