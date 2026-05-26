@@ -111,6 +111,9 @@ export default {
   "owner_name_label": "اسم صاحب المحل",
   // إشعار الهاتف مسجل لحساب آخر
   "this_phone_registered_to_another_account": "هذا الهاتف مسجل لحساب آخر ولا يمكن بيعه أو نقل ملكيته من هذا الحساب.",
+  "phone_already_advertised": "هذا الهاتف معروض للبيع بالفعل",
+  "phone_already_advertised_detail": "يوجد إعلان نشط لهذا الهاتف في النظام، لا يمكن تكرار الإعلان.",
+  "view_existing_ad": "عرض الإعلان الحالي",
   "this_phone_registered_to_another_account_cannot_report": "هذا الهاتف مسجل لحساب آخر ولا يمكن الإبلاغ عنه من هذا الحساب.",
   "phone_not_registered_can_report": "هذا الحساب غير مسجل لدينا. يمكنك الإبلاغ الآن، وبرجاء تسجيل الهاتف عند العثور عليه.",
   "share_whatsapp_number": "مشاركة رقم الواتساب الخاص بك عند العثور على هاتفك",

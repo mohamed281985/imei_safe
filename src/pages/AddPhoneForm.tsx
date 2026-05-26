@@ -1221,7 +1221,7 @@ const AddPhoneForm: React.FC = () => {
                 <button
                   type="button"
                   onClick={nextStep}
-                  disabled={isAlreadyAdvertised}
+                  disabled={isAlreadyAdvertised || isReported || imeiChecking}
                   className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-l from-blue-600 to-blue-500 px-5 py-2 text-sm font-bold text-white shadow-[0_10px_20px_rgba(37,99,235,0.35)] transition hover:from-blue-700 hover:to-blue-600 disabled:opacity-50"
                 >
                   {t('next')}

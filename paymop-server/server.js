@@ -902,6 +902,60 @@ app.post('/api/supabase-auth-webhook', async (req, res) => {
   }
 });
 
+// ⭐ نقطة نهاية للتحقق الشامل من IMEI (البلاغات، التسجيل، والإعلانات السابقة)
+app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
+  try {
+    const { imei } = req.body;
+    if (!imei) return res.status(400).json({ error: 'IMEI is required' });
+    const normalizedImei = String(imei).replace(/\D/g, '');
+
+    // 1. التحقق من جدول البلاغات (active reports)
+    const { data: reports } = await supabase.from('phone_reports').select('imei').eq('status', 'active');
+    const isStolen = (reports || []).some(r => {
+      const dec = decryptField(r.imei);
+      return dec && String(dec).replace(/\D/g, '') === normalizedImei;
+    });
+    if (isStolen) return res.json({ found: true, hasActiveReport: true });
+
+    // 2. ⭐ التحقق من جدول phones (وجود إعلان سابق)
+    const { data: ads } = await supabase.from('phones').select('id, imei, phone_type').neq('status', 'deleted');
+    const existingAd = (ads || []).find(a => {
+      const dec = decryptField(a.imei);
+      return dec && String(dec).replace(/\D/g, '') === normalizedImei;
+    });
+    
+    if (existingAd) {
+      return res.json({ 
+        found: true, 
+        hasActiveAd: true, 
+        adId: existingAd.id, 
+        phone_type: existingAd.phone_type 
+      });
+    }
+
+    // 3. التحقق من جدول التسجيل (registered_phones)
+    const { data: registered } = await supabase.from('registered_phones').select('imei, phone_type, user_id');
+    const reg = (registered || []).find(r => {
+      const dec = decryptField(r.imei);
+      return dec && String(dec).replace(/\D/g, '') === normalizedImei;
+    });
+
+    if (reg) {
+      return res.json({ 
+        found: true, 
+        isRegistered: true, 
+        phone_type: reg.phone_type,
+        isOwner: req.user?.id === reg.user_id 
+      });
+    }
+
+    return res.json({ found: false });
+  } catch (err) {
+    console.error('imei-masked-info error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Internal endpoint: create application `users` row after auth signup
 // Frontend calls this after `supabase.auth.signUp` to persist encrypted app user data.
 app.post('/api/create-app-user', verifyJwtToken, createAppUserLimiter, async (req, res) => {
