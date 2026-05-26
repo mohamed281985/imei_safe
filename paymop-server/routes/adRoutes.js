@@ -154,19 +154,21 @@ export function registerAdRoutes({
 
       const { data: ad, error: fetchError } = await supabase
         .from('ads_payment')
-        .select('id, phone, is_active, is_paid, payment_status, expires_at')
+        .select('id, phone, is_active, is_paid, payment_status, expires_at, whatsapp')
         .eq('id', adId)
         .maybeSingle();
 
       if (fetchError) {
-        console.error('Error fetching ad for decryption:', fetchError);
+        console.error('Database Error in ad-website-decrypted-public:', fetchError);
         return res.status(500).json({ error: 'Database error' });
       }
 
       if (!ad) {
         return res.status(404).json({ error: 'Ad not found' });
       }
-      if (!ad.is_active || !ad.is_paid || ad.payment_status !== 'paid') {
+
+      const isValidStatus = ad.is_paid === true && (ad.payment_status === 'paid' || ad.payment_status === 'package');
+      if (!ad.is_active || !isValidStatus) {
         return res.status(404).json({ error: 'Ad not available' });
       }
       if (ad.expires_at && new Date(ad.expires_at) <= new Date()) {
@@ -174,8 +176,13 @@ export function registerAdRoutes({
       }
 
       let finalUrl = decryptField(ad.phone);
-      if (finalUrl && /^\+?[0-9]{8,15}$/.test(String(finalUrl).trim())) {
-        finalUrl = `https://wa.me/${String(finalUrl).trim().replace(/\D/g, '')}`;
+      
+      // إذا كان الإعلان يتطلب واتساب، ننشئ الرابط
+      if (ad.whatsapp === true || String(ad.whatsapp).toLowerCase() === 'true' || ad.whatsapp === 1) {
+        if (finalUrl) {
+          const cleanPhone = String(finalUrl).trim().replace(/\D/g, '');
+          finalUrl = `https://wa.me/${cleanPhone}`;
+        }
       }
 
       return res.json({ success: true, website_url: finalUrl });

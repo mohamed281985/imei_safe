@@ -32,6 +32,8 @@ interface AdDisplay {
   longitude?: number | null;
   expires_at?: string | null;
   distance?: number;
+  whatsapp?: boolean;
+  phone?: string;
 }
 
 interface PageAdvertisementProps {
@@ -100,7 +102,7 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
     // وجود السجل في publish_ad يعني أن الأدمن وافق عليه
     const { data: publishedAds, error: pubError } = await supabase
       .from('publish_ad')
-      .select('ad_id, image_url, ads_payment(latitude, longitude, expires_at)')
+      .select('ad_id, image_url, ads_payment(latitude, longitude, expires_at, whatsapp, phone)')
       .order('created_at', { ascending: false });
 
     if (pubError || !publishedAds || publishedAds.length === 0) {
@@ -126,6 +128,8 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
           latitude: payAd?.latitude ?? null,
           longitude: payAd?.longitude ?? null,
           expires_at: expiresAt,
+          whatsapp: payAd?.whatsapp,
+          phone: payAd?.phone,
         };
       })
       .filter(Boolean) as AdDisplay[];
