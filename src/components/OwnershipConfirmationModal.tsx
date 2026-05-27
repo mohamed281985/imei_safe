@@ -221,22 +221,40 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
           </div>
           <div className="max-h-60 overflow-y-auto space-y-3 pr-2 border-t pt-3">
           {phones.map(phone => (
-              <label
+              <div
                 key={phone.id}
-                htmlFor={`phone-${phone.id}`}
                 className="flex items-center gap-4 p-3 bg-gray-50 rounded-lg border border-gray-200 cursor-pointer hover:bg-orange-50 transition-colors"
+                role="button"
+                tabIndex={0}
+                onClick={() => handleTogglePhone(phone.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleTogglePhone(phone.id);
+                  }
+                }}
               >
                 <Checkbox
                   id={`phone-${phone.id}`}
                   checked={selectedPhones.includes(phone.id)}
-                  onCheckedChange={() => handleTogglePhone(phone.id)}
+                  onCheckedChange={(checked) => {
+                    // Radix may pass boolean or "indeterminate"; handle boolean
+                    if (typeof checked === 'boolean') {
+                      if (checked && !selectedPhones.includes(phone.id)) {
+                        setSelectedPhones(prev => [...prev, phone.id]);
+                      } else if (!checked) {
+                        setSelectedPhones(prev => prev.filter(id => id !== phone.id));
+                      }
+                    }
+                  }}
+                  onClick={(e) => e.stopPropagation()}
                 />
                 <Smartphone className="w-6 h-6 text-gray-500 flex-shrink-0" />
                 <div className="flex-grow">
                   <p className="font-semibold text-gray-800">{phone.phone_type || t('unspecified_phone')}</p>
                   <p className="text-sm text-gray-500 font-mono" dir="ltr">{phone.imei_masked}</p>
                 </div>
-              </label>
+              </div>
           ))}
           </div>
         </div>

@@ -682,14 +682,38 @@ export function registerOwnershipRoutes({
       if (!ids || !Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids required' });
       if (!status) return res.status(400).json({ error: 'status required' });
 
+      // Build update payload. If confirming ownership, set last_confirmed_at timestamp.
+      const updatePayload = { status };
+      if (status === 'approved') {
+        updatePayload.last_confirmed_at = new Date().toISOString();
+      }
+
       const { data, error } = await supabase
         .from('registered_phones')
-        .update({ status })
+        .update(updatePayload)
         .in('id', ids)
         .eq('user_id', userId)
         .select();
 
       if (error) throw error;
+
+      try {
+        // Audit log for ownership updates
+        for (const updated of data || []) {
+          await logAudit({
+            userId,
+            action: status === 'approved' ? 'confirm_ownership' : 'update_phone_status',
+            resourceType: 'registered_phone',
+            resourceId: updated.id,
+            newValues: { status: updatePayload.status, last_confirmed_at: updatePayload.last_confirmed_at || null },
+            ip: req.ip,
+            userAgent: req.headers['user-agent']
+          });
+        }
+      } catch (auditErr) {
+        console.warn('Failed to write audit for update-phone-status:', auditErr);
+      }
+
       return res.json({ success: true, data });
     } catch (err) {
       console.error('update-phone-status error:', err);
