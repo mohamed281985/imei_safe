@@ -733,13 +733,31 @@ const handleWhatsAppCheckboxChange = async () => {
 
         // If checkResult provides active-report flags, prefer them for UI decisions
         if (checkResult) {
-          // normalize flags onto result for downstream logic
+          // دمج نتائج check-imei مع نتيجة imei-masked-info
+          // تأكد من تحويل أشكال الاستجابة المختلفة إلى حقول متوقعة في الواجهة
           result.hasActiveReport = result.hasActiveReport ?? (checkResult.hasActiveReport ?? checkResult.active ?? false);
+
+          // اعتبر وجود phoneDetails أو exists كدليل على أن الجهاز موجود / مسجل
+          const checkIndicatesFound = Boolean(
+            checkResult.found || checkResult.exists || (checkResult.phoneDetails && Object.keys(checkResult.phoneDetails).length > 0)
+          );
+          result.found = result.found ?? checkIndicatesFound;
+          result.isRegistered = result.isRegistered ?? (checkResult.isRegistered ?? checkResult.exists ?? (checkResult.phoneDetails ? true : false));
+
+          // دمج تفاصيل الهاتف إذا وفّرت
+          if (!result.phoneDetails && checkResult.phoneDetails) {
+            result.phoneDetails = checkResult.phoneDetails;
+          }
+
+          // دمج مؤشرات الملكية والمرسل
           const inferredIsOwnReport = typeof (checkResult?.isOwnReport) === 'boolean'
             ? checkResult.isOwnReport
             : ((checkResult?.reporter_user_id === user?.id) || (checkResult?.userId === user?.id));
           result.isOwnReport = result.isOwnReport ?? inferredIsOwnReport;
           result.reporter_user_id = result.reporter_user_id ?? (checkResult.reporter_user_id ?? checkResult.userId ?? checkResult.reporterId);
+
+          // حالات مساعدة أخرى من شكل الاستجابة القديم
+          result.isOtherUser = result.isOtherUser ?? (checkResult.isOtherUser ?? false);
         }
 
         // حالة 1: هاتف جديد (غير مسجل) - يمكن الإبلاغ مع تنبيه بالتسجيل
@@ -767,6 +785,10 @@ const handleWhatsAppCheckboxChange = async () => {
               || (result.maskedPhoneNumber && String(result.maskedPhoneNumber).trim() === currentMaskedPhone)) {
               inferredIsOwner = true;
             }
+          }
+          // Additional: if phoneDetails includes a user_id equal to current user, treat as owner
+          if (!inferredIsOwner && result.phoneDetails && user && result.phoneDetails.user_id && String(result.phoneDetails.user_id) === String(user.id)) {
+            inferredIsOwner = true;
           }
         } catch (e) {
           console.debug('Error inferring owner from masked values:', e);
