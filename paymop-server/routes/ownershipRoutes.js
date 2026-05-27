@@ -694,6 +694,22 @@ export function registerOwnershipRoutes({
         .limit(1000);
       if (fetchErr) throw fetchErr;
 
+      // Diagnostic: show decrypted incoming and a small sample of decrypted report IMEIs
+      let sampleDecrypted = [];
+      try {
+        for (let i = 0; i < Math.min(10, reports.length); i++) {
+          const r = reports[i];
+          try {
+            const dec = decryptField(r.imei) || r.imei;
+            sampleDecrypted.push({ id: r.id, user_id: r.user_id, status: r.status, imei_dec: dec });
+          } catch (e) {
+            sampleDecrypted.push({ id: r.id, user_id: r.user_id, status: r.status, imei_dec: '<decrypt-failed>' });
+          }
+        }
+      } catch (e) {
+        console.warn('[resolve-report] failed to build sampleDecrypted:', e);
+      }
+
       const matching = (reports || []).filter((r) => {
         try {
           const dec = decryptField(r.imei) || r.imei;
@@ -704,7 +720,7 @@ export function registerOwnershipRoutes({
         }
       });
 
-      console.log('[resolve-report] normalizedIncoming:', normalizedIncoming, 'matchingCount:', matching.length);
+      console.log('[resolve-report] normalizedIncoming:', normalizedIncoming, 'matchingCount:', matching.length, 'sampleDecrypted:', sampleDecrypted.slice(0,5));
 
       if (!matching || matching.length === 0) {
         return res.status(404).json({ success: false, error: 'Report not found' });
