@@ -673,6 +673,49 @@ export function registerOwnershipRoutes({
       return res.status(500).json({ error: 'Server error', details: err?.message || '' });
     }
   });
+  
+  // Endpoint: تحقق مما إذا كان هناك بلاغ "active" ل imei مشفّر (لا يغيّر الحالة)
+  app.post('/api/check-report-active', verifyJwtToken, async (req, res) => {
+    try {
+      const { imei_encrypted } = req.body || {};
+      const userId = req.user?.id;
+      if (!userId) return res.status(401).json({ success: false, error: 'Unauthorized' });
+      if (!imei_encrypted) return res.status(400).json({ success: false, error: 'imei_encrypted is required' });
+
+      const incomingImei = decryptField(imei_encrypted) || null;
+      if (!incomingImei) return res.status(400).json({ success: false, error: 'Invalid imei_encrypted' });
+      const normalizedIncoming = normalizeDigitsOnly(incomingImei);
+
+      const { data: reports, error: fetchErr } = await supabase
+        .from('phone_reports')
+        .select('*')
+        .limit(1000);
+      if (fetchErr) throw fetchErr;
+
+      const matchingActive = (reports || []).filter((r) => {
+        try {
+          const dec = decryptField(r.imei) || r.imei;
+          return normalizeDigitsOnly(dec) === normalizedIncoming && r.status === 'active';
+        } catch (e) {
+          return false;
+        }
+      });
+
+      const anyMatches = (reports || []).filter((r) => {
+        try {
+          const dec = decryptField(r.imei) || r.imei;
+          return normalizeDigitsOnly(dec) === normalizedIncoming;
+        } catch (e) {
+          return false;
+        }
+      });
+
+      return res.json({ success: true, active: (matchingActive.length > 0), matchingCount: matchingActive.length, anyMatchesCount: anyMatches.length });
+    } catch (err) {
+      console.error('check-report-active error:', err);
+      return res.status(500).json({ success: false, error: 'Server error' });
+    }
+  });
 
   // Endpoint: حل البلاغات بناءً على imei مشفّر (مستخدم في الواجهة عند تأكيد العثور)
   app.post('/api/resolve-report', verifyJwtToken, async (req, res) => {
