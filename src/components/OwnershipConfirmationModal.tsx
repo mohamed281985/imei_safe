@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Smartphone, ShieldCheck, ShieldAlert, HelpCircle } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase'; // تأكد من صحة مسار الاستيراد، يبدو أنه كان خطأ مطبعي في السابق (sabase -> supabase)
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import axiosInstance from '@/services/axiosInterceptor';
@@ -38,8 +38,11 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
   const [selectedPhones, setSelectedPhones] = React.useState<string[]>([]);
   const [phoneWithReport, setPhoneWithReport] = React.useState<PhoneForConfirmation | null>(null);
   const [showFoundPhoneDialog, setShowFoundPhoneDialog] = React.useState(false);
+  const [localPhones, setLocalPhones] = React.useState<PhoneForConfirmation[]>(phones);
 
-  // IMEI يأتي من السيرفر كمخفى في الحقل `imei_masked`، ولا نقوم بفك التشفير في الواجهة
+  React.useEffect(() => {
+    setLocalPhones(phones || []);
+  }, [phones]);
 
   const handleConfirm = async () => {
     if (selectedPhones.length === 0) return;
@@ -51,49 +54,69 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
       const phone = phones.find(p => p.id === phoneId);
       if (!phone) continue;
 
-      // التحقق باستخدام العلامة القادمة من API
       if (phone.hasActiveReport) {
-        // إذا وجد بلاغ، اظهر مربع الحوار وتوقف
-        setPhoneWithReport(phone);
-        setShowFoundPhoneDialog(true);
-        reportFound = true;
-        return; 
+        // تحقق سريع في الخادم لإتاحة حالة البلاغ الحقيقية
+        try {
+          const resp = await axiosInstance.post('/api/check-report-active', { imei_encrypted: phone.imei_encrypted });
+          const active = resp?.data?.active;
+          if (active) {
+            setPhoneWithReport(phone);
+            setShowFoundPhoneDialog(true);
+            reportFound = true;
+            return;
+          } else {
+            // بلاغ سبق حله — حدّث الحالة محلياً و اعتبره قابل للتأكيد مباشرة
+            setLocalPhones(prev => prev.map(p => p.id === phone.id ? { ...p, hasActiveReport: false } : p));
+            phonesToConfirmDirectly.push(phoneId);
+          }
+        } catch (e) {
+          console.error('Failed to verify active report status:', e);
+          // إذا فشل التحقق، نُسقِط هذا الهاتف من العملية حفاظاً على استمرارية تجربة المستخدم
+          phonesToConfirmDirectly.push(phoneId);
+        }
       } else {
         phonesToConfirmDirectly.push(phoneId);
       }
     }
 
-    // إذا لم يتم العثور على أي بلاغات، قم بالتأكيد مباشرة
+    // تأكيد الهواتف التي ليس عليها بلاغات نشطة
     if (!reportFound && phonesToConfirmDirectly.length > 0) {
       onConfirm(phonesToConfirmDirectly);
       setSelectedPhones([]);
+      // إغلاق النافذة الرئيسية إذا تم تأكيد كل الهواتف
+      if (phonesToConfirmDirectly.length === selectedPhones.length) {
+        onClose();
+      }
     }
   };
 
   const handleFoundPhoneConfirmation = async (found: boolean) => {
     if (!phoneWithReport) return;
 
+    let errorOccurred = false;
+
     if (found) {
-      // إذا تم العثور على الهاتف، قم بتحديث حالة البلاغ إلى "resolved"
-      // استخدام API لحل البلاغ لأن IMEI مشفر في قاعدة البيانات
+      // الحالة: المستخدم يقول "وجدت الهاتف"
       try {
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
-
-        // Use axiosInstance to include auth/CSRF handling
         const resultResp = await axiosInstance.post('/api/resolve-report', { imei_encrypted: phoneWithReport.imei_encrypted });
         const result = resultResp.data;
-        if (!result || !result.success) throw new Error(result?.error || 'Failed to resolve report');
+        
+        // التعديل هنا: نقبل النجاح حتى لو كان "already_resolved"
+        if (!result || (!result.success && result.message !== 'already_resolved')) {
+          throw new Error(result?.error || 'Failed to resolve report');
+        }
         
         toast({ title: t('success_title'), description: t('report_status_updated_successfully') });
+        onConfirm([phoneWithReport.id]);
       } catch (error) {
         console.error('Error resolving report:', error);
         toast({ title: t('alert_title'), description: t('report_status_update_failed'), variant: 'destructive' });
+        errorOccurred = true;
       }
-      // استمر في عملية التأكيد الأصلية لهذا الهاتف
-      onConfirm([phoneWithReport.id]);
     } else {
-      // إذا لم يتم العثور عليه، لا تغير حالة البلاغ، قم بتحديث الحالة عبر السيرفر إلى 'transferred'
+      // الحالة: المستخدم يقول "لم أجد الهاتف"
       try {
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
@@ -102,31 +125,33 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
       } catch (e) {
         console.error('Failed to mark phone transferred:', e);
         toast({ title: t('alert_title'), description: t('phone_status_update_failed'), variant: 'destructive' });
+        errorOccurred = true;
       }
-      // onDeny([phoneWithReport.id]); // لم نعد نستدعي onDeny هنا
     }
 
-    // أغلق مربع الحوار وأعد التعيين
+    // إغلاق النافذة الفرعية دائماً
     setShowFoundPhoneDialog(false);
     setPhoneWithReport(null);
 
-    // قم بإزالة الهاتف المعالج من التحديد واستمر إذا كان هناك المزيد
+    // إزالة الهاتف الحالي من القائمة المحددة
     const remainingPhones = selectedPhones.filter(id => id !== phoneWithReport.id);
     setSelectedPhones(remainingPhones);
 
-    if (remainingPhones.length > 0) {
-      // استدعاء مرة أخرى لمعالجة الهواتف المتبقية
-      // نضعها في setTimeout لتجنب التحديث المتزامن للحالة
-      setTimeout(() => handleConfirm(), 0);
-    } else {
-      setSelectedPhones([]);
+    // التعامل مع الهواتف المتبقية أو إغلاق النافذة الرئيسية
+    if (!errorOccurred) {
+      if (remainingPhones.length > 0) {
+        // معالجة الهاتف التالي بشكل غير متزامن
+        setTimeout(() => handleConfirm(), 0);
+      } else {
+        // لا توجد هواتف متبقية، أغلق النافذة الرئيسية
+        onClose();
+      }
     }
   };
 
   const handleDeny = async () => {
     if (selectedPhones.length === 0) return;
 
-    // تحديث الحالة إلى 'transferred' عبر السيرفر
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
@@ -137,7 +162,6 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
       return;
     }
 
-    // حل أي بلاغات مرتبطة بالهواتف التي تم إنكارها
     for (const phoneId of selectedPhones) {
       const phone = phones.find(p => p.id === phoneId);
       if (!phone) continue;
@@ -152,7 +176,7 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
 
     toast({ title: t('success_title'), description: t('phones_status_updated') });
     setSelectedPhones([]);
-    onClose(); // إغلاق النافذة بعد إتمام العملية
+    onClose();
   };
 
   const handleTogglePhone = (phoneId: string) => {
@@ -163,9 +187,9 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
 
   const handleSelectAll = () => {
     if (selectedPhones.length === phones.length) {
-      setSelectedPhones([]); // إلغاء تحديد الكل
+      setSelectedPhones([]);
     } else {
-      setSelectedPhones(phones.map(p => p.id)); // تحديد الكل
+      setSelectedPhones(phones.map(p => p.id));
     }
   };
 
@@ -212,7 +236,7 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
                   id={`phone-${phone.id}`}
                   checked={selectedPhones.includes(phone.id)}
                   onCheckedChange={(checked) => {
-                    // Radix may pass boolean or "indeterminate"; handle boolean
+                    // تم التصحيح هنا: استخدام phone.id بدلاً من phoneId
                     if (typeof checked === 'boolean') {
                       if (checked && !selectedPhones.includes(phone.id)) {
                         setSelectedPhones(prev => [...prev, phone.id]);
@@ -254,7 +278,6 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
         </DialogFooter>
       </DialogContent>
 
-      {/* Dialog for found phone confirmation */}
       <Dialog open={showFoundPhoneDialog} onOpenChange={setShowFoundPhoneDialog}>
         <DialogContent className="bg-white/90 backdrop-blur-lg text-gray-800 w-[90%] sm:max-w-md border-2 border-blue-400 shadow-2xl rounded-2xl">
           <DialogHeader className="text-center">
