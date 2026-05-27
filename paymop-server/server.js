@@ -25,7 +25,6 @@ import { registerOwnershipRoutes } from './routes/ownershipRoutes.js';
 import { registerProfileRoutes } from './routes/profileRoutes.js';
 import { registerReportRoutes } from './routes/reportRoutes.js';
 import { registerBuyerInfoRoutes } from './routes/buyerInfoRoutes.js';
-import axiosInstance from '@/services/axiosInterceptor';
 // =================================================================
 // 1. الإعدادات الأولية وتحميل متغيرات البيئة (يجب أن تكون في البداية)
 // =================================================================
