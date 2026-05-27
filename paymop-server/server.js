@@ -1625,7 +1625,10 @@ registerNotificationRoutes({
   sendError,
   sendFCMNotificationV1,
   getFCMTokenByImei,
-  searchImeiLimiter
+  searchImeiLimiter,
+  // helpers used by notification routes
+  decryptField,
+  normalizeDigitsOnly
 });
 
 // --- دوال Paymob ---
