@@ -7,6 +7,7 @@ import { Smartphone, ShieldCheck, ShieldAlert, HelpCircle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
+import axiosInstance from '@/services/axiosInterceptor';
  
 interface PhoneForConfirmation {
   id: string;
@@ -79,18 +80,10 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
 
-        const response = await fetch('https://imei-safe.me/api/resolve-report', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          // نرسل IMEI مشفّر كما أتى من السيرفر
-          body: JSON.stringify({ imei_encrypted: phoneWithReport.imei_encrypted })
-        });
-
-        const result = await response.json();
-        if (!result.success) throw new Error(result.error);
+        // Use axiosInstance to include auth/CSRF handling
+        const resultResp = await axiosInstance.post('https://imei-safe.me/api/resolve-report', { imei_encrypted: phoneWithReport.imei_encrypted });
+        const result = resultResp.data;
+        if (!result || !result.success) throw new Error(result?.error || 'Failed to resolve report');
         
         toast({ title: t('success_title'), description: t('report_status_updated_successfully') });
       } catch (error) {
@@ -104,19 +97,7 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
       try {
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
-        const resp = await fetch('/api/update-phone-status', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
-          body: JSON.stringify({ ids: [phoneWithReport.id], status: 'transferred' })
-        });
-        let json;
-        try {
-          json = await resp.json();
-        } catch (parseErr) {
-          const text = await resp.text().catch(() => '');
-          json = { error: text || `HTTP ${resp.status}` };
-        }
-        if (!resp.ok) throw new Error(json.error || `Failed to update status (HTTP ${resp.status})`);
+        await axiosInstance.post('/api/update-phone-status', { ids: [phoneWithReport.id], status: 'transferred' });
         toast({ title: t('note_title'), description: t('phone_status_transferred_note'), variant: 'default' });
       } catch (e) {
         console.error('Failed to mark phone transferred:', e);
@@ -149,19 +130,7 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
-      const resp = await fetch('/api/update-phone-status', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ ids: selectedPhones, status: 'transferred' })
-      });
-      let json;
-      try {
-        json = await resp.json();
-      } catch (parseErr) {
-        const text = await resp.text().catch(() => '');
-        json = { error: text || `HTTP ${resp.status}` };
-      }
-      if (!resp.ok) throw new Error(json.error || `Failed to update status (HTTP ${resp.status})`);
+      await axiosInstance.post('/api/update-phone-status', { ids: selectedPhones, status: 'transferred' });
     } catch (e) {
       console.error('Failed to mark phones transferred:', e);
       toast({ title: t('alert_title'), description: t('phone_status_update_failed'), variant: 'destructive' });
@@ -175,14 +144,7 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
       try {
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
-        await fetch('https://imei-safe.me/api/resolve-report', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ imei_encrypted: phone.imei_encrypted })
-        });
+        await axiosInstance.post('https://imei-safe.me/api/resolve-report', { imei_encrypted: phone.imei_encrypted });
       } catch (e) {
         console.error('Failed to resolve report for phone', phoneId, e);
       }

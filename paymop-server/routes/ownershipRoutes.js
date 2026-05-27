@@ -674,6 +674,72 @@ export function registerOwnershipRoutes({
     }
   });
 
+  // Endpoint: حل البلاغات بناءً على imei مشفّر (مستخدم في الواجهة عند تأكيد العثور)
+  app.post('/api/resolve-report', verifyJwtToken, async (req, res) => {
+    try {
+      const { imei_encrypted } = req.body || {};
+      const userId = req.user?.id;
+      if (!userId) return res.status(401).json({ success: false, error: 'Unauthorized' });
+      if (!imei_encrypted) return res.status(400).json({ success: false, error: 'imei_encrypted is required' });
+
+      // حاول استخراج قيمة IMEI من الحمولة المشفّرة المرسلة
+      const incomingImei = decryptField(imei_encrypted) || null;
+      if (!incomingImei) return res.status(400).json({ success: false, error: 'Invalid imei_encrypted' });
+      const normalizedIncoming = normalizeDigitsOnly(incomingImei);
+
+      // جلب كل البلاغات الفعالة لمستخدمنا أو عامة للبحث
+      const { data: reports, error: fetchErr } = await supabase
+        .from('phone_reports')
+        .select('*')
+        .limit(1000);
+      if (fetchErr) throw fetchErr;
+
+      const matching = (reports || []).filter((r) => {
+        try {
+          const dec = decryptField(r.imei) || r.imei;
+          return normalizeDigitsOnly(dec) === normalizedIncoming && r.status === 'active' && r.user_id === userId;
+        } catch (e) {
+          return false;
+        }
+      });
+
+      if (!matching || matching.length === 0) {
+        return res.status(404).json({ success: false, error: 'Report not found' });
+      }
+
+      const ids = matching.map(m => m.id);
+      const { data: updated, error: updateErr } = await supabase
+        .from('phone_reports')
+        .update({ status: 'resolved' })
+        .in('id', ids)
+        .select();
+      if (updateErr) throw updateErr;
+
+      // Audit
+      for (const id of ids) {
+        try {
+          await logAudit({
+            userId,
+            action: 'resolve_report',
+            resourceType: 'phone_report',
+            resourceId: id,
+            oldValues: { status: 'active' },
+            newValues: { status: 'resolved' },
+            ip: req.ip,
+            userAgent: req.headers['user-agent']
+          });
+        } catch (auditErr) {
+          console.warn('resolve-report: audit log failed', auditErr);
+        }
+      }
+
+      return res.json({ success: true, data: updated });
+    } catch (err) {
+      console.error('resolve-report error:', err);
+      return res.status(500).json({ success: false, error: 'Server error' });
+    }
+  });
+
   app.post('/api/update-phone-status', verifyJwtToken, async (req, res) => {
     try {
       const { ids, status } = req.body;
