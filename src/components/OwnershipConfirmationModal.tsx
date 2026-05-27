@@ -81,7 +81,7 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
         const token = session?.access_token;
 
         // Use axiosInstance to include auth/CSRF handling
-        const resultResp = await axiosInstance.post('https://imei-safe.me/api/resolve-report', { imei_encrypted: phoneWithReport.imei_encrypted });
+        const resultResp = await axiosInstance.post('/api/resolve-report', { imei_encrypted: phoneWithReport.imei_encrypted });
         const result = resultResp.data;
         if (!result || !result.success) throw new Error(result?.error || 'Failed to resolve report');
         
@@ -144,7 +144,7 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
       try {
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
-        await axiosInstance.post('https://imei-safe.me/api/resolve-report', { imei_encrypted: phone.imei_encrypted });
+        await axiosInstance.post('/api/resolve-report', { imei_encrypted: phone.imei_encrypted });
       } catch (e) {
         console.error('Failed to resolve report for phone', phoneId, e);
       }

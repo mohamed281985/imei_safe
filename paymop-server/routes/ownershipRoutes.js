@@ -697,11 +697,14 @@ export function registerOwnershipRoutes({
       const matching = (reports || []).filter((r) => {
         try {
           const dec = decryptField(r.imei) || r.imei;
-          return normalizeDigitsOnly(dec) === normalizedIncoming && r.status === 'active' && r.user_id === userId;
+          // Match active reports for the same IMEI regardless of who created the report
+          return normalizeDigitsOnly(dec) === normalizedIncoming && r.status === 'active';
         } catch (e) {
           return false;
         }
       });
+
+      console.log('[resolve-report] normalizedIncoming:', normalizedIncoming, 'matchingCount:', matching.length);
 
       if (!matching || matching.length === 0) {
         return res.status(404).json({ success: false, error: 'Report not found' });
