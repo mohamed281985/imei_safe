@@ -109,8 +109,14 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
           headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
           body: JSON.stringify({ ids: [phoneWithReport.id], status: 'transferred' })
         });
-        const json = await resp.json();
-        if (!resp.ok) throw new Error(json.error || 'Failed to update status');
+        let json;
+        try {
+          json = await resp.json();
+        } catch (parseErr) {
+          const text = await resp.text().catch(() => '');
+          json = { error: text || `HTTP ${resp.status}` };
+        }
+        if (!resp.ok) throw new Error(json.error || `Failed to update status (HTTP ${resp.status})`);
         toast({ title: t('note_title'), description: t('phone_status_transferred_note'), variant: 'default' });
       } catch (e) {
         console.error('Failed to mark phone transferred:', e);
@@ -148,8 +154,14 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
         headers: { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}) },
         body: JSON.stringify({ ids: selectedPhones, status: 'transferred' })
       });
-      const json = await resp.json();
-      if (!resp.ok) throw new Error(json.error || 'Failed to update status');
+      let json;
+      try {
+        json = await resp.json();
+      } catch (parseErr) {
+        const text = await resp.text().catch(() => '');
+        json = { error: text || `HTTP ${resp.status}` };
+      }
+      if (!resp.ok) throw new Error(json.error || `Failed to update status (HTTP ${resp.status})`);
     } catch (e) {
       console.error('Failed to mark phones transferred:', e);
       toast({ title: t('alert_title'), description: t('phone_status_update_failed'), variant: 'destructive' });

@@ -688,6 +688,7 @@ export function registerOwnershipRoutes({
         updatePayload.last_confirmed_at = new Date().toISOString();
       }
 
+      console.log('[update-phone-status] userId:', userId, 'ids:', ids, 'status:', status);
       const { data, error } = await supabase
         .from('registered_phones')
         .update(updatePayload)
