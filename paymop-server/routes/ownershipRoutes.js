@@ -843,19 +843,24 @@ export function registerOwnershipRoutes({
 
   app.post('/api/update-phone-status', verifyJwtToken, async (req, res) => {
     try {
-      const { ids, status } = req.body;
+      const { ids, status, confirmOnly } = req.body;
       const userId = req.user?.id;
       if (!userId) return res.status(401).json({ error: 'Unauthorized' });
       if (!ids || !Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids required' });
-      if (!status) return res.status(400).json({ error: 'status required' });
+      if (!status && !confirmOnly) return res.status(400).json({ error: 'status or confirmOnly required' });
 
-      // Build update payload. If confirming ownership, set last_confirmed_at timestamp.
-      const updatePayload = { status };
-      if (status === 'approved') {
-        updatePayload.last_confirmed_at = new Date().toISOString();
+      // Build update payload.
+      // Always update last_confirmed_at with any status change.
+      // If confirmOnly is true, only update last_confirmed_at without changing status.
+      const updatePayload = {};
+      updatePayload.last_confirmed_at = new Date().toISOString();
+      if (confirmOnly) {
+        // no status change
+      } else {
+        updatePayload.status = status;
       }
 
-      console.log('[update-phone-status] userId:', userId, 'ids:', ids, 'status:', status);
+      console.log('[update-phone-status] userId:', userId, 'ids:', ids, 'status:', status, 'confirmOnly:', !!confirmOnly);
       const { data, error } = await supabase
         .from('registered_phones')
         .update(updatePayload)

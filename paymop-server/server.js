@@ -4845,8 +4845,12 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
     if (matchingPhone) {
       // التحقق مما إذا كان مسجلاً لمستخدم آخر أو منقول الملكية
       if (requesterId && matchingPhone.user_id === requesterId) {
-        // الهاتف مسجل للمستخدم الحالي، نسمح له بتحديث البيانات
-        // فك تشفير البيانات قبل إرجاعها
+        // الهاتف مسجل للمستخدم الحالي
+        if (matchingPhone.status === 'transferred') {
+          // المستخدم تخلى عن الهاتف (قال "هذا ليس هاتفي") - يعامل كأنه ليس ملكه
+          return res.json({ exists: true, isOtherUser: true, phoneDetails: null, isTransferred: true });
+        }
+        // نسمح له بتحديث البيانات - فك تشفير البيانات قبل إرجاعها
         let decryptedPhoneNumber = null;
         try {
           decryptedPhoneNumber = decryptField(matchingPhone.phone_number);
