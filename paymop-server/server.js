@@ -4221,11 +4221,12 @@ app.get('/api/user-phones', verifyJwtToken, async (req, res) => {
       }
     };
 
-    // جلب الهواتف التي يملكها المستخدم الحالي فقط
+    // جلب الهواتف التي يملكها المستخدم الحالي فقط (استبعاد المنقولة - تم التخلي عنها)
     const { data: phones, error } = await supabase
       .from('registered_phones')
       .select('id, imei, phone_type, registration_date, last_confirmed_at, status, user_id')
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .neq('status', 'transferred');
 
     if (error) throw error;
 

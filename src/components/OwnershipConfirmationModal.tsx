@@ -48,15 +48,23 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
 
   // عند فتح المودال، تأكد من حالة البلاغات التي وُسِمت بأنها نشطة
   React.useEffect(() => {
+    console.log('[OwnershipConfirmationModal] verifyActiveReports effect run: isOpen=', isOpen, 'localPhones.length=', localPhones.length);
     if (!isOpen) return;
     let mounted = true;
     (async () => {
       try {
-        const toCheck = (localPhones || []).filter(p => p.hasActiveReport);
-        if (toCheck.length === 0) return;
+        console.log('[OwnershipConfirmationModal] localPhones snapshot before check:', (localPhones || []).map(p => ({ id: p.id, hasActiveReport: p.hasActiveReport, imei_masked: p.imei_masked })));
+        // Check all phones that have an encrypted IMEI, not only those flagged hasActiveReport
+        const toCheck = (localPhones || []).filter(p => !!p.imei_encrypted);
+        if (toCheck.length === 0) {
+          console.log('[OwnershipConfirmationModal] no phones with imei_encrypted to check');
+          return;
+        }
+        console.log('[OwnershipConfirmationModal] sending check-report-active for', toCheck.map(p => ({ id: p.id, imei_masked: p.imei_masked })));
         const checks = await Promise.allSettled(
           toCheck.map(p => axiosInstance.post('/api/check-report-active', { imei_encrypted: p.imei_encrypted }))
         );
+        console.log('[OwnershipConfirmationModal] check-report-active results:', checks.map((c, i) => ({ idx: i, status: c.status, value: c.status === 'fulfilled' ? c.value?.data : undefined })));
         if (!mounted) return;
         const toRemove: string[] = [];
         checks.forEach((c, idx) => {
@@ -68,6 +76,7 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
           }
         });
         if (toRemove.length > 0) {
+          console.log('[OwnershipConfirmationModal] removing non-active ids:', toRemove);
           setLocalPhones(prev => prev.filter(p => !toRemove.includes(p.id)));
           setRemovedPhoneIds(prev => Array.from(new Set([...prev, ...toRemove])));
           // also clear selection of removed ids
@@ -90,8 +99,9 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
       const phone = localPhones.find(p => p.id === phoneId);
       if (!phone) continue;
 
-      if (phone.hasActiveReport) {
+      if (phone.imei_encrypted) {
         try {
+          console.log('[OwnershipConfirmationModal] handleConfirm checking phone id:', phone.id, 'imei_masked:', phone.imei_masked);
           const resp = await axiosInstance.post('/api/check-report-active', { imei_encrypted: phone.imei_encrypted });
           const active = resp?.data?.active;
           if (active) {

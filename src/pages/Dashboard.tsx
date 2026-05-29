@@ -287,19 +287,15 @@ const Dashboard: React.FC = () => {
         return (new Date().getTime() - baseDate.getTime()) > oneDayInMilliseconds;
       });
 
-      // تصفية الهواتف المنقولة
-      const transferredPhonesData = data.filter((p: any) => p.status === 'transferred');
-
-      // دمج الهواتف التي تحتاج إلى تأكيد مع الهواتف المنقولة
-      const allPhonesToConfirm = [...phonesToConfirm, ...transferredPhonesData];
+      // الهواتف المنقولة (transferred) تم التخلي عنها ولا يجب عرضها مرة أخرى
+      // تم استبعادها من الخادم أيضاً عبر .neq('status', 'transferred')
 
       // 2. تحديث الحالة وعرض النافذة
-      console.log("Phones to confirm count:", allPhonesToConfirm.length);
+      console.log("Phones to confirm count:", phonesToConfirm.length);
       console.log("Approved phones to confirm:", phonesToConfirm.length);
-      console.log("Transferred phones:", transferredPhonesData.length);
 
-      if (allPhonesToConfirm.length > 0) {
-        setPhonesForConfirmation(allPhonesToConfirm);
+      if (phonesToConfirm.length > 0) {
+        setPhonesForConfirmation(phonesToConfirm);
         setShowOwnershipConfirmation(true);
       } else {
         setShowOwnershipConfirmation(false);
