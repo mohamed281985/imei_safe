@@ -946,4 +946,63 @@ export function registerOwnershipRoutes({
       return res.status(500).json({ error: 'Server error' });
     }
   });
+
+  // التحقق من بيانات المشتري - يتأكد إن الاسم والإيميل ورقم الهاتف يطابقون الحساب المسجل
+  app.post('/api/validate-buyer-data', verifyJwtToken, async (req, res) => {
+    try {
+      const { buyerEmail, buyerName, buyerPhone, buyerCountryCode } = req.body;
+      if (!buyerEmail) {
+        return res.status(400).json({ error: 'buyerEmail is required' });
+      }
+
+      const normalizedEmail = String(buyerEmail || '').trim().toLowerCase();
+
+      // البحث عن المستخدم بالإيميل في جدول users
+      const { data: users, error: userError } = await supabase
+        .from('users')
+        .select('id, full_name, email, phone')
+        .ilike('email', normalizedEmail)
+        .limit(5);
+
+      if (userError) {
+        console.error('[validate-buyer-data] Error fetching users:', userError);
+        return res.status(500).json({ error: 'Database error' });
+      }
+
+      // لو مفيش حساب بالإيميل ده → نسمح بالمتابعة (مشتري جديد)
+      if (!users || users.length === 0) {
+        return res.status(404).json({ error: 'buyer_not_found', valid: false });
+      }
+
+      const buyerUser = users[0];
+
+      // فك تشفير البيانات للمقارنة
+      const dbFullName = decryptField(buyerUser.full_name) || buyerUser.full_name || '';
+      const dbPhone = decryptField(buyerUser.phone) || buyerUser.phone || '';
+
+      // تطبيع النصوص للمقارنة
+      const normalizeForCompare = (s) => String(s || '').trim().toLowerCase().replace(/[\s\-()]/g, '');
+      const normalizePhone = (s) => String(s || '').replace(/\D/g, '');
+
+      const nameMatch = !buyerName || normalizeForCompare(dbFullName).includes(normalizeForCompare(buyerName)) || normalizeForCompare(buyerName).includes(normalizeForCompare(dbFullName));
+
+      const incomingPhone = normalizePhone(String(buyerPhone || ''));
+      const dbPhoneClean = normalizePhone(dbPhone);
+      const phoneMatch = !buyerPhone || dbPhoneClean.endsWith(incomingPhone.slice(-8)) || incomingPhone.endsWith(dbPhoneClean.slice(-8));
+
+      if (nameMatch && phoneMatch) {
+        return res.json({ valid: true, message: 'Buyer data matches registered account' });
+      }
+
+      // البيانات لا تطابق
+      return res.json({
+        valid: false,
+        error: 'buyer_data_mismatch',
+        message: 'الاسم أو رقم الهاتف لا يطابق بيانات الحساب المسجل بهذا البريد الإلكتروني'
+      });
+    } catch (err) {
+      console.error('[validate-buyer-data] error:', err);
+      return res.status(500).json({ error: 'Server error' });
+    }
+  });
 }
