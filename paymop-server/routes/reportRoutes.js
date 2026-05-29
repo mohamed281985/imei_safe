@@ -102,6 +102,13 @@ app.post('/api/report-lost-phone', verifyJwtToken, async (req, res) => {
         // إذا كانت الحالة 'transferred' فالمستخدم تخلى عن الهاتف — لا يسمح لأي شخص بتقديم بلاغ
         if (registeredPhone.status === 'transferred') {
           return res.status(403).json({ success: false, error: 'تم التخلي عن هذا الهاتف ولا يمكن تقديم بلاغ عليه.' });
+        }
+        // إذا كانت الحالة 'sold' فتم نقل الملكية — فقط المشتري الجديد يقدر يقدم بلاغ
+        if (registeredPhone.status === 'sold') {
+          if (!requesterId || registeredPhone.user_id !== requesterId) {
+            return res.status(403).json({ success: false, error: 'فقط المالك الجديد يمكنه تقديم البلاغ.' });
+          }
+          // المشتري الجديد يقدر يقدم بلاغ
         } else {
           // الحالة الاعتيادية: تأكد أن المرسل هو المالك المسجّل
           if (!requesterId || registeredPhone.user_id !== requesterId) {
