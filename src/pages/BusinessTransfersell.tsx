@@ -708,6 +708,39 @@ const BusinessTransfer: React.FC = () => {
         return;
       }
 
+      // التحقق من بيانات المشتري قبل المتابعة
+      try {
+        const validateResp = await axiosInstance.post('/api/validate-buyer-data',
+          {
+            buyerEmail: buyerEmail.trim().toLowerCase(),
+            buyerName,
+            buyerPhone: `${buyerCountryCode}${buyerPhone}`,
+            buyerCountryCode
+          },
+          { validateStatus: () => true }
+        );
+
+        // إذا كان الحساب موجود وبياناته لا تطابق → نرفض
+        if (validateResp.status >= 200 && validateResp.status < 300 && validateResp.data?.valid === true) {
+          // البيانات مطابقة ✓
+        } else if (validateResp.status === 404 || validateResp.data?.error === 'buyer_not_found') {
+          // لا يوجد حساب للمشتري → نسمح بالمتابعة
+        } else {
+          // البيانات لا تطابق الحساب المسجل
+          toast({
+            title: 'بيانات المشتري لا تطابق الحساب',
+            description: 'الاسم أو البريد الإلكتروني أو رقم الهاتف لا يطابق بيانات المستخدم المسجلة لدينا',
+            variant: 'destructive',
+            className: 'bg-red-50 text-red-800 font-bold rtl border-2 border-red-500'
+          });
+          setIsLoading(false);
+          return;
+        }
+      } catch (validateErr) {
+        console.error('Buyer validation error:', validateErr);
+        // في حالة خطأ في التحقق، نسمح بالمتابعة (لا نمنع المستخدم بسبب خطأ في الخادم)
+      }
+
       // Save masked phone info for UI; sensitive verification and final update happen server-side
       setCurrentRegisteredPhone(phone);
       setShowPasswordDialog(true);
