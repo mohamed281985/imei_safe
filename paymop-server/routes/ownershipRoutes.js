@@ -710,7 +710,30 @@ export function registerOwnershipRoutes({
         }
       });
 
-      return res.json({ success: true, active: (matchingActive.length > 0), matchingCount: matchingActive.length, anyMatchesCount: anyMatches.length });
+      // To avoid relying on possibly stale bulk results, re-query each matching report by id
+      // and use the authoritative status from the DB for the final decision.
+      const idsToCheck = anyMatches.map(r => r.id);
+      let authoritativeActive = false;
+      const refreshedStatuses = [];
+      for (const id of idsToCheck) {
+        try {
+          const { data: single, error: singleErr } = await supabase
+            .from('phone_reports')
+            .select('id,status')
+            .eq('id', id)
+            .maybeSingle();
+          if (singleErr) {
+            console.warn('[check-report-active] failed to re-fetch report', id, singleErr);
+            continue;
+          }
+          refreshedStatuses.push({ id: single.id, status: single.status });
+          if (String(single.status) === 'active') authoritativeActive = true;
+        } catch (e) {
+          console.warn('[check-report-active] exception re-fetching report', id, e);
+        }
+      }
+
+      return res.json({ success: true, active: authoritativeActive, matchingCount: matchingActive.length, anyMatchesCount: anyMatches.length, refreshed: refreshedStatuses });
     } catch (err) {
       console.error('check-report-active error:', err);
       return res.status(500).json({ success: false, error: 'Server error' });
