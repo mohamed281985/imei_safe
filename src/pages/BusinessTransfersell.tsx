@@ -847,7 +847,8 @@ const BusinessTransfer: React.FC = () => {
       if (receiptImage) {
         const response = await fetch(receiptImage);
         const blob = await response.blob();
-        const fileName = `receipt_${imei}_${Date.now()}.jpg`;
+        const fileId = (typeof crypto !== 'undefined' && typeof (crypto as any).randomUUID === 'function') ? (crypto as any).randomUUID() : `${Date.now()}_${Math.floor(Math.random() * 1e9)}`;
+        const fileName = `receipt_${fileId}_${Date.now()}.jpg`;
         const imageFile = new File([blob], fileName, { type: blob.type });
         const filePath = `receipts/${fileName}`;
         const { error: uploadError } = await supabase.storage.from('transfer-assets').upload(filePath, imageFile, { upsert: true });

@@ -219,6 +219,16 @@ function cleanIdLast6(idLast6: string): string {
   return idLast6.trim().replace(/\D/g, '');
 }
 
+// Generate a random opaque id for filenames to avoid leaking IMEI in storage paths
+function generateRandomId(): string {
+  try {
+    if (typeof crypto !== 'undefined' && typeof (crypto as any).randomUUID === 'function') {
+      return (crypto as any).randomUUID();
+    }
+  } catch (e) {}
+  return `${Date.now()}_${Math.floor(Math.random() * 1e9)}`;
+}
+
 const RegisterPhone: React.FC = () => {
   // حالة الحد المسموح
   const [hasReachedRegisterLimit, setHasReachedRegisterLimit] = useState(false);
@@ -747,7 +757,8 @@ const RegisterPhone: React.FC = () => {
 
       let phoneImagePath = null;
       if (formData.phoneImage) {
-        const fileName = `${formData.imei}_phone_${Date.now()}.jpg`;
+        const fileId = generateRandomId();
+        const fileName = `${fileId}_phone_${Date.now()}.jpg`;
         const { data: phoneUpload, error: phoneError } = await supabase.storage
           .from('registerphone')
           .upload(fileName, formData.phoneImage);
@@ -760,7 +771,8 @@ const RegisterPhone: React.FC = () => {
 
       let receiptImagePath = null;
       if (formData.receiptImage) {
-        const fileName = `${formData.imei}_receipt_${Date.now()}.jpg`;
+        const fileId = generateRandomId();
+        const fileName = `${fileId}_receipt_${Date.now()}.jpg`;
         const { data: receiptUpload, error: receiptError } = await supabase.storage
           .from('registerphone')
           .upload(fileName, formData.receiptImage);

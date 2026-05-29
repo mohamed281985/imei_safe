@@ -967,6 +967,16 @@ const handleWhatsAppCheckboxChange = async () => {
         reader.readAsDataURL(file);
       });
 
+      // Generate a random opaque id for filenames to avoid leaking IMEI in storage paths
+      const generateRandomId = (): string => {
+        try {
+          if (typeof crypto !== 'undefined' && typeof (crypto as any).randomUUID === 'function') {
+            return (crypto as any).randomUUID();
+          }
+        } catch (e) {}
+        return `${Date.now()}_${Math.floor(Math.random() * 1e9)}`;
+      };
+
       // دالة رفع صورة إلى Supabase Storage
       const uploadToSupabase = async (file: File | Blob, type: 'receipt' | 'report') => {
         // تحديد الامتداد بناءً على نوع الملف أو إجباره على webp
@@ -985,7 +995,8 @@ const handleWhatsAppCheckboxChange = async () => {
         if (file instanceof File && file.name && file.name.endsWith('.webp')) {
           fileExt = 'webp';
         }
-        const fileName = `${formData.imei}_${type}_${Date.now()}.${fileExt}`;
+        const fileId = generateRandomId();
+        const fileName = `${fileId}_${type}_${Date.now()}.${fileExt}`;
         const filePath = `reports/${fileName}`;
         const { data, error } = await supabase.storage.from('phoneimages').upload(filePath, file, { upsert: true });
         if (error) {
