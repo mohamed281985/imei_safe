@@ -816,7 +816,8 @@ const BusinessTransferBuy: React.FC = () => {
       let newReceiptImagePath: string | null = null;
       if (receiptFile) {
         const ext = (receiptFile.type && receiptFile.type.split('/')[1]) ? receiptFile.type.split('/')[1].split('+')[0] : 'jpg';
-        const fileName = `receipt_${imei}_${Date.now()}.${ext}`;
+        const fileId = (typeof crypto !== 'undefined' && typeof (crypto as any).randomUUID === 'function') ? (crypto as any).randomUUID() : `${Date.now()}_${Math.floor(Math.random() * 1e9)}`;
+        const fileName = `receipt_${fileId}_${Date.now()}.${ext}`;
         const filePath = `receipts/${fileName}`;
         const { error: uploadError } = await supabase.storage.from('transfer-assets').upload(filePath, receiptFile as File, { upsert: true, contentType: receiptFile.type });
         if (uploadError) throw uploadError;
@@ -827,7 +828,8 @@ const BusinessTransferBuy: React.FC = () => {
         try {
           const response = await fetch(receiptImage);
           const blob = await response.blob();
-          const fileName = `receipt_${imei}_${Date.now()}.jpg`;
+          const fileId = (typeof crypto !== 'undefined' && typeof (crypto as any).randomUUID === 'function') ? (crypto as any).randomUUID() : `${Date.now()}_${Math.floor(Math.random() * 1e9)}`;
+          const fileName = `receipt_${fileId}_${Date.now()}.jpg`;
           const imageFile = new File([blob], fileName, { type: blob.type });
           const filePath = `receipts/${fileName}`;
           const { error: uploadError } = await supabase.storage.from('transfer-assets').upload(filePath, imageFile, { upsert: true });
