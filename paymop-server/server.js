@@ -4221,12 +4221,13 @@ app.get('/api/user-phones', verifyJwtToken, async (req, res) => {
       }
     };
 
-    // جلب الهواتف التي يملكها المستخدم الحالي فقط (استبعاد المنقولة - تم التخلي عنها)
+    // جلب الهواتف التي يملكها المستخدم الحالي فقط (استبعاد المنقولة والمن بيعها)
     const { data: phones, error } = await supabase
       .from('registered_phones')
       .select('id, imei, phone_type, registration_date, last_confirmed_at, status, user_id')
       .eq('user_id', userId)
-      .neq('status', 'transferred');
+      .neq('status', 'transferred')
+      .neq('status', 'sold');
 
     if (error) throw error;
 
@@ -4847,8 +4848,12 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
       if (requesterId && matchingPhone.user_id === requesterId) {
         // الهاتف مسجل للمستخدم الحالي
         if (matchingPhone.status === 'transferred') {
-          // المستخدم تخلى عن الهاتف (قال "هذا ليس هاتفي") - يعامل كأنه ليس ملكه
-          return res.json({ exists: true, isOtherUser: true, phoneDetails: null, isTransferred: true });
+          // المستخدم تخلى عن الهاتف (قال "هذا ليس هاتفي") - يُسمح بتسجيله من جديد
+          return res.json({ exists: false, phoneDetails: null, isTransferred: true });
+        }
+        if (matchingPhone.status === 'sold') {
+          // تم نقل الملكية - فقط المشتري الجديد يقدر يسجله
+          return res.json({ exists: true, isOtherUser: true, phoneDetails: null, isSold: true });
         }
         // نسمح له بتحديث البيانات - فك تشفير البيانات قبل إرجاعها
         let decryptedPhoneNumber = null;
@@ -4892,7 +4897,21 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
         }
         return res.json({ exists: true, phoneDetails: decryptedPhone, isOtherUser: false });
       } else {
-        // مسجل لمستخدم آخر أو منقول الملكية - لا نرجع أي بيانات
+        // مسجل لمستخدم آخر
+        if (matchingPhone.status === 'transferred') {
+          // المستخدم تخلى عن الهاتف - يُسمح بتسجيله من جديد
+          return res.json({ exists: false, phoneDetails: null, isTransferred: true });
+        }
+        if (matchingPhone.status === 'sold') {
+          // تم نقل الملكية - فقط المشتري الجديد يقدر يسجله
+          // لو المستخدم الحالي هو المشتري (user_id يطابقه)، يسمح بالتسجيل
+          if (matchingPhone.user_id && matchingPhone.user_id === requesterId) {
+            return res.json({ exists: false, phoneDetails: null, isSold: true });
+          }
+          // غير المشتري - يظهر كمسجل لحساب آخر
+          return res.json({ exists: true, isOtherUser: true, phoneDetails: null, isSold: true });
+        }
+        // لا نرجع أي بيانات للمستخدم الآخر
         return res.json({ exists: true, isOtherUser: true, phoneDetails: null });
       }
     }

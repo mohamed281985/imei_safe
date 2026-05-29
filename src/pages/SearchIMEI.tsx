@@ -722,7 +722,7 @@ disabled={isSearching || !imei}
               {/* Registered Phone Card */}
               {searchResult === 'not_found' && registeredPhoneDetails && (
                 <>
-                  {registeredPhoneDetails.status === 'transferred' ? (
+                  {registeredPhoneDetails.status === 'transferred' || registeredPhoneDetails.status === 'sold' ? (
                     <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-slate-100">
                       <div className="bg-green-50 pt-6 pb-4 px-6 flex flex-col items-center">
                         <div className="bg-green-100 p-4 rounded-full mb-3">

@@ -457,7 +457,7 @@ export function registerOwnershipRoutes({
         }
       }
       updateData.user_id = buyerUserId;
-      updateData.status = 'transferred';
+      updateData.status = 'sold';
 
       if ((typeof newOwner.email === 'undefined' || newOwner.email === null || newOwner.email === '') && buyerUserId) {
         try {

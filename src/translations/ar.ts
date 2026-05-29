@@ -91,6 +91,8 @@ export default {
   "report_status_updated_successfully": "تم تحديث حالة البلاغ بنجاح.",
   "phone_status_update_failed": "فشل في تحديث حالة الهاتف.",
   "phone_status_transferred_note": "سيستمر البلاغ نشطًا وسيتم إزالة الهاتف من قائمة هواتفك المسجلة.",
+    "phone_status_sold_note": "تم نقل ملكية هذا الهاتف. فقط المالك الجديد يمكنه التسجيل أو تقديم بلاغ.",
+    "imei_registered_sold": "تم نقل ملكية هذا الهاتف لمستخدم آخر. فقط المالك الجديد يمكنه التسجيل.",
   "phones_status_updated": "تم تحديث حالة الهواتف المحددة.",
   "alert_title": "تنبيه",
   "success_title": "نجاح",
