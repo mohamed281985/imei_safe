@@ -171,13 +171,12 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
         errorOccurred = true;
       }
     } else {
-      // الحالة: المستخدم يقول "لم أجد الهاتف"
+      // الحالة: المستخدم يقول "لم أجد الهاتف" - البلاغ يبقى نشطاً لأن الهاتف لسه مفقود
+      // فقط نحدّث تاريخ آخر تأكيد بدون تغيير حالة الهاتف أو حل البلاغ
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token;
-        await axiosInstance.post('/api/update-phone-status', { ids: [phoneWithReport.id], status: 'transferred' });
-        toast({ title: t('note_title'), description: t('phone_status_transferred_note'), variant: 'default' });
-        // إزالة الهاتف من العرض المحلي بعد النقل
+        await axiosInstance.post('/api/update-phone-status', { ids: [phoneWithReport.id], confirmOnly: true });
+        toast({ title: t('success_title'), description: t('report_status_updated_successfully'), variant: 'default' });
+        // إزالة الهاتف من العرض المحلي
         setLocalPhones(prev => prev.filter(p => p.id !== phoneWithReport.id));
         setRemovedPhoneIds(prev => Array.from(new Set([...prev, phoneWithReport.id])));
         const remainingPhonesNow = selectedPhones.filter(id => id !== phoneWithReport.id);
@@ -191,7 +190,7 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
         }
         return;
       } catch (e) {
-        console.error('Failed to mark phone transferred:', e);
+        console.error('Failed to resolve report and confirm:', e);
         toast({ title: t('alert_title'), description: t('phone_status_update_failed'), variant: 'destructive' });
         errorOccurred = true;
       }
