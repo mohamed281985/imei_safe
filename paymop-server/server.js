@@ -25,6 +25,7 @@ import { registerOwnershipRoutes } from './routes/ownershipRoutes.js';
 import { registerProfileRoutes } from './routes/profileRoutes.js';
 import { registerReportRoutes } from './routes/reportRoutes.js';
 import { registerBuyerInfoRoutes } from './routes/buyerInfoRoutes.js';
+import { registerAdminRoutes } from './routes/adminRoutes.js';
 // =================================================================
 // 1. الإعدادات الأولية وتحميل متغيرات البيئة (يجب أن تكون في البداية)
 // =================================================================
@@ -1761,6 +1762,13 @@ registerReportRoutes({
   sendFCMNotificationV1,
   resend,
   crypto
+});
+
+// Admin routes (general utilities that may decrypt provided payloads)
+registerAdminRoutes({
+  app,
+  supabase,
+  decryptField
 });
 
 // --- نقاط نهاية Paymob ---
