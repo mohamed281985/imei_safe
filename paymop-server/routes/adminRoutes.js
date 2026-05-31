@@ -54,9 +54,9 @@ export function registerAdminRoutes({ app, supabase, decryptField }) {
       ]);
 
       const recentReports = (await supabase.from('phone_reports').select('*').order('report_date', { ascending: false }).limit(10)).data || [];
-      const recentAds = (await supabase.from('phones').select('*').order('created_at', { ascending: false }).limit(10)).data || [];
-      const recentUsers = (await supabase.from('users').select('*').order('created_at', { ascending: false }).limit(10)).data || [];
-      const recentTransfers = (await supabase.from('transfer_records').select('*').order('created_at', { ascending: false }).limit(10)).data || [];
+      const recentAds = (await supabase.from('phones').select('*').order('id', { ascending: false }).limit(10)).data || [];
+      const recentUsers = (await supabase.from('users').select('*').order('id', { ascending: false }).limit(10)).data || [];
+      const recentTransfers = (await supabase.from('transfer_records').select('*').order('id', { ascending: false }).limit(10)).data || [];
 
       return res.json({
         stats: {
@@ -96,7 +96,7 @@ export function registerAdminRoutes({ app, supabase, decryptField }) {
   app.get('/admin/ads', async (req, res) => {
     try {
       const limit = Math.min(Number(req.query.limit || 200), 1000);
-      const { data, error } = await supabase.from('phones').select('*').order('created_at', { ascending: false }).limit(limit);
+      const { data, error } = await supabase.from('ads_payment').select('*').order('id', { ascending: false }).limit(limit);
       if (error) throw error;
       const out = (data || []).map(p => ({ id: p.id, ...decryptDeep(p) }));
       return res.json({ ok: true, ads: out });
@@ -106,11 +106,25 @@ export function registerAdminRoutes({ app, supabase, decryptField }) {
     }
   });
 
+    // Backwards-compatible alias: GET /admin/ads_payment
+    app.get('/admin/ads_payment', async (req, res) => {
+      try {
+        const limit = Math.min(Number(req.query.limit || 200), 1000);
+         const { data, error } = await supabase.from('ads_payment').select('*').order('id', { ascending: false }).limit(limit);
+        if (error) throw error;
+        const out = (data || []).map(p => ({ id: p.id, ...decryptDeep(p) }));
+        return res.json({ ok: true, ads_payment: out });
+      } catch (err) {
+        console.error('/admin/ads_payment error', err);
+        return res.status(500).json({ error: 'Server error' });
+      }
+    });
+
   // GET /admin/users - list users (decrypted)
   app.get('/admin/users', async (req, res) => {
     try {
       const limit = Math.min(Number(req.query.limit || 200), 1000);
-      const { data, error } = await supabase.from('users').select('*').order('created_at', { ascending: false }).limit(limit);
+      const { data, error } = await supabase.from('users').select('*').order('id', { ascending: false }).limit(limit);
       if (error) throw error;
       const out = (data || []).map(u => ({ id: u.id, ...decryptDeep(u) }));
       return res.json({ ok: true, users: out });
@@ -124,7 +138,7 @@ export function registerAdminRoutes({ app, supabase, decryptField }) {
   app.get('/admin/ownerships', async (req, res) => {
     try {
       const limit = Math.min(Number(req.query.limit || 200), 1000);
-      const { data, error } = await supabase.from('registered_phones').select('*').order('created_at', { ascending: false }).limit(limit);
+      const { data, error } = await supabase.from('registered_phones').select('*').order('id', { ascending: false }).limit(limit);
       if (error) throw error;
       const out = (data || []).map(r => ({ id: r.id, ...decryptDeep(r) }));
       return res.json({ ok: true, ownerships: out });
