@@ -134,6 +134,20 @@ export function registerAdminRoutes({ app, supabase, decryptField }) {
     }
   });
 
+  // Backwards-compatible alias: GET /admin/registered_phones
+  app.get('/admin/registered_phones', async (req, res) => {
+    try {
+      const limit = Math.min(Number(req.query.limit || 200), 1000);
+      const { data, error } = await supabase.from('registered_phones').select('*').order('created_at', { ascending: false }).limit(limit);
+      if (error) throw error;
+      const out = (data || []).map(r => ({ id: r.id, ...decryptDeep(r) }));
+      return res.json({ ok: true, registered_phones: out });
+    } catch (err) {
+      console.error('/admin/registered_phones error', err);
+      return res.status(500).json({ error: 'Server error' });
+    }
+  });
+
   // GET /admin/stats - counts
   app.get('/admin/stats', async (req, res) => {
     try {
