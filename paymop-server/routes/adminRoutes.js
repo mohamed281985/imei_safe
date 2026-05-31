@@ -234,6 +234,44 @@ export function registerAdminRoutes({ app, supabase, decryptField }) {
     }
   });
 
+  // POST /admin/reject-phone - mark phone rejected and notify owner
+  app.post('/admin/reject-phone', async (req, res) => {
+    try {
+      const { phoneId, reason } = req.body || {};
+      if (!phoneId || !reason) return res.status(400).json({ error: 'phoneId and reason required' });
+
+      // fetch phone to get owner user_id
+      const { data: phone, error: phoneErr } = await supabase.from('phones').select('*').eq('id', phoneId).maybeSingle();
+      if (phoneErr) throw phoneErr;
+      if (!phone) return res.status(404).json({ error: 'phone not found' });
+
+      const user_id = phone.user_id || phone.userId || phone.owner_id || phone.owner || null;
+
+      // update phone status to 'rejected'
+      const { data: updated, error: updateErr } = await supabase.from('phones').update({ status: 'rejected' }).eq('id', phoneId).select().maybeSingle();
+      if (updateErr) throw updateErr;
+
+      // insert notification for owner
+      if (user_id) {
+        const notif = {
+          user_id: user_id,
+          title: 'تم رفض طلب تسجيل الهاتف',
+          message: reason,
+          is_read: false
+        };
+        const { error: notifErr } = await supabase.from('notifications').insert(notif);
+        if (notifErr) console.warn('/admin/reject-phone: notification insert failed', notifErr);
+      } else {
+        console.warn('/admin/reject-phone: phone has no user_id', phoneId);
+      }
+
+      return res.json({ success: true });
+    } catch (err) {
+      console.error('/admin/reject-phone error', err);
+      return res.status(500).json({ error: 'Server error' });
+    }
+  });
+
   // GET /admin/stats - counts
   app.get('/admin/stats', async (req, res) => {
     try {
