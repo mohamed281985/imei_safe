@@ -134,6 +134,78 @@ export function registerAdminRoutes({ app, supabase, decryptField }) {
     }
   });
 
+  // GET /admin/phones - list phones (decrypted)
+  app.get('/admin/phones', async (req, res) => {
+    try {
+      const limit = Math.min(Number(req.query.limit || 200), 1000);
+      const { data, error } = await supabase.from('phones').select('*').order('id', { ascending: false }).limit(limit);
+      if (error) throw error;
+      const out = (data || []).map(p => ({ id: p.id, ...decryptDeep(p) }));
+      return res.json({ ok: true, phones: out });
+    } catch (err) {
+      console.error('/admin/phones error', err);
+      return res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // GET /admin/accessories - list accessories (decrypted)
+  app.get('/admin/accessories', async (req, res) => {
+    try {
+      const limit = Math.min(Number(req.query.limit || 200), 1000);
+      const { data, error } = await supabase.from('accessories').select('*').order('id', { ascending: false }).limit(limit);
+      if (error) throw error;
+      const out = (data || []).map(a => ({ id: a.id, ...decryptDeep(a) }));
+      return res.json({ ok: true, accessories: out });
+    } catch (err) {
+      console.error('/admin/accessories error', err);
+      return res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // GET /admin/ads_price - list ads price rows, optional ?type=...
+  app.get('/admin/ads_price', async (req, res) => {
+    try {
+      const limit = Math.min(Number(req.query.limit || 200), 1000);
+      let q = supabase.from('ads_price').select('*').order('id', { ascending: false }).limit(limit);
+      if (req.query.type) q = q.eq('type', req.query.type);
+      const { data, error } = await q;
+      if (error) throw error;
+      const out = (data || []).map(p => ({ id: p.id, ...decryptDeep(p) }));
+      return res.json({ ok: true, ads_price: out });
+    } catch (err) {
+      console.error('/admin/ads_price error', err);
+      return res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // GET /admin/game_win - list game wins
+  app.get('/admin/game_win', async (req, res) => {
+    try {
+      const limit = Math.min(Number(req.query.limit || 200), 1000);
+      const { data, error } = await supabase.from('game_win').select('*').order('id', { ascending: false }).limit(limit);
+      if (error) throw error;
+      const out = (data || []).map(g => ({ id: g.id, ...decryptDeep(g) }));
+      return res.json({ ok: true, game_win: out });
+    } catch (err) {
+      console.error('/admin/game_win error', err);
+      return res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // GET /admin/user_rewards - list user rewards
+  app.get('/admin/user_rewards', async (req, res) => {
+    try {
+      const limit = Math.min(Number(req.query.limit || 200), 1000);
+      const { data, error } = await supabase.from('user_rewards').select('*').order('id', { ascending: false }).limit(limit);
+      if (error) throw error;
+      const out = (data || []).map(u => ({ id: u.id, ...decryptDeep(u) }));
+      return res.json({ ok: true, user_rewards: out });
+    } catch (err) {
+      console.error('/admin/user_rewards error', err);
+      return res.status(500).json({ error: 'Server error' });
+    }
+  });
+
   // GET /admin/ownerships - list registered phones (decrypted)
   app.get('/admin/ownerships', async (req, res) => {
     try {
