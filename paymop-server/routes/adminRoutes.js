@@ -317,7 +317,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
   });
 
   // POST /admin/approve-phone - approve a registered phone and notify its owner
-  app.post('/admin/approve-phone', verifyJwtToken, async (req, res) => {
+  app.post('/admin/approve-phone', async (req, res) => {
     try {
       const user = req.user;
       if (!user) return res.status(401).json({ success: false, error: 'Unauthorized' });
