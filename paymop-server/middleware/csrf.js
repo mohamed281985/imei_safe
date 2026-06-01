@@ -24,7 +24,11 @@ const { invalidCsrfTokenError, generateToken, doubleCsrfProtection } = doubleCsr
 });
 
 // middleware لحماية CSRF
-export const csrfProtection = doubleCsrfProtection;
+// في بيئة التطوير نسمح بتجاوز الحماية مؤقتًا لتسهيل الاختبار المحلي
+export const csrfProtection = (req, res, next) => {
+  if (process.env.NODE_ENV === 'development') return next();
+  return doubleCsrfProtection(req, res, next);
+};
 
 // middleware لإرجاع CSRF token
 export const getCsrfToken = (req, res) => {

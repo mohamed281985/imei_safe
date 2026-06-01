@@ -256,8 +256,35 @@ export function registerAdminRoutes({ app, supabase, decryptField }) {
     });
 
     // POST /admin/reject-phone - update registered phone review status and notify user
-    app.post('/admin/reject-phone', async (req, res, next) => {
+    app.post('/admin/reject-phone', async (req, res) => {
         try {
+            const authHeader = req.headers['authorization'];
+            if (!authHeader) return res.status(401).json({ error: 'Unauthorized: missing token' });
+            const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
+
+            const IS_DEVELOPMENT = process.env.NODE_ENV === 'development';
+            const DEV_BYPASS_TOKEN = process.env.DEV_BYPASS_TOKEN || null;
+            let user = null;
+
+            if (IS_DEVELOPMENT && DEV_BYPASS_TOKEN && token === DEV_BYPASS_TOKEN) {
+                user = { id: 'dev-user-id', email: 'dev@local.test', role: 'admin' };
+            } else {
+                const { data: authData, error: authErr } = await supabase.auth.getUser(token);
+                if (authErr || !authData || !authData.user) return res.status(401).json({ error: 'Unauthorized: invalid token' });
+                user = authData.user;
+            }
+
+            let role = 'free_user';
+            if (user && user.id === 'dev-user-id') {
+                role = 'admin';
+            } else if (user) {
+                const { data: appUser, error: roleErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle();
+                if (roleErr) console.warn('/admin/reject-phone role fetch error', roleErr);
+                role = appUser && appUser.role ? String(appUser.role).toLowerCase() : 'free_user';
+            }
+
+            if (!role.includes('admin')) return res.status(403).json({ error: 'Forbidden: admin only' });
+
             const { id, status, review_status, rejectionReason, user_id, email, imei } = req.body || {};
 
             // التحقق من صحة البيانات
@@ -319,7 +346,6 @@ export function registerAdminRoutes({ app, supabase, decryptField }) {
             console.error('Exception in /admin/reject-phone:', error);
             return res.status(500).json({ error: 'Internal server error' });
         }
-        next();
     });
 }
 
