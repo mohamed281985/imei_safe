@@ -271,7 +271,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       // Update the registered_phones row: set status=rejected and save reason in review_status
       const { data: updatedPhone, error: updateErr } = await supabase
         .from('registered_phones')
-        .update({ status: 'rejected', review_status: rejectReason })
+        .update({ status: 'rejected', review_status: rejected })
         .eq('id', phoneId)
         .select('id, user_id')
         .maybeSingle();
