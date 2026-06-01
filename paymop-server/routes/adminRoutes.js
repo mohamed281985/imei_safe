@@ -316,6 +316,68 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
     }
   });
 
+  // POST /admin/approve-phone - approve a registered phone and notify its owner
+  app.post('/admin/approve-phone', verifyJwtToken, async (req, res) => {
+    try {
+      const user = req.user;
+      if (!user) return res.status(401).json({ success: false, error: 'Unauthorized' });
+
+      const userRole = (user.role || '').toString().toLowerCase();
+      if (!userRole.includes('admin')) return res.status(403).json({ success: false, error: 'Forbidden: admin only' });
+
+      const { phoneId } = req.body || {};
+      if (!phoneId) return res.status(400).json({ success: false, error: 'phoneId required' });
+
+      const now = new Date().toISOString();
+
+      // Update the registered_phones row: set status=approved, review_status and review_date
+      const { data: updatedPhone, error: updateErr } = await supabase
+        .from('registered_phones')
+        .update({ status: 'approved', review_status: 'تمت المراجعة', review_date: now })
+        .eq('id', phoneId)
+        .select('id, user_id')
+        .maybeSingle();
+      if (updateErr) throw updateErr;
+      if (!updatedPhone) return res.status(404).json({ success: false, error: 'phone_not_found' });
+
+      const targetUserId = updatedPhone.user_id || null;
+
+      // Insert a notification for the phone owner using server service-role client
+      const notif = {
+        user_id: targetUserId,
+        title: 'تمت الموافقة على تسجيل الهاتف',
+        message: 'تمت مراجعة طلب تسجيل الهاتف والموافقة عليه',
+        type: 'phone_approved',
+        is_read: false,
+        created_at: now
+      };
+
+      const { error: insertErr } = await supabase.from('notifications').insert(notif);
+      if (insertErr) console.warn('/admin/approve-phone: notification insert failed', insertErr);
+
+      try {
+        if (typeof logAudit === 'function') {
+          await logAudit({
+            userId: user.id || null,
+            action: 'admin_approve_phone',
+            resourceType: 'registered_phone',
+            resourceId: phoneId,
+            details: {},
+            ip: req.ip,
+            userAgent: req.headers['user-agent']
+          });
+        }
+      } catch (e) {
+        console.warn('/admin/approve-phone: audit failed', e);
+      }
+
+      return res.json({ success: true });
+    } catch (err) {
+      console.error('/admin/approve-phone error', err);
+      return res.status(500).json({ success: false, error: 'Server error' });
+    }
+  });
+
   app.post('/admin/notifications', async (req, res) => {
     try {
       const authHeader = req.headers['authorization'];
