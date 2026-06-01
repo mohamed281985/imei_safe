@@ -235,7 +235,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
   });
 
   // POST /admin/reject-phone - mark phone rejected and notify owner
-  app.post('/admin/reject-phone', csrfProtection, verifyJwtToken, async (req, res) => {
+  app.post('/admin/reject-phone', async (req, res) => {
     try {
       // Require admin role
       if (!req.user || String(req.user.role).toLowerCase().indexOf('admin') === -1) {
