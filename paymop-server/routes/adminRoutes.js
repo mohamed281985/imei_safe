@@ -1,4 +1,4 @@
-export function registerAdminRoutes({ app, supabase, decryptField }) {
+export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToken, logAudit }) {
   // Deep decrypt helper: recursively decrypt strings or encrypted objects.
   const decryptDeep = (value) => {
     try {
@@ -257,31 +257,21 @@ export function registerAdminRoutes({ app, supabase, decryptField }) {
 
   // POST /admin/notifications - create a notification (admin only)
   // POST /admin/reject-phone - reject a registered phone and notify its owner
-  app.post('/admin/reject-phone', async (req, res) => {
+  app.post('/admin/reject-phone', verifyJwtToken, async (req, res) => {
     try {
-      const authHeader = req.headers['authorization'];
-      if (!authHeader) return res.status(401).json({ success: false, error: 'Unauthorized: missing token' });
-      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
+      const user = req.user;
+      if (!user) return res.status(401).json({ success: false, error: 'Unauthorized' });
 
-      // validate auth token with Supabase
-      const { data: authData, error: authErr } = await supabase.auth.getUser(token);
-      if (authErr || !authData || !authData.user) return res.status(401).json({ success: false, error: 'Unauthorized: invalid token' });
-
-      const user = authData.user;
-
-      // fetch app role
-      const { data: appUser, error: roleErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle();
-      if (roleErr) console.warn('/admin/reject-phone role fetch error', roleErr);
-      const role = appUser && appUser.role ? String(appUser.role).toLowerCase() : 'free_user';
-      if (!role.includes('admin')) return res.status(403).json({ success: false, error: 'Forbidden: admin only' });
+      const userRole = (user.role || '').toString().toLowerCase();
+      if (!userRole.includes('admin')) return res.status(403).json({ success: false, error: 'Forbidden: admin only' });
 
       const { phoneId, rejectReason } = req.body || {};
       if (!phoneId || !rejectReason) return res.status(400).json({ success: false, error: 'phoneId and rejectReason required' });
 
-      // Update the registered_phones row and return its user_id
+      // Update the registered_phones row: set status=rejected and save reason in review_status
       const { data: updatedPhone, error: updateErr } = await supabase
         .from('registered_phones')
-        .update({ review_status: 'rejected' })
+        .update({ status: 'rejected', review_status: rejectReason })
         .eq('id', phoneId)
         .select('id, user_id')
         .maybeSingle();
@@ -290,7 +280,7 @@ export function registerAdminRoutes({ app, supabase, decryptField }) {
 
       const targetUserId = updatedPhone.user_id || null;
 
-      // Insert a notification for the user (service role client used by server)
+      // Insert a notification for the phone owner using server service-role client
       const notif = {
         user_id: targetUserId,
         title: 'تم رفض تسجيل الهاتف',
@@ -300,8 +290,8 @@ export function registerAdminRoutes({ app, supabase, decryptField }) {
         created_at: new Date().toISOString()
       };
 
-      const { data: insertedNotif, error: insertErr } = await supabase.from('notifications').insert(notif).select().maybeSingle();
-      if (insertErr) throw insertErr;
+      const { error: insertErr } = await supabase.from('notifications').insert(notif);
+      if (insertErr) console.warn('/admin/reject-phone: notification insert failed', insertErr);
 
       try {
         if (typeof logAudit === 'function') {
