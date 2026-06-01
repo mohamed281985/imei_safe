@@ -262,8 +262,8 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
      // const user = req.user;
      // if (!user) return res.status(401).json({ success: false, error: 'Unauthorized' });
 
-      const userRole = (user.role || '').toString().toLowerCase();
-      if (!userRole.includes('admin')) return res.status(403).json({ success: false, error: 'Forbidden: admin only' });
+     // const userRole = (user.role || '').toString().toLowerCase();
+     // if (!userRole.includes('admin')) return res.status(403).json({ success: false, error: 'Forbidden: admin only' });
 
       const { phoneId, rejectReason } = req.body || {};
       if (!phoneId || !rejectReason) return res.status(400).json({ success: false, error: 'phoneId and rejectReason required' });
