@@ -5066,6 +5066,18 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
   const phoneData = req.body;
   const userId = req.user.id;
   const rawImei = typeof phoneData.imei === 'string' ? phoneData.imei : '';
+  // If an IMEI is provided, compute a stable SHA-256 hash of the normalized digits
+  // and store it in `imei_hash` for indexing/searching (non-reversible).
+  try {
+    if (rawImei && String(rawImei).trim() !== '') {
+      const norm = normalizeDigitsOnly(rawImei);
+      if (norm) {
+        phoneData.imei_hash = crypto.createHash('sha256').update(String(norm)).digest('hex');
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to compute imei_hash for registration', e);
+  }
   const useBonusOnLimit = phoneData.useBonusOnLimit === true || phoneData.useBonusOnLimit === 'true';
   delete phoneData.useBonusOnLimit;
 

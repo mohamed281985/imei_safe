@@ -225,6 +225,8 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
     try {
       const limit = Math.min(Number(req.query.limit || 200), 1000);
       const filter = (req.query.filter || '').toString();
+      const imei = req.query.imei || null;
+      const imei_hash = req.query.imei_hash || null;
 
       // Build query and apply optional status filter (supports single value or comma-separated list)
       let q = supabase.from('registered_phones').select('*').order('created_at', { ascending: false }).limit(limit);
@@ -235,6 +237,25 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
         } else {
           q = q.eq('status', filter);
         }
+      }
+
+      // If the client provided an imei_hash we can query directly. If they provided plain
+      // `imei`, try to compute sha256 on the server (Node ESM import). If server-side
+      // hashing isn't available, clients should call with `imei_hash` instead.
+      try {
+        if (imei_hash) {
+          q = q.eq('imei_hash', imei_hash.toString());
+        } else if (imei) {
+          try {
+            const { createHash } = await import('crypto');
+            const h = createHash('sha256').update(String(imei)).digest('hex');
+            q = q.eq('imei_hash', h);
+          } catch (e) {
+            console.warn('server hashing unavailable; please call with imei_hash', e);
+          }
+        }
+      } catch (e) {
+        console.warn('/admin/registered_phones: hash handling error', e);
       }
 
       const { data, error } = await q;
