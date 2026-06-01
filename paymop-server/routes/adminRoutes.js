@@ -254,6 +254,72 @@ export function registerAdminRoutes({ app, supabase, decryptField }) {
       return res.status(500).json({ error: 'Server error' });
     }
   });
+
+  // POST /admin/reject-phone - update registered phone review status and notify user
+  app.post('/admin/reject-phone', async (req, res) => {
+    try {
+      const { id, status, review_status, rejectionReason, user_id, email, imei } = req.body || {};
+
+      // التحقق من صحة البيانات
+      if (!id || !status) {
+        return res.status(400).json({ error: 'Missing required fields' });
+      }
+
+      // تحديث حالة الهاتف
+      const { data, error } = await supabase
+        .from('registered_phones')
+        .update({
+          status,
+          review_date: new Date().toISOString(),
+          review_status
+        })
+        .eq('id', id)
+        .select('*');
+
+      if (error) {
+        console.error('Error updating phone status:', error);
+        return res.status(500).json({ error: error.message });
+      }
+
+      // إرسال إشعار للمستخدم
+      let notificationError = null;
+      try {
+        const notificationData = {
+          user_id,
+          email,
+          imei,
+          title: status === 'approved' ? 'قبول طلب تسجيل هاتف' : 'رفض طلب تسجيل هاتف',
+          created_at: new Date().toISOString(),
+          is_read: false,
+          body: status === 'approved'
+            ? 'تم قبول طلب تسجيل هاتفك بنجاح.'
+            : `تم رفض طلب تسجيل الهاتف الخاص بك للسبب التالي: ${rejectionReason}`
+        };
+
+        const { error: notifError } = await supabase
+          .from('notifications')
+          .insert(notificationData);
+
+        if (notifError) {
+          notificationError = notifError;
+          console.error('Error sending notification:', notifError);
+        }
+      } catch (notifErr) {
+        notificationError = notifErr;
+        console.error('Exception sending notification:', notifErr);
+      }
+
+      // إرجاع النتيجة
+      return res.status(200).json({
+        success: true,
+        data,
+        notificationError: notificationError ? notificationError.message : null
+      });
+    } catch (error) {
+      console.error('Exception in /admin/reject-phone:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  });
 }
 
 export default registerAdminRoutes;
