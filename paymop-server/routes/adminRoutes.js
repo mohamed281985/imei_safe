@@ -285,11 +285,34 @@ export function registerAdminRoutes({ app, supabase, decryptField }) {
 
             if (!role.includes('admin')) return res.status(403).json({ error: 'Forbidden: admin only' });
 
-            const { id, status, review_status, rejectionReason, user_id, email, imei } = req.body || {};
+            const { id: rawId, status, review_status, rejectionReason, user_id, email, imei } = req.body || {};
 
             // التحقق من صحة البيانات
-            if (!id || !status) {
+            if (!rawId || !status) {
                 return res.status(400).json({ error: 'Missing required fields' });
+            }
+
+            // حاول تحويل الـ id إلى رقم صحيح (bigint compatible)
+            const idNum = Number(rawId);
+            if (!Number.isFinite(idNum) || !Number.isInteger(idNum)) {
+                return res.status(400).json({ error: 'Invalid id: must be an integer' });
+            }
+
+            // تعيين قيمة review_status إلى القيم المتوقعة في قاعدة البيانات (قيم واجهة المستخدم)
+            let mappedReviewStatus = null;
+            if (typeof review_status !== 'undefined' && review_status !== null) {
+                const rs = String(review_status).trim();
+                const rsLower = rs.toLowerCase();
+                if (rsLower === 'rejected' || rsLower === 'manual' || rsLower === 'data_incorrect') {
+                    mappedReviewStatus = 'بيانات خاطئة';
+                } else if (rsLower === 'approved' || rsLower === 'accepted' || rs === 'تمت المراجعة') {
+                    mappedReviewStatus = 'تمت المراجعة';
+                } else if (rsLower === 'pending' || rs === '') {
+                    mappedReviewStatus = null;
+                } else {
+                    // افتراضياً مرّر القيمة كما هي (قد تكون عربية صحيحة)
+                    mappedReviewStatus = rs;
+                }
             }
 
             // تحديث حالة الهاتف
@@ -298,9 +321,9 @@ export function registerAdminRoutes({ app, supabase, decryptField }) {
                 .update({
                     status,
                     review_date: new Date().toISOString(),
-                    review_status
+                    review_status: mappedReviewStatus
                 })
-                .eq('id', id)
+                .eq('id', idNum)
                 .select('*');
 
             if (error) {
