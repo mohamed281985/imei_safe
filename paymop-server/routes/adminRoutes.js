@@ -1,4 +1,4 @@
-export function registerAdminRoutes({ app, supabase, decryptField }) {
+export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToken, logAudit }) {
   // Deep decrypt helper: recursively decrypt strings or encrypted objects.
   const decryptDeep = (value) => {
     try {
@@ -235,8 +235,12 @@ export function registerAdminRoutes({ app, supabase, decryptField }) {
   });
 
   // POST /admin/reject-phone - mark phone rejected and notify owner
-  app.post('/admin/reject-phone', async (req, res) => {
+  app.post('/admin/reject-phone', verifyJwtToken, async (req, res) => {
     try {
+      // Require admin role
+      if (!req.user || String(req.user.role).toLowerCase().indexOf('admin') === -1) {
+        return res.status(403).json({ error: 'Forbidden: admin only' });
+      }
       const { phoneId, reason } = req.body || {};
       if (!phoneId || !reason) return res.status(400).json({ error: 'phoneId and reason required' });
 
@@ -263,6 +267,23 @@ export function registerAdminRoutes({ app, supabase, decryptField }) {
         if (notifErr) console.warn('/admin/reject-phone: notification insert failed', notifErr);
       } else {
         console.warn('/admin/reject-phone: phone has no user_id', phoneId);
+      }
+
+      // Audit log (best-effort)
+      try {
+        if (typeof logAudit === 'function') {
+          await logAudit({
+            userId: req.user?.id || null,
+            action: 'reject_phone',
+            resourceType: 'phone',
+            resourceId: phoneId,
+            details: { reason },
+            ip: req.ip,
+            userAgent: req.headers['user-agent']
+          });
+        }
+      } catch (auditErr) {
+        console.warn('/admin/reject-phone: audit log failed', auditErr);
       }
 
       return res.json({ success: true });

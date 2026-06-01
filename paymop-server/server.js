@@ -1768,7 +1768,9 @@ registerReportRoutes({
 registerAdminRoutes({
   app,
   supabase,
-  decryptField
+  decryptField,
+  verifyJwtToken,
+  logAudit
 });
 
 // --- نقاط نهاية Paymob ---
