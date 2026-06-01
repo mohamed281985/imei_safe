@@ -284,7 +284,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       const notif = {
         user_id: targetUserId,
         title: 'تم رفض تسجيل الهاتف',
-        message: `سبب الرفض: ${rejectReason}`,
+        body: `سبب الرفض: ${rejectReason}`,
         type: 'phone_rejected',
         is_read: false,
         created_at: new Date().toISOString()
@@ -296,7 +296,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       try {
         if (typeof logAudit === 'function') {
           await logAudit({
-            userId: user.id || null,
+            userId: null,
             action: 'admin_reject_phone',
             resourceType: 'registered_phone',
             resourceId: phoneId,
@@ -346,7 +346,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       const notif = {
         user_id: targetUserId,
         title: 'تمت الموافقة على تسجيل الهاتف',
-        message: 'تمت مراجعة طلب تسجيل الهاتف والموافقة عليه',
+        body: 'تمت مراجعة طلب تسجيل الهاتف والموافقة عليه',
         type: 'phone_approved',
         is_read: false,
         created_at: now
@@ -358,7 +358,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       try {
         if (typeof logAudit === 'function') {
           await logAudit({
-            userId: user.id || null,
+            userId: null,
             action: 'admin_approve_phone',
             resourceType: 'registered_phone',
             resourceId: phoneId,
