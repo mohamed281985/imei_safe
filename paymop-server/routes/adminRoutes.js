@@ -224,6 +224,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
   app.get('/admin/registered_phones', async (req, res) => {
     try {
       const limit = Math.min(Number(req.query.limit || 200), 1000);
+      const filter = req.query.filter;
       const { data, error } = await supabase.from('registered_phones').select('*').order('created_at', { ascending: false }).limit(limit);
       if (error) throw error;
       const out = (data || []).map(r => ({ id: r.id, ...decryptDeep(r) }));
@@ -349,7 +350,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
         body: 'تمت مراجعة طلب تسجيل الهاتف والموافقة عليه',
         type: 'phone_approved',
         is_read: false,
-        created_at: now
+        created_at: new Date().toISOString()
       };
 
       const { error: insertErr } = await supabase.from('notifications').insert(notif);
