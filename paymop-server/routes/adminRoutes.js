@@ -1,4 +1,4 @@
-export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToken, logAudit, csrfProtection }) {
+export function registerAdminRoutes({ app, supabase, decryptField }) {
   // Deep decrypt helper: recursively decrypt strings or encrypted objects.
   const decryptDeep = (value) => {
     try {
@@ -234,65 +234,6 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
     }
   });
 
-  // POST /admin/reject-phone - mark phone rejected and notify owner
-  app.post('/admin/reject-phone', async (req, res) => {
-    try {
-      // Require admin role
-      if (!req.user || String(req.user.role).toLowerCase().indexOf('admin') === -1) {
-        return res.status(403).json({ error: 'Forbidden: admin only' });
-      }
-      const { phoneId, reason } = req.body || {};
-      if (!phoneId || !reason) return res.status(400).json({ error: 'phoneId and reason required' });
-
-      // fetch phone to get owner user_id
-      const { data: phone, error: phoneErr } = await supabase.from('phones').select('*').eq('id', phoneId).maybeSingle();
-      if (phoneErr) throw phoneErr;
-      if (!phone) return res.status(404).json({ error: 'phone not found' });
-
-      const user_id = phone.user_id || phone.userId || phone.owner_id || phone.owner || null;
-
-      // update phone status to 'rejected'
-      const { data: updated, error: updateErr } = await supabase.from('phones').update({ status: 'rejected' }).eq('id', phoneId).select().maybeSingle();
-      if (updateErr) throw updateErr;
-
-      // insert notification for owner
-      if (user_id) {
-        const notif = {
-          user_id: user_id,
-          title: 'تم رفض طلب تسجيل الهاتف',
-          message: reason,
-          is_read: false
-        };
-        const { error: notifErr } = await supabase.from('notifications').insert(notif);
-        if (notifErr) console.warn('/admin/reject-phone: notification insert failed', notifErr);
-      } else {
-        console.warn('/admin/reject-phone: phone has no user_id', phoneId);
-      }
-
-      // Audit log (best-effort)
-      try {
-        if (typeof logAudit === 'function') {
-          await logAudit({
-            userId: req.user?.id || null,
-            action: 'reject_phone',
-            resourceType: 'phone',
-            resourceId: phoneId,
-            details: { reason },
-            ip: req.ip,
-            userAgent: req.headers['user-agent']
-          });
-        }
-      } catch (auditErr) {
-        console.warn('/admin/reject-phone: audit log failed', auditErr);
-      }
-
-      return res.json({ success: true });
-    } catch (err) {
-      console.error('/admin/reject-phone error', err);
-      return res.status(500).json({ error: 'Server error' });
-    }
-  });
-
   // GET /admin/stats - counts
   app.get('/admin/stats', async (req, res) => {
     try {
@@ -310,6 +251,55 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       });
     } catch (err) {
       console.error('/admin/stats error', err);
+      return res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // POST /admin/notifications - create a notification (admin only)
+  app.post('/admin/notifications', async (req, res) => {
+    try {
+      const authHeader = req.headers['authorization'];
+      if (!authHeader) return res.status(401).json({ error: 'Unauthorized: missing token' });
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
+
+      // validate auth token with Supabase
+      const { data: authData, error: authErr } = await supabase.auth.getUser(token);
+      if (authErr || !authData || !authData.user) return res.status(401).json({ error: 'Unauthorized: invalid token' });
+
+      const user = authData.user;
+
+      // fetch app role
+      const { data: appUser, error: roleErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle();
+      if (roleErr) console.warn('/admin/notifications role fetch error', roleErr);
+      const role = appUser && appUser.role ? String(appUser.role).toLowerCase() : 'free_user';
+      if (!role.includes('admin')) return res.status(403).json({ error: 'Forbidden: admin only' });
+
+      const { user_id = null, title, message, metadata = null } = req.body || {};
+      if (!title || !message) return res.status(400).json({ error: 'title and message required' });
+
+      const notif = { user_id: user_id, title: title, message: message, is_read: false, metadata };
+      const { data: inserted, error: insertErr } = await supabase.from('notifications').insert(notif).select().maybeSingle();
+      if (insertErr) throw insertErr;
+
+      try {
+        if (typeof logAudit === 'function') {
+          await logAudit({
+            userId: user.id || null,
+            action: 'admin_post_notification',
+            resourceType: 'notification',
+            resourceId: inserted && inserted.id ? inserted.id : null,
+            details: { user_id, title },
+            ip: req.ip,
+            userAgent: req.headers['user-agent']
+          });
+        }
+      } catch (e) {
+        console.warn('/admin/notifications: audit failed', e);
+      }
+
+      return res.json({ success: true, notification: inserted || null });
+    } catch (err) {
+      console.error('/admin/notifications error', err);
       return res.status(500).json({ error: 'Server error' });
     }
   });
