@@ -254,55 +254,6 @@ export function registerAdminRoutes({ app, supabase, decryptField }) {
       return res.status(500).json({ error: 'Server error' });
     }
   });
-
-  // POST /admin/notifications - create a notification (admin only)
-  app.post('/admin/notifications', async (req, res) => {
-    try {
-      const authHeader = req.headers['authorization'];
-      if (!authHeader) return res.status(401).json({ error: 'Unauthorized: missing token' });
-      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
-
-      // validate auth token with Supabase
-      const { data: authData, error: authErr } = await supabase.auth.getUser(token);
-      if (authErr || !authData || !authData.user) return res.status(401).json({ error: 'Unauthorized: invalid token' });
-
-      const user = authData.user;
-
-      // fetch app role
-      const { data: appUser, error: roleErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle();
-      if (roleErr) console.warn('/admin/notifications role fetch error', roleErr);
-      const role = appUser && appUser.role ? String(appUser.role).toLowerCase() : 'free_user';
-      if (!role.includes('admin')) return res.status(403).json({ error: 'Forbidden: admin only' });
-
-      const { user_id = null, title, message, metadata = null } = req.body || {};
-      if (!title || !message) return res.status(400).json({ error: 'title and message required' });
-
-      const notif = { user_id: user_id, title: title, message: message, is_read: false, metadata };
-      const { data: inserted, error: insertErr } = await supabase.from('notifications').insert(notif).select().maybeSingle();
-      if (insertErr) throw insertErr;
-
-      try {
-        if (typeof logAudit === 'function') {
-          await logAudit({
-            userId: user.id || null,
-            action: 'admin_post_notification',
-            resourceType: 'notification',
-            resourceId: inserted && inserted.id ? inserted.id : null,
-            details: { user_id, title },
-            ip: req.ip,
-            userAgent: req.headers['user-agent']
-          });
-        }
-      } catch (e) {
-        console.warn('/admin/notifications: audit failed', e);
-      }
-
-      return res.json({ success: true, notification: inserted || null });
-    } catch (err) {
-      console.error('/admin/notifications error', err);
-      return res.status(500).json({ error: 'Server error' });
-    }
-  });
 }
 
 export default registerAdminRoutes;
