@@ -224,8 +224,20 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
   app.get('/admin/registered_phones', async (req, res) => {
     try {
       const limit = Math.min(Number(req.query.limit || 200), 1000);
-      const filter = req.query.filter;
-      const { data, error } = await supabase.from('registered_phones').select('*').order('created_at', { ascending: false }).limit(limit);
+      const filter = (req.query.filter || '').toString();
+
+      // Build query and apply optional status filter (supports single value or comma-separated list)
+      let q = supabase.from('registered_phones').select('*').order('created_at', { ascending: false }).limit(limit);
+      if (filter && filter !== 'all') {
+        if (filter.includes(',')) {
+          const vals = filter.split(',').map(s => s.trim()).filter(Boolean);
+          if (vals.length) q = q.in('status', vals);
+        } else {
+          q = q.eq('status', filter);
+        }
+      }
+
+      const { data, error } = await q;
       if (error) throw error;
       const out = (data || []).map(r => ({ id: r.id, ...decryptDeep(r) }));
       return res.json({ ok: true, registered_phones: out });
