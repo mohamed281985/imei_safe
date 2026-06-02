@@ -255,6 +255,60 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
     }
   });
 
+  // PATCH /admin/users/:id - update user status/role (accept Arabic status values)
+  app.patch('/admin/users', async (req, res) => {
+    try {
+      const acting = req.user || null;
+      const roleCheck = (acting && acting.role) ? String(acting.role).toLowerCase() : '';
+      if (!roleCheck.includes('admin')) return res.status(403).json({ error: 'forbidden: admin only' });
+
+      const id = req.params.id;
+      if (!id) return res.status(400).json({ error: 'missing id' });
+
+      let { status, role } = req.body || {};
+      const payload = {};
+      if (typeof role !== 'undefined' && role !== null && String(role).trim() !== '') payload.role = role;
+
+      if (typeof status !== 'undefined' && status !== null && String(status).trim() !== '') {
+        const s = String(status).trim().toLowerCase();
+        const activeSet = new Set(['نشط', 'active', 'فعال', '1', 'true', 'yes']);
+        const blockedSet = new Set(['محظور', 'blocked', 'banned', '0', 'false', 'no']);
+        let mapped = null;
+        if (activeSet.has(s)) mapped = 'active';
+        else if (blockedSet.has(s)) mapped = 'blocked';
+        if (!mapped) return res.status(400).json({ error: 'invalid status value' });
+        payload.status = mapped;
+      }
+
+      if (Object.keys(payload).length === 0) return res.status(400).json({ error: 'nothing to update' });
+
+      const { data, error } = await supabase.from('users').update(payload).eq('id', id).select().maybeSingle();
+      if (error) return res.status(500).json({ error: error.message || 'update failed' });
+      if (!data) return res.status(404).json({ error: 'user not found' });
+
+      try {
+        if (typeof logAudit === 'function') {
+          await logAudit({
+            userId: acting && acting.id ? acting.id : null,
+            action: 'admin_update_user',
+            resourceType: 'user',
+            resourceId: id,
+            details: { changes: payload },
+            ip: req.ip,
+            userAgent: req.headers['user-agent']
+          });
+        }
+      } catch (e) {
+        console.warn('/admin/users patch: audit failed', e);
+      }
+
+      return res.json({ ok: true, user: data });
+    } catch (err) {
+      console.error('/admin/users patch error', err);
+      return res.status(500).json({ error: 'Server error' });
+    }
+  });
+
   // GET /admin/phones - list phones (decrypted)
   app.get('/admin/phones', async (req, res) => {
     try {
