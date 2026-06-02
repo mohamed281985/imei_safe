@@ -90,7 +90,10 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       let q = supabase.from('phone_reports').select('*').order('report_date', { ascending: false }).limit(limit);
 
       if (filter && filter !== 'all') {
-        if (filter.includes(',')) {
+        const f = filter.toString().toLowerCase();
+        if (f === 'paid' || f === 'unpaid') {
+          q = q.eq('is_paid', f === 'paid');
+        } else if (filter.includes(',')) {
           const vals = filter.split(',').map(s => s.trim()).filter(Boolean);
           if (vals.length) q = q.in('status', vals);
         } else {
@@ -118,6 +121,28 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       if (error) throw error;
 
       let rows = (data || []);
+
+      // If client requested filtering by whether the report's IMEI is registered in the system
+      // use the stored imei_hash on phone_reports and compare against registered_phones.imei_hash
+      const registeredFilter = req.query.registered;
+      if (typeof registeredFilter !== 'undefined' && registeredFilter !== null && String(registeredFilter).trim() !== '') {
+        const val = String(registeredFilter).toLowerCase();
+        const wantRegistered = (val === 'true' || val === '1' || val === 'yes' || val === 'registered');
+        try {
+          const { data: regRows, error: regErr } = await supabase.from('registered_phones').select('imei_hash');
+          if (!regErr && Array.isArray(regRows)) {
+            const regSet = new Set(regRows.map(r => r.imei_hash).filter(Boolean));
+            rows = rows.filter(r => {
+              const h = r.imei_hash || null;
+              if (h) return wantRegistered ? regSet.has(h) : !regSet.has(h);
+              // If report lacks imei_hash, treat it as unregistered
+              return !wantRegistered;
+            });
+          }
+        } catch (e) {
+          console.warn('/admin/reports: registered filter error', e);
+        }
+      }
 
       // If client requested phone search, decrypt rows and filter in-memory (note: unindexed, may be slow)
       if (phone) {
@@ -191,7 +216,10 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
         let q = supabase.from('ads_payment').select('*').order('id', { ascending: false }).limit(limit);
 
         if (filter && filter !== 'all') {
-          if (filter.includes(',')) {
+          const f = filter.toString().toLowerCase();
+          if (f === 'paid' || f === 'unpaid') {
+            q = q.eq('is_paid', f === 'paid');
+          } else if (filter.includes(',')) {
             const vals = filter.split(',').map(s => s.trim()).filter(Boolean);
             if (vals.length) q = q.in('status', vals);
           } else {
