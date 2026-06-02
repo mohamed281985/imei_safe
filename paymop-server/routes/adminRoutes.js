@@ -260,6 +260,8 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
     try {
       const acting = req.user || null;
       const roleCheck = (acting && acting.role) ? String(acting.role).toLowerCase() : '';
+      console.log('REQ USER =', req.user);
+console.log('ACTING =', acting);
       if (!roleCheck.includes('admin')) return res.status(403).json({ error: 'forbidden: admin only' });
 
       const id = req.params.id;
