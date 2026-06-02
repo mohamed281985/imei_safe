@@ -203,43 +203,43 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
     }
   });
 
-    // Backwards-compatible alias: GET /admin/ads_payment
-    app.get('/admin/ads_payment', async (req, res) => {
-      try {
-        const limit = Math.min(Number(req.query.limit || 200), 1000);
-        const filter = (req.query.filter || '').toString();
-        const user_id = req.query.user_id || null;
-        const id = req.query.id || null;
-        const type = req.query.type || null;
-        const phone_id = req.query.phone_id || null;
+  // Backwards-compatible alias: GET /admin/ads_payment
+  app.get('/admin/ads_payment', async (req, res) => {
+    try {
+      const limit = Math.min(Number(req.query.limit || 200), 1000);
+      const filter = (req.query.filter || '').toString();
+      const user_id = req.query.user_id || null;
+      const id = req.query.id || null;
+      const type = req.query.type || null;
+      const phone_id = req.query.phone_id || null;
 
-        let q = supabase.from('ads_payment').select('*').order('id', { ascending: false }).limit(limit);
+      let q = supabase.from('ads_payment').select('*').order('id', { ascending: false }).limit(limit);
 
-        if (filter && filter !== 'all') {
-          const f = filter.toString().toLowerCase();
-          if (f === 'paid' || f === 'unpaid') {
-            q = q.eq('is_paid', f === 'paid');
-          } else if (filter.includes(',')) {
-            const vals = filter.split(',').map(s => s.trim()).filter(Boolean);
-            if (vals.length) q = q.in('status', vals);
-          } else {
-            q = q.eq('status', filter);
-          }
+      if (filter && filter !== 'all') {
+        const f = filter.toString().toLowerCase();
+        if (f === 'paid' || f === 'unpaid') {
+          q = q.eq('is_paid', f === 'paid');
+        } else if (filter.includes(',')) {
+          const vals = filter.split(',').map(s => s.trim()).filter(Boolean);
+          if (vals.length) q = q.in('status', vals);
+        } else {
+          q = q.eq('status', filter);
         }
-        if (user_id) q = q.eq('user_id', user_id);
-        if (id) q = q.eq('id', id);
-        if (type) q = q.eq('type', type);
-        if (phone_id) q = q.eq('phone_id', phone_id);
-
-        const { data, error } = await q;
-        if (error) throw error;
-        const out = (data || []).map(p => ({ id: p.id, ...decryptDeep(p) }));
-        return res.json({ ok: true, ads_payment: out });
-      } catch (err) {
-        console.error('/admin/ads_payment error', err);
-        return res.status(500).json({ error: 'Server error' });
       }
-    });
+      if (user_id) q = q.eq('user_id', user_id);
+      if (id) q = q.eq('id', id);
+      if (type) q = q.eq('type', type);
+      if (phone_id) q = q.eq('phone_id', phone_id);
+
+      const { data, error } = await q;
+      if (error) throw error;
+      const out = (data || []).map(p => ({ id: p.id, ...decryptDeep(p) }));
+      return res.json({ ok: true, ads_payment: out });
+    } catch (err) {
+      console.error('/admin/ads_payment error', err);
+      return res.status(500).json({ error: 'Server error' });
+    }
+  });
 
   // GET /admin/users - list users (decrypted)
   app.get('/admin/users', async (req, res) => {
@@ -256,12 +256,12 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
   });
 
   // PATCH /admin/users/:id - update user status/role (accept Arabic status values)
-  app.patch('/admin/users/:id',  async (req, res) => {
+  app.patch('/admin/users/:id', verifyJwtToken, async (req, res) => {
     try {
       const acting = req.user || null;
       const roleCheck = (acting && acting.role) ? String(acting.role).toLowerCase() : '';
       console.log('REQ USER =', req.user);
-console.log('ACTING =', acting);
+      console.log('ACTING =', acting);
       if (!roleCheck.includes('admin')) return res.status(403).json({ error: 'forbidden: admin only' });
 
       const id = req.params.id;
@@ -470,11 +470,11 @@ console.log('ACTING =', acting);
   // POST /admin/reject-phone - reject a registered phone and notify its owner
   app.post('/admin/reject-phone', async (req, res) => {
     try {
-     // const user = req.user;
-     // if (!user) return res.status(401).json({ success: false, error: 'Unauthorized' });
+      // const user = req.user;
+      // if (!user) return res.status(401).json({ success: false, error: 'Unauthorized' });
 
-     // const userRole = (user.role || '').toString().toLowerCase();
-     // if (!userRole.includes('admin')) return res.status(403).json({ success: false, error: 'Forbidden: admin only' });
+      // const userRole = (user.role || '').toString().toLowerCase();
+      // if (!userRole.includes('admin')) return res.status(403).json({ success: false, error: 'Forbidden: admin only' });
 
       const { phoneId, rejectReason } = req.body || {};
       if (!phoneId || !rejectReason) return res.status(400).json({ success: false, error: 'phoneId and rejectReason required' });
@@ -531,10 +531,10 @@ console.log('ACTING =', acting);
   app.post('/admin/approve-phone', async (req, res) => {
     try {
       //const user = req.user;
-    //  if (!user) return res.status(401).json({ success: false, error: 'Unauthorized' });
+      //  if (!user) return res.status(401).json({ success: false, error: 'Unauthorized' });
 
-     // const userRole = (user.role || '').toString().toLowerCase();
-     // if (!userRole.includes('admin')) return res.status(403).json({ success: false, error: 'Forbidden: admin only' });
+      // const userRole = (user.role || '').toString().toLowerCase();
+      // if (!userRole.includes('admin')) return res.status(403).json({ success: false, error: 'Forbidden: admin only' });
 
       const { phoneId } = req.body || {};
       if (!phoneId) return res.status(400).json({ success: false, error: 'phoneId required' });
