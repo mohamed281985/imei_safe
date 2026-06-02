@@ -256,7 +256,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
   });
 
   // PATCH /admin/users/:id - update user status/role (accept Arabic status values)
-  app.patch('/admin/users', async (req, res) => {
+  app.patch('/admin/users/:id',  async (req, res) => {
     try {
       const acting = req.user || null;
       const roleCheck = (acting && acting.role) ? String(acting.role).toLowerCase() : '';
