@@ -82,9 +82,60 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
   app.get('/admin/reports', async (req, res) => {
     try {
       const limit = Math.min(Number(req.query.limit || 200), 1000);
-      const { data, error } = await supabase.from('phone_reports').select('*').order('report_date', { ascending: false }).limit(limit);
+      const filter = (req.query.filter || '').toString();
+      const imei = req.query.imei || null;
+      const imei_hash = req.query.imei_hash || null;
+      const phone = req.query.phone || null;
+
+      let q = supabase.from('phone_reports').select('*').order('report_date', { ascending: false }).limit(limit);
+
+      if (filter && filter !== 'all') {
+        if (filter.includes(',')) {
+          const vals = filter.split(',').map(s => s.trim()).filter(Boolean);
+          if (vals.length) q = q.in('status', vals);
+        } else {
+          q = q.eq('status', filter);
+        }
+      }
+
+      try {
+        if (imei_hash) {
+          q = q.eq('imei_hash', imei_hash.toString());
+        } else if (imei) {
+          try {
+            const { createHash } = await import('crypto');
+            const h = createHash('sha256').update(String(imei).replace(/\D/g, '')).digest('hex');
+            q = q.eq('imei_hash', h);
+          } catch (e) {
+            console.warn('/admin/reports: server hashing unavailable; please call with imei_hash', e);
+          }
+        }
+      } catch (e) {
+        console.warn('/admin/reports: hash handling error', e);
+      }
+
+      const { data, error } = await q;
       if (error) throw error;
-      const out = (data || []).map(r => ({ id: r.id, ...decryptDeep(r) }));
+
+      let rows = (data || []);
+
+      // If client requested phone search, decrypt rows and filter in-memory (note: unindexed, may be slow)
+      if (phone) {
+        const normalizedPhone = String(phone).replace(/\D/g, '');
+        rows = rows.filter(r => {
+          try {
+            const dec = decryptDeep(r);
+            const p = dec && dec.phone_number ? dec.phone_number : null;
+            if (!p) return false;
+            const normalized = String(p).replace(/\D/g, '');
+            return normalized.includes(normalizedPhone) || normalized === normalizedPhone;
+          } catch (e) {
+            return false;
+          }
+        });
+      }
+
+      const out = rows.map(r => ({ id: r.id, ...decryptDeep(r) }));
       return res.json({ ok: true, reports: out });
     } catch (err) {
       console.error('/admin/reports error', err);
@@ -96,7 +147,28 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
   app.get('/admin/ads', async (req, res) => {
     try {
       const limit = Math.min(Number(req.query.limit || 200), 1000);
-      const { data, error } = await supabase.from('ads_payment').select('*').order('id', { ascending: false }).limit(limit);
+      const filter = (req.query.filter || '').toString();
+      const user_id = req.query.user_id || null;
+      const id = req.query.id || null;
+      const type = req.query.type || null;
+      const phone_id = req.query.phone_id || null;
+
+      let q = supabase.from('ads_payment').select('*').order('id', { ascending: false }).limit(limit);
+
+      if (filter && filter !== 'all') {
+        if (filter.includes(',')) {
+          const vals = filter.split(',').map(s => s.trim()).filter(Boolean);
+          if (vals.length) q = q.in('status', vals);
+        } else {
+          q = q.eq('status', filter);
+        }
+      }
+      if (user_id) q = q.eq('user_id', user_id);
+      if (id) q = q.eq('id', id);
+      if (type) q = q.eq('type', type);
+      if (phone_id) q = q.eq('phone_id', phone_id);
+
+      const { data, error } = await q;
       if (error) throw error;
       const out = (data || []).map(p => ({ id: p.id, ...decryptDeep(p) }));
       return res.json({ ok: true, ads: out });
@@ -110,7 +182,28 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
     app.get('/admin/ads_payment', async (req, res) => {
       try {
         const limit = Math.min(Number(req.query.limit || 200), 1000);
-         const { data, error } = await supabase.from('ads_payment').select('*').order('id', { ascending: false }).limit(limit);
+        const filter = (req.query.filter || '').toString();
+        const user_id = req.query.user_id || null;
+        const id = req.query.id || null;
+        const type = req.query.type || null;
+        const phone_id = req.query.phone_id || null;
+
+        let q = supabase.from('ads_payment').select('*').order('id', { ascending: false }).limit(limit);
+
+        if (filter && filter !== 'all') {
+          if (filter.includes(',')) {
+            const vals = filter.split(',').map(s => s.trim()).filter(Boolean);
+            if (vals.length) q = q.in('status', vals);
+          } else {
+            q = q.eq('status', filter);
+          }
+        }
+        if (user_id) q = q.eq('user_id', user_id);
+        if (id) q = q.eq('id', id);
+        if (type) q = q.eq('type', type);
+        if (phone_id) q = q.eq('phone_id', phone_id);
+
+        const { data, error } = await q;
         if (error) throw error;
         const out = (data || []).map(p => ({ id: p.id, ...decryptDeep(p) }));
         return res.json({ ok: true, ads_payment: out });
