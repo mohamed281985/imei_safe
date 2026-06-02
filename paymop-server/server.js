@@ -4929,6 +4929,10 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
           // المستخدم تخلى عن الهاتف (قال "هذا ليس هاتفي") - يُسمح بتسجيله من جديد
           return res.json({ exists: false, phoneDetails: null, isTransferred: true });
         }
+        if (matchingPhone.status === 'rejected') {
+          // تم رفض التسجيل سابقًا - السماح بإعادة التسجيل
+          return res.json({ exists: false, phoneDetails: null, isRejected: true });
+        }
         if (matchingPhone.status === 'sold') {
           // تم نقل الملكية - فقط المشتري الجديد يقدر يسجله
           return res.json({ exists: true, isOtherUser: true, phoneDetails: null, isSold: true });
@@ -4979,6 +4983,10 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
         if (matchingPhone.status === 'transferred') {
           // المستخدم تخلى عن الهاتف - يُسمح بتسجيله من جديد
           return res.json({ exists: false, phoneDetails: null, isTransferred: true });
+        }
+        if (matchingPhone.status === 'rejected') {
+          // تم رفض التسجيل سابقًا - السماح بإعادة التسجيل
+          return res.json({ exists: false, phoneDetails: null, isRejected: true });
         }
         if (matchingPhone.status === 'sold') {
           // تم نقل الملكية - فقط المشتري الجديد يقدر يسجله
