@@ -650,6 +650,55 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       return res.status(500).json({ error: 'Server error' });
     }
   });
+
+  // PATCH /admin/ads-payment/:id - update ads_payment record (admin only)
+  app.patch('/admin/ads-payment/:id', verifyJwtToken, async (req, res) => {
+    try {
+      console.log('PATCH /admin/ads-payment called. body:', JSON.stringify(req.body));
+      const acting = req.user || null;
+      const roleCheck = (acting && acting.role) ? String(acting.role).toLowerCase() : '';
+      if (!roleCheck.includes('admin')) {
+        console.log('Forbidden: user is not admin', acting ? acting.id : null);
+        return res.status(403).json({ success: false, error: 'forbidden: admin only' });
+      }
+
+      const id = req.params.id;
+      console.log('Updating ads_payment id=', id);
+      if (!id) return res.status(400).json({ success: false, error: 'missing id' });
+
+      // Only allow specific fields to be updated via this admin endpoint
+      const { is_active, status, amount, paymob_order_id, ads_payment_id } = req.body || {};
+      const updateObj = {};
+      if (typeof is_active !== 'undefined') updateObj.is_active = is_active;
+      if (typeof status !== 'undefined') updateObj.status = status;
+      if (typeof amount !== 'undefined') updateObj.amount = amount;
+      if (typeof paymob_order_id !== 'undefined') updateObj.paymob_order_id = paymob_order_id;
+      if (typeof ads_payment_id !== 'undefined') updateObj.ads_payment_id = ads_payment_id;
+
+      if (Object.keys(updateObj).length === 0) {
+        return res.status(400).json({ success: false, error: 'nothing to update' });
+      }
+
+      try {
+        const { data: updated, error } = await supabase
+          .from('ads_payment')
+          .update(updateObj)
+          .eq('id', id)
+          .select()
+          .maybeSingle();
+
+        console.log('ads_payment update result for id=', id, 'error=', error, 'updated=', updated);
+        if (error) return res.status(500).json({ success: false, error: error.message || error });
+        return res.json({ success: true, data: updated });
+      } catch (e) {
+        console.error('ads_payment update exception:', e);
+        return res.status(500).json({ success: false, error: e.message || 'update failed' });
+      }
+    } catch (err) {
+      console.error('/admin/ads-payment error', err);
+      return res.status(500).json({ success: false, error: err.message || 'Server error' });
+    }
+  });
 }
 
 export default registerAdminRoutes;
