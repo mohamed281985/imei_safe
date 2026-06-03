@@ -78,21 +78,14 @@ app.post('/api/report-lost-phone', verifyJwtToken, async (req, res) => {
     }
 
 
-    // تحقق من روابط الصور (الفاتورة والمحضر) أنها روابط https صالحة أو فارغة (null/undefined)
+    // تحقق من روابط الصور (الفاتورة والمحضر) — سنجري التحقق بعد تعبئة القيم من
+    // registered_phones لأن الواجهة قد ترسل placeholders بدلاً من رابط الفاتورة.
     const isValidImageUrl = (url) => {
       if (!url) return false;
       if (typeof url !== 'string') return false;
       // يجب أن يبدأ الرابط بـ https:// ويحتوي على /storage/v1/object/public/
       return url.startsWith('https://') && url.includes('/storage/v1/object/public/');
     };
-
-    // إذا لم تُرسل receipt_image_url أو كانت غير صالحة، ارفض الطلب مباشرة
-    if (!('receipt_image_url' in data) || !data.receipt_image_url || !isValidImageUrl(data.receipt_image_url)) {
-      return res.status(400).json({ success: false, error: 'يجب رفع صورة الفاتورة بشكل صحيح (رابط صالح).' });
-    }
-    if ('report_image_url' in data && data.report_image_url && !isValidImageUrl(data.report_image_url)) {
-      return res.status(400).json({ success: false, error: 'رابط صورة المحضر غير صالح أو لم يتم رفع الصورة بشكل صحيح.' });
-    }
 
     // التحقق مما إذا كان الهاتف مسجلاً ومنع غير المالك من تقديم البلاغ
     if (data.imei) {
@@ -142,9 +135,44 @@ app.post('/api/report-lost-phone', verifyJwtToken, async (req, res) => {
         if ((!data.phoneNumber || data.phoneNumber === PLACEHOLDER_REGISTERED) && phoneReal) data.phoneNumber = phoneReal;
         if ((!data.idLast6 || data.idLast6 === PLACEHOLDER_REGISTERED) && idLast6Real) data.idLast6 = idLast6Real;
         if ((!data.phone_type || data.phone_type === PLACEHOLDER_REGISTERED) && phoneTypeReal) data.phone_type = phoneTypeReal;
+        // إذا كانت صورة الفاتورة محفوظة في سجل registered_phones، استخدمها كقيمة افتراضية
+        if ((!data.receipt_image_url || data.receipt_image_url === '') && registeredPhoneForReport.receipt_image_url) {
+          let rurl = registeredPhoneForReport.receipt_image_url;
+          try {
+            if (typeof rurl === 'string' && (!rurl.startsWith('https://') || !rurl.includes('/storage/v1/object/public/'))) {
+              // حاول استخلاص المسار ثم الحصول على publicUrl عبر service role
+              let path = rurl;
+              const idx = rurl.indexOf('/object/public/');
+              if (idx !== -1) {
+                path = rurl.substring(idx + '/object/public/'.length);
+              } else {
+                const idx2 = rurl.indexOf('phone-images/');
+                if (idx2 !== -1) path = rurl.substring(idx2 + 'phone-images/'.length);
+              }
+              const { data: publicUrlData, error: puErr } = await supabase.storage.from('phone-images').getPublicUrl(path);
+              if (!puErr && publicUrlData && publicUrlData.publicUrl) {
+                data.receipt_image_url = publicUrlData.publicUrl;
+              } else {
+                data.receipt_image_url = rurl;
+              }
+            } else {
+              data.receipt_image_url = rurl;
+            }
+          } catch (e) {
+            data.receipt_image_url = rurl;
+          }
+        }
       } catch (e) {
         console.warn('report-lost-phone: failed to hydrate placeholders from registered_phones', e);
       }
+    }
+
+    // الآن بعد تعبئة الحقول من registered_phones، نفّذ تحقق روابط الصور النهائي
+    if (!('receipt_image_url' in data) || !data.receipt_image_url || !isValidImageUrl(data.receipt_image_url)) {
+      return res.status(400).json({ success: false, error: 'يجب رفع صورة الفاتورة بشكل صحيح (رابط صالح).' });
+    }
+    if ('report_image_url' in data && data.report_image_url && !isValidImageUrl(data.report_image_url)) {
+      return res.status(400).json({ success: false, error: 'رابط صورة المحضر غير صالح أو لم يتم رفع الصورة بشكل صحيح.' });
     }
     // تشفير كلمة المرور قبل الحفظ (bcrypt)
     if (data.password) {
