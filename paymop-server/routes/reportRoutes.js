@@ -262,10 +262,10 @@ app.post('/api/upload-report-image', verifyJwtToken, async (req, res) => {
       return res.status(500).json({ success: false, error: 'Upload failed', details: uploadErr.message || uploadErr });
     }
 
-    // Get public URL
+    // Construct a guaranteed public URL (format: {SUPABASE_URL}/storage/v1/object/public/{bucket}/{path})
     try {
-      const { data: publicUrlData } = supabase.storage.from('phone-images').getPublicUrl(filePath);
-      const publicUrl = publicUrlData && publicUrlData.publicUrl ? publicUrlData.publicUrl : null;
+      const supabaseUrl = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
+      const publicUrl = supabaseUrl ? `${supabaseUrl}/storage/v1/object/public/phone-images/${filePath}` : null;
       return res.json({ success: true, path: filePath, publicUrl });
     } catch (e) {
       return res.json({ success: true, path: filePath });

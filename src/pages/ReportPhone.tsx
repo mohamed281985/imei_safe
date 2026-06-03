@@ -1038,7 +1038,7 @@ const handleWhatsAppCheckboxChange = async () => {
           if (idx !== -1) {
             path = url.substring(idx + '/object/public/'.length);
           }
-          const { data: publicUrlData } = supabase.storage.from('phoneimages').getPublicUrl(path);
+          const { data: publicUrlData } = supabase.storage.from('phone-images').getPublicUrl(path);
           url = publicUrlData?.publicUrl || url;
         }
         receiptImageToSend = url;
