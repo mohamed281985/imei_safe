@@ -131,10 +131,11 @@ app.post('/api/report-lost-phone', verifyJwtToken, async (req, res) => {
         const idLast6Real = decryptField(registeredPhoneForReport.id_last6) || registeredPhoneForReport.id_last6;
         const phoneTypeReal = registeredPhoneForReport.phone_type || null;
 
-        if ((!data.ownerName || data.ownerName === PLACEHOLDER_REGISTERED) && ownerNameReal) data.ownerName = ownerNameReal;
-        if ((!data.phoneNumber || data.phoneNumber === PLACEHOLDER_REGISTERED) && phoneReal) data.phoneNumber = phoneReal;
-        if ((!data.idLast6 || data.idLast6 === PLACEHOLDER_REGISTERED) && idLast6Real) data.idLast6 = idLast6Real;
-        if ((!data.phone_type || data.phone_type === PLACEHOLDER_REGISTERED) && phoneTypeReal) data.phone_type = phoneTypeReal;
+        // احفظ القيم الحقيقية دائماً عندما تكون متوفرة في سجل registered_phones
+        if (ownerNameReal) data.ownerName = ownerNameReal;
+        if (phoneReal) data.phoneNumber = phoneReal;
+        if (idLast6Real) data.idLast6 = idLast6Real;
+        if (phoneTypeReal) data.phone_type = phoneTypeReal;
         // إذا كانت صورة الفاتورة محفوظة في سجل registered_phones، استخدمها كقيمة افتراضية
         if ((!data.receipt_image_url || data.receipt_image_url === '') && registeredPhoneForReport.receipt_image_url) {
           let rurl = registeredPhoneForReport.receipt_image_url;
