@@ -636,6 +636,20 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       return res.status(500).json({ error: 'Server error' });
     }
   });
+
+  // GET /admin/publish_ad - list published ads
+  app.get('/admin/publish_ad', async (req, res) => {
+    try {
+      const limit = Math.min(Number(req.query.limit || 200), 1000);
+      const { data, error } = await supabase.from('publish_ad').select('*').order('id', { ascending: false }).limit(limit);
+      if (error) throw error;
+      const out = (data || []).map(p => ({ id: p.id, ...decryptDeep(p) }));
+      return res.json({ ok: true, data: out });
+    } catch (err) {
+      console.error('/admin/publish_ad error', err);
+      return res.status(500).json({ error: 'Server error' });
+    }
+  });
 }
 
 export default registerAdminRoutes;
