@@ -287,6 +287,72 @@ app.post('/api/upload-report-image', verifyJwtToken, async (req, res) => {
   }
 });
 
+// Endpoint: convert various storage URL forms to a guaranteed public URL
+app.post('/api/get-public-url', verifyJwtToken, async (req, res) => {
+  try {
+    const { url } = req.body || {};
+    if (!url || typeof url !== 'string') return res.status(400).json({ success: false, error: 'Missing url' });
+
+    // If already a public storage URL, return as-is
+    if (url.startsWith('https://') && url.includes('/storage/v1/object/public/')) {
+      return res.json({ success: true, publicUrl: url });
+    }
+
+    // Try to extract bucket and path from known supabase URL patterns
+    let bucket = 'phone-images';
+    let path = null;
+
+    // Pattern: /storage/v1/object/sign/{bucket}/{path}
+    const signIdx = url.indexOf('/storage/v1/object/sign/');
+    if (signIdx !== -1) {
+      const after = url.substring(signIdx + '/storage/v1/object/sign/'.length);
+      const cleaned = after.split('?')[0];
+      const parts = cleaned.split('/');
+      if (parts.length >= 2) {
+        bucket = parts.shift();
+        path = parts.join('/');
+      }
+    }
+
+    // Pattern: /storage/v1/object/public/{bucket}/{path}
+    if (!path) {
+      const pubIdx = url.indexOf('/storage/v1/object/');
+      if (pubIdx !== -1) {
+        const after = url.substring(pubIdx + '/storage/v1/object/'.length);
+        if (after.startsWith('public/')) {
+          const rest = after.substring('public/'.length).split('?')[0];
+          const parts = rest.split('/');
+          if (parts.length >= 2) {
+            bucket = parts.shift();
+            path = parts.join('/');
+          }
+        }
+      }
+    }
+
+    // Fallback: detect bucket name in plain strings like 'phone-images/...' or full path containing 'phone-images/'
+    if (!path) {
+      const idx = url.indexOf('phone-images/');
+      if (idx !== -1) {
+        path = url.substring(idx + 'phone-images/'.length).split('?')[0];
+        bucket = 'phone-images';
+      }
+    }
+
+    if (!path) return res.status(400).json({ success: false, error: 'Cannot extract storage path' });
+
+    const { data: publicUrlData, error } = await supabase.storage.from(bucket).getPublicUrl(path);
+    if (error) {
+      console.error('get-public-url supabase error:', error);
+      return res.status(500).json({ success: false, error: 'Failed to get public url', details: error.message || error });
+    }
+    return res.json({ success: true, publicUrl: publicUrlData?.publicUrl || null });
+  } catch (err) {
+    console.error('/api/get-public-url error', err);
+    return res.status(500).json({ success: false, error: 'Server error' });
+  }
+});
+
 const recentlyNotifiedByImei = new Map();
 
 // إرسال بريد إلكتروني للمالك عند العثور على الهاتف

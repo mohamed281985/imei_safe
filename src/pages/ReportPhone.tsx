@@ -1031,15 +1031,16 @@ const handleWhatsAppCheckboxChange = async () => {
             console.error('فشل جلب receipt_image_url عبر /api/imei-masked-info:');
           }
         }
-        // إذا لم يكن الرابط عامًا، حوله إلى رابط عام
+        // إذا لم يكن الرابط عامًا، اطلب من السيرفر توليد/إرجاع رابط عام موثوق
         if (typeof url === 'string' && (!url.startsWith('https://') || !url.includes('/storage/v1/object/public/'))) {
-          let path = url;
-          const idx = url.indexOf('/object/public/');
-          if (idx !== -1) {
-            path = url.substring(idx + '/object/public/'.length);
+          try {
+            const resp = await axiosInstance.post('/api/get-public-url', { url });
+            if (resp && resp.data && resp.data.success && resp.data.publicUrl) {
+              url = resp.data.publicUrl;
+            }
+          } catch (e) {
+            console.warn('Failed to convert receipt image to public URL via server, falling back to original URL', e);
           }
-          const { data: publicUrlData } = supabase.storage.from('phone-images').getPublicUrl(path);
-          url = publicUrlData?.publicUrl || url;
         }
         receiptImageToSend = url;
       } else if (formData.receiptImage && ((typeof File !== 'undefined' && formData.receiptImage instanceof File) || (typeof Blob !== 'undefined' && formData.receiptImage instanceof Blob))) {
