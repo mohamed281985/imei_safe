@@ -66,6 +66,17 @@ app.post('/api/report-lost-phone', verifyJwtToken, async (req, res) => {
     const PLACEHOLDER_REGISTERED = 'مسجل بالنظام';
     let registeredPhoneForReport = null;
 
+    // Diagnostic: log presence/format of image URLs to help debug 400 errors
+    try {
+      const caller = req.user?.id || 'unknown';
+      console.log(`/api/report-lost-phone called by=${caller} receipt_image_url_present=${!!data.receipt_image_url} report_image_url_present=${!!data.report_image_url}`);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('Payload keys:', Object.keys(req.body || {}).join(','));
+      }
+    } catch (e) {
+      // ignore logging failures
+    }
+
 
     // تحقق من روابط الصور (الفاتورة والمحضر) أنها روابط https صالحة أو فارغة (null/undefined)
     const isValidImageUrl = (url) => {
