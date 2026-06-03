@@ -700,10 +700,11 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
     }
   });
 
-  // PATCH /admin/ads_payment - update ads_payment by id from request body (admin only)
+  // PATCH /admin/ads_payment - update ads_payment by id from request body or query (admin only)
+  // Accepts id in body (`{ id: 123 }`) or in query (`?id=eq.123` or `?id=123`).
   app.patch('/admin/ads_payment', verifyJwtToken, async (req, res) => {
     try {
-      console.log('PATCH /admin/ads_payment called. body:', JSON.stringify(req.body));
+      console.log('PATCH /admin/ads_payment called. body:', JSON.stringify(req.body), 'query:', JSON.stringify(req.query));
       const acting = req.user || null;
       const roleCheck = (acting && acting.role) ? String(acting.role).toLowerCase() : '';
       if (!roleCheck.includes('admin')) {
@@ -711,10 +712,20 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
         return res.status(403).json({ success: false, error: 'forbidden: admin only' });
       }
 
-      const { id, status, amount, is_active, paymob_order_id, ads_payment_id } = req.body || {};
-      console.log('ads_payment id from body =', id);
-      if (!id) return res.status(400).json({ success: false, error: 'Missing id in request body' });
+      // Helper: extract id from body or query (supports formats like "eq.593")
+      const extractId = (r) => {
+        if (r.body && r.body.id) return r.body.id;
+        const q = r.query && r.query.id;
+        if (!q) return null;
+        const m = String(q).match(/^(?:eq\.)?(.+)$/);
+        return m ? m[1] : null;
+      };
 
+      const id = extractId(req);
+      console.log('ads_payment id from body/query =', id);
+      if (!id) return res.status(400).json({ success: false, error: 'Missing id in request body or query' });
+
+      const { status, amount, is_active, paymob_order_id, ads_payment_id } = req.body || {};
       const updateObj = {};
       if (typeof is_active !== 'undefined') updateObj.is_active = is_active;
       if (typeof status !== 'undefined') updateObj.status = status;
