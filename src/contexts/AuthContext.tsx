@@ -254,9 +254,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .single();
 
       // إذا كان الحساب محظوراً، أوقف العملية فوراً
-      if (userProfileData && userProfileData.status === 'banned') {
-        console.log('Login blocked for banned user:', email);
-        return { success: false, error: 'user_banned' };
+      if (userProfileData && userProfileData.status === 'blocked') {
+        console.log('Login blocked for blocked user:', email);
+        return { success: false, error: 'user_blocked' };
       }
 
       const { data, error } = await supabase.auth.signInWithPassword({

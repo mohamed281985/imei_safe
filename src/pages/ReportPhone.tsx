@@ -977,43 +977,34 @@ const handleWhatsAppCheckboxChange = async () => {
         return `${Date.now()}_${Math.floor(Math.random() * 1e9)}`;
       };
 
-      // دالة رفع صورة إلى Supabase Storage
+      // دالة رفع صورة عبر السيرفر: سترسل base64 إلى endpoint سيرفري يقوم بالرفع باستخدام service-role
       const uploadToSupabase = async (file: File | Blob, type: 'receipt' | 'report') => {
-        // تحديد الامتداد بناءً على نوع الملف أو إجباره على webp
+        // determine extension
         let fileExt = 'jpg';
-        if (file.type === 'image/webp') {
-          fileExt = 'webp';
-        } else if (file.type === 'image/png') {
-          fileExt = 'png';
-        } else if (file.type === 'image/jpeg' || file.type === 'image/jpg') {
-          fileExt = 'jpg';
-        } else if (file.type) {
-          // fallback لأي نوع صورة آخر
-          fileExt = file.type.split('/').pop() || 'jpg';
-        }
-        // إذا كان الملف مضغوط (عادةً من imageCompression)، اجبر الامتداد على webp
-        if (file instanceof File && file.name && file.name.endsWith('.webp')) {
-          fileExt = 'webp';
-        }
-        const fileId = generateRandomId();
-        const fileName = `${fileId}_${type}_${Date.now()}.${fileExt}`;
-        const filePath = `reports/${fileName}`;
-        const { data, error } = await supabase.storage.from('phoneimages').upload(filePath, file, { upsert: true });
-        if (error) {
-          console.error('❌ خطأ supabase عند رفع الصورة:', error);
+        if (file instanceof File && file.name && file.name.endsWith('.webp')) fileExt = 'webp';
+        else if ((file as any).type === 'image/webp') fileExt = 'webp';
+        else if ((file as any).type === 'image/png') fileExt = 'png';
+        else if ((file as any).type === 'image/jpeg' || (file as any).type === 'image/jpg') fileExt = 'jpg';
+        else if ((file as any).type) fileExt = (file as any).type.split('/').pop() || 'jpg';
+
+        // convert to base64 (data URL)
+        const base64 = await getBase64(file as File);
+
+        // POST to server upload endpoint
+        try {
+          const resp = await axiosInstance.post('/api/upload-report-image', {
+            fileBase64: base64,
+            fileExt,
+            type,
+          });
+          if (resp && resp.data && resp.data.success) {
+            return resp.data.publicUrl || resp.data.path || null;
+          }
+          throw new Error('Upload failed');
+        } catch (e) {
+          console.error('Server upload failed', e);
           throw new Error(t('failed_to_upload_image'));
         }
-        // حاول تحويل المسار إلى رابط عام مناسب لـ Supabase
-        try {
-          const { data: publicUrlData } = supabase.storage.from('phoneimages').getPublicUrl(filePath);
-          if (publicUrlData && publicUrlData.publicUrl) {
-            return publicUrlData.publicUrl;
-          }
-        } catch (e) {
-          console.warn('Could not derive public URL for uploaded file, returning path as fallback', e);
-        }
-        // افتح العودة للمسار إذا فشل توليد رابط عام
-        return filePath;
       };
 
       let receiptImageToSend: string | null = null;

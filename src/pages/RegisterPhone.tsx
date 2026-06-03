@@ -449,7 +449,7 @@ const RegisterPhone: React.FC = () => {
   }, [user, fromPurchase, t, toast, formData.registerType]);
   // ...existing code...
   // Restore checkImeiExists definition here if missing
-  const checkImeiExists = useCallback(async (imei: string): Promise<{ exists: boolean; phoneDetails: Partial<PhoneData> | null; isOtherUser?: boolean; hasActiveReport?: boolean; isStolen?: boolean; isOwnReport?: boolean }> => {
+  const checkImeiExists = useCallback(async (imei: string): Promise<{ exists: boolean; phoneDetails: Partial<PhoneData> | null; isOtherUser?: boolean; hasActiveReport?: boolean; isStolen?: boolean; isOwnReport?: boolean; isRejected?: boolean }> => {
     try {
       // ملاحظة: تم تشفير رقم IMEI بالفعل قبل استدعاء هذه الدالة باستخدام AES
       // ملاحظة أمنية: استخدام JWT Token للمصادقة بدلاً من مفتاح API
@@ -507,7 +507,22 @@ const RegisterPhone: React.FC = () => {
         // ملاحظة أمنية: إرسال البيانات كنص عادي عبر HTTPS آمن
         // التشفير سيتم في الخلفية (Backend)
         const cleanImeiValue = cleanImei(value);
-        const { exists, phoneDetails, isOtherUser, hasActiveReport, isStolen, isOwnReport } = await checkImeiExists(cleanImeiValue);
+        const { exists, phoneDetails, isOtherUser, hasActiveReport, isStolen, isOwnReport, isRejected } = await checkImeiExists(cleanImeiValue);
+        // If server indicates this IMEI was previously rejected, treat it as not-existing
+        if (isRejected) {
+          setIsImeiValid(true);
+          setImeiError('');
+          setFormData(prev => ({
+            ...prev,
+            ownerName: (prev.registerType === 'mine' || user?.role === 'business') ? prev.ownerName : '',
+            phoneNumber: (prev.registerType === 'mine' || user?.role === 'business') ? prev.phoneNumber : '',
+            phoneType: '',
+            phoneImage: null,
+          }));
+          setPreviews(prev => ({ ...prev, phoneImage: '' }));
+          setIsLoading(false);
+          return;
+        }
         console.log('Check IMEI result:', { exists, isOtherUser, hasActiveReport, isStolen });
 
         if (exists) {
@@ -737,7 +752,9 @@ const RegisterPhone: React.FC = () => {
       // التشفير سيتم في الخلفية (Backend)
       const cleanImeiValue = cleanImei(formData.imei);
       const exists = await checkImeiExists(cleanImeiValue);
-      if (exists.exists) {
+      if (exists.isRejected) {
+        // previously rejected registrations are allowed to register again
+      } else if (exists.exists) {
         setImeiError('imei_already_exists');
         showToast('error', 'imei_already_exists');
         return false;

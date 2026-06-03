@@ -227,6 +227,55 @@ app.post('/api/report-lost-phone', verifyJwtToken, async (req, res) => {
   }
 });
 
+// Endpoint: upload images for reports via server (uses service-role supabase client)
+app.post('/api/upload-report-image', verifyJwtToken, async (req, res) => {
+  try {
+    // Expect { fileBase64, fileExt, type }
+    const { fileBase64, fileExt, type } = req.body || {};
+    if (!fileBase64 || !fileExt || !type) return res.status(400).json({ success: false, error: 'Missing fileBase64/fileExt/type' });
+
+    // Basic validation
+    if (!['receipt', 'report'].includes(type)) return res.status(400).json({ success: false, error: 'Invalid type' });
+
+    // Decode base64 (allow data URL prefix)
+    let base64 = String(fileBase64);
+    const match = base64.match(/^data:(.+);base64,(.*)$/);
+    let contentType = `image/${fileExt}`;
+    if (match) {
+      contentType = match[1] || contentType;
+      base64 = match[2];
+    }
+
+    const buffer = Buffer.from(base64, 'base64');
+    // size limit ~8MB
+    if (buffer.length > 8 * 1024 * 1024) return res.status(400).json({ success: false, error: 'File too large' });
+
+    // Generate filename similar to client
+    const fileId = `${Date.now()}_${Math.floor(Math.random() * 1e9)}`;
+    const fileName = `${fileId}_${type}_${Date.now()}.${String(fileExt).replace(/[^a-z0-9]/gi, '')}`;
+    const filePath = `reports/${fileName}`;
+
+    // Upload to bucket `phone-images` (server uses service role client passed as `supabase`)
+    const { data: uploadData, error: uploadErr } = await supabase.storage.from('phone-images').upload(filePath, buffer, { contentType, upsert: true });
+    if (uploadErr) {
+      console.error('Server upload error:', uploadErr);
+      return res.status(500).json({ success: false, error: 'Upload failed', details: uploadErr.message || uploadErr });
+    }
+
+    // Get public URL
+    try {
+      const { data: publicUrlData } = supabase.storage.from('phone-images').getPublicUrl(filePath);
+      const publicUrl = publicUrlData && publicUrlData.publicUrl ? publicUrlData.publicUrl : null;
+      return res.json({ success: true, path: filePath, publicUrl });
+    } catch (e) {
+      return res.json({ success: true, path: filePath });
+    }
+  } catch (err) {
+    console.error('/api/upload-report-image error', err);
+    return res.status(500).json({ success: false, error: 'Server error' });
+  }
+});
+
 const recentlyNotifiedByImei = new Map();
 
 // إرسال بريد إلكتروني للمالك عند العثور على الهاتف
