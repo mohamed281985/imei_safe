@@ -310,14 +310,42 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       return res.status(500).json({ error: 'Server error' });
     }
   });
-
-  // GET /admin/phones - list phones (decrypted)
+  // GET /admin/phones - list phones (decrypted) with images
   app.get('/admin/phones', async (req, res) => {
     try {
       const limit = Math.min(Number(req.query.limit || 200), 1000);
-      const { data, error } = await supabase.from('phones').select('*').order('id', { ascending: false }).limit(limit);
+      
+      // تعديل الاستعلام لجلب الصور مع الهواتف
+      const { data, error } = await supabase
+        .from('phones')
+        .select(`
+          *,
+          phone_images (
+            id,
+            image_url,
+            is_primary
+          )
+        `)
+        .order('id', { ascending: false })
+        .limit(limit);
+      
       if (error) throw error;
-      const out = (data || []).map(p => ({ id: p.id, ...decryptDeep(p) }));
+      
+      // معالجة البيانات وفك تشفيرها
+      const out = (data || []).map(p => {
+        // فك تشفير بيانات الهاتف
+        const decryptedPhone = decryptDeep(p);
+        
+        // الحفاظ على الصور كما هي (لأنها عادة لا تحتاج إلى فك تشفير)
+        const images = p.phone_images || [];
+        
+        return {
+          id: p.id,
+          ...decryptedPhone,
+          images: images
+        };
+      });
+      
       return res.json({ ok: true, phones: out });
     } catch (err) {
       console.error('/admin/phones error', err);
@@ -325,13 +353,43 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
     }
   });
 
-  // GET /admin/accessories - list accessories (decrypted)
+
+    // GET /admin/accessories - list accessories (decrypted) with images
   app.get('/admin/accessories', async (req, res) => {
     try {
       const limit = Math.min(Number(req.query.limit || 200), 1000);
-      const { data, error } = await supabase.from('accessories').select('*').order('id', { ascending: false }).limit(limit);
+      
+      // تعديل الاستعلام لجلب الصور مع الإكسسوارات
+      const { data, error } = await supabase
+        .from('accessories')
+        .select(`
+          *,
+          accessory_images (
+            id,
+            image_url,
+            is_primary
+          )
+        `)
+        .order('id', { ascending: false })
+        .limit(limit);
+      
       if (error) throw error;
-      const out = (data || []).map(a => ({ id: a.id, ...decryptDeep(a) }));
+      
+      // معالجة البيانات وفك تشفيرها
+      const out = (data || []).map(a => {
+        // فك تشفير بيانات الإكسسوار
+        const decryptedAccessory = decryptDeep(a);
+        
+        // الحفاظ على الصور كما هي (لأنها عادة لا تحتاج إلى فك تشفير)
+        const images = a.accessory_images || [];
+        
+        return {
+          id: a.id,
+          ...decryptedAccessory,
+          images: images
+        };
+      });
+      
       return res.json({ ok: true, accessories: out });
     } catch (err) {
       console.error('/admin/accessories error', err);
