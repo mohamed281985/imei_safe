@@ -323,7 +323,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
           phone_images (
             id,
             image_path,
-            is_primary
+            main_image
           )
         `)
         .order('id', { ascending: false })
@@ -379,21 +379,21 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
         // استخدام استعلام SQL مباشر لتجنب مشاكل العلاقات
         const { data: images, error: imagesError } = await supabase
           .from('phone_images')
-          .select('id, phone_id, image_path, is_primary')
+          .select('id, phone_id, image_path, main_image')
           .in('phone_id', phoneIds);
         
         if (imagesError) {
           console.error('Error fetching phone images:', imagesError);
         } else if (images) {
           // تنظيم الصور في خريطة حسب معرف الهاتف
-          imagesMap = images.reduce((acc, img) => {
+            imagesMap = images.reduce((acc, img) => {
             if (!acc[img.phone_id]) {
               acc[img.phone_id] = [];
             }
             acc[img.phone_id].push({
               id: img.id,
               image_path: img.image_path,
-              is_primary: img.is_primary
+                main_image: img.main_image
             });
             return acc;
           }, {});
@@ -448,21 +448,21 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
         // استخدام استعلام SQL مباشر لتجنب مشاكل العلاقات
         const { data: images, error: imagesError } = await supabase
           .from('accessory_images')
-          .select('id, accessory_id, image_path, is_primary')
+          .select('id, accessory_id, image_path, main_image')
           .in('accessory_id', accessoryIds);
         
         if (imagesError) {
           console.error('Error fetching accessory images:', imagesError);
         } else if (images) {
           // تنظيم الصور في خريطة حسب معرف الإكسسوار
-          imagesMap = images.reduce((acc, img) => {
+            imagesMap = images.reduce((acc, img) => {
             if (!acc[img.accessory_id]) {
               acc[img.accessory_id] = [];
             }
             acc[img.accessory_id].push({
               id: img.id,
               image_path: img.image_path,
-              is_primary: img.is_primary
+                main_image: img.main_image
             });
             return acc;
           }, {});
