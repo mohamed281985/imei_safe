@@ -355,6 +355,81 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
     }
   });
 
+  // POST /admin/update-ads-price - update ads prices (admin only)
+  app.post('/admin/update-ads-price', verifyJwtToken, async (req, res) => {
+    try {
+      const acting = req.user || null;
+      const roleCheck = (acting && acting.role) ? String(acting.role).toLowerCase() : '';
+      
+      // التحقق من أن المستخدم مسؤول
+      if (!roleCheck.includes('admin')) {
+        return res.status(403).json({ success: false, error: 'forbidden: admin only' });
+      }
+
+      const { prices } = req.body;
+
+      // التحقق من وجود البيانات
+      if (!prices || !Array.isArray(prices)) {
+        return res.status(400).json({ error: 'بيانات غير صالحة: يجب أن تكون مصفوفة من الأسعار.' });
+      }
+
+      // تنفيذ عملية التحديث لكل عنصر في المصفوفة
+      const updatePromises = prices.map((price) => {
+        // تجهيز البيانات المطلوب تحديثها
+        const updateData = {
+          duration_days: price.duration_days,
+          amount: price.amount,
+        };
+
+        // إضافة bonus_offer فقط إذا كانت موجودة
+        if (price.bonus_offer !== null && price.bonus_offer !== undefined) {
+          updateData.bonus_offer = price.bonus_offer;
+        }
+
+        return supabase
+          .from('ads_price')
+          .update(updateData)
+          .eq('id', price.id);
+      });
+
+      // انتظار انتهاء جميع عمليات التحديث
+      const results = await Promise.all(updatePromises);
+
+      // التحقق من وجود أخطاء
+      const errors = results.filter(result => result.error);
+      if (errors.length > 0) {
+        console.error('Supabase Update Errors:', errors);
+        return res.status(500).json({ 
+          error: 'حدث خطأ أثناء تحديث بعض الأسعار.',
+          details: errors.map(e => e.error.message)
+        });
+      }
+
+      // تسجيل العملية في سجل التدقيق
+      try {
+        if (typeof logAudit === 'function') {
+          await logAudit({
+            userId: acting && acting.id ? acting.id : null,
+            action: 'admin_update_ads_price',
+            resourceType: 'ads_price',
+            resourceId: null,
+            details: { count: prices.length },
+            ip: req.ip,
+            userAgent: req.headers['user-agent']
+          });
+        }
+      } catch (e) {
+        console.warn('/admin/update-ads-price: audit failed', e);
+      }
+
+      res.status(200).json({ message: 'تم تحديث الأسعار بنجاح.' });
+
+    } catch (error) {
+      console.error('Server Error:', error);
+      res.status(500).json({ error: 'خطأ في الخادم الداخلي.' });
+    }
+  });
+
   // GET /admin/game_win - list game wins
   app.get('/admin/game_win', async (req, res) => {
     try {
