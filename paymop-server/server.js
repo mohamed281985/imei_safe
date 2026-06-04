@@ -2379,7 +2379,7 @@ app.post('/api/ads/package-publish', verifyJwtToken, paymentLimiter, rateLimitMi
       const { data: planRow, error: planErr } = await supabase
         .from('plans')
         .select('type, Publish_Ad')
-        .eq('type', normalizedPackage)
+        .ilike('type', normalizedPackage)
         .maybeSingle();
       if (!planErr && planRow) {
         maxAdsAllowed = planRow.Publish_Ad;
@@ -2425,7 +2425,7 @@ app.post('/api/ads/package-publish', verifyJwtToken, paymentLimiter, rateLimitMi
           // إذا لم توجد، نستخدم 30 يوم افتراضيًا
           let planDuration = 30;
           try {
-            const { data: planRow } = await supabase.from('plans').select('duration_days').eq('type', normalizedPackage).maybeSingle();
+            const { data: planRow } = await supabase.from('plans').select('duration_days').ilike('type', normalizedPackage).maybeSingle();
             if (planRow && planRow.duration_days) planDuration = Number(planRow.duration_days);
           } catch {}
           const expiresAt = new Date(userRec.expires_at);
