@@ -675,6 +675,86 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
     }
   });
 
+  // GET /admin/package-ads - compute user's package ad allowance and remaining
+  app.get('/admin/package-ads', verifyJwtToken, async (req, res) => {
+    try {
+      const acting = req.user || null;
+      const roleCheck = (acting && acting.role) ? String(acting.role).toLowerCase() : '';
+      if (!roleCheck.includes('admin')) return res.status(403).json({ success: false, error: 'forbidden: admin only' });
+
+      const userId = req.query.user_id;
+      if (!userId) return res.status(400).json({ success: false, error: 'Missing user_id' });
+
+      // 1) fetch user
+      const { data: userRow, error: userErr } = await supabase.from('users').select('id, role, expires_at').eq('id', userId).maybeSingle();
+      if (userErr) throw userErr;
+      if (!userRow) return res.status(404).json({ success: false, error: 'User not found' });
+
+      const role = userRow.role || null;
+      const expiresAt = userRow.expires_at || null;
+
+      // 2) fetch plan by name (case-insensitive)
+      let publishAdsCount = 0;
+      if (role) {
+        const { data: planRow, error: planErr } = await supabase.from('plans').select('publish_ad, publish_ads, Publish_Ad').ilike('name', role).maybeSingle();
+        if (planErr) console.warn('/admin/package-ads: plan fetch warning', planErr);
+        const pr = planRow || {};
+        publishAdsCount = Number(pr.publish_ad ?? pr.publish_ads ?? pr.Publish_Ad ?? 0);
+      }
+
+      // 3) latest paid package row for the user (prefer payment_date then upload_date)
+      const { data: paidRows, error: paidErr } = await supabase
+        .from('ads_payment')
+        .select('payment_date, upload_date')
+        .eq('user_id', userId)
+        .eq('is_paid', true)
+        .order('payment_date', { ascending: false })
+        .order('upload_date', { ascending: false })
+        .limit(1);
+      if (paidErr) console.warn('/admin/package-ads: paid fetch warning', paidErr);
+      const paidRow = Array.isArray(paidRows) && paidRows.length ? paidRows[0] : null;
+
+      let packageStartDate;
+      if (paidRow) {
+        const d = paidRow.payment_date || paidRow.upload_date;
+        packageStartDate = d ? new Date(d) : new Date();
+      } else {
+        const expiry = expiresAt ? new Date(expiresAt) : new Date();
+        packageStartDate = new Date(expiry);
+        packageStartDate.setDate(packageStartDate.getDate() - 30);
+      }
+
+      // 4) fetch ads_payments for user and filter by date client-side (coalesce upload_date/payment_date)
+      const { data: adsRows, error: adsErr } = await supabase
+        .from('ads_payment')
+        .select('id, upload_date, payment_date, status, transaction')
+        .eq('user_id', userId);
+      if (adsErr) console.warn('/admin/package-ads: ads fetch warning', adsErr);
+      const rows = Array.isArray(adsRows) ? adsRows : [];
+
+      const actualPublishedCount = rows.filter(a => {
+        try {
+          if (a.transaction === 'bonus_add') return false;
+          const dt = a.upload_date || a.payment_date;
+          if (!dt) return false;
+          const d = new Date(dt);
+          if (d < packageStartDate) return false;
+          const st = (a.status || '').toLowerCase();
+          return st === 'pending' || st === 'approved' || st === 'paid';
+        } catch (e) {
+          return false;
+        }
+      }).length;
+
+      const remaining = Math.max(0, publishAdsCount - actualPublishedCount);
+
+      return res.json({ success: true, data: { total: publishAdsCount, remaining, actualPublishedCount, packageStartDate: packageStartDate.toISOString() } });
+    } catch (err) {
+      console.error('GET /admin/package-ads error', err);
+      return res.status(500).json({ success: false, error: 'Server error' });
+    }
+  });
+
   // PATCH /admin/ads-payment/:id - update ads_payment record (admin only)
   app.patch('/admin/ads-payment/:id', verifyJwtToken, async (req, res) => {
     try {
