@@ -376,13 +376,33 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       // جلب الصور لجميع الهواتف دفعة واحدة
       let imagesMap = {};
       if (phoneIds.length > 0) {
-        const { data: images, error: imagesError } = await supabase
-          .from('phone_images')
-          .select('*')
-          .in('phone_id', phoneIds);
+        // استخدام استعلام SQL مباشر لتجنب مشاكل العلاقات
+        const { data: images, error: imagesError } = await supabase.rpc('get_phone_images', {
+          phone_ids: phoneIds
+        });
         
         if (imagesError) {
           console.error('Error fetching phone images:', imagesError);
+          // في حالة فشل الاستعلام، نحاول جلب الصور بالطريقة العادية
+          const { data: fallbackImages, error: fallbackError } = await supabase
+            .from('phone_images')
+            .select('id, image_path, is_primary, phone_id')
+            .in('phone_id', phoneIds);
+          
+          if (!fallbackError && fallbackImages) {
+            // تنظيم الصور في خريطة حسب معرف الهاتف
+            imagesMap = fallbackImages.reduce((acc, img) => {
+              if (!acc[img.phone_id]) {
+                acc[img.phone_id] = [];
+              }
+              acc[img.phone_id].push({
+                id: img.id,
+                image_path: img.image_path,
+                is_primary: img.is_primary
+              });
+              return acc;
+            }, {});
+          }
         } else if (images) {
           // تنظيم الصور في خريطة حسب معرف الهاتف
           imagesMap = images.reduce((acc, img) => {
@@ -444,13 +464,33 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       // جلب الصور لجميع الإكسسوارات دفعة واحدة
       let imagesMap = {};
       if (accessoryIds.length > 0) {
-        const { data: images, error: imagesError } = await supabase
-          .from('accessory_images')
-          .select('*')
-          .in('accessory_id', accessoryIds);
+        // استخدام استعلام SQL مباشر لتجنب مشاكل العلاقات
+        const { data: images, error: imagesError } = await supabase.rpc('get_accessory_images', {
+          accessory_ids: accessoryIds
+        });
         
         if (imagesError) {
           console.error('Error fetching accessory images:', imagesError);
+          // في حالة فشل الاستعلام، نحاول جلب الصور بالطريقة العادية
+          const { data: fallbackImages, error: fallbackError } = await supabase
+            .from('accessory_images')
+            .select('id, image_path, is_primary, accessory_id')
+            .in('accessory_id', accessoryIds);
+          
+          if (!fallbackError && fallbackImages) {
+            // تنظيم الصور في خريطة حسب معرف الإكسسوار
+            imagesMap = fallbackImages.reduce((acc, img) => {
+              if (!acc[img.accessory_id]) {
+                acc[img.accessory_id] = [];
+              }
+              acc[img.accessory_id].push({
+                id: img.id,
+                image_path: img.image_path,
+                is_primary: img.is_primary
+              });
+              return acc;
+            }, {});
+          }
         } else if (images) {
           // تنظيم الصور في خريطة حسب معرف الإكسسوار
           imagesMap = images.reduce((acc, img) => {
