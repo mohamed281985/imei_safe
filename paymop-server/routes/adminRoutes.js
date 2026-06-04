@@ -322,7 +322,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
           *,
           phone_images (
             id,
-            image_url,
+            image_path,
             is_primary
           )
         `)
