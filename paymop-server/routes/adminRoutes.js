@@ -912,6 +912,38 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       return res.status(500).json({ success: false, error: err.message || 'Server error' });
     }
   });
+
+  // GET /admin/ads_offar - list ads_offar (decrypted)
+  app.get('/admin/ads_offar', async (req, res) => {
+    try {
+      // الحصول على نوع العرض من الاستعلام (Query Parameter)
+      const { type } = req.query;
+
+      if (!type) {
+        return res.status(400).json({ error: 'نوع العرض (type) مطلوب' });
+      }
+
+      // جلب البيانات من جدول ads_offar في Supabase
+      const { data, error } = await supabase
+        .from('ads_offar')
+        .select('*')
+        .eq('type', type); // تصفية النتائج حسب النوع
+
+      if (error) {
+        throw error;
+      }
+
+      // فك تشفير البيانات قبل إرجاعها
+      const out = (data || []).map(item => ({ id: item.id, ...decryptDeep(item) }));
+
+      // إرجاع البيانات
+      return res.status(200).json(out);
+
+    } catch (error) {
+      console.error('Error fetching ads_offar:', error);
+      return res.status(500).json({ error: 'حدث خطأ في الخادم' });
+    }
+  });
 }
 
 export default registerAdminRoutes;
