@@ -353,35 +353,117 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
     }
   });
 
+  // GET /admin/phones - list phones (decrypted) with images
+  app.get('/admin/phones', async (req, res) => {
+    try {
+      const limit = Math.min(Number(req.query.limit || 200), 1000);
+      
+      // جلب بيانات الهواتف
+      const { data: phones, error: phonesError } = await supabase
+        .from('phones')
+        .select('*')
+        .order('id', { ascending: false })
+        .limit(limit);
+      
+      if (phonesError) throw phonesError;
+      
+      // جلب معرفات الهواتف
+      const phoneIds = phones.map(p => p.id);
+      
+      // جلب الصور لجميع الهواتف دفعة واحدة
+      let imagesMap = {};
+      if (phoneIds.length > 0) {
+        const { data: images, error: imagesError } = await supabase
+          .from('phone_images')
+          .select('id, image_path, is_primary, phone_id')
+          .in('phone_id', phoneIds);
+        
+        if (!imagesError && images) {
+          // تنظيم الصور في خريطة حسب معرف الهاتف
+          imagesMap = images.reduce((acc, img) => {
+            if (!acc[img.phone_id]) {
+              acc[img.phone_id] = [];
+            }
+            acc[img.phone_id].push({
+              id: img.id,
+              image_path: img.image_path,
+              is_primary: img.is_primary
+            });
+            return acc;
+          }, {});
+        }
+      }
+      
+      // معالجة البيانات وفك تشفيرها
+      const out = (phones || []).map(p => {
+        // فك تشفير بيانات الهاتف
+        const decryptedPhone = decryptDeep(p);
+        
+        // إضافة الصور من الخريطة
+        const images = imagesMap[p.id] || [];
+        
+        return {
+          id: p.id,
+          ...decryptedPhone,
+          images: images
+        };
+      });
+      
+      return res.json({ ok: true, phones: out });
+    } catch (err) {
+      console.error('/admin/phones error', err);
+      return res.status(500).json({ error: 'Server error' });
+    }
+  });
 
-    // GET /admin/accessories - list accessories (decrypted) with images
+  // GET /admin/accessories - list accessories (decrypted) with images
   app.get('/admin/accessories', async (req, res) => {
     try {
       const limit = Math.min(Number(req.query.limit || 200), 1000);
       
-      // تعديل الاستعلام لجلب الصور مع الإكسسوارات
-      const { data, error } = await supabase
+      // جلب بيانات الإكسسوارات
+      const { data: accessories, error: accessoriesError } = await supabase
         .from('accessories')
-        .select(`
-          *,
-          accessory_images (
-            id,
-            image_url,
-            is_primary
-          )
-        `)
+        .select('*')
         .order('id', { ascending: false })
         .limit(limit);
       
-      if (error) throw error;
+      if (accessoriesError) throw accessoriesError;
+      
+      // جلب معرفات الإكسسوارات
+      const accessoryIds = accessories.map(a => a.id);
+      
+      // جلب الصور لجميع الإكسسوارات دفعة واحدة
+      let imagesMap = {};
+      if (accessoryIds.length > 0) {
+        const { data: images, error: imagesError } = await supabase
+          .from('accessory_images')
+          .select('id, image_path, is_primary, accessory_id')
+          .in('accessory_id', accessoryIds);
+        
+        if (!imagesError && images) {
+          // تنظيم الصور في خريطة حسب معرف الإكسسوار
+          imagesMap = images.reduce((acc, img) => {
+            if (!acc[img.accessory_id]) {
+              acc[img.accessory_id] = [];
+            }
+            acc[img.accessory_id].push({
+              id: img.id,
+              image_path: img.image_path,
+              is_primary: img.is_primary
+            });
+            return acc;
+          }, {});
+        }
+      }
       
       // معالجة البيانات وفك تشفيرها
-      const out = (data || []).map(a => {
+      const out = (accessories || []).map(a => {
         // فك تشفير بيانات الإكسسوار
         const decryptedAccessory = decryptDeep(a);
         
-        // الحفاظ على الصور كما هي (لأنها عادة لا تحتاج إلى فك تشفير)
-        const images = a.accessory_images || [];
+        // إضافة الصور من الخريطة
+        const images = imagesMap[a.id] || [];
         
         return {
           id: a.id,
