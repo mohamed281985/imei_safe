@@ -377,9 +377,10 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       let imagesMap = {};
       if (phoneIds.length > 0) {
         // استخدام استعلام SQL مباشر لتجنب مشاكل العلاقات
-        const { data: images, error: imagesError } = await supabase.rpc('get_phone_images_by_ids', {
-          phone_ids: phoneIds
-        });
+        const { data: images, error: imagesError } = await supabase
+          .from('phone_images')
+          .select('id, phone_id, image_path, is_primary')
+          .in('phone_id', phoneIds);
         
         if (imagesError) {
           console.error('Error fetching phone images:', imagesError);
@@ -445,9 +446,10 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       let imagesMap = {};
       if (accessoryIds.length > 0) {
         // استخدام استعلام SQL مباشر لتجنب مشاكل العلاقات
-        const { data: images, error: imagesError } = await supabase.rpc('get_accessory_images_by_ids', {
-          accessory_ids: accessoryIds
-        });
+        const { data: images, error: imagesError } = await supabase
+          .from('accessory_images')
+          .select('id, accessory_id, image_path, is_primary')
+          .in('accessory_id', accessoryIds);
         
         if (imagesError) {
           console.error('Error fetching accessory images:', imagesError);
