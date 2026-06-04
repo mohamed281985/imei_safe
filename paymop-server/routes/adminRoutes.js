@@ -355,70 +355,70 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
     }
   });
 
-  // POST /admin/update-ads-price - update ads prices (admin only)
-  app.post('/admin/update-ads-price', verifyJwtToken, async (req, res) => {
-    try {
-      const { prices } = req.body;
-      
-      if (!prices || !Array.isArray(prices)) {
-        return res.status(400).json({ error: 'بيانات الأسعار غير صالحة' });
-      }
-
-      // تحديث كل سعر في قاعدة البيانات
-      const updatePromises = prices.map(async (price) => {
-        const { id, duration_days, amount, bonus_offer } = price;
-        
-        if (!id) {
-          throw new Error('معرف السعر مفقود');
-        }
-
-        const { data, error } = await supabase
-          .from('ads_price') // تأكد من اسم الجدول الصحيح في قاعدة البيانات
-          .update({
-            duration_days,
-            amount,
-            bonus_offer: bonus_offer || null
-          })
-          .eq('id', id);
-
-        if (error) {
-          throw error;
-        }
-
-        return data;
-      });
-
-      await Promise.all(updatePromises);
-
-      // تسجيل العملية في سجل التدقيق
-      try {
-        const acting = req.user || null;
-        if (typeof logAudit === 'function') {
-          await logAudit({
-            userId: acting && acting.id ? acting.id : null,
-            action: 'admin_update_ads_price',
-            resourceType: 'ads_price',
-            resourceId: null,
-            details: { count: prices.length },
-            ip: req.ip,
-            userAgent: req.headers['user-agent']
-          });
-        }
-      } catch (e) {
-        console.warn('/admin/update-ads-price: audit failed', e);
-      }
-
-      res.status(200).json({ 
-        success: true, 
-        message: 'تم تحديث الأسعار بنجاح' 
-      });
-    } catch (error) {
-      console.error('خطأ في تحديث الأسعار:', error);
-      res.status(500).json({ 
-        error: error.message || 'حدث خطأ أثناء تحديث الأسعار' 
-      });
+ // POST /admin/update-ads-price - update ads prices (admin only)
+app.post('/admin/update-ads-price', verifyJwtToken, async (req, res) => {
+  try {
+    const { prices } = req.body;
+    
+    if (!prices || !Array.isArray(prices)) {
+      return res.status(400).json({ error: 'بيانات الأسعار غير صالحة' });
     }
-  });
+
+    // تحديث كل سعر في قاعدة البيانات
+    const updatePromises = prices.map(async (price) => {
+      const { id, duration_days, amount } = price; // إزالة bonus_offer
+      
+      if (!id) {
+        throw new Error('معرف السعر مفقود');
+      }
+
+      const { data, error } = await supabase
+        .from('ads_price')
+        .update({
+          duration_days,
+          amount
+          // إزالة bonus_offer
+        })
+        .eq('id', id);
+
+      if (error) {
+        throw error;
+      }
+
+      return data;
+    });
+
+    await Promise.all(updatePromises);
+
+    // تسجيل العملية في سجل التدقيق
+    try {
+      const acting = req.user || null;
+      if (typeof logAudit === 'function') {
+        await logAudit({
+          userId: acting && acting.id ? acting.id : null,
+          action: 'admin_update_ads_price',
+          resourceType: 'ads_price',
+          resourceId: null,
+          details: { count: prices.length },
+          ip: req.ip,
+          userAgent: req.headers['user-agent']
+        });
+      }
+    } catch (e) {
+      console.warn('/admin/update-ads-price: audit failed', e);
+    }
+
+    res.status(200).json({ 
+      success: true, 
+      message: 'تم تحديث الأسعار بنجاح' 
+    });
+  } catch (error) {
+    console.error('خطأ في تحديث الأسعار:', error);
+    res.status(500).json({ 
+      error: error.message || 'حدث خطأ أثناء تحديث الأسعار' 
+    });
+  }
+});
 
   // GET /admin/game_win - list game wins
   app.get('/admin/game_win', async (req, res) => {
