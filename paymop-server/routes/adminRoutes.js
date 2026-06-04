@@ -692,27 +692,52 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
 
       const role = userRow.role || null;
       const expiresAt = userRow.expires_at || null;
-    // 2) جلب الخطة (مطابقة على عمود `type`)
+    // 2) جلب الخطة (مطابقة على عمود `type`) — استخدم Supabase بدلاً من `db`
     let publishAdsCount = 0;
     let planRow = null;
 
-    // محاولة تطابق دقيق على عمود `type`
-    const exactQ = await db.query('SELECT * FROM plans WHERE LOWER(type) = LOWER($1) LIMIT 1', [role]);
-    if (exactQ.rows && exactQ.rows[0]) planRow = exactQ.rows[0];
+    if (role) {
+      // محاولة تطابق حالة غير حساسة لحالة الأحرف على عمود `type`
+      try {
+        const { data: exactPlan, error: exactErr } = await supabase.from('plans').select('*').ilike('type', role).maybeSingle();
+        if (exactErr) console.warn('/admin/package-ads: plan exact fetch warning', exactErr);
+        planRow = exactPlan || null;
+      } catch (e) {
+        console.warn('/admin/package-ads: plan exact fetch exception', e);
+      }
+    }
 
-    // إذا لم توجد نتيجة، حاول تطابق جزئي على `type` أو على `name`
     if (!planRow && role) {
-      const likeQ = await db.query('SELECT * FROM plans WHERE type ILIKE $1 OR name ILIKE $1 LIMIT 1', [`%${role}%`]);
-      if (likeQ.rows && likeQ.rows[0]) planRow = likeQ.rows[0];
+      try {
+        const { data: likeType, error: likeTypeErr } = await supabase.from('plans').select('*').ilike('type', `%${role}%`).limit(1);
+        if (likeTypeErr) console.warn('/admin/package-ads: plan like-type warning', likeTypeErr);
+        if (Array.isArray(likeType) && likeType.length) planRow = likeType[0];
+      } catch (e) {
+        console.warn('/admin/package-ads: plan like-type exception', e);
+      }
     }
 
-    // كحل احتياطي بسيط: خذ أول خطة إذا لم نجد تطابقاً (اختياري، لإظهار قيمة بدل الصفر)
+    if (!planRow && role) {
+      try {
+        const { data: likeName, error: likeNameErr } = await supabase.from('plans').select('*').ilike('name', `%${role}%`).limit(1);
+        if (likeNameErr) console.warn('/admin/package-ads: plan like-name warning', likeNameErr);
+        if (Array.isArray(likeName) && likeName.length) planRow = likeName[0];
+      } catch (e) {
+        console.warn('/admin/package-ads: plan like-name exception', e);
+      }
+    }
+
+    // كحل احتياطي: خذ أول خطة إن لم نجد تطابقاً
     if (!planRow) {
-      const anyQ = await db.query('SELECT * FROM plans LIMIT 1');
-      if (anyQ.rows && anyQ.rows[0]) planRow = anyQ.rows[0];
+      try {
+        const { data: anyPlans, error: anyErr } = await supabase.from('plans').select('*').limit(1);
+        if (anyErr) console.warn('/admin/package-ads: fallback plan fetch warning', anyErr);
+        if (Array.isArray(anyPlans) && anyPlans.length) planRow = anyPlans[0];
+      } catch (e) {
+        console.warn('/admin/package-ads: fallback plan fetch exception', e);
+      }
     }
 
-    // قراءة قيمة Publish_Ad بغض النظر عن اسم العمود (حالات مختلفة)
     if (planRow) {
       publishAdsCount = Number(
         planRow.publish_ad ??
