@@ -692,15 +692,41 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
 
       const role = userRow.role || null;
       const expiresAt = userRow.expires_at || null;
+    // 2) جلب الخطة (مطابقة على عمود `type`)
+    let publishAdsCount = 0;
+    let planRow = null;
 
-      // 2) fetch plan by name (case-insensitive)
-      let publishAdsCount = 0;
-      if (role) {
-        const { data: planRow, error: planErr } = await supabase.from('plans').select('publish_ad, publish_ads, Publish_Ad').ilike('name', role).maybeSingle();
-        if (planErr) console.warn('/admin/package-ads: plan fetch warning', planErr);
-        const pr = planRow || {};
-        publishAdsCount = Number(pr.publish_ad ?? pr.publish_ads ?? pr.Publish_Ad ?? 0);
-      }
+    // محاولة تطابق دقيق على عمود `type`
+    const exactQ = await db.query('SELECT * FROM plans WHERE LOWER(type) = LOWER($1) LIMIT 1', [role]);
+    if (exactQ.rows && exactQ.rows[0]) planRow = exactQ.rows[0];
+
+    // إذا لم توجد نتيجة، حاول تطابق جزئي على `type` أو على `name`
+    if (!planRow && role) {
+      const likeQ = await db.query('SELECT * FROM plans WHERE type ILIKE $1 OR name ILIKE $1 LIMIT 1', [`%${role}%`]);
+      if (likeQ.rows && likeQ.rows[0]) planRow = likeQ.rows[0];
+    }
+
+    // كحل احتياطي بسيط: خذ أول خطة إذا لم نجد تطابقاً (اختياري، لإظهار قيمة بدل الصفر)
+    if (!planRow) {
+      const anyQ = await db.query('SELECT * FROM plans LIMIT 1');
+      if (anyQ.rows && anyQ.rows[0]) planRow = anyQ.rows[0];
+    }
+
+    // قراءة قيمة Publish_Ad بغض النظر عن اسم العمود (حالات مختلفة)
+    if (planRow) {
+      publishAdsCount = Number(
+        planRow.publish_ad ??
+        planRow.Publish_Ad ??
+        planRow.PublishAd ??
+        planRow.publishAd ??
+        planRow.publish_ads ??
+        0
+      ) || 0;
+    } else {
+      publishAdsCount = 0;
+    }
+
+    console.debug('package-ads: role=', role, 'matchedPlan=', planRow ? (planRow.type || planRow.name) : null, 'publishAdsCount=', publishAdsCount);
 
       // 3) latest paid package row for the user (prefer payment_date then upload_date)
       const { data: paidRows, error: paidErr } = await supabase
