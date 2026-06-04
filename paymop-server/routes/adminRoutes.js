@@ -358,14 +358,17 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
     try {
       const limit = Math.min(Number(req.query.limit || 200), 1000);
       
-      // جلب بيانات الهواتف
+      // جلب بيانات الهواتف فقط
       const { data: phones, error: phonesError } = await supabase
         .from('phones')
         .select('*')
         .order('id', { ascending: false })
         .limit(limit);
       
-      if (phonesError) throw phonesError;
+      if (phonesError) {
+        console.error('Error fetching phones:', phonesError);
+        throw phonesError;
+      }
       
       // جلب معرفات الهواتف
       const phoneIds = phones.map(p => p.id);
@@ -375,10 +378,12 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       if (phoneIds.length > 0) {
         const { data: images, error: imagesError } = await supabase
           .from('phone_images')
-          .select('id, image_path, is_primary, phone_id')
+          .select('*')
           .in('phone_id', phoneIds);
         
-        if (!imagesError && images) {
+        if (imagesError) {
+          console.error('Error fetching phone images:', imagesError);
+        } else if (images) {
           // تنظيم الصور في خريطة حسب معرف الهاتف
           imagesMap = images.reduce((acc, img) => {
             if (!acc[img.phone_id]) {
@@ -421,14 +426,17 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
     try {
       const limit = Math.min(Number(req.query.limit || 200), 1000);
       
-      // جلب بيانات الإكسسوارات
+      // جلب بيانات الإكسسوارات فقط
       const { data: accessories, error: accessoriesError } = await supabase
         .from('accessories')
         .select('*')
         .order('id', { ascending: false })
         .limit(limit);
       
-      if (accessoriesError) throw accessoriesError;
+      if (accessoriesError) {
+        console.error('Error fetching accessories:', accessoriesError);
+        throw accessoriesError;
+      }
       
       // جلب معرفات الإكسسوارات
       const accessoryIds = accessories.map(a => a.id);
@@ -438,10 +446,12 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       if (accessoryIds.length > 0) {
         const { data: images, error: imagesError } = await supabase
           .from('accessory_images')
-          .select('id, image_path, is_primary, accessory_id')
+          .select('*')
           .in('accessory_id', accessoryIds);
         
-        if (!imagesError && images) {
+        if (imagesError) {
+          console.error('Error fetching accessory images:', imagesError);
+        } else if (images) {
           // تنظيم الصور في خريطة حسب معرف الإكسسوار
           imagesMap = images.reduce((acc, img) => {
             if (!acc[img.accessory_id]) {
