@@ -651,6 +651,30 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
     }
   });
 
+  // GET /admin/plans - list available plans, sorted by price (asc)
+  app.get('/admin/plans', async (req, res) => {
+    try {
+      const { data, error } = await supabase.from('plans').select('*').order('price', { ascending: true });
+      if (error) throw error;
+
+      const out = (data || []).map(p => {
+        const dec = decryptDeep(p) || {};
+        return {
+          id: dec.id ?? p.id ?? null,
+          name: dec.name ?? p.name ?? null,
+          price: dec.price ?? p.price ?? null,
+          duration_days: dec.duration_days ?? p.duration_days ?? null,
+          Publish_Ad: dec.Publish_Ad ?? dec.publish_ad ?? dec.publishAds ?? dec.publish_ads ?? p.Publish_Ad ?? p.publish_ad ?? p.publishAds ?? p.publish_ads ?? null
+        };
+      });
+
+      return res.json({ ok: true, plans: out });
+    } catch (err) {
+      console.error('/admin/plans error', err);
+      return res.status(500).json({ error: 'Server error' });
+    }
+  });
+
   // PATCH /admin/ads-payment/:id - update ads_payment record (admin only)
   app.patch('/admin/ads-payment/:id', verifyJwtToken, async (req, res) => {
     try {
