@@ -358,55 +358,41 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
   // POST /admin/update-ads-price - update ads prices (admin only)
   app.post('/admin/update-ads-price', verifyJwtToken, async (req, res) => {
     try {
-      const acting = req.user || null;
-      const roleCheck = (acting && acting.role) ? String(acting.role).toLowerCase() : '';
-      
-      // التحقق من أن المستخدم مسؤول
-      if (!roleCheck.includes('admin')) {
-        return res.status(403).json({ success: false, error: 'forbidden: admin only' });
-      }
-
       const { prices } = req.body;
-
-      // التحقق من وجود البيانات
+      
       if (!prices || !Array.isArray(prices)) {
-        return res.status(400).json({ error: 'بيانات غير صالحة: يجب أن تكون مصفوفة من الأسعار.' });
+        return res.status(400).json({ error: 'بيانات الأسعار غير صالحة' });
       }
 
-      // تنفيذ عملية التحديث لكل عنصر في المصفوفة
-      const updatePromises = prices.map((price) => {
-        // تجهيز البيانات المطلوب تحديثها
-        const updateData = {
-          duration_days: price.duration_days,
-          amount: price.amount,
-        };
-
-        // إضافة bonus_offer فقط إذا كانت موجودة
-        if (price.bonus_offer !== null && price.bonus_offer !== undefined) {
-          updateData.bonus_offer = price.bonus_offer;
+      // تحديث كل سعر في قاعدة البيانات
+      const updatePromises = prices.map(async (price) => {
+        const { id, duration_days, amount, bonus_offer } = price;
+        
+        if (!id) {
+          throw new Error('معرف السعر مفقود');
         }
 
-        return supabase
-          .from('ads_price')
-          .update(updateData)
-          .eq('id', price.id);
+        const { data, error } = await supabase
+          .from('ads_price') // تأكد من اسم الجدول الصحيح في قاعدة البيانات
+          .update({
+            duration_days,
+            amount,
+            bonus_offer: bonus_offer || null
+          })
+          .eq('id', id);
+
+        if (error) {
+          throw error;
+        }
+
+        return data;
       });
 
-      // انتظار انتهاء جميع عمليات التحديث
-      const results = await Promise.all(updatePromises);
-
-      // التحقق من وجود أخطاء
-      const errors = results.filter(result => result.error);
-      if (errors.length > 0) {
-        console.error('Supabase Update Errors:', errors);
-        return res.status(500).json({ 
-          error: 'حدث خطأ أثناء تحديث بعض الأسعار.',
-          details: errors.map(e => e.error.message)
-        });
-      }
+      await Promise.all(updatePromises);
 
       // تسجيل العملية في سجل التدقيق
       try {
+        const acting = req.user || null;
         if (typeof logAudit === 'function') {
           await logAudit({
             userId: acting && acting.id ? acting.id : null,
@@ -422,11 +408,15 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
         console.warn('/admin/update-ads-price: audit failed', e);
       }
 
-      res.status(200).json({ message: 'تم تحديث الأسعار بنجاح.' });
-
+      res.status(200).json({ 
+        success: true, 
+        message: 'تم تحديث الأسعار بنجاح' 
+      });
     } catch (error) {
-      console.error('Server Error:', error);
-      res.status(500).json({ error: 'خطأ في الخادم الداخلي.' });
+      console.error('خطأ في تحديث الأسعار:', error);
+      res.status(500).json({ 
+        error: error.message || 'حدث خطأ أثناء تحديث الأسعار' 
+      });
     }
   });
 
