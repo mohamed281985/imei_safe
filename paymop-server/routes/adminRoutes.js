@@ -310,6 +310,35 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       return res.status(500).json({ error: 'Server error' });
     }
   });
+  // PATCH /admin/accessories/:id - update accessory (admin light endpoint)
+  app.patch('/admin/accessories/:id', async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!id) return res.status(400).json({ ok: false, error: 'Missing id' });
+
+      const updates = {};
+      if (req.body.status !== undefined) updates.status = req.body.status;
+      if (req.body.updated_at !== undefined) updates.updated_at = req.body.updated_at;
+      else updates.updated_at = new Date().toISOString();
+
+      const { data, error } = await supabase
+        .from('accessories')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .maybeSingle();
+
+      if (error) {
+        console.error('PATCH /admin/accessories/:id error', error);
+        return res.status(500).json({ ok: false, error: error.message || error });
+      }
+
+      return res.json({ ok: true, accessory: data });
+    } catch (err) {
+      console.error('PATCH /admin/accessories/:id unexpected', err);
+      return res.status(500).json({ ok: false, error: 'Server error' });
+    }
+  });
   // GET /admin/phones - list phones (decrypted) with images
   app.get('/admin/phones', async (req, res) => {
     try {
