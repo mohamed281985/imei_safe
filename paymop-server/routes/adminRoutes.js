@@ -1190,6 +1190,30 @@ app.post('/admin/update-ads-price', verifyJwtToken, async (req, res) => {
       return res.status(500).json({ error: 'حدث خطأ في الخادم' });
     }
   });
+
+  // GET /admin/transfers - list transfer_records (decrypted)
+  app.get('/admin/transfers', async (req, res) => {
+    try {
+      // تحقق مبدئي من وجود توكن (يمكن استبداله بميدل وير JWT الحقيقي)
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'غير مصرح: مفقود رمز المصادقة' });
+      }
+
+      const { data, error } = await supabase
+        .from('transfer_records')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      const out = (data || []).map(r => ({ id: r.id, ...decryptDeep(r) }));
+      return res.status(200).json(out);
+    } catch (err) {
+      console.error('Error fetching transfers:', err);
+      return res.status(500).json({ error: 'خطأ في السيرفر', message: err && err.message ? err.message : String(err) });
+    }
+  });
 }
 
 export default registerAdminRoutes;
