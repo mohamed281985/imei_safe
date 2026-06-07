@@ -152,6 +152,8 @@ const AppCore = () => {
             // حالة خاصة: إذا كان المسار أو host يشير إلى 'reset' فنتجاهل شرط type/access
             if ((url.host && url.host.toLowerCase() === 'reset') || pathname === '/reset' || pathname === 'reset') {
               navigate(`/reset?${combined.toString()}`);
+            } else if (type === 'signup') {
+              navigate('/login?confirmed=1');
             } else if (type === 'recovery' && access) {
               navigate(`/reset?${combined.toString()}`);
             }
