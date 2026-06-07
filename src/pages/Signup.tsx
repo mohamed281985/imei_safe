@@ -149,23 +149,36 @@ const Signup: React.FC = () => {
       } else {
         toast({ title: t('signup_successful'), description: t('verification_email_sent') });
 
-        // If Supabase returned a user id immediately, send sensitive data ONLY to our backend
-        // so it can encrypt and store them safely. Do not store phone/id_last6 in Supabase Auth metadata.
+        // If Supabase returned a user id immediately, attempt to call our backend
+        // only when a valid session token is available. Otherwise rely on the
+        // server-side Supabase webhook to create application rows after email
+        // confirmation.
         try {
           const returnedId = data?.user?.id;
           if (returnedId) {
-            const payload = {
-              id: returnedId,
-              email,
-              metadata: {
-                full_name: username,
-                phone: fullPhoneNumber,
-                id_last6: idLast6,
-                role: 'customer'
-              }
-            };
             try {
-              await fetch('/api/create-app-user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+              const sessionResp = await supabase.auth.getSession();
+              const token = sessionResp?.data?.session?.access_token;
+              const payload = {
+                id: returnedId,
+                email,
+                metadata: {
+                  full_name: username,
+                  phone: fullPhoneNumber,
+                  id_last6: idLast6,
+                  role: 'customer'
+                }
+              };
+
+              if (token) {
+                await fetch('/api/create-app-user', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                  body: JSON.stringify(payload)
+                });
+              } else {
+                if (import.meta.env.MODE !== 'production') console.warn('Skipping create-app-user: no session token available; webhook will handle insertion after confirmation.');
+              }
             } catch (e) {
               if (import.meta.env.MODE !== 'production') console.warn('create-app-user call failed', e);
             }

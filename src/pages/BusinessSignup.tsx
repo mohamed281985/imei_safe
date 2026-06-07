@@ -190,27 +190,40 @@ export default function BusinessSignup() {
       });
 
       // Create application-level `users` row on the server (encrypted) and include sensitive fields only here
+      // Only call the endpoint when we have a valid session token. Otherwise
+      // the Supabase webhook will insert the application rows after email confirmation.
       try {
         const returnedId = data?.user?.id;
         if (returnedId) {
-          const payload = {
-            id: returnedId,
-            email: formData.email,
-            metadata: {
-              full_name: metadata.full_name,
-              phone: fullPhoneNumber,
-              id_last6: formData.id_last6,
-              role: metadata.role,
-              store_name: metadata.store_name,
-              address: metadata.address,
-              business_type: metadata.business_type
+          try {
+            const sessionResp = await supabase.auth.getSession();
+            const token = sessionResp?.data?.session?.access_token;
+            const payload = {
+              id: returnedId,
+              email: formData.email,
+              metadata: {
+                full_name: metadata.full_name,
+                phone: fullPhoneNumber,
+                id_last6: formData.id_last6,
+                role: metadata.role,
+                store_name: metadata.store_name,
+                address: metadata.address,
+                business_type: metadata.business_type
+              }
+            };
+
+            if (token) {
+              await fetch('/api/create-app-user', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify(payload)
+              });
+            } else {
+              console.warn('Skipping create-app-user: no session token available; webhook will handle insertion after confirmation.');
             }
-          };
-          await fetch('/api/create-app-user', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          });
+          } catch (e) {
+            console.warn('create-app-user error', e);
+          }
         }
       } catch (e) {
         console.warn('create-app-user error', e);

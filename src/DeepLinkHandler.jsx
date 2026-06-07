@@ -80,7 +80,7 @@ export default function DeepLinkHandler() {
           }
 
           if (type === 'signup') {
-            navigate('/business-profile-complete');
+            navigate('/login?confirmed=1');
           } else if (type === 'recovery') {
             // بعض روابط Supabase تحتوي فقط على access_token في الـ hash أو query.
             if (!accessToken || accessToken.length < 10) {

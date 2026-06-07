@@ -181,6 +181,7 @@ const BusinessTransferBuy: React.FC = () => {
   const [showUnmaskedSellerInfo, setShowUnmaskedSellerInfo] = useState(false);
   const [buyerName, setBuyerName] = useState('');
   const [buyerPhone, setBuyerPhone] = useState('');
+  const [buyerCountryCode, setBuyerCountryCode] = useState('+20');
   const [buyerVerified, setBuyerVerified] = useState(false);
   const [paid, setPaid] = useState(false);
   const [success, setSuccess] = useState(false);
