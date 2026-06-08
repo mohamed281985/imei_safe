@@ -3686,9 +3686,16 @@ async function verifyJwtToken(req, res, next) {
 
     next();
   } catch (error) {
+    // Avoid referencing variables (`user`, `appUserData`) that may not be defined
+    // when an exception occurs during token verification — doing so caused a
+    // ReferenceError which turned a 401 into a 500. Log the error safely and
+    // return 401 to the client.
     console.error('Error verifying JWT token:', error);
-    console.log('[verifyJwtToken] المستخدم:', user.id, 'الدور من قاعدة البيانات:', appUserData?.role);
-
+    try {
+      console.error('[verifyJwtToken] error details:', error && error.message ? error.message : String(error));
+    } catch (logErr) {
+      // swallow logging errors
+    }
     return res.status(401).json({ error: 'Unauthorized: Invalid token' });
   }
 }
