@@ -40,6 +40,20 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="myapp" android:host="reset" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="myapp" android:host="auth" />
+            </intent-filter>
+            <!-- Capture Supabase https verify links directly (so app receives original https URL)
+                 e.g. https://<project>.supabase.co/auth/v1/verify?token=...&type=signup&redirect_to=... -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="idpnvgvamdedaynetjvm.supabase.co" android:pathPrefix="/auth/v1/verify" />
+            </intent-filter>
             <!-- Universal deep link for myapp://* (autoVerify) -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
