@@ -175,7 +175,8 @@ export default function BusinessSignup() {
         email: formData.email,
         password: formData.password,
         options: {
-          emailRedirectTo: `${window.location.origin}/login`,
+          // Redirect confirmation links to the mobile app deep link
+          emailRedirectTo: 'myapp://auth',
           data: signupMetadata
         }
       });

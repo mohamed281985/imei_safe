@@ -869,104 +869,14 @@ app.post('/api/encrypt', async (req, res) => {
 // Webhook: Supabase Auth -> call this when a user confirms email.
 // Configure Supabase Auth webhooks to send events to this URL.
 // For security, set SUPABASE_WEBHOOK_SECRET in .env and send it in header 'x-webhook-secret'.
-app.post('/api/supabase-auth-webhook', async (req, res) => {
-  try {
-    const secret = process.env.SUPABASE_WEBHOOK_SECRET || '';
-    const incomingSecret = req.headers['x-webhook-secret'] || req.headers['x-supabase-signature'] || '';
-    if (secret && String(incomingSecret) !== String(secret)) {
-      console.warn('Webhook secret mismatch');
-      return res.status(403).json({ error: 'Forbidden' });
-    }
-
-    const event = req.body || {};
-    // Support two shapes: direct user payload or { event: { type, user } }
-    let user = null;
-    if (event.user) user = event.user;
-    else if (event.record) user = event.record;
-    else if (event?.payload?.user) user = event.payload.user;
-    else user = event;
-
-    if (!user || !user.id) return res.status(400).json({ error: 'No user payload' });
-
-    // Proceed only when email_confirmed_at is present
-    if (!user.email_confirmed_at) {
-      return res.json({ ok: true, message: 'email not confirmed yet' });
-    }
-
-    const userId = user.id;
-    const email = user.email || user.email_address || '';
-    const metadata = user.user_metadata || {};
-    // Security: prevent accidental insertion of unwanted fields into `users` table
-    // e.g. `username` should not be stored as a top-level column on users here
-    try { if (metadata && typeof metadata === 'object') { delete metadata.username; } } catch (e) { }
-
-    // Idempotency: do nothing if application user already exists
-    const { data: existingUser, error: existingErr } = await supabase.from('users').select('id').eq('id', userId).maybeSingle();
-    if (existingErr) console.warn('existing user check error', existingErr);
-    if (existingUser) {
-      return res.json({ ok: true, message: 'already inserted' });
-    }
-
-    // Prepare encrypted fields using available metadata fallback
-    const owner_name = metadata.full_name || metadata.owner_name || '';
-    const store_name = metadata.store_name || '';
-    const phone = metadata.phone || '';
-    const address = metadata.address || '';
-    const business_type = metadata.business_type || '';
-    const id_last6 = metadata.id_last6 || '';
-
-    const encPhone = encryptObject(phone);
-    const encFullName = encryptObject(owner_name);
-    const encIdLast6 = encryptObject(id_last6);
-    const encOwnerName = encryptObject(owner_name);
-    const encAddress = encryptObject(address);
-
-    // Insert into users
-    const userRow = {
-      id: userId,
-      email,
-      // store encrypted blobs as JSON strings so text columns can hold them
-      full_name: encFullName ? JSON.stringify(encFullName) : null,
-      phone: encPhone ? JSON.stringify(encPhone) : null,
-      id_last6: encIdLast6 ? JSON.stringify(encIdLast6) : null,
-      role: 'free_business'
-    };
-
-    const { error: userInsertError } = await supabase.from('users').insert(userRow);
-    if (userInsertError) {
-      if (process.env.NODE_ENV !== 'production') console.error('[webhook] users insert error:', userInsertError);
-      return sendError(res, 500, 'Failed to insert user row', userInsertError);
-    }
-
-    // Insert into businesses
-    const businessRow = {
-      email,
-      store_name,
-      owner_name: encOwnerName ? JSON.stringify(encOwnerName) : null,
-      phone: encPhone ? JSON.stringify(encPhone) : null,
-      address: encAddress ? JSON.stringify(encAddress) : null,
-      business_type,
-      id_last6: encIdLast6 ? JSON.stringify(encIdLast6) : null,
-      user_id: userId
-    };
-
-    // Debug logging: show the businessRow being inserted
-    if (process.env.NODE_ENV !== 'production') console.log('[webhook] businessRow to insert:', JSON.stringify(businessRow));
-    const { data: businessData, error: businessInsertError } = await supabase.from('businesses').insert(businessRow).select();
-    if (businessInsertError) {
-      if (process.env.NODE_ENV !== 'production') {
-        console.error('[webhook] businesses insert error:', businessInsertError);
-        console.error('[webhook] attempted businessRow:', JSON.stringify(businessRow));
-      }
-      return sendError(res, 500, 'Failed to insert business row', businessInsertError);
-    }
-    if (process.env.NODE_ENV !== 'production') console.log('[webhook] businesses insert success:', businessData);
-
-    return res.json({ ok: true, inserted: true });
-  } catch (e) {
-    if (process.env.NODE_ENV !== 'production') console.error('/api/supabase-auth-webhook error', e);
-    return sendError(res, 500, 'Server error', e);
-  }
+// NOTE: Supabase auth webhook handling removed. The application now relies on
+// the client/server `POST /api/create-app-user` flow which is idempotent and
+// is called by the app on first successful authenticated session after
+// email confirmation. Keep a disabled endpoint to provide a clear response
+// if an external webhook is still configured.
+app.post('/api/supabase-auth-webhook', (req, res) => {
+  console.warn('/api/supabase-auth-webhook called but webhook support is disabled on this server');
+  return res.status(410).json({ error: 'Webhook disabled. Use client-side create-on-first-session flow.' });
 });
 
 // ⭐ نقطة نهاية للتحقق الشامل من IMEI (البلاغات، التسجيل، والإعلانات السابقة)

@@ -139,7 +139,8 @@ const Signup: React.FC = () => {
         email,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/login`,
+          // Redirect confirmation links to the mobile app deep link
+          emailRedirectTo: 'myapp://auth',
           data: metadata
         }
       } as any);

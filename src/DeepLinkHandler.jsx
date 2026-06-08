@@ -79,6 +79,20 @@ export default function DeepLinkHandler() {
             return;
           }
 
+          // Fallback: if the deep link is myapp://auth (or /auth) treat it as
+          // an email confirmation (navigate to login) unless it includes an
+          // access_token (in which case treat as recovery/reset).
+          if ((url.host && url.host.toLowerCase() === 'auth') || url.pathname === '/auth' || url.pathname === 'auth') {
+            if (accessToken && accessToken.length >= 10) {
+              console.log('DeepLinkHandler detected auth with access_token — navigating to /reset');
+              navigate(`/reset?${combined.toString()}`);
+              return;
+            }
+            console.log('DeepLinkHandler detected auth host — navigating to /login (confirmed)');
+            navigate('/login?confirmed=1');
+            return;
+          }
+
           if (type === 'signup') {
             navigate('/login?confirmed=1');
           } else if (type === 'recovery') {
