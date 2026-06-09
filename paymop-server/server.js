@@ -935,148 +935,10 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
 
 // Internal endpoint: create application `users` row after auth signup
 // Frontend calls this after `supabase.auth.signUp` to persist encrypted app user data.
-app.post('/api/create-app-user', verifyJwtToken, createAppUserLimiter, async (req, res) => {
-  try {
-    const { id, email, metadata } = req.body || {};
-    // Ensure client-provided metadata cannot inject undesirable top-level columns into `users`
-    try { if (metadata && typeof metadata === 'object') { delete metadata.username; } } catch (e) { }
-    if (process.env.NODE_ENV !== 'production') console.log('/api/create-app-user called with body:', JSON.stringify(req.body));
-
-    // Require a valid UUID `id` coming from Supabase Auth (frontend should pass the auth user id)
-    if (!id) return res.status(400).json({ error: 'missing id (provide Supabase auth user id)' });
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (typeof id !== 'string' || !uuidRegex.test(id)) {
-      return res.status(400).json({ error: 'invalid id: must be a UUID from Supabase auth' });
-    }
-
-    // Enforce ownership: caller can only create/update their own application profile row.
-    const requesterId = req.user?.id;
-    if (!requesterId || requesterId !== id) {
-      return res.status(403).json({ error: 'Forbidden: cannot create app user for another account' });
-    }
-
-    // Idempotency: don't re-insert if exists
-    const userId = id;
-    const { data: existingUser, error: existingErr } = await supabase.from('users').select('id').eq('id', userId).maybeSingle();
-    if (existingErr) console.warn('/api/create-app-user existing check error', existingErr);
-    if (existingUser) return res.json({ ok: true, message: 'user already exists' });
-
-    // Ensure the Supabase Auth user exists before inserting application row.
-    // Sometimes the auth user creation may not have fully propagated; perform a short retry loop
-    const checkAuthUserExists = async (uid) => {
-      try {
-        if (!SUPABASE_URL || !SUPABASE_KEY) return false;
-        const adminUrl = `${SUPABASE_URL.replace(/\/+$/, '')}/auth/v1/admin/users/${uid}`;
-        const r = await fetch(adminUrl, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${SUPABASE_KEY}`,
-            'apikey': SUPABASE_KEY,
-            'Content-Type': 'application/json'
-          }
-        });
-        return r.ok;
-      } catch (e) {
-        if (process.env.NODE_ENV !== 'production') console.warn('checkAuthUserExists error', e);
-        return false;
-      }
-    };
-
-    let authExists = await checkAuthUserExists(userId);
-    const maxAuthChecks = 5;
-    for (let attempt = 1; attempt <= maxAuthChecks && !authExists; attempt++) {
-      // small backoff
-      await new Promise(r => setTimeout(r, attempt * 200));
-      authExists = await checkAuthUserExists(userId);
-      if (process.env.NODE_ENV !== 'production') console.log(`/api/create-app-user auth check attempt ${attempt} => ${authExists}`);
-    }
-
-    if (!authExists) {
-      // If auth user not found, return informative error so client can retry later
-      if (process.env.NODE_ENV !== 'production') console.warn('/api/create-app-user: auth user not found for id', userId);
-      return res.status(400).json({ error: 'Invalid id: Supabase auth user not found yet. Please confirm signup and retry.' });
-    }
-
-    const owner_name = metadata?.full_name || metadata?.owner_name || '';
-    const store_name = metadata?.store_name || '';
-    const phone = metadata?.phone || '';
-    const address = metadata?.address || '';
-    const business_type = metadata?.business_type || '';
-    const id_last6 = metadata?.id_last6 || '';
-
-    // Determine whether this should create a business row.
-    // Treat as business if explicit flag `is_business` is true or `store_name` is provided.
-    const isBusiness = !!(metadata && (metadata.is_business === true || (typeof store_name === 'string' && store_name.trim() !== '')));
-
-    const encPhone = encryptObject(phone);
-    const encFullName = encryptObject(owner_name);
-    const encIdLast6 = encryptObject(id_last6);
-    const encAddress = encryptObject(address);
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('/api/create-app-user encIdLast6 raw:', encIdLast6);
-      console.log('/api/create-app-user encIdLast6 json:', encIdLast6 ? JSON.stringify(encIdLast6) : null);
-    }
-
-    const userRow = {
-      id: userId,
-      email: email || '',
-      full_name: encFullName ? JSON.stringify(encFullName) : null,
-      phone: encPhone ? JSON.stringify(encPhone) : null,
-      id_last6: encIdLast6 ? JSON.stringify(encIdLast6) : null,
-      role: isBusiness ? 'free_business' : 'free_user'
-    };
-
-    const { error: userInsertError } = await supabase.from('users').insert(userRow);
-    if (userInsertError) {
-      if (process.env.NODE_ENV !== 'production') console.error('/api/create-app-user users insert error', userInsertError);
-      if (userInsertError.code === '23503') {
-        return res.status(400).json({ error: 'Invalid id: must match an existing Supabase auth user id (foreign key constraint)' });
-      }
-      return sendError(res, 500, 'Failed to insert user row', userInsertError);
-    }
-
-    // Idempotency: don't re-insert business if exists for this user
-    try {
-      const { data: existingBusiness, error: ebErr } = await supabase.from('businesses').select('id').eq('user_id', userId).maybeSingle();
-      if (ebErr) console.warn('/api/create-app-user existing business check error', ebErr);
-      if (!existingBusiness && isBusiness) {
-        const businessRow = {
-          email: email || '',
-          store_name: store_name,
-          owner_name: encFullName ? JSON.stringify(encFullName) : null,
-          phone: encPhone ? JSON.stringify(encPhone) : null,
-          address: encAddress ? JSON.stringify(encAddress) : null,
-          business_type: business_type,
-          id_last6: encIdLast6 ? JSON.stringify(encIdLast6) : null,
-          user_id: userId
-        };
-
-        if (process.env.NODE_ENV !== 'production') console.log('/api/create-app-user inserting businessRow', JSON.stringify(businessRow));
-        const { data: businessData, error: businessInsertError } = await supabase.from('businesses').insert(businessRow).select();
-        if (businessInsertError) {
-          if (process.env.NODE_ENV !== 'production') {
-            console.error('/api/create-app-user businesses insert error', businessInsertError);
-            console.error('/api/create-app-user attempted businessRow:', JSON.stringify(businessRow));
-          }
-          // If FK constraint or other DB error, surface informative message
-          if (businessInsertError.code === '23503') {
-            return res.status(400).json({ error: 'Invalid user_id: referenced application user does not exist' });
-          }
-          return sendError(res, 500, 'Failed to insert business row', businessInsertError);
-        }
-        if (process.env.NODE_ENV !== 'production') console.log('/api/create-app-user business insert success', businessData);
-      }
-    } catch (e) {
-      if (process.env.NODE_ENV !== 'production') console.error('/api/create-app-user business insert catch error', e);
-      // do not fail the whole request if business insert had unexpected issues
-      return sendError(res, 500, 'Failed to insert business row', e);
-    }
-
-    return res.json({ ok: true, inserted: true });
-  } catch (e) {
-    if (process.env.NODE_ENV !== 'production') console.error('/api/create-app-user error', e);
-    return sendError(res, 500, 'Server error', e);
-  }
+app.post('/api/create-app-user', (req, res) => {
+  // Disabled by operator request: avoid creating application rows via this endpoint.
+  console.warn('/api/create-app-user called but is disabled on this server');
+  return res.status(410).json({ error: 'create-app-user endpoint disabled' });
 });
 
 // Temporary test endpoint: encrypt payload and save to local file for testing
@@ -1162,6 +1024,69 @@ app.post('/api/register-user', createAppUserLimiter, async (req, res) => {
   } catch (e) {
     if (process.env.NODE_ENV !== 'production') console.error('/api/register-user error', e);
     return sendError(res, 500, 'Server error', e);
+  }
+});
+
+// Simple direct register endpoint (operator-requested)
+app.post('/api/register', async (req, res) => {
+  try {
+    console.log('REGISTER REQUEST');
+
+    const {
+      id,
+      email,
+      full_name,
+      phone,
+      id_last6,
+      role,
+      store_name,
+      address,
+      business_type
+    } = req.body;
+
+    console.log('DATA RECEIVED:', req.body);
+
+    const { error: userError } = await supabase
+      .from('users')
+      .insert({
+        id,
+        email,
+        full_name,
+        phone,
+        id_last6,
+        role
+      });
+
+    if (userError) {
+      console.error('USER ERROR:', userError);
+      return res.status(400).json(userError);
+    }
+
+    if (role === 'free_business') {
+      const { error: businessError } = await supabase
+        .from('businesses')
+        .insert({
+          user_id: id,
+          store_name,
+          address,
+          business_type
+        });
+
+      if (businessError) {
+        console.error('BUSINESS ERROR:', businessError);
+        return res.status(400).json(businessError);
+      }
+    }
+
+    return res.json({
+      success: true
+    });
+
+  } catch (err) {
+    console.error('REGISTER ERROR:', err);
+    return res.status(500).json({
+      error: err && err.message ? err.message : String(err)
+    });
   }
 });
 
