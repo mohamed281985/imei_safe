@@ -196,38 +196,38 @@ export default function BusinessSignup() {
       try {
         const returnedId = data?.user?.id;
         if (returnedId) {
-          try {
-            const sessionResp = await supabase.auth.getSession();
-            const token = sessionResp?.data?.session?.access_token;
-            const payload = {
-              id: returnedId,
-              email: formData.email,
-              metadata: {
-                full_name: metadata.full_name,
+          // إرسال البيانات إلى السيرفر لإنشاء حساب الأعمال
+          const response = await fetch(
+            'https://imei-safe.me/api/register',
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                id: returnedId,
+                email: formData.email,
+                full_name: formData.ownerName,
                 phone: fullPhoneNumber,
                 id_last6: formData.id_last6,
-                role: metadata.role,
-                store_name: metadata.store_name,
-                address: metadata.address,
-                business_type: metadata.business_type
-              }
-            };
-
-            if (token) {
-              await fetch('/api/create-app-user', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                body: JSON.stringify(payload)
-              });
-            } else {
-              console.warn('Skipping create-app-user: no session token available; webhook will handle insertion after confirmation.');
+                role: 'free_business',
+                store_name: formData.storeName,
+                address: formData.address,
+                business_type: formData.businessType
+              })
             }
-          } catch (e) {
-            console.warn('create-app-user error', e);
+          );
+
+          if (!response.ok) {
+            throw new Error('Failed to create business account');
           }
+
+          const result = await response.json();
+          console.log('REGISTER RESULT:', result);
         }
       } catch (e) {
-        console.warn('create-app-user error', e);
+        console.warn('Error creating business account:', e);
+        // لا نوقف عملية التسجيل بسبب فشل إنشاء حساب الأعمال
       }
 
       // Optionally redirect to a page telling user to check email
@@ -265,7 +265,7 @@ export default function BusinessSignup() {
                     <stop offset="50%" stopColor="#A8E1FF" />
                     <stop offset="100%" stopColor="#1E7BFF" />
                   </linearGradient>
-                  <pattern id="dots-pattern-compact" x="0" y="0" width="8" height="8" patternUnits="userSpaceOnUse">
+                  <pattern id="dots-pattern-compact" x="0" y1="0" width="8" height="8" patternUnits="userSpaceOnUse">
                     <circle cx="2" cy="2" r="1.6" fill="#2b78ebff" opacity="0.25" />
                   </pattern>
                 </defs>

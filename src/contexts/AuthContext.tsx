@@ -400,7 +400,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             username: username, // This will be the full name
             phone: phoneNumber,
             id_last6: idLast6, // Save the last 6 digits of the ID
-            role: 'customer'
+            role: 'free_user'
           },
           emailRedirectTo: `myapp://auth`
         }
@@ -414,11 +414,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         throw signUpError;
       }
+if (data.user) {
 
-      if (data.user) {
-        setError(null);
-        return 'success';
-      }
+  const response = await fetch(
+    'https://imei-safe.me/api/register',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        id: data.user.id,
+        email,
+        full_name: username,
+        phone: phoneNumber,
+        id_last6: idLast6,
+        role: 'free_user'
+      })
+    }
+  );
+
+ if (!response.ok) {
+  throw new Error('Failed to create user profile');
+}
+
+const result = await response.json();
+console.log('REGISTER RESULT:', result);
+
+setError(null);
+return 'success';
+}
 
       setError('حدث خطأ أثناء إنشاء الحساب');
       return 'error';
