@@ -214,27 +214,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               const { data: appUser, error: appUserErr } = await supabase.from('users').select('id').eq('id', user.id).maybeSingle();
               if (appUserErr) console.warn('checkAuth: error checking app users table', appUserErr);
               if (!appUser) {
-                console.log('checkAuth: app user not found, attempting to create via /api/create-app-user');
-                try {
-                  const tokenResp = await supabase.auth.getSession();
-                  const token = tokenResp?.data?.session?.access_token;
-                  const resp = await fetch('/api/create-app-user', {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-                    },
-                    body: JSON.stringify({ id: user.id, email: user.email, metadata: user.user_metadata || {} })
-                  });
-                  const json = await resp.json().catch(() => ({}));
-                  if (!resp.ok) {
-                    console.warn('checkAuth: create-app-user failed', resp.status, json);
-                  } else {
-                    console.log('checkAuth: create-app-user success', json);
-                  }
-                } catch (e) {
-                  console.error('checkAuth: create-app-user request error', e);
-                }
+                // create-app-user تم تعطيله بطلب المُشغّل — لا نقوم الآن باستدعاء نقطة النهاية هذه
+                console.log('checkAuth: create-app-user is disabled; skipping server-side create.');
               } else {
                 console.log('checkAuth: app user exists');
               }

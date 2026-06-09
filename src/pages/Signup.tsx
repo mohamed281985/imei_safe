@@ -156,33 +156,11 @@ const Signup: React.FC = () => {
         // confirmation.
         try {
           const returnedId = data?.user?.id;
-          if (returnedId) {
-            try {
-              const sessionResp = await supabase.auth.getSession();
-              const token = sessionResp?.data?.session?.access_token;
-              const payload = {
-                id: returnedId,
-                email,
-                metadata: {
-                  full_name: username,
-                  phone: fullPhoneNumber,
-                  id_last6: idLast6,
-                  role: 'customer'
-                }
-              };
-
-              if (token) {
-                await fetch('/api/create-app-user', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                  body: JSON.stringify(payload)
-                });
-              } else {
-                if (import.meta.env.MODE !== 'production') console.warn('Skipping create-app-user: no session token available; webhook will handle insertion after confirmation.');
-              }
-            } catch (e) {
-              if (import.meta.env.MODE !== 'production') console.warn('create-app-user call failed', e);
-            }
+              if (returnedId) {
+            // تم تعطيل منطق الاتصال بـ /api/create-app-user بطلب من المُشغّل.
+            // لا يحاول الكلاينت استدعاء نقطة النهاية هذه الآن.
+            // لإعادة التفعيل لاحقًا، أعد بناء الطلب باستخدام رمز الاستدعاء أعلاه.
+            if (import.meta.env.MODE !== 'production') console.log('create-app-user call is disabled; skipping backend create.');
           }
         } catch (e) { /* ignore */ }
 
