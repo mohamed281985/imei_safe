@@ -128,11 +128,12 @@ const Signup: React.FC = () => {
         setIsSubmitting(false);
         return;
       }
+      
       // Use client-side signUp so Supabase sends the verification email (same as BusinessSignup)
       // Do NOT include sensitive fields (phone, id_last6) in the Auth metadata.
       const metadata = {
         full_name: username,
-        role: 'customer'
+        role: 'free_user'
       };
 
       const { data, error } = await supabase.auth.signUp({
@@ -156,13 +157,41 @@ const Signup: React.FC = () => {
         // confirmation.
         try {
           const returnedId = data?.user?.id;
-              if (returnedId) {
-            // تم تعطيل منطق الاتصال بـ /api/create-app-user بطلب من المُشغّل.
-            // لا يحاول الكلاينت استدعاء نقطة النهاية هذه الآن.
-            // لإعادة التفعيل لاحقًا، أعد بناء الطلب باستخدام رمز الاستدعاء أعلاه.
-            if (import.meta.env.MODE !== 'production') console.log('create-app-user call is disabled; skipping backend create.');
+          if (returnedId) {
+            const response = await fetch(
+              'https://imei-safe.me/api/register',
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  id: returnedId,
+                  email,
+                  full_name: username,
+                  phone: fullPhoneNumber,
+                  id_last6: idLast6,
+                  role: 'free_user'
+                })
+              }
+            );
+
+            if (!response.ok) {
+              throw new Error('Failed to create user profile');
+            }
+
+            const result = await response.json();
+            console.log('REGISTER RESULT:', result);
           }
-        } catch (e) { /* ignore */ }
+          
+          // تم تعطيل منطق الاتصال بـ /api/create-app-user بطلب من المُشغّل.
+          // لا يحاول الكلاينت استدعاء نقطة النهاية هذه الآن.
+          // لإعادة التفعيل لاحقًا، أعد بناء الطلب باستخدام رمز الاستدعاء أعلاه.
+          if (import.meta.env.MODE !== 'production') console.log('create-app-user call is disabled; skipping backend create.');
+        } catch (e) { 
+          console.error('Error creating user profile:', e);
+          // لا نوقف عملية التسجيل بسبب فشل إنشاء الملف الشخصي
+        }
 
         navigate('/login');
       }
@@ -173,28 +202,28 @@ const Signup: React.FC = () => {
     }
   };
 
-    useEffect(() => {
-      const pw = formData.password || '';
-      try {
-        setPwdChecks({
-          minLength: pw.length >= 8,
-          hasLetter: /\p{L}/u.test(pw),
-          hasNumber: /\d/.test(pw),
-          hasSpecial: /[^\p{L}\d]/u.test(pw),
-        });
-      } catch (e) {
-        setPwdChecks({
-          minLength: pw.length >= 8,
-          hasLetter: /[A-Za-z]/.test(pw),
-          hasNumber: /\d/.test(pw),
-          hasSpecial: /[\W_]/.test(pw),
-        });
-      }
-    }, [formData.password]);
+  useEffect(() => {
+    const pw = formData.password || '';
+    try {
+      setPwdChecks({
+        minLength: pw.length >= 8,
+        hasLetter: /\p{L}/u.test(pw),
+        hasNumber: /\d/.test(pw),
+        hasSpecial: /[^\p{L}\d]/u.test(pw),
+      });
+    } catch (e) {
+      setPwdChecks({
+        minLength: pw.length >= 8,
+        hasLetter: /[A-Za-z]/.test(pw),
+        hasNumber: /\d/.test(pw),
+        hasSpecial: /[\W_]/.test(pw),
+      });
+    }
+  }, [formData.password]);
 
   return (
-      <PageContainer>
-        <Card className="w-full shadow-lg border-t-4 border-t-orange-500 bg-transparent mt-8">
+    <PageContainer>
+      <Card className="w-full shadow-lg border-t-4 border-t-orange-500 bg-transparent mt-8">
         <CardHeader className="pb-0">
           <CardTitle className="text-2xl font-bold text-orange-600 text-center">
             <div className="flex justify-center mb-6">
@@ -203,222 +232,223 @@ const Signup: React.FC = () => {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
-            {signupError && (
-              <Alert variant="destructive" className="mb-4">
-                <AlertDescription>
-                  <span style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{signupError}</span>
-                </AlertDescription>
-              </Alert>
-            )}
+          {signupError && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertDescription>
+                <span style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{signupError}</span>
+              </AlertDescription>
+            </Alert>
+          )}
+          
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="w-full max-w-full mb-6">
+              <div className="flex items-center justify-between w-full gap-3">
+                {/* dotted square */}
+                <div className="flex-none">
+                  <svg className="w-10 h-10 sm:w-14 sm:h-14" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                    <defs>
+                      <linearGradient id="signup-dots-grad" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+                        <stop offset="0%" stopColor="#D8F6FF" />
+                        <stop offset="50%" stopColor="#66C8FF" />
+                        <stop offset="100%" stopColor="#0F62FF" />
+                      </linearGradient>
+                      <pattern id="signup-dots-pattern" x="0" y="0" width="6" height="6" patternUnits="userSpaceOnUse">
+                        <circle cx="1.5" cy="1.5" r="1.6" fill="url(#signup-dots-grad)" fillOpacity="0.95" />
+                      </pattern>
+                    </defs>
+                    <rect width="40" height="40" fill="url(#signup-dots-pattern)" rx="6" />
+                  </svg>
+                </div>
+
+                {/* title centered */}
+                <div className="flex-1 text-center px-2">
+                  <h1 className="text-2xl font-bold text-orange-600 leading-tight">
+                    {t('create_account')}
+                  </h1>
+                </div>
+
+                {/* back button on right */}
+                <div className="flex-none">
+                  <BackButton />
+                </div>
+              </div>
+            </div>
             
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="w-full max-w-full mb-6">
-                <div className="flex items-center justify-between w-full gap-3">
-                  {/* dotted square */}
-                  <div className="flex-none">
-                    <svg className="w-10 h-10 sm:w-14 sm:h-14" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-                      <defs>
-                        <linearGradient id="signup-dots-grad" x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
-                          <stop offset="0%" stopColor="#D8F6FF" />
-                          <stop offset="50%" stopColor="#66C8FF" />
-                          <stop offset="100%" stopColor="#0F62FF" />
-                        </linearGradient>
-                        <pattern id="signup-dots-pattern" x="0" y="0" width="6" height="6" patternUnits="userSpaceOnUse">
-                          <circle cx="1.5" cy="1.5" r="1.6" fill="url(#signup-dots-grad)" fillOpacity="0.95" />
-                        </pattern>
-                      </defs>
-                      <rect width="40" height="40" fill="url(#signup-dots-pattern)" rx="6" />
-                    </svg>
-                  </div>
+            <div>
+              <label htmlFor="email" className="block text-black text-sm font-medium mb-1">
+                {t('email')}
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Mail size={18} className="text-gray-400" />
+                </div>
+                <Input
+                  id="email"
+                  type="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleInputChange}
+                  className={`input-field pl-10 w-full focus:ring-2 focus:ring-orange-500 bg-imei-dark/50 backdrop-blur-sm ${emailExists ? 'border-red-500' : ''}`}
+                  placeholder="user@example.com"
+                  required
+                />
+                {/* no live email existence indicator to prevent user enumeration */}
+              </div>
+            </div>
+            
+            <div>
+              <label htmlFor="username" className="block text-black text-sm font-medium mb-1">
+                {t('username')}
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <User size={18} className="text-gray-400" />
+                </div>
+                <Input
+                  id="username"
+                  type="text"
+                  name="username"
+                  value={formData.username}
+                  onChange={handleInputChange}
+                  className="input-field pl-10 w-full focus:ring-2 focus:ring-orange-500 bg-imei-dark/50 backdrop-blur-sm"
+                  placeholder={t('username')}
+                  required
+                />
+              </div>
+            </div>
+            
+            <div>
+              <label htmlFor="idLast6" className="block text-black text-sm font-medium mb-1">
+                {t('id_last_6_from_card')}
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <CreditCard size={18} className="text-gray-400" />
+                </div>
+                <Input
+                  id="idLast6"
+                  type="text"
+                  name="idLast6"
+                  value={formData.idLast6}
+                  onChange={handleInputChange}
+                  className="input-field pl-10 w-full focus:ring-2 focus:ring-orange-500 bg-imei-dark/50 backdrop-blur-sm"
+                  placeholder={t('id_last_6_from_card')}
+                  required
+                  maxLength={6}
+                />
+              </div>
+            </div>
+            
 
-                  {/* title centered */}
-                  <div className="flex-1 text-center px-2">
-                    <h1 className="text-2xl font-bold text-orange-600 leading-tight">
-                      {t('create_account')}
-                    </h1>
-                  </div>
-
-                  {/* back button on right */}
-                  <div className="flex-none">
-                    <BackButton />
-                  </div>
-                </div>
-              </div>
-              <div>
-                <label htmlFor="email" className="block text-black text-sm font-medium mb-1">
-                  {t('email')}
-                </label>
-                <div className="relative">
+            <div>
+              <label htmlFor="phoneNumber" className="block text-black text-sm font-medium mb-1">
+                {t('phone_number')}
+              </label>
+              <div className="flex gap-2 items-center">
+                <CountryCodeSelector
+                  value={countryCode}
+                  onChange={setCountryCode}
+                  disabled={isSubmitting}
+                />
+                <div className="relative w-full">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Mail size={18} className="text-gray-400" />
+                    <Phone size={18} className="text-gray-400" />
                   </div>
                   <Input
-                    id="email"
-                    type="email"
-                    name="email"
-                    value={formData.email}
-                    onChange={handleInputChange}
-                    className={`input-field pl-10 w-full focus:ring-2 focus:ring-orange-500 bg-imei-dark/50 backdrop-blur-sm ${emailExists ? 'border-red-500' : ''}`}
-                    placeholder="user@example.com"
-                    required
-                  />
-                  {/* no live email existence indicator to prevent user enumeration */}
-                </div>
-              </div>
-              
-              <div>
-                <label htmlFor="username" className="block text-black text-sm font-medium mb-1">
-                  {t('username')}
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <User size={18} className="text-gray-400" />
-                  </div>
-                  <Input
-                    id="username"
-                    type="text"
-                    name="username"
-                    value={formData.username}
+                    id="phoneNumber"
+                    type="tel"
+                    name="phoneNumber"
+                    value={formData.phoneNumber}
                     onChange={handleInputChange}
                     className="input-field pl-10 w-full focus:ring-2 focus:ring-orange-500 bg-imei-dark/50 backdrop-blur-sm"
-                    placeholder={t('username')}
+                    placeholder={t('phone_number')}
                     required
                   />
                 </div>
               </div>
-              
-              <div>
-                <label htmlFor="idLast6" className="block text-black text-sm font-medium mb-1">
-                  {t('id_last_6_from_card')}
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <CreditCard size={18} className="text-gray-400" />
-                  </div>
-                  <Input
-                    id="idLast6"
-                    type="text"
-                    name="idLast6"
-                    value={formData.idLast6}
-                    onChange={handleInputChange}
-                    className="input-field pl-10 w-full focus:ring-2 focus:ring-orange-500 bg-imei-dark/50 backdrop-blur-sm"
-                    placeholder={t('id_last_6_from_card')}
-                    required
-                    maxLength={6}
-                  />
+            </div>
+            
+            <div>
+              <label htmlFor="password" className="block text-black text-sm font-medium mb-1">
+                {t('password')}
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Lock size={18} className="text-gray-400" />
                 </div>
-              </div>
-              
-
-              <div>
-                <label htmlFor="phoneNumber" className="block text-black text-sm font-medium mb-1">
-                  {t('phone_number')}
-                </label>
-                <div className="flex gap-2 items-center">
-                  <CountryCodeSelector
-                    value={countryCode}
-                    onChange={setCountryCode}
-                    disabled={isSubmitting}
-                  />
-                  <div className="relative w-full">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <Phone size={18} className="text-gray-400" />
-                    </div>
-                    <Input
-                      id="phoneNumber"
-                      type="tel"
-                      name="phoneNumber"
-                      value={formData.phoneNumber}
-                      onChange={handleInputChange}
-                      className="input-field pl-10 w-full focus:ring-2 focus:ring-orange-500 bg-imei-dark/50 backdrop-blur-sm"
-                      placeholder={t('phone_number')}
-                      required
-                    />
+                <Input
+                  id="password"
+                  type="password"
+                  name="password"
+                  value={formData.password}
+                  onChange={handleInputChange}
+                  onFocus={() => setPwdFocused(true)}
+                  onBlur={() => setPwdFocused(false)}
+                  className="input-field pl-10 w-full focus:ring-2 focus:ring-orange-500 bg-imei-dark/50 backdrop-blur-sm"
+                  placeholder="********"
+                  required
+                  minLength={8}
+                />
+                {pwdFocused && (
+                  <div className="mt-2 text-sm text-black bg-white p-2 rounded shadow-sm w-full">
+                    <ul className="space-y-1">
+                      <li className={pwdChecks.minLength ? 'text-green-600' : 'text-gray-700'}>
+                        {pwdChecks.minLength ? '✓' : '○'} {t('pwd_min_chars') || 'At least 8 characters'}
+                      </li>
+                      <li className={pwdChecks.hasLetter ? 'text-green-600' : 'text-gray-700'}>
+                        {pwdChecks.hasLetter ? '✓' : '○'} {t('pwd_letter') || 'At least one letter'}
+                      </li>
+                      <li className={pwdChecks.hasNumber ? 'text-green-600' : 'text-gray-700'}>
+                        {pwdChecks.hasNumber ? '✓' : '○'} {t('pwd_number') || 'Number'}
+                      </li>
+                      <li className={pwdChecks.hasSpecial ? 'text-green-600' : 'text-gray-700'}>
+                        {pwdChecks.hasSpecial ? '✓' : '○'} {t('pwd_special') || 'Special character'}
+                      </li>
+                    </ul>
                   </div>
+                )}
+              </div>
+            </div>
+            
+            <div>
+              <label htmlFor="confirmPassword" className="block text-black text-sm font-medium mb-1">
+                {t('confirm_password')}
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Lock size={18} className="text-gray-400" />
                 </div>
+                <Input
+                  id="confirmPassword"
+                  type="password"
+                  name="confirmPassword"
+                  value={formData.confirmPassword}
+                  onChange={handleInputChange}
+                  className="input-field pl-10 w-full focus:ring-2 focus:ring-orange-500 bg-imei-dark/50 backdrop-blur-sm"
+                  placeholder="********"
+                  required
+                  minLength={8}
+                />
               </div>
-              
-              <div>
-                <label htmlFor="password" className="block text-black text-sm font-medium mb-1">
-                  {t('password')}
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Lock size={18} className="text-gray-400" />
-                  </div>
-                  <Input
-                    id="password"
-                    type="password"
-                    name="password"
-                    value={formData.password}
-                    onChange={handleInputChange}
-                    onFocus={() => setPwdFocused(true)}
-                    onBlur={() => setPwdFocused(false)}
-                    className="input-field pl-10 w-full focus:ring-2 focus:ring-orange-500 bg-imei-dark/50 backdrop-blur-sm"
-                    placeholder="********"
-                    required
-                    minLength={8}
-                  />
-                  {pwdFocused && (
-                    <div className="mt-2 text-sm text-black bg-white p-2 rounded shadow-sm w-full">
-                      <ul className="space-y-1">
-                        <li className={pwdChecks.minLength ? 'text-green-600' : 'text-gray-700'}>
-                          {pwdChecks.minLength ? '✓' : '○'} {t('pwd_min_chars') || 'At least 8 characters'}
-                        </li>
-                        <li className={pwdChecks.hasLetter ? 'text-green-600' : 'text-gray-700'}>
-                          {pwdChecks.hasLetter ? '✓' : '○'} {t('pwd_letter') || 'At least one letter'}
-                        </li>
-                        <li className={pwdChecks.hasNumber ? 'text-green-600' : 'text-gray-700'}>
-                          {pwdChecks.hasNumber ? '✓' : '○'} {t('pwd_number') || 'Number'}
-                        </li>
-                        <li className={pwdChecks.hasSpecial ? 'text-green-600' : 'text-gray-700'}>
-                          {pwdChecks.hasSpecial ? '✓' : '○'} {t('pwd_special') || 'Special character'}
-                        </li>
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              </div>
-              
-              <div>
-                <label htmlFor="confirmPassword" className="block text-black text-sm font-medium mb-1">
-                  {t('confirm_password')}
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Lock size={18} className="text-gray-400" />
-                  </div>
-                  <Input
-                    id="confirmPassword"
-                    type="password"
-                    name="confirmPassword"
-                    value={formData.confirmPassword}
-                    onChange={handleInputChange}
-                    className="input-field pl-10 w-full focus:ring-2 focus:ring-orange-500 bg-imei-dark/50 backdrop-blur-sm"
-                    placeholder="********"
-                    required
-                    minLength={8}
-                  />
-                </div>
-              </div>
-              
-              <div>
-                <Button
-                  type="submit"
-                  className={`w-full text-white transition-colors ${isEmailRegistered ? 'bg-gray-500 cursor-not-allowed' : 'bg-orange-500 hover:bg-orange-600'} ${isSubmitting ? 'opacity-70' : ''}`}
-                  disabled={isSubmitting || isEmailRegistered}
-                >
-                  {isEmailRegistered ? t('phone_registered_before') : (isSubmitting ? t('loading') : t('signup'))}
-                </Button>
-              </div>
-              
-              <div className="text-center text-sm text-gray-300 mt-4">
-                {t('already_have_account')}{' '}
-                <Link to="/login" className="text-orange-500 hover:underline">
-                  {t('login')}
-                </Link>
-              </div>
-            </form>
+            </div>
+            
+            <div>
+              <Button
+                type="submit"
+                className={`w-full text-white transition-colors ${isEmailRegistered ? 'bg-gray-500 cursor-not-allowed' : 'bg-orange-500 hover:bg-orange-600'} ${isSubmitting ? 'opacity-70' : ''}`}
+                disabled={isSubmitting || isEmailRegistered}
+              >
+                {isEmailRegistered ? t('phone_registered_before') : (isSubmitting ? t('loading') : t('signup'))}
+              </Button>
+            </div>
+            
+            <div className="text-center text-sm text-gray-300 mt-4">
+              {t('already_have_account')}{' '}
+              <Link to="/login" className="text-orange-500 hover:underline">
+                {t('login')}
+              </Link>
+            </div>
+          </form>
         </CardContent>
       </Card>
     </PageContainer>

@@ -1046,16 +1046,24 @@ app.post('/api/register', async (req, res) => {
 
     console.log('DATA RECEIVED:', req.body);
 
+    // Encrypt sensitive fields before storing
+    const encFullName = encryptObject(full_name);
+    const encPhone = encryptObject(phone);
+    const encIdLast6 = encryptObject(id_last6);
+    const encAddress = encryptObject(address);
+
+    const userPayload = {
+      id,
+      email: email || '',
+      full_name: encFullName ? JSON.stringify(encFullName) : null,
+      phone: encPhone ? JSON.stringify(encPhone) : null,
+      id_last6: encIdLast6 ? JSON.stringify(encIdLast6) : null,
+      role: role || null
+    };
+
     const { error: userError } = await supabase
       .from('users')
-      .insert({
-        id,
-        email,
-        full_name,
-        phone,
-        id_last6,
-        role
-      });
+      .insert(userPayload);
 
     if (userError) {
       console.error('USER ERROR:', userError);
@@ -1063,14 +1071,17 @@ app.post('/api/register', async (req, res) => {
     }
 
     if (role === 'free_business') {
+      const businessPayload = {
+        user_id: id,
+        store_name: store_name || '',
+        owner_name: encFullName ? JSON.stringify(encFullName) : null,
+        address: encAddress ? JSON.stringify(encAddress) : null,
+        business_type: business_type || ''
+      };
+
       const { error: businessError } = await supabase
         .from('businesses')
-        .insert({
-          user_id: id,
-          store_name,
-          address,
-          business_type
-        });
+        .insert(businessPayload);
 
       if (businessError) {
         console.error('BUSINESS ERROR:', businessError);
