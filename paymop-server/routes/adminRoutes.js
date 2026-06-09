@@ -310,6 +310,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       return res.status(500).json({ error: 'Server error' });
     }
   });
+  
   // PATCH /admin/accessories/:id - update accessory (admin light endpoint)
   app.patch('/admin/accessories/:id', async (req, res) => {
     try {
@@ -339,49 +340,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       return res.status(500).json({ ok: false, error: 'Server error' });
     }
   });
-  // GET /admin/phones - list phones (decrypted) with images
-  app.get('/admin/phones', async (req, res) => {
-    try {
-      const limit = Math.min(Number(req.query.limit || 200), 1000);
-      
-      // تعديل الاستعلام لجلب الصور مع الهواتف
-      const { data, error } = await supabase
-        .from('phones')
-        .select(`
-          *,
-          phone_images (
-            id,
-            image_path,
-            main_image
-          )
-        `)
-        .order('id', { ascending: false })
-        .limit(limit);
-      
-      if (error) throw error;
-      
-      // معالجة البيانات وفك تشفيرها
-      const out = (data || []).map(p => {
-        // فك تشفير بيانات الهاتف
-        const decryptedPhone = decryptDeep(p);
-        
-        // الحفاظ على الصور كما هي (لأنها عادة لا تحتاج إلى فك تشفير)
-        const images = p.phone_images || [];
-        
-        return {
-          id: p.id,
-          ...decryptedPhone,
-          images: images
-        };
-      });
-      
-      return res.json({ ok: true, phones: out });
-    } catch (err) {
-      console.error('/admin/phones error', err);
-      return res.status(500).json({ error: 'Server error' });
-    }
-  });
-
+  
   // GET /admin/phones - list phones (decrypted) with images
   app.get('/admin/phones', async (req, res) => {
     try {
@@ -1212,6 +1171,51 @@ app.post('/admin/update-ads-price', verifyJwtToken, async (req, res) => {
     } catch (err) {
       console.error('Error fetching transfers:', err);
       return res.status(500).json({ error: 'خطأ في السيرفر', message: err && err.message ? err.message : String(err) });
+    }
+  });
+
+  // GET /admin/businesses/:userId - get business details by user ID
+  app.get('/admin/businesses/:userId', async (req, res) => {
+    try {
+      // استخراج معرف المستخدم من المسار
+      const { userId } = req.params;
+
+      // التحقق من أن معرف المستخدم موجود
+      if (!userId || typeof userId !== 'string') {
+        return res.status(400).json({ error: 'User ID is required' });
+      }
+
+      // التحقق من أن معرف المستخدم هو UUID صالح
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(userId)) {
+        return res.status(400).json({ error: 'Invalid user ID format' });
+      }
+
+      // جلب بيانات النشاط التجاري من Supabase
+      const { data, error } = await supabase
+        .from('businesses')
+        .select('*')
+        .eq('user_id', userId);
+
+      // التحقق من وجود خطأ
+      if (error) {
+        console.error('Error fetching business details:', error);
+        return res.status(500).json({ error: 'Failed to fetch business details' });
+      }
+
+      // التحقق من وجود بيانات
+      if (!data || data.length === 0) {
+        return res.status(404).json({ error: 'Business details not found' });
+      }
+
+      // فك تشفير البيانات قبل إرجاعها
+      const decryptedData = decryptDeep(data[0]);
+
+      // إرجاع البيانات
+      return res.status(200).json(decryptedData);
+    } catch (error) {
+      console.error('Error in business details API:', error);
+      return res.status(500).json({ error: 'Internal server error' });
     }
   });
 }

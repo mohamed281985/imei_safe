@@ -133,7 +133,7 @@ const Signup: React.FC = () => {
       // Do NOT include sensitive fields (phone, id_last6) in the Auth metadata.
       const metadata = {
         full_name: username,
-        role: 'free_user'
+        role: 'customer'
       };
 
       const { data, error } = await supabase.auth.signUp({
@@ -146,55 +146,63 @@ const Signup: React.FC = () => {
         }
       } as any);
 
+      // معالجة الأخطاء
       if (error) {
-        setSignupError(error.message || t('signup_error'));
-      } else {
-        toast({ title: t('signup_successful'), description: t('verification_email_sent') });
-
-        // If Supabase returned a user id immediately, attempt to call our backend
-        // only when a valid session token is available. Otherwise rely on the
-        // server-side Supabase webhook to create application rows after email
-        // confirmation.
-        try {
-          const returnedId = data?.user?.id;
-          if (returnedId) {
-            const response = await fetch(
-              'https://imei-safe.me/api/register',
-              {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                  id: returnedId,
-                  email,
-                  full_name: username,
-                  phone: fullPhoneNumber,
-                  id_last6: idLast6,
-                  role: 'free_user'
-                })
-              }
-            );
-
-            if (!response.ok) {
-              throw new Error('Failed to create user profile');
-            }
-
-            const result = await response.json();
-            console.log('REGISTER RESULT:', result);
-          }
-          
-          // تم تعطيل منطق الاتصال بـ /api/create-app-user بطلب من المُشغّل.
-          // لا يحاول الكلاينت استدعاء نقطة النهاية هذه الآن.
-          // لإعادة التفعيل لاحقًا، أعد بناء الطلب باستخدام رمز الاستدعاء أعلاه.
-          if (import.meta.env.MODE !== 'production') console.log('create-app-user call is disabled; skipping backend create.');
-        } catch (e) { 
-          console.error('Error creating user profile:', e);
-          // لا نوقف عملية التسجيل بسبب فشل إنشاء الملف الشخصي
+        if (error.message?.includes('User already registered')) {
+          setSignupError('البريد مستخدم بالفعل');
+          setIsSubmitting(false);
+          return;
         }
 
-        navigate('/login');
+        setSignupError(error.message || t('signup_error'));
+        setIsSubmitting(false);
+        return;
       }
+
+      // عرض رسالة نجاح التسجيل
+      toast({
+        title: t('signup_successful'),
+        description: t('verification_email_sent')
+      });
+
+      // If Supabase returned a user id immediately, attempt to call our backend
+      // only when a valid session token is available. Otherwise rely on the
+      // server-side Supabase webhook to create application rows after email
+      // confirmation.
+      try {
+        const returnedId = data?.user?.id;
+        if (returnedId) {
+          const response = await fetch(
+            'https://imei-safe.me/api/register',
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                id: returnedId,
+                email,
+                full_name: username,
+                phone: fullPhoneNumber,
+                id_last6: idLast6,
+                role: 'free_user'
+              })
+            }
+          );
+
+          if (!response.ok) {
+            throw new Error('Failed to create user profile');
+          }
+
+          const result = await response.json();
+          console.log('REGISTER RESULT:', result);
+        }
+      } catch (e) {
+        console.warn('Error creating user profile:', e);
+        // لا نوقف عملية التسجيل بسبب فشل إنشاء الملف الشخصي
+      }
+
+      navigate('/login');
     } catch (error: any) {
       setSignupError(error?.message || t('signup_error'));
     } finally {
@@ -252,7 +260,7 @@ const Signup: React.FC = () => {
                         <stop offset="50%" stopColor="#66C8FF" />
                         <stop offset="100%" stopColor="#0F62FF" />
                       </linearGradient>
-                      <pattern id="signup-dots-pattern" x="0" y="0" width="6" height="6" patternUnits="userSpaceOnUse">
+                      <pattern id="signup-dots-pattern" x="0" y1="0" width="6" height="6" patternUnits="userSpaceOnUse">
                         <circle cx="1.5" cy="1.5" r="1.6" fill="url(#signup-dots-grad)" fillOpacity="0.95" />
                       </pattern>
                     </defs>
