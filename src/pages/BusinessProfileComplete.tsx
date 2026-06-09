@@ -3,17 +3,20 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 import imageCompression from 'browser-image-compression';
+import ReactCrop, { Crop, PixelCrop } from 'react-image-crop';
+import 'react-image-crop/dist/ReactCrop.css';
 import ImageUploader from '@/components/ImageUploader';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/contexts/AuthContext';
 import { Camera as CapacitorCamera, CameraResultType, CameraSource } from '@capacitor/camera';
+import { Capacitor } from '@capacitor/core';
 import { useLanguage } from '../contexts/LanguageContext';
 import Logo from '../components/Logo';
 import BackButton from '../components/BackButton';
 import PageContainer from '@/components/PageContainer';
 import TopBar from '@/components/TopBar';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Crop as CropIcon, Wand2, RotateCw } from 'lucide-react';
 
 export default function BusinessProfileComplete() {
   const { t } = useLanguage();
@@ -21,7 +24,21 @@ export default function BusinessProfileComplete() {
   const [licenseImage, setLicenseImage] = useState<File | null>(null);
   const [previews, setPreviews] = useState<{ storeImage: string | null; licenseImage: string | null }>({ storeImage: null, licenseImage: null });
   const [loading, setLoading] = useState(false);
+  const [processing, setProcessing] = useState(false);
   const { toast } = useToast();
+  const navigate = useNavigate();
+  const { completeProfile, logout } = useAuth();
+
+  // حالة للاقتطاع
+  const [showCropModal, setShowCropModal] = useState(false);
+  const [cropImageType, setCropImageType] = useState<'store' | 'license' | null>(null);
+  const [cropImageSrc, setCropImageSrc] = useState('');
+  const [crop, setCrop] = useState<Crop>({ unit: '%', width: 90, aspect: 16 / 9 });
+  const [completedCrop, setCompletedCrop] = useState<PixelCrop | null>(null);
+
+  // التحقق مما إذا كنا في بيئة تطبيق حقيقي
+  const isNative = Capacitor.isNativePlatform();
+
   // cleanup object URLs when previews change or component unmounts
   useEffect(() => {
     return () => {
@@ -29,8 +46,125 @@ export default function BusinessProfileComplete() {
       if (previews.licenseImage) URL.revokeObjectURL(previews.licenseImage);
     };
   }, [previews.storeImage, previews.licenseImage]);
-  const navigate = useNavigate();
-  const { completeProfile, logout } = useAuth();
+
+  // دالة لاقتطاع الصورة
+  const handleCropComplete = useCallback(async (crop: PixelCrop, image: HTMLImageElement) => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    
+    if (!ctx || !crop.width || !crop.height) return;
+
+    const scaleX = image.naturalWidth / image.width;
+    const scaleY = image.naturalHeight / image.height;
+
+    canvas.width = crop.width * scaleX;
+    canvas.height = crop.height * scaleY;
+
+    ctx.drawImage(
+      image,
+      crop.x * scaleX,
+      crop.y * scaleY,
+      crop.width * scaleX,
+      crop.height * scaleY,
+      0,
+      0,
+      crop.width * scaleX,
+      crop.height * scaleY
+    );
+
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const file = new File([blob], `${cropImageType}_cropped.webp`, { type: 'image/webp' });
+      handleImage(file, cropImageType || 'store');
+      setShowCropModal(false);
+      setCropImageType(null);
+      setCropImageSrc('');
+    }, 'image/webp');
+  }, [cropImageType]);
+
+  // دالة لفتح نافذة الاقتطاع
+  const openCropModal = useCallback((type: 'store' | 'license') => {
+    const imageSrc = type === 'store' ? previews.storeImage : previews.licenseImage;
+    if (!imageSrc) return;
+
+    setCropImageType(type);
+    setCropImageSrc(imageSrc);
+    setShowCropModal(true);
+  }, [previews.storeImage, previews.licenseImage]);
+
+  // دالة لتحسين الصورة تلقائياً
+  const enhanceImage = useCallback(async (file: File, type: 'store' | 'license') => {
+    setProcessing(true);
+    try {
+      toast({ description: t('enhancing_image') });
+
+      // خيارات تحسين الصورة
+      const enhanceOptions = {
+        maxSizeMB: 2,
+        maxWidthOrHeight: 2048,
+        useWebWorker: true,
+        fileType: 'image/webp',
+        quality: 0.9,
+        // تحسينات إضافية
+        initialQuality: 0.8,
+        alwaysKeepResolution: false,
+      };
+
+      // تحويل الصورة إلى Blob
+      const compressedFile = await imageCompression(file, enhanceOptions);
+
+      // تطبيق تحسينات إضافية باستخدام Canvas
+      const img = new Image();
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+
+      if (!ctx) {
+        throw new Error('Failed to get canvas context');
+      }
+
+      img.onload = () => {
+        canvas.width = img.width;
+        canvas.height = img.height;
+
+        // تحسين السطوع والتباين
+        ctx.filter = 'contrast(1.1) brightness(1.05) saturate(1.1)';
+        ctx.drawImage(img, 0, 0);
+
+        // تطبيق تأثير حاد بسيط
+        ctx.globalCompositeOperation = 'overlay';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            setProcessing(false);
+            return;
+          }
+
+          const enhancedFile = new File([blob], `${type}_enhanced.webp`, { type: 'image/webp' });
+          handleImage(enhancedFile, type);
+          setProcessing(false);
+          toast({ title: t('success'), description: t('image_enhanced_successfully') });
+        }, 'image/webp');
+      };
+
+      img.onerror = () => {
+        setProcessing(false);
+        toast({ title: t('error'), description: t('image_enhancement_failed'), variant: 'destructive' });
+      };
+
+      // تحميل الصورة المضغوطة
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        img.src = e.target?.result as string;
+      };
+      reader.readAsDataURL(compressedFile);
+    } catch (error) {
+      console.error('Image enhancement error:', error);
+      setProcessing(false);
+      toast({ title: t('error'), description: t('image_enhancement_failed'), variant: 'destructive' });
+    }
+  }, [t, toast]);
 
   const handleImage = useCallback(async (file: File, type: 'store' | 'license') => {
     if (file.size > 10 * 1024 * 1024) { // 10MB limit for original file
@@ -213,24 +347,73 @@ export default function BusinessProfileComplete() {
   // Function to capture an image with the camera and update the state
   const handleCameraCapture = async (type: 'store' | 'license') => {
     try {
-      const image = await CapacitorCamera.getPhoto({
-        quality: 90,
-        allowEditing: false,
-        resultType: CameraResultType.Uri,
-        source: CameraSource.Camera,
-      });
-  
-      if (image.webPath) {
-        const response = await fetch(image.webPath);
-        const blob = await response.blob();
-        if (!blob.type || !blob.type.startsWith('image/')) {
-          console.error('Camera capture did not return an image blob, type=', blob.type);
-          toast({ title: t('error'), description: t('invalid_file_type'), variant: 'destructive' });
-          return;
+      let imageFile: File | null = null;
+
+      if (isNative) {
+        // استخدام Capacitor Camera في بيئة التطبيق الحقيقي
+        const image = await CapacitorCamera.getPhoto({
+          quality: 90,
+          allowEditing: false,
+          resultType: CameraResultType.Uri,
+          source: CameraSource.Camera,
+        });
+    
+        if (image.webPath) {
+          const response = await fetch(image.webPath);
+          const blob = await response.blob();
+          if (!blob.type || !blob.type.startsWith('image/')) {
+            console.error('Camera capture did not return an image blob, type=', blob.type);
+            toast({ title: t('error'), description: t('invalid_file_type'), variant: 'destructive' });
+            return;
+          }
+          const ext = blob.type.split('/')[1] || 'webp';
+          imageFile = new File([blob], `${type}_${Date.now()}.${ext}`, { type: blob.type });
         }
-        const ext = blob.type.split('/')[1] || 'webp';
-        const file = new File([blob], `${type}_${Date.now()}.${ext}`, { type: blob.type });
-        await handleImage(file, type);
+      } else {
+        // استخدام navigator.mediaDevices.getUserMedia في بيئة الويب
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { 
+            facingMode: 'environment' // استخدام الكاميرا الخلفية
+          } 
+        });
+        
+        const video = document.createElement('video');
+        video.srcObject = stream;
+        video.play();
+
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        
+        // انتظار حتى يتم تحميل الفيديو
+        await new Promise((resolve) => {
+          video.onloadedmetadata = () => {
+            resolve(null);
+          };
+        });
+
+        // التقاط صورة من الفيديو
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        canvas.toBlob((blob) => {
+          if (!blob || !blob.type.startsWith('image/')) {
+            toast({ title: t('error'), description: t('invalid_file_type'), variant: 'destructive' });
+            return;
+          }
+          
+          // إيقاف دفق الفيديو
+          stream.getTracks().forEach(track => track.stop());
+          
+          imageFile = new File([blob], `${type}_${Date.now()}.webp`, { type: 'image/webp' });
+          handleImage(imageFile, type);
+        }, 'image/webp');
+        
+        return;
+      }
+
+      if (imageFile) {
+        await handleImage(imageFile, type);
       }
     } catch (error: any) {
       console.error("Camera error:", error);
@@ -288,6 +471,38 @@ export default function BusinessProfileComplete() {
                     }
                   }}
                   onCameraClick={() => handleCameraCapture('store')}
+                  additionalActions={
+                    previews.storeImage && (
+                      <div className="flex gap-2 mt-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openCropModal('store')}
+                          disabled={processing}
+                          className="flex items-center gap-1"
+                        >
+                          <CropIcon size={16} />
+                          {t('crop')}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => enhanceImage(storeImage, 'store')}
+                          disabled={processing}
+                          className="flex items-center gap-1"
+                        >
+                          {processing ? (
+                            <RotateCw size={16} className="animate-spin" />
+                          ) : (
+                            <Wand2 size={16} />
+                          )}
+                          {t('enhance')}
+                        </Button>
+                      </div>
+                    )
+                  }
                 />
               </div>
               
@@ -312,6 +527,38 @@ export default function BusinessProfileComplete() {
                     }
                   }}
                   onCameraClick={() => handleCameraCapture('license')}
+                  additionalActions={
+                    previews.licenseImage && (
+                      <div className="flex gap-2 mt-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openCropModal('license')}
+                          disabled={processing}
+                          className="flex items-center gap-1"
+                        >
+                          <CropIcon size={16} />
+                          {t('crop')}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => enhanceImage(licenseImage, 'license')}
+                          disabled={processing}
+                          className="flex items-center gap-1"
+                        >
+                          {processing ? (
+                            <RotateCw size={16} className="animate-spin" />
+                          ) : (
+                            <Wand2 size={16} />
+                          )}
+                          {t('enhance')}
+                        </Button>
+                      </div>
+                    )
+                  }
                 />
               </div>
               
@@ -327,6 +574,52 @@ export default function BusinessProfileComplete() {
 
         </div>
       </div>
+
+      {/* نافذة الاقتطاع */}
+      {showCropModal && cropImageSrc && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full">
+            <div className="p-4 border-b">
+              <h3 className="text-lg font-semibold">{t('crop_image')}</h3>
+            </div>
+            <div className="p-4">
+              <ReactCrop
+                crop={crop}
+                onChange={(c) => setCrop(c)}
+                onComplete={(c) => setCompletedCrop(c)}
+                aspect={16 / 9}
+              >
+                <img src={cropImageSrc} alt="Crop preview" />
+              </ReactCrop>
+            </div>
+            <div className="p-4 border-t flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowCropModal(false);
+                  setCropImageType(null);
+                  setCropImageSrc('');
+                }}
+              >
+                {t('cancel')}
+              </Button>
+              <Button
+                onClick={() => {
+                  if (completedCrop && cropImageType) {
+                    const imageElement = document.querySelector('img[src="' + cropImageSrc + '"]') as HTMLImageElement;
+                    if (imageElement) {
+                      handleCropComplete(completedCrop, imageElement);
+                    }
+                  }
+                }}
+                disabled={!completedCrop}
+              >
+                {t('apply_crop')}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </PageContainer>
   );
 }

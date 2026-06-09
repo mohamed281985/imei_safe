@@ -900,13 +900,13 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
       const dec = decryptField(a.imei);
       return dec && String(dec).replace(/\D/g, '') === normalizedImei;
     });
-    
+
     if (existingAd) {
-      return res.json({ 
-        found: true, 
-        hasActiveAd: true, 
-        adId: existingAd.id, 
-        phone_type: existingAd.phone_type 
+      return res.json({
+        found: true,
+        hasActiveAd: true,
+        adId: existingAd.id,
+        phone_type: existingAd.phone_type
       });
     }
 
@@ -918,11 +918,11 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
     });
 
     if (reg) {
-      return res.json({ 
-        found: true, 
-        isRegistered: true, 
+      return res.json({
+        found: true,
+        isRegistered: true,
         phone_type: reg.phone_type,
-        isOwner: req.user?.id === reg.user_id 
+        isOwner: req.user?.id === reg.user_id
       });
     }
 
@@ -1073,12 +1073,14 @@ app.post('/api/register', async (req, res) => {
     if (role === 'free_business') {
       const businessPayload = {
         user_id: id,
+        email: email || '',
         store_name: store_name || '',
         owner_name: encFullName ? JSON.stringify(encFullName) : null,
+        phone: encPhone ? JSON.stringify(encPhone) : null,
         address: encAddress ? JSON.stringify(encAddress) : null,
+        id_last6: encIdLast6 ? JSON.stringify(encIdLast6) : null,
         business_type: business_type || ''
       };
-
       const { error: businessError } = await supabase
         .from('businesses')
         .insert(businessPayload);
@@ -2273,7 +2275,7 @@ app.post('/api/ads/package-publish', verifyJwtToken, paymentLimiter, rateLimitMi
           try {
             const { data: planRow } = await supabase.from('plans').select('duration_days').ilike('type', `%${normalizedPackage}%`).maybeSingle();
             if (planRow && planRow.duration_days) planDuration = Number(planRow.duration_days);
-          } catch {}
+          } catch { }
           const expiresAt = new Date(userRec.expires_at);
           const start = new Date(expiresAt);
           start.setDate(start.getDate() - planDuration);
