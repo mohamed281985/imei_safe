@@ -344,7 +344,45 @@ export function registerOwnershipRoutes({
 
   app.post('/api/transfer-ownership', verifyJwtToken, async (req, res) => {
     try {
-      const { imei, sellerPassword, newOwner, new_receipt_image_url } = req.body;
+      const {
+        imei,
+        sellerPassword,
+        newOwner,
+        new_receipt_image_url,
+        receiptImage
+      } = req.body;
+      let uploadedReceiptPath = null;
+
+      if (receiptImage) {
+        try {
+          const matches = receiptImage.match(/^data:(.+);base64,(.+)$/);
+
+          if (matches) {
+            const mimeType = matches[1];
+            const base64Data = matches[2];
+
+            const buffer = Buffer.from(base64Data, 'base64');
+
+            const fileName = `receipt_${Date.now()}.jpg`;
+            const filePath = `receipts/${fileName}`;
+
+            const { error: uploadError } = await supabase.storage
+              .from('transfer-assets')
+              .upload(filePath, buffer, {
+                contentType: mimeType,
+                upsert: true
+              });
+
+            if (uploadError) {
+              console.error('Receipt upload failed:', uploadError);
+            } else {
+              uploadedReceiptPath = filePath;
+            }
+          }
+        } catch (e) {
+          console.error('Receipt upload exception:', e);
+        }
+      }
       const userId = req.user?.id;
 
       if (!userId) return res.status(401).json({ error: 'Unauthorized: No user ID' });
@@ -501,7 +539,11 @@ export function registerOwnershipRoutes({
         buyer_name: encryptToJson(newOwner.owner_name || ''),
         buyer_phone: encryptToJson(newOwner.phone_number || ''),
         buyer_id_last6: encryptToJson(newOwner.id_last6 || null),
-        receipt_image: new_receipt_image_url || registeredPhone.receipt_image_url || null,
+        receipt_image:
+          uploadedReceiptPath ||
+          new_receipt_image_url ||
+          registeredPhone.receipt_image_url ||
+          null,
         phone_image: registeredPhone.phone_image_url || null
       };
 
@@ -673,7 +715,7 @@ export function registerOwnershipRoutes({
       return res.status(500).json({ error: 'Server error', details: err?.message || '' });
     }
   });
-  
+
   // Endpoint: تحقق مما إذا كان هناك بلاغ "active" ل imei مشفّر (لا يغيّر الحالة)
   app.post('/api/check-report-active', verifyJwtToken, async (req, res) => {
     try {
@@ -786,7 +828,7 @@ export function registerOwnershipRoutes({
         }
       });
 
-      console.log('[resolve-report] normalizedIncoming:', normalizedIncoming, 'matchingCount:', matching.length, 'sampleDecrypted:', sampleDecrypted.slice(0,5));
+      console.log('[resolve-report] normalizedIncoming:', normalizedIncoming, 'matchingCount:', matching.length, 'sampleDecrypted:', sampleDecrypted.slice(0, 5));
 
       if (!matching || matching.length === 0) {
         // If no active reports, check if there are reports for this IMEI in other states (e.g., already resolved)
