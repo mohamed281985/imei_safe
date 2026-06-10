@@ -367,7 +367,7 @@ export function registerOwnershipRoutes({
             const filePath = `receipts/${fileName}`;
 
             const { error: uploadError } = await supabase.storage
-              .from('transfer-assets')
+  .from('transfer-assets')
               .upload(filePath, buffer, {
                 contentType: mimeType,
                 upsert: true
