@@ -4843,17 +4843,39 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
           // تم رفض التسجيل سابقًا - السماح بإعادة التسجيل
           return res.json({ exists: false, phoneDetails: null, isRejected: true });
         }
+        console.log('JWT USER:', req.user?.id);
+        console.log('BODY USER:', req.body?.userId);
+        console.log('PHONE USER:', matchingPhone?.user_id);
         if (matchingPhone.status === 'sold') {
-          // تم نقل الملكية - فقط المشتري الجديد يقدر يسجله
-          // لو المستخدم الحالي هو المشتري (user_id يطابقه)، يسمح بالتسجيل
-          if (matchingPhone.user_id && matchingPhone.user_id === requesterId) {
-            return res.json({ exists: false, phoneDetails: null, isSold: true });
+
+          // الهاتف المباع أصبح مملوكًا للمستخدم الحالي
+          if (
+            matchingPhone.user_id &&
+            String(matchingPhone.user_id) === String(requesterId)
+          ) {
+            return res.json({
+              exists: true,
+              isOwnPhone: true,
+              isSold: true,
+              phoneDetails: null
+            });
           }
-          // غير المشتري - يظهر كمسجل لحساب آخر
-          return res.json({ exists: true, isOtherUser: true, phoneDetails: null, isSold: true });
+
+          // الهاتف المباع مملوك لمستخدم آخر
+          return res.json({
+            exists: true,
+            isOtherUser: true,
+            isSold: true,
+            phoneDetails: null
+          });
         }
-        // لا نرجع أي بيانات للمستخدم الآخر
-        return res.json({ exists: true, isOtherUser: true, phoneDetails: null });
+
+        // الهاتف غير مباع لكنه مسجل لمستخدم آخر
+        return res.json({
+          exists: true,
+          isOtherUser: true,
+          phoneDetails: null
+        });
       }
     }
 
