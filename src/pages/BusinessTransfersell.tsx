@@ -844,18 +844,6 @@ const BusinessTransfer: React.FC = () => {
 
       // 3) رفع صورة الفاتورة الجديدة (إذا وجدت)
       let newReceiptImagePath: string | null = null;
-      if (receiptImage) {
-        const response = await fetch(receiptImage);
-        const blob = await response.blob();
-        const fileId = (typeof crypto !== 'undefined' && typeof (crypto as any).randomUUID === 'function') ? (crypto as any).randomUUID() : `${Date.now()}_${Math.floor(Math.random() * 1e9)}`;
-        const fileName = `receipt_${fileId}_${Date.now()}.jpg`;
-        const imageFile = new File([blob], fileName, { type: blob.type });
-        const filePath = `receipts/${fileName}`;
-        const { error: uploadError } = await supabase.storage.from('transfer-assets').upload(filePath, imageFile, { upsert: true });
-        if (uploadError) throw uploadError;
-        // تخزين المسار فقط (path)، بدون URL كامل
-        newReceiptImagePath = filePath;
-      }
 
       // 4) Delegate the transfer and update to server-side endpoint to handle sensitive writes
       let jwtTokenTransfer = '';
@@ -863,6 +851,8 @@ const BusinessTransfer: React.FC = () => {
       const transferPayload: any = {
         imei: String(imei).trim(),
         sellerPassword,
+        receiptImage, // أضف هذا السطر
+
         newOwner: {
           owner_name: buyerName,
           phone_number: `${buyerCountryCode}${buyerPhone}`,
@@ -1368,7 +1358,6 @@ const BusinessTransfer: React.FC = () => {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-
           <Dialog open={showPasswordDialog} onOpenChange={setShowPasswordDialog}>
             <DialogContent className="bg-white/90 backdrop-blur-lg text-gray-800 w-[90%] sm:max-w-md border-2 border-orange-400 shadow-2xl rounded-2xl">
               <DialogHeader>
@@ -1380,7 +1369,8 @@ const BusinessTransfer: React.FC = () => {
                 </DialogDescription>
               </DialogHeader>
 
-              <div className="space-y-4">
+              {/* ✅ التعديل هنا: تحويل الـ div إلى form */}
+              <form onSubmit={(e) => { e.preventDefault(); handlePasswordSubmit(); }} className="space-y-4">
                 <div className="space-y-2">
                   <label className="block text-gray-800 text-sm font-medium mb-1">
                     {t('seller_current_password')}
@@ -1412,27 +1402,31 @@ const BusinessTransfer: React.FC = () => {
                   {!newPassword && <p className="text-xs text-red-400 mt-1">{t('buyer_password_required')}</p>}
                   {newPassword && newPassword.length < 6 && <p className="text-xs text-red-400 mt-1">{t('password_length_error')}</p>}
                 </div>
-              </div>
 
-              <DialogFooter>
-                <Button
-                  variant="outline"
-                  onClick={() => setShowPasswordDialog(false)}
-                  className="text-white border-gray-600 hover:bg-gray-700"
-                  disabled={isLoading}
-                >
-                  {t('cancel')}
-                </Button>
-                <Button
-                  onClick={handlePasswordSubmit}
-                  className="bg-imei-cyan hover:bg-imei-cyan-dark text-white"
-                  disabled={isLoading}
-                >
-                  {isLoading ? t('processing') : t('confirm')}
-                </Button>
-              </DialogFooter>
+                <DialogFooter>
+                  <Button
+                    variant="outline"
+                    type="button" // مهم: وضع type="button" لمنع إرسال الفورم عند الإلغاء
+                    onClick={() => setShowPasswordDialog(false)}
+                    className="text-white border-gray-600 hover:bg-gray-700"
+                    disabled={isLoading}
+                  >
+                    {t('cancel')}
+                  </Button>
+                  <Button
+                    type="submit" // التعديل: تحويل زر التأكيد إلى زر إرسال للفورم
+                    className="bg-imei-cyan hover:bg-imei-cyan-dark text-white"
+                    disabled={isLoading}
+                  >
+                    {isLoading ? t('processing') : t('confirm')}
+                  </Button>
+                </DialogFooter>
+              </form>
+              {/* نهاية التعديل */}
+
             </DialogContent>
           </Dialog>
+
 
           {/* مكون عارض الصور */}
           <ImageViewer
