@@ -4876,7 +4876,7 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
           const maskedId = maskIdLast6(decryptedIdLast6);
 
           // إرجاع البيانات للملء التلقائي مع تحديد أنها للقراءة فقط
-          // نُرجع النسخ المقنعة للعرض، ونُضمّن الحقول الخام تحت مفاتيح raw* كي يستخدمها العميل للارسال عند الحاجة
+          // نُرجع النسخ المقنعة للعرض فقط (لا نُدرج القيم الخام في الاستجابة العامة)
           return res.json({
             exists: false,
             phoneDetails: null,
@@ -4884,9 +4884,6 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
               ownerName: maskedOwner,
               phoneNumber: maskedPhone,
               idLast6: maskedId,
-              rawOwnerName: decryptedFullName,
-              rawPhoneNumber: decryptedPhone,
-              rawIdLast6: decryptedIdLast6,
               isReadOnly: true // البيانات للقراءة فقط
             }
           });
