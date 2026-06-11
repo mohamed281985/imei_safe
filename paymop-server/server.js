@@ -4848,7 +4848,8 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
         console.log('PHONE USER:', matchingPhone?.user_id);
         // في دالة /api/check-imei
         if (matchingPhone.status === 'sold') {
-          // الهاتف المباع أصبح مملوكاًا للمستخدم الحالي
+
+          // الهاتف مباع لكنه موجود في حساب المستخدم الحالي
           if (
             matchingPhone.user_id &&
             String(matchingPhone.user_id) === String(requesterId)
@@ -4857,24 +4858,20 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
               exists: true,
               isOwnPhone: true,
               isSold: true,
-              phoneDetails: null,
-              message: 'هذا الهاتف مسجل لحسابك وتم بيعه مسبقاً. لا يمكن تسجيله مرة أخرى.'
+              phoneDetails: null
             });
           }
 
-          // الهاتف المباع مملوك لمستخدم آخر
+          // الهاتف مباع لكنه يخص مستخدم آخر
           return res.json({
             exists: true,
             isOtherUser: true,
             isSold: true,
-            phoneDetails: null,
-            message: 'هذا الهاتف مسجل لحساب آخر'
+            phoneDetails: null
           });
         }
       }
     }
-
-
 
     res.json({ exists: false, phoneDetails: null });
   } catch (error) {
