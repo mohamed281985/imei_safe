@@ -355,6 +355,27 @@ const ReportPhone: React.FC = () => {
     };
   };
 
+  // Helper: split a phone string into country code and local number
+  const splitPhoneToCountryAndLocal = (phoneStr: string) => {
+    if (!phoneStr) return { code: countryCode, local: '' };
+    const digitsOnly = phoneStr.replace(/[^0-9+]/g, '');
+    if (digitsOnly.startsWith('+')) {
+      const raw = digitsOnly.slice(1);
+      const known = ['20','1','44','971','966','61','49','33','7','39','34','212'];
+      for (let len = 1; len <= 3; len++) {
+        const cand = raw.slice(0, len);
+        if (known.includes(cand)) return { code: '+' + cand, local: raw.slice(len) };
+      }
+      return { code: '+' + raw.slice(0, 2), local: raw.slice(2) };
+    }
+    const withoutPlus = phoneStr.replace(/\D/g, '');
+    if (withoutPlus.startsWith(countryCode.replace('+', ''))) {
+      const local = withoutPlus.slice(countryCode.replace('+', '').length).replace(/^0+/, '');
+      return { code: countryCode, local };
+    }
+    return { code: countryCode, local: withoutPlus.replace(/^0+/, '') };
+  };
+
   // دالة للتعامل مع تغيير مربع اختيار الواتساب
   const handleWhatsAppCheckboxChange = async () => {
     console.log('=== بدء التحقق من دور المستخدم ===');
@@ -768,6 +789,11 @@ const ReportPhone: React.FC = () => {
             result.phoneDetails = checkResult.phoneDetails;
           }
 
+          // دمج بيانات الملء التلقائي إذا وفّرت من checkResult
+          if (!result.autoFillData && checkResult.autoFillData) {
+            result.autoFillData = checkResult.autoFillData;
+          }
+
           // دمج مؤشرات الملكية والمرسل
           const inferredIsOwnReport = typeof (checkResult?.isOwnReport) === 'boolean'
             ? checkResult.isOwnReport
@@ -781,7 +807,51 @@ const ReportPhone: React.FC = () => {
 
         // حالة 1: هاتف جديد (غير مسجل) - يمكن الإبلاغ مع تنبيه بالتسجيل
         if (!result.found) {
-          // جلب بيانات المستخدم الحالي
+          // أولوية: إذا أعاد السيرفر بيانات `autoFillData`، استخدمها
+          const auto = result.autoFillData || null;
+          if (auto) {
+            // افصل رمز الدولة عن رقم الهاتف إذا أرسله السيرفر مع مفتاح الدولة
+            const { code: autoCode, local: autoLocal } = splitPhoneToCountryAndLocal(auto.phoneNumber || '');
+            setCountryCode(autoCode);
+            // احتفظ بالبيانات الحقيقية في originalData ولكن اعرض نسخة مقنعة في الحقول
+            setOriginalData({
+              ownerName: auto.rawOwnerName || auto.ownerName || '',
+              phoneNumber: auto.rawPhoneNumber || auto.phoneNumber || '',
+              idLast6: auto.rawIdLast6 || auto.idLast6 || ''
+            });
+
+            setFormData(prev => ({
+              ...prev,
+              ownerName: auto.ownerName ? maskName(auto.ownerName) : prev.ownerName,
+              phoneNumber: autoLocal ? maskPhoneNumber(autoLocal) : prev.phoneNumber,
+              idLast6: auto.idLast6 ? maskIdNumber(auto.idLast6) : prev.idLast6,
+              imei: prev.imei,
+              phone_type: '',
+              lossLocation: '',
+              lossTime: '',
+              receiptImage: null,
+              reportImage: null,
+              password: '',
+              confirmPassword: '',
+            }));
+
+            setFieldReadOnlyState({
+              ownerName: auto.isReadOnly ?? true,
+              phoneNumber: auto.isReadOnly ?? true,
+              idLast6: auto.isReadOnly ?? true,
+              lossLocation: false,
+              lossTime: false,
+              receiptImage: false,
+              reportImage: false,
+            });
+
+            setIsImeiRegistered(false);
+            setIsImeiValid(true);
+            setActiveReportWarning('phone_not_registered_can_report');
+            return;
+          }
+
+          // جلب بيانات المستخدم الحالي كخيار احتياطي
           const currentUserData = getCurrentUserData();
 
           if (currentUserData) {
@@ -868,12 +938,45 @@ const ReportPhone: React.FC = () => {
         }
 
         if (result.found && result.isRegistered && inferredIsOwner) {
+          // استخدم القيم الحقيقية من السيرفر إن وُجدت
+          const serverOwnerName = result.owner_name || result.ownerName || result.maskedOwnerName || '';
+          const serverPhone = result.phone_number || result.phoneNumber || result.maskedPhoneNumber || '';
+          const serverId6 = result.id_last6 || result.idLast6 || result.maskedIdLast6 || '';
+
+          // helper: extract country code if present in E.164 style
+          const extractCountry = (phoneStr: string) => {
+            if (!phoneStr) return { code: countryCode, local: '' };
+            const digits = phoneStr.replace(/[^0-9+]/g, '');
+            if (digits.startsWith('+')) {
+              const raw = digits.slice(1);
+              // try common lengths 1..3 for country code
+              const known = ['20','1','44','971','966','61','49','33','7','39','34','212'];
+              for (let len = 1; len <= 3; len++) {
+                const cand = raw.slice(0, len);
+                if (known.includes(cand)) {
+                  return { code: '+' + cand, local: raw.slice(len) };
+                }
+              }
+              // fallback: assume first 2 digits are country
+              return { code: '+' + raw.slice(0, 2), local: raw.slice(2) };
+            }
+            // if no + sign but starts with country digits like 20..., try to match current code
+            const withoutPlus = phoneStr.replace(/\D/g, '');
+            if (withoutPlus.startsWith(countryCode.replace('+', ''))) {
+              return { code: countryCode, local: withoutPlus.slice(countryCode.replace('+', '').length) };
+            }
+            return { code: countryCode, local: withoutPlus };
+          };
+
+          const { code: detectedCode, local: detectedLocal } = extractCountry(serverPhone);
+
+          setCountryCode(detectedCode);
           setFormData(prev => (({
             ...prev,
-            ownerName: REGISTERED_IN_SYSTEM,
-            phoneNumber: REGISTERED_IN_SYSTEM,
-            phone_type: REGISTERED_IN_SYSTEM,
-            idLast6: REGISTERED_IN_SYSTEM,
+            ownerName: serverOwnerName || prev.ownerName,
+            phoneNumber: detectedLocal || prev.phoneNumber,
+            phone_type: result.phone_type === REGISTERED_IN_SYSTEM ? (result.phone_type || '') : (result.phone_type || ''),
+            idLast6: serverId6 || prev.idLast6,
             lossLocation: '',
             lossTime: '',
             receiptImage: null,
@@ -890,8 +993,7 @@ const ReportPhone: React.FC = () => {
             lossTime: false,
             receiptImage: true,
             reportImage: false,
-            idLast6: true, // إضافة هذه الخاصية
-
+            idLast6: true,
           });
           setIsImeiRegistered(false);
           setIsReadOnly(false);
@@ -1144,9 +1246,10 @@ const ReportPhone: React.FC = () => {
       // تشفير كلمة المرور قبل الإرسال
       // تجهيز البيانات للإرسال
       // إذا كانت الحقول تشير إلى REGISTERED_IN_SYSTEM، حاول جلب القيم الحقيقية من resultRef.current
-      let effectiveOwnerName = isImeiRegistered ? originalData.ownerName : formData.ownerName;
-      let effectivePhoneNumber = isImeiRegistered ? originalData.phoneNumber : `${countryCode}${formData.phoneNumber}`;
-      let effectiveIdLast6 = isImeiRegistered ? originalData.idLast6 : formData.idLast6;
+      // Prefer real originalData values when fields are read-only (autofill from server)
+      let effectiveOwnerName = (fieldReadOnlyState.ownerName && originalData.ownerName) ? originalData.ownerName : (isImeiRegistered ? originalData.ownerName : formData.ownerName);
+      let effectivePhoneNumber = (fieldReadOnlyState.phoneNumber && originalData.phoneNumber) ? originalData.phoneNumber : (isImeiRegistered ? originalData.phoneNumber : `${countryCode}${formData.phoneNumber}`);
+      let effectiveIdLast6 = (fieldReadOnlyState.idLast6 && originalData.idLast6) ? originalData.idLast6 : (isImeiRegistered ? originalData.idLast6 : formData.idLast6);
 
       if (effectiveOwnerName === REGISTERED_IN_SYSTEM || effectivePhoneNumber === REGISTERED_IN_SYSTEM || effectiveIdLast6 === REGISTERED_IN_SYSTEM) {
         // حاول الحصول عليها من نتيجة الاستعلام المحفوظة
@@ -1470,7 +1573,7 @@ const ReportPhone: React.FC = () => {
                             ? registeredInSystemLabel
                             : (formData.idLast6 && /^[*]+$/.test(formData.idLast6) ? registeredInSystemLabel : t('id_last_6_digits_placeholder'))
                         }
-                        disabled={isImeiRegistered || isReadOnly || isSubmitting || formData.idLast6 === REGISTERED_IN_SYSTEM}
+                        disabled={isImeiRegistered || isReadOnly || isSubmitting || formData.idLast6 === REGISTERED_IN_SYSTEM || fieldReadOnlyState.idLast6}
                       />
                     </div>
                   </div>

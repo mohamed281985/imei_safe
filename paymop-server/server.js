@@ -4870,14 +4870,23 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
           const decryptedPhone = decryptField(userData.phone) || '';
           const decryptedIdLast6 = decryptField(userData.id_last6) || '';
 
+          // إنشاء نسخ مُقنّعة (masked) للعرض العام
+          const maskedOwner = maskName(decryptedFullName);
+          const maskedPhone = maskPhoneNumber(decryptedPhone);
+          const maskedId = maskIdLast6(decryptedIdLast6);
+
           // إرجاع البيانات للملء التلقائي مع تحديد أنها للقراءة فقط
+          // نُرجع النسخ المقنعة للعرض، ونُضمّن الحقول الخام تحت مفاتيح raw* كي يستخدمها العميل للارسال عند الحاجة
           return res.json({
             exists: false,
             phoneDetails: null,
             autoFillData: {
-              ownerName: decryptedFullName,
-              phoneNumber: decryptedPhone,
-              idLast6: decryptedIdLast6,
+              ownerName: maskedOwner,
+              phoneNumber: maskedPhone,
+              idLast6: maskedId,
+              rawOwnerName: decryptedFullName,
+              rawPhoneNumber: decryptedPhone,
+              rawIdLast6: decryptedIdLast6,
               isReadOnly: true // البيانات للقراءة فقط
             }
           });
