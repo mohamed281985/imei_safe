@@ -4854,12 +4854,46 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
       }
     }
 
+    // ⭐ التعديل الرئيسي: إذا لم يتم العثور على الهاتف، جلب بيانات المستخدم الحالي للملء التلقائي
+    if (!matchingPhone) {
+      try {
+        // جلب بيانات المستخدم الحالي
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('full_name, phone, id_last6')
+          .eq('id', requesterId)
+          .maybeSingle();
+
+        if (!userError && userData) {
+          // فك تشفير بيانات المستخدم
+          const decryptedFullName = decryptField(userData.full_name) || '';
+          const decryptedPhone = decryptField(userData.phone) || '';
+          const decryptedIdLast6 = decryptField(userData.id_last6) || '';
+
+          // إرجاع البيانات للملء التلقائي مع تحديد أنها للقراءة فقط
+          return res.json({
+            exists: false,
+            phoneDetails: null,
+            autoFillData: {
+              ownerName: decryptedFullName,
+              phoneNumber: decryptedPhone,
+              idLast6: decryptedIdLast6,
+              isReadOnly: true // البيانات للقراءة فقط
+            }
+          });
+        }
+      } catch (e) {
+        console.error('[check-imei] Error fetching user data for auto-fill:', e);
+      }
+    }
+
     res.json({ exists: false, phoneDetails: null });
   } catch (error) {
     console.error('Error checking IMEI:', error);
     return sendError(res, 500, 'حدث خطأ في الخادم', error);
   }
 });
+
 
 // نقطة نهاية لتسجيل الهاتف
 // تخزين مؤقت لتتبع محاولات التسجيل لمنع الهجمات العشوائية

@@ -131,26 +131,26 @@ const validateImageFile = (file: File): Promise<boolean> => {
       if (e.target?.readyState === FileReader.DONE) {
         const arr = (new Uint8Array(e.target.result as ArrayBuffer)).subarray(0, 4);
         let header = "";
-        for(let i = 0; i < arr.length; i++) {
-           header += arr[i].toString(16);
+        for (let i = 0; i < arr.length; i++) {
+          header += arr[i].toString(16);
         }
-        
+
         // JPEG: ffd8...
         // PNG: 89504e47
         // GIF: 47494638
         // WebP: 52494646 (RIFF)
-        
+
         let isValid = false;
         if (header.startsWith('ffd8')) {
-            isValid = true; // JPEG
+          isValid = true; // JPEG
         } else if (header === '89504e47') {
-            isValid = true; // PNG
+          isValid = true; // PNG
         } else if (header === '47494638') {
-            isValid = true; // GIF
+          isValid = true; // GIF
         } else if (header === '52494646') {
-            isValid = true; // WebP
+          isValid = true; // WebP
         }
-        
+
         resolve(isValid);
       } else {
         resolve(false);
@@ -170,16 +170,16 @@ const ReportPhone: React.FC = () => {
     phoneNumber: '',
     idLast6: ''
   });
-  
+
   // تخزين الروابط المؤقتة للصور لتنظيفها عند إلغاء المكون
   const [imageUrls, setImageUrls] = useState<string[]>([]);
-  
+
   // دالة لتنظيف الروابط المؤقتة
   const cleanupImageUrls = useCallback(() => {
     imageUrls.forEach(url => URL.revokeObjectURL(url));
     setImageUrls([]);
   }, []);
-  
+
   // تنظيف الروابط عند إلغاء المكون
   useEffect(() => {
     return cleanupImageUrls;
@@ -220,6 +220,8 @@ const ReportPhone: React.FC = () => {
     lossTime: false,
     receiptImage: false, // تم التغيير من phoneImage
     reportImage: false,
+    idLast6: false, // إضافة هذه الخاصية الجديدة
+
   });
 
   // حالة التحميل والإرسال
@@ -265,7 +267,7 @@ const ReportPhone: React.FC = () => {
   // إضافة حالة لمربع اختيار مشاركة الواتساب
   const [shareWhatsApp, setShareWhatsApp] = useState(false);
   const [showUpgradeDialog, setShowUpgradeDialog] = useState(false);
-  
+
   // إضافة حالة لتخزين دور المستخدم من قاعدة البيانات
   const [userRole, setUserRole] = useState<string | null>(null);
   const [isCheckingRole, setIsCheckingRole] = useState(false);
@@ -338,60 +340,75 @@ const ReportPhone: React.FC = () => {
   useEffect(() => {
     checkUserRole();
   }, [user]);
-// دالة للتعامل مع تغيير مربع اختيار الواتساب
-const handleWhatsAppCheckboxChange = async () => {
-  console.log('=== بدء التحقق من دور المستخدم ===');
-  
-  if (!user) {
-    console.log('المستخدم غير مسجل الدخول');
-    toast({
-      title: t('error'),
-      description: t('must_be_logged_in'),
-      variant: 'destructive',
-    });
-    return;
-  }
 
-  // التحقق من دور المستخدم من قاعدة البيانات
-  if (isCheckingRole) {
-    console.log('جاري التحقق من دور المستخدم حالياً');
-    toast({
-      title: t('info'),
-      description: t('checking_user_role'),
-      variant: 'default',
-    });
-    return;
-  }
+  // دالة جديدة لجلب بيانات المستخدم الحالي
+  const getCurrentUserData = () => {
+    if (!user) return null;
 
-  console.log('التحقق من دور المستخدم:', userRole);
-  console.log('نوع البيانات:', typeof userRole);
-  console.log('القيمة بعد التحويل للنص:', String(userRole));
-  
-  // تنظيف القيمة من المسافات الزائدة
-  const cleanedRole = userRole ? userRole.trim() : '';
-  console.log('الدور بعد التنظيف:', cleanedRole);
-  console.log('طول الدور الأصلي:', userRole ? userRole.length : 0);
-  console.log('طول الدور بعد التنظيف:', cleanedRole.length);
-  
-  // التحقق من الدور بشكل صريح
-  const isGoldUser = cleanedRole === 'gold_user' || cleanedRole === 'gold_business';
-  
-  console.log('هل المستخدم لديه دور ذهبي؟', isGoldUser);
-  console.log('مقارنة مع gold_user:', cleanedRole === 'gold_user');
-  console.log('مقارنة مع gold_business:', cleanedRole === 'gold_business');
-  
-  if (isGoldUser) {
-    // المستخدم لديه دور ذهبي، السماح بالمشاركة
-    console.log('المستخدم لديه دور ذهبي، السماح بالمشاركة');
-    setShareWhatsApp(!shareWhatsApp);
-  } else {
-    // المستخدم ليس لديه دور ذهبي، عرض نافذة الترقية
-    console.log('المستخدم ليس لديه دور ذهبي، عرض نافذة الترقية');
-    setShowUpgradeDialog(true);
-  }
-  
-  console.log('=== انتهى التحقق من دور المستخدم ===');
-};
+    const extendedUser = user as ExtendedUser;
+    const userMetadata = extendedUser.user_metadata || {};
+
+    return {
+      ownerName: userMetadata.name || '',
+      phoneNumber: userMetadata.phone || '',
+      idLast6: userMetadata.id_last6 || '',
+    };
+  };
+
+  // دالة للتعامل مع تغيير مربع اختيار الواتساب
+  const handleWhatsAppCheckboxChange = async () => {
+    console.log('=== بدء التحقق من دور المستخدم ===');
+
+    if (!user) {
+      console.log('المستخدم غير مسجل الدخول');
+      toast({
+        title: t('error'),
+        description: t('must_be_logged_in'),
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // التحقق من دور المستخدم من قاعدة البيانات
+    if (isCheckingRole) {
+      console.log('جاري التحقق من دور المستخدم حالياً');
+      toast({
+        title: t('info'),
+        description: t('checking_user_role'),
+        variant: 'default',
+      });
+      return;
+    }
+
+    console.log('التحقق من دور المستخدم:', userRole);
+    console.log('نوع البيانات:', typeof userRole);
+    console.log('القيمة بعد التحويل للنص:', String(userRole));
+
+    // تنظيف القيمة من المسافات الزائدة
+    const cleanedRole = userRole ? userRole.trim() : '';
+    console.log('الدور بعد التنظيف:', cleanedRole);
+    console.log('طول الدور الأصلي:', userRole ? userRole.length : 0);
+    console.log('طول الدور بعد التنظيف:', cleanedRole.length);
+
+    // التحقق من الدور بشكل صريح
+    const isGoldUser = cleanedRole === 'gold_user' || cleanedRole === 'gold_business';
+
+    console.log('هل المستخدم لديه دور ذهبي؟', isGoldUser);
+    console.log('مقارنة مع gold_user:', cleanedRole === 'gold_user');
+    console.log('مقارنة مع gold_business:', cleanedRole === 'gold_business');
+
+    if (isGoldUser) {
+      // المستخدم لديه دور ذهبي، السماح بالمشاركة
+      console.log('المستخدم لديه دور ذهبي، السماح بالمشاركة');
+      setShareWhatsApp(!shareWhatsApp);
+    } else {
+      // المستخدم ليس لديه دور ذهبي، عرض نافذة الترقية
+      console.log('المستخدم ليس لديه دور ذهبي، عرض نافذة الترقية');
+      setShowUpgradeDialog(true);
+    }
+
+    console.log('=== انتهى التحقق من دور المستخدم ===');
+  };
 
 
   // دالة موحدة للتحقق من صحة الحقول
@@ -679,6 +696,8 @@ const handleWhatsAppCheckboxChange = async () => {
         lossTime: false,
         receiptImage: false, // اجعل صورة الفاتورة قابلة للرفع عند IMEI جديد أو عليه بلاغ
         reportImage: false,
+        idLast6: false, // إضافة هذه الخاصية
+
       });
       setIsImeiRegistered(false);
       setDbPassword(null);
@@ -762,7 +781,42 @@ const handleWhatsAppCheckboxChange = async () => {
 
         // حالة 1: هاتف جديد (غير مسجل) - يمكن الإبلاغ مع تنبيه بالتسجيل
         if (!result.found) {
-          resetFormForNewReport();
+          // جلب بيانات المستخدم الحالي
+          const currentUserData = getCurrentUserData();
+
+          if (currentUserData) {
+            // ملء البيانات تلقائياً من بيانات المستخدم
+            setFormData(prev => ({
+              ...prev,
+              ownerName: currentUserData.ownerName,
+              phoneNumber: currentUserData.phoneNumber,
+              idLast6: currentUserData.idLast6,
+              // إبقاء الحقول الأخرى كما هي
+              imei: prev.imei,
+              phone_type: '',
+              lossLocation: '',
+              lossTime: '',
+              receiptImage: null,
+              reportImage: null,
+              password: '',
+              confirmPassword: '',
+            }));
+
+            // تعيين الحقول الشخصية كـ "للقراءة فقط"
+            setFieldReadOnlyState({
+              ownerName: true,      // الاسم للقراءة فقط
+              phoneNumber: true,    // رقم الهاتف للقراءة فقط
+              idLast6: true,        // آخر 6 أرقام للهوية للقراءة فقط
+              lossLocation: false,  // موقع الفقد قابل للتعديل
+              lossTime: false,      // وقت الفقد قابل للتعديل
+              receiptImage: false,  // صورة الفاتورة قابلة للرفع
+              reportImage: false,   // صورة المحضر قابلة للرفع
+            });
+          } else {
+            // إذا لم تكن هناك بيانات مستخدم، قم بإعادة تعيين النموذج
+            resetFormForNewReport();
+          }
+
           setIsImeiRegistered(false);
           setIsImeiValid(true);
           setActiveReportWarning('phone_not_registered_can_report');
@@ -804,7 +858,8 @@ const handleWhatsAppCheckboxChange = async () => {
           setIsReadOnly(true);
           setFieldReadOnlyState({
             ownerName: true, phoneNumber: true, lossLocation: true, lossTime: true,
-            receiptImage: true, reportImage: true,
+            receiptImage: true, reportImage: true, idLast6: true,        // آخر 6 أرقام للهوية للقراءة فقط
+
           });
           setActiveReportWarning('imei_already_reported_by_your_account');
           setIsImeiValid(false);
@@ -835,6 +890,8 @@ const handleWhatsAppCheckboxChange = async () => {
             lossTime: false,
             receiptImage: true,
             reportImage: false,
+            idLast6: true, // إضافة هذه الخاصية
+
           });
           setIsImeiRegistered(false);
           setIsReadOnly(false);
@@ -870,6 +927,8 @@ const handleWhatsAppCheckboxChange = async () => {
             lossTime: true,
             receiptImage: true,
             reportImage: true,
+              idLast6: true, // إضافة هذه الخاصية
+
           });
           setIsImeiRegistered(true);
           setIsImeiValid(false);
@@ -889,7 +948,8 @@ const handleWhatsAppCheckboxChange = async () => {
           setIsReadOnly(true);
           setFieldReadOnlyState({
             ownerName: true, phoneNumber: true, lossLocation: true, lossTime: true,
-            receiptImage: true, reportImage: true,
+            receiptImage: true, reportImage: true,   idLast6: true, // إضافة هذه الخاصية
+
           });
           setActiveReportWarning('imei_already_reported_as_lost_detail');
           setIsImeiValid(false);
@@ -973,7 +1033,7 @@ const handleWhatsAppCheckboxChange = async () => {
           if (typeof crypto !== 'undefined' && typeof (crypto as any).randomUUID === 'function') {
             return (crypto as any).randomUUID();
           }
-        } catch (e) {}
+        } catch (e) { }
         return `${Date.now()}_${Math.floor(Math.random() * 1e9)}`;
       };
 
@@ -1015,7 +1075,7 @@ const handleWhatsAppCheckboxChange = async () => {
           try {
             // طلب للسيرفر للحصول على بيانات الصورة (السيرفر يتكفل بفك التشفير والتأكد من الملكية)
             let jwtToken = '';
-            try { const sessionResp = await supabase.auth.getSession(); jwtToken = (sessionResp?.data as any)?.session?.access_token || ''; } catch(e) { jwtToken = ''; }
+            try { const sessionResp = await supabase.auth.getSession(); jwtToken = (sessionResp?.data as any)?.session?.access_token || ''; } catch (e) { jwtToken = ''; }
 
             try {
               const resp = await axiosInstance.post('/api/imei-masked-info', { imei: formData.imei });
@@ -1167,7 +1227,7 @@ const handleWhatsAppCheckboxChange = async () => {
       setIsReadOnly(true);
       setFieldReadOnlyState({
         ownerName: true, phoneNumber: true, lossLocation: true, lossTime: true,
-        receiptImage: true, reportImage: true
+        receiptImage: true, idLast6: true, reportImage: true,
       });
       setTimeout(() => {
         navigate('/dashboard');
@@ -1193,7 +1253,7 @@ const handleWhatsAppCheckboxChange = async () => {
       <div className="pb-3">
         <AppNavbar />
         <PageAdvertisement pageName="reportphone" />
-        
+
         <div className="flex items-center mb-6 pt-3" style={{ background: 'linear-gradient(to top, #053060 0%, #0a4d8c 100%)', padding: '0.3rem', borderRadius: '1rem', marginTop: '1rem' }}>
           <BackButton className="mr-4" />
           <h1
@@ -1213,23 +1273,21 @@ const handleWhatsAppCheckboxChange = async () => {
                   <React.Fragment key={step}>
                     <div className="flex flex-col items-center z-10">
                       <div
-                        className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white transition-all duration-500 ${
-                          currentStep === step
-                            ? 'bg-gradient-to-r from-blue-600 to-cyan-600 shadow-lg ring-4 ring-blue-100 scale-110'
-                            : currentStep > step
+                        className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white transition-all duration-500 ${currentStep === step
+                          ? 'bg-gradient-to-r from-blue-600 to-cyan-600 shadow-lg ring-4 ring-blue-100 scale-110'
+                          : currentStep > step
                             ? 'bg-green-500'
                             : 'bg-gray-300'
-                        }`}
+                          }`}
                       >
                         {currentStep > step ? <CheckCircle className="w-6 h-6" /> : step}
                       </div>
                     </div>
                     {step < 4 && (
                       <div className="flex-1 h-1 mx-[-10px] -mt-0">
-                        <div 
-                          className={`h-full transition-all duration-500 ${
-                            currentStep > step ? 'bg-green-500' : 'bg-gray-300'
-                          }`}
+                        <div
+                          className={`h-full transition-all duration-500 ${currentStep > step ? 'bg-green-500' : 'bg-gray-300'
+                            }`}
                         />
                       </div>
                     )}
@@ -1665,9 +1723,9 @@ const handleWhatsAppCheckboxChange = async () => {
               </div>
             </div>
             <DialogFooter>
-              <Button 
-                type="button" 
-                onClick={handleModalSubmit} 
+              <Button
+                type="button"
+                onClick={handleModalSubmit}
                 disabled={isLoading || isSubmitting}
                 className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-bold"
               >
@@ -1707,7 +1765,7 @@ const handleWhatsAppCheckboxChange = async () => {
               </div>
             </div>
           </div>
-        , document.getElementById('modal-root') || document.body)}
+          , document.getElementById('modal-root') || document.body)}
       </div>
     </PageContainer>
   );
