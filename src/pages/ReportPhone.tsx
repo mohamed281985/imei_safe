@@ -810,21 +810,14 @@ const ReportPhone: React.FC = () => {
           // أولوية: إذا أعاد السيرفر بيانات `autoFillData`، استخدمها
           const auto = result.autoFillData || null;
           if (auto) {
-            // افصل رمز الدولة عن رقم الهاتف إذا أرسله السيرفر مع مفتاح الدولة
-            const { code: autoCode, local: autoLocal } = splitPhoneToCountryAndLocal(auto.phoneNumber || '');
-            setCountryCode(autoCode);
-            // احتفظ بالبيانات الحقيقية في originalData ولكن اعرض نسخة مقنعة في الحقول
-            setOriginalData({
-              ownerName: auto.rawOwnerName || auto.ownerName || '',
-              phoneNumber: auto.rawPhoneNumber || auto.phoneNumber || '',
-              idLast6: auto.rawIdLast6 || auto.idLast6 || ''
-            });
+            // لا نخزن القيم الخام على العميل؛ نجعل الحقول تشير إلى أن قيمها من النظام
+            setOriginalData({ ownerName: '', phoneNumber: '', idLast6: '' });
 
             setFormData(prev => ({
               ...prev,
-              ownerName: auto.ownerName ? maskName(auto.ownerName) : prev.ownerName,
-              phoneNumber: autoLocal ? maskPhoneNumber(autoLocal) : prev.phoneNumber,
-              idLast6: auto.idLast6 ? maskIdNumber(auto.idLast6) : prev.idLast6,
+              ownerName: REGISTERED_IN_SYSTEM,
+              phoneNumber: REGISTERED_IN_SYSTEM,
+              idLast6: REGISTERED_IN_SYSTEM,
               imei: prev.imei,
               phone_type: '',
               lossLocation: '',
@@ -1523,11 +1516,11 @@ const ReportPhone: React.FC = () => {
                         type="text"
                         id="ownerName"
                         name="ownerName"
-                        value={formData.ownerName === REGISTERED_IN_SYSTEM ? registeredInSystemLabel : formData.ownerName}
+                        value={formData.ownerName === REGISTERED_IN_SYSTEM ? (resultRef.current?.autoFillData?.ownerName || registeredInSystemLabel) : formData.ownerName}
                         onChange={handleChange}
                         placeholder={
                           formData.ownerName === REGISTERED_IN_SYSTEM
-                            ? registeredInSystemLabel
+                            ? (resultRef.current?.autoFillData?.ownerName || registeredInSystemLabel)
                             : (formData.ownerName && /^[*]+$/.test(formData.ownerName) ? registeredInSystemLabel : t('owner_name'))
                         }
                         disabled={isReadOnly || fieldReadOnlyState.ownerName || isSubmitting || formData.ownerName === REGISTERED_IN_SYSTEM}
@@ -1555,7 +1548,7 @@ const ReportPhone: React.FC = () => {
                         type="text"
                         id="idLast6"
                         name="idLast6"
-                        value={formData.idLast6 === REGISTERED_IN_SYSTEM ? registeredInSystemLabel : formData.idLast6}
+                        value={formData.idLast6 === REGISTERED_IN_SYSTEM ? (resultRef.current?.autoFillData?.idLast6 || registeredInSystemLabel) : formData.idLast6}
                         onChange={handleChange}
                         className={`input-field w-full bg-[#c0dee5] text-gray-800 !pl-12 ${/^[*]+$/.test(formData.idLast6) || formData.idLast6.length < 2 ? 'text-gray-400 italic' : ''}`}
                         style={(() => {
@@ -1570,7 +1563,7 @@ const ReportPhone: React.FC = () => {
                         required
                         placeholder={
                           formData.idLast6 === REGISTERED_IN_SYSTEM
-                            ? registeredInSystemLabel
+                            ? (resultRef.current?.autoFillData?.idLast6 || registeredInSystemLabel)
                             : (formData.idLast6 && /^[*]+$/.test(formData.idLast6) ? registeredInSystemLabel : t('id_last_6_digits_placeholder'))
                         }
                         disabled={isImeiRegistered || isReadOnly || isSubmitting || formData.idLast6 === REGISTERED_IN_SYSTEM || fieldReadOnlyState.idLast6}
@@ -1597,7 +1590,7 @@ const ReportPhone: React.FC = () => {
                           id="phoneNumber"
                           name="phoneNumber"
                           type="tel"
-                          value={formData.phoneNumber === REGISTERED_IN_SYSTEM ? registeredInSystemLabel : formData.phoneNumber}
+                          value={formData.phoneNumber === REGISTERED_IN_SYSTEM ? (resultRef.current?.autoFillData?.phoneNumber || registeredInSystemLabel) : formData.phoneNumber}
                           onChange={handleChange}
                           disabled={fieldReadOnlyState.phoneNumber || isReadOnly || isSubmitting || formData.phoneNumber === REGISTERED_IN_SYSTEM}
                           className={`input-field w-full bg-[#c0dee5] text-gray-800 !pl-12 ${/^[*]+$/.test(formData.phoneNumber) || formData.phoneNumber.length < 2 ? 'text-gray-400 italic' : ''}`}
@@ -1609,7 +1602,7 @@ const ReportPhone: React.FC = () => {
                           })()}
                           placeholder={
                             formData.phoneNumber === REGISTERED_IN_SYSTEM
-                              ? registeredInSystemLabel
+                              ? (resultRef.current?.autoFillData?.phoneNumber || registeredInSystemLabel)
                               : (formData.phoneNumber && /^[*]+$/.test(formData.phoneNumber) ? registeredInSystemLabel : t('phone_placeholder'))
                           }
                         />
