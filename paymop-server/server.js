@@ -4847,37 +4847,34 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
         console.log('BODY USER:', req.body?.userId);
         console.log('PHONE USER:', matchingPhone?.user_id);
         // في دالة /api/check-imei
-        if (matchingPhone.status === 'sold') {
-
-          // الهاتف مباع لكنه موجود في حساب المستخدم الحالي
-          if (
-            matchingPhone.user_id &&
-            String(matchingPhone.user_id) === String(requesterId)
-          ) {
-            return res.json({
-              exists: true,
-              isOwnPhone: true,
-              isSold: true,
-              phoneDetails: null
-            });
-          }
-
-          // الهاتف مباع لكنه يخص مستخدم آخر
+        if (
+          matchingPhone.status === 'sold' &&
+          String(matchingPhone.user_id) === String(requesterId)
+        ) {
           return res.json({
             exists: true,
-            isOtherUser: true,
+            isOwnPhone: true,
             isSold: true,
             phoneDetails: null
           });
         }
+
+        // الهاتف مباع لكنه يخص مستخدم آخر
+        return res.json({
+          exists: true,
+          isOtherUser: true,
+          isSold: true,
+          phoneDetails: null
+        });
       }
     }
+  
 
     res.json({ exists: false, phoneDetails: null });
-  } catch (error) {
-    console.error('Error checking IMEI:', error);
-    return sendError(res, 500, 'حدث خطأ في الخادم', error);
-  }
+} catch (error) {
+  console.error('Error checking IMEI:', error);
+  return sendError(res, 500, 'حدث خطأ في الخادم', error);
+}
 });
 
 // نقطة نهاية لتسجيل الهاتف
