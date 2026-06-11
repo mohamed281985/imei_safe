@@ -1470,9 +1470,10 @@ const maskEmail = (email) => {
 const maskIdLast6 = (id) => {
   if (!id) return '';
   const cleanId = String(id).replace(/\D/g, '');
-  if (cleanId.length <= 6) return cleanId;
-  // إذا كانت أطول من 6، أظهر آخر 6 أرقام بدون إخفاء
-  return cleanId.slice(-6);
+  if (cleanId.length <= 4) return cleanId;
+  const lastFourDigits = cleanId.slice(-4);
+  const starsCount = Math.max(0, Math.min(cleanId.length - 4, 6));
+  return lastFourDigits + '*'.repeat(starsCount);
 };
 
 // إخفاء رقم واتساب/هاتف: يُظهر أول 3 أرقام وآخر رقمين فقط
