@@ -1473,7 +1473,7 @@ const maskIdLast6 = (id) => {
   if (cleanId.length <= 4) return cleanId;
   const lastFourDigits = cleanId.slice(-4);
   const starsCount = Math.max(0, Math.min(cleanId.length - 4, 6));
-  return lastFourDigits + '*'.repeat(starsCount);
+  return '*'.repeat(starsCount) + lastFourDigits;
 };
 
 // إخفاء رقم واتساب/هاتف: يُظهر أول 3 أرقام وآخر رقمين فقط

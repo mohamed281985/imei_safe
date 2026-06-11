@@ -98,7 +98,7 @@ const maskIdNumber = (id: string): string => {
   const lastFourDigits = cleanId.slice(-4);
 
   // إظهار الأرقام أولاً ثم النجوم (بدون مسافات) - مثل صفحة الشراء
-  return lastFourDigits + '*'.repeat(Math.min(cleanId.length - 4, 6));
+  return '*'.repeat(Math.min(cleanId.length - 4, 6)) + lastFourDigits;
 };
 
 const maskEmail = (email: string | null): string => {
