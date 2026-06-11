@@ -71,10 +71,10 @@ const IMEI_LENGTH = 15;
 const decodeHtmlEntities = (s: string) => {
   if (!s) return '';
   return s.replace(/&quot;/gi, '"')
-          .replace(/&apos;/gi, "'")
-          .replace(/&amp;/gi, '&')
-          .replace(/&lt;/gi, '<')
-          .replace(/&gt;/gi, '>');
+    .replace(/&apos;/gi, "'")
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>');
 };
 
 const stripSurroundingQuotes = (s: string) => {
@@ -163,26 +163,26 @@ const validateImageFile = (file: File): Promise<boolean> => {
       if (e.target?.readyState === FileReader.DONE) {
         const arr = (new Uint8Array(e.target.result as ArrayBuffer)).subarray(0, 4);
         let header = "";
-        for(let i = 0; i < arr.length; i++) {
-           header += arr[i].toString(16);
+        for (let i = 0; i < arr.length; i++) {
+          header += arr[i].toString(16);
         }
-        
+
         // JPEG: ffd8...
         // PNG: 89504e47
         // GIF: 47494638
         // WebP: 52494646 (RIFF)
-        
+
         let isValid = false;
         if (header.startsWith('ffd8')) {
-            isValid = true; // JPEG
+          isValid = true; // JPEG
         } else if (header === '89504e47') {
-            isValid = true; // PNG
+          isValid = true; // PNG
         } else if (header === '47494638') {
-            isValid = true; // GIF
+          isValid = true; // GIF
         } else if (header === '52494646') {
-            isValid = true; // WebP
+          isValid = true; // WebP
         }
-        
+
         resolve(isValid);
       } else {
         resolve(false);
@@ -225,7 +225,7 @@ function generateRandomId(): string {
     if (typeof crypto !== 'undefined' && typeof (crypto as any).randomUUID === 'function') {
       return (crypto as any).randomUUID();
     }
-  } catch (e) {}
+  } catch (e) { }
   return `${Date.now()}_${Math.floor(Math.random() * 1e9)}`;
 }
 
@@ -261,7 +261,7 @@ const RegisterPhone: React.FC = () => {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
 
-      const response = await axiosInstance.post('/api/check-limit', 
+      const response = await axiosInstance.post('/api/check-limit',
         { type: 'register_phone', consumeBonusOnLimit: false },
         {
           headers: {
@@ -355,20 +355,20 @@ const RegisterPhone: React.FC = () => {
 
   // Resolve a stored storage path to a usable URL (public or signed)
   const resolveImageUrl = async (path: string) => {
-  if (!path) return '';
-  if (path.startsWith('http')) return path;
+    if (!path) return '';
+    if (path.startsWith('http')) return path;
 
-  try {
-    const { data } = await axiosInstance.get('/api/signed-url', {
-      params: { bucket: 'registerphone', path, expiresIn: 60 }
-    });
+    try {
+      const { data } = await axiosInstance.get('/api/signed-url', {
+        params: { bucket: 'registerphone', path, expiresIn: 60 }
+      });
 
-    return data?.signedUrl || '';
-  } catch (e) {
-    console.error(e);
-    return '';
-  }
-};
+      return data?.signedUrl || '';
+    } catch (e) {
+      console.error(e);
+      return '';
+    }
+  };
   // Safe getter for multiple possible property names (avoids TS errors)
   const getFirstProp = (obj: any, keys: string[]) => {
     if (!obj) return '';
@@ -449,7 +449,8 @@ const RegisterPhone: React.FC = () => {
   }, [user, fromPurchase, t, toast, formData.registerType]);
   // ...existing code...
   // Restore checkImeiExists definition here if missing
-  const checkImeiExists = useCallback(async (imei: string): Promise<{ exists: boolean; phoneDetails: Partial<PhoneData> | null; isOtherUser?: boolean; hasActiveReport?: boolean; isStolen?: boolean; isOwnReport?: boolean; isRejected?: boolean }> => {
+  const checkImeiExists = useCallback(async (imei: string): Promise<{ exists: boolean; phoneDetails: Partial<PhoneData> | null; isOtherUser?: boolean; isSold?: boolean;
+ hasActiveReport?: boolean; isStolen?: boolean; isOwnReport?: boolean; isRejected?: boolean }> => {
     try {
       // ملاحظة: تم تشفير رقم IMEI بالفعل قبل استدعاء هذه الدالة باستخدام AES
       // ملاحظة أمنية: استخدام JWT Token للمصادقة بدلاً من مفتاح API
@@ -507,7 +508,7 @@ const RegisterPhone: React.FC = () => {
         // ملاحظة أمنية: إرسال البيانات كنص عادي عبر HTTPS آمن
         // التشفير سيتم في الخلفية (Backend)
         const cleanImeiValue = cleanImei(value);
-        const { exists, phoneDetails, isOtherUser, hasActiveReport, isStolen, isOwnReport, isRejected } = await checkImeiExists(cleanImeiValue);
+        const { exists, phoneDetails, isOtherUser, hasActiveReport, isSold, isStolen, isOwnReport, isRejected } = await checkImeiExists(cleanImeiValue);
         // If server indicates this IMEI was previously rejected, treat it as not-existing
         if (isRejected) {
           setIsImeiValid(true);
@@ -579,7 +580,18 @@ const RegisterPhone: React.FC = () => {
               phoneImage: null,
             }));
             setPreviews(prev => ({ ...prev, phoneImage: '' }));
-          } else if (phoneDetails) {
+          } else  if(exists && isSold && !isOtherUser) {
+            setImeiError('imei_registered_to_you');
+            setIsImeiValid(false);
+
+            toast({
+              title: t('error'),
+              description: t('imei_registered_to_you_error'),
+              variant: 'destructive'
+            });
+
+            return;
+          } if (phoneDetails) {
             // إذا كانت بيانات الهاتف تشير إلى أنه مسجل بالفعل لحساب المستخدم الحالي
             if (phoneDetails.user_id && user && phoneDetails.user_id === user.id) {
               setImeiError('imei_registered_to_you');
@@ -1098,13 +1110,12 @@ const RegisterPhone: React.FC = () => {
                       return (
                         <div key={item.title} className="flex min-w-0 flex-col items-center text-center">
                           <div
-                            className={`relative flex h-14 w-14 items-center justify-center rounded-full text-sm font-semibold shadow-sm transition-all duration-300 ${
-                              isCompleted
+                            className={`relative flex h-14 w-14 items-center justify-center rounded-full text-sm font-semibold shadow-sm transition-all duration-300 ${isCompleted
                                 ? 'bg-emerald-500 text-white'
                                 : isActive
-                                ? 'bg-gradient-to-br from-sky-500 to-cyan-400 text-white shadow-xl'
-                                : 'bg-white border border-slate-300 text-slate-600'
-                            }`}
+                                  ? 'bg-gradient-to-br from-sky-500 to-cyan-400 text-white shadow-xl'
+                                  : 'bg-white border border-slate-300 text-slate-600'
+                              }`}
                           >
                             {isCompleted ? <CheckCircle className="h-5 w-5" /> : stepIndex}
                           </div>
@@ -1123,260 +1134,260 @@ const RegisterPhone: React.FC = () => {
                     <div className="space-y-5">
                       <div>
                         <label htmlFor="imei" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
-                      <Hash className="w-4 h-4 text-[#0a4d8c]" />
-                      IMEI
-                    </label>
-                    <div className="relative">
-                      {!isImeiValid && (
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <Smartphone className="h-4 w-4 text-gray-500" />
+                          <Hash className="w-4 h-4 text-[#0a4d8c]" />
+                          IMEI
+                        </label>
+                        <div className="relative">
+                          {!isImeiValid && (
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                              <Smartphone className="h-4 w-4 text-gray-500" />
+                            </div>
+                          )}
+                          <input
+                            type="text"
+                            id="imei"
+                            name="imei"
+                            value={formData.imei}
+                            onChange={handleImeiChange}
+                            className={`input-field w-full text-gray-800 !pl-12 ${imeiError ? 'border-red-500' : ''} ${isImeiValid ? 'border-green-500' : ''}`}
+                            maxLength={IMEI_LENGTH}
+                            pattern="[0-9]*"
+                            inputMode="numeric"
+                            required
+                            placeholder={t('imei_placeholder_15_digits')}
+                            disabled={hasReachedRegisterLimit}
+                          />
+                          {isImeiValid && (
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                              <CheckCircle className="h-5 w-5 text-green-500" />
+                            </div>
+                          )}
                         </div>
-                      )}
-                      <input
-                        type="text"
-                        id="imei"
-                        name="imei"
-                        value={formData.imei}
-                        onChange={handleImeiChange}
-                        className={`input-field w-full text-gray-800 !pl-12 ${imeiError ? 'border-red-500' : ''} ${isImeiValid ? 'border-green-500' : ''}`}
-                        maxLength={IMEI_LENGTH}
-                        pattern="[0-9]*"
-                        inputMode="numeric"
-                        required
-                        placeholder={t('imei_placeholder_15_digits')}
-                        disabled={hasReachedRegisterLimit}
-                      />
-                      {isImeiValid && (
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <CheckCircle className="h-5 w-5 text-green-500" />
-                        </div>
-                      )}
-                    </div>
-                    {imeiError && (
-                      (imeiError === 'imei_stolen' || imeiError === 'imei_registered_to_you') ? (
-                        <div
-                          className="my-4 p-4 rounded-lg text-center flex flex-col items-center space-y-3 shadow-lg border"
-                          style={{
-                            background: 'linear-gradient(90deg, rgb(240, 247, 255) 0%, rgb(234, 244, 255) 100%)',
-                            borderColor: '#2196f3'
-                          }}
-                        >
-                          <AlertTriangle className="w-12 h-12 text-blue-500" />
-                          <p className="text-blue-700 font-semibold text-lg">
-                            {imeiError === 'imei_stolen' ? t('imei_stolen') : t('imei_registered_to_you_error')}
-                          </p>
-                        </div>
-                      ) : (
-                        <p className="text-red-500 text-sm mt-1">{t(imeiError)}</p>
-                      )
-                    )}
-                  </div>
-                  <div>
-                    <label htmlFor="phoneType" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
-                      <Smartphone className="w-4 h-4 text-[#0a4d8c]" />
-                      {t('phone_type')}
-                    </label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <FileText className="h-4 w-4 text-gray-500" />
+                        {imeiError && (
+                          (imeiError === 'imei_stolen' || imeiError === 'imei_registered_to_you') ? (
+                            <div
+                              className="my-4 p-4 rounded-lg text-center flex flex-col items-center space-y-3 shadow-lg border"
+                              style={{
+                                background: 'linear-gradient(90deg, rgb(240, 247, 255) 0%, rgb(234, 244, 255) 100%)',
+                                borderColor: '#2196f3'
+                              }}
+                            >
+                              <AlertTriangle className="w-12 h-12 text-blue-500" />
+                              <p className="text-blue-700 font-semibold text-lg">
+                                {imeiError === 'imei_stolen' ? t('imei_stolen') : t('imei_registered_to_you_error')}
+                              </p>
+                            </div>
+                          ) : (
+                            <p className="text-red-500 text-sm mt-1">{t(imeiError)}</p>
+                          )
+                        )}
                       </div>
-                      <input
-                        type="text"
-                        id="phoneType"
-                        name="phoneType"
-                        value={formData.phoneType}
-                        onChange={handleChange}
-                        className="input-field w-full text-gray-800 !pl-12"
-                        required
-                        placeholder={t('phone_type_placeholder')}
-                        disabled={isLoading}
-                      />
+                      <div>
+                        <label htmlFor="phoneType" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
+                          <Smartphone className="w-4 h-4 text-[#0a4d8c]" />
+                          {t('phone_type')}
+                        </label>
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <FileText className="h-4 w-4 text-gray-500" />
+                          </div>
+                          <input
+                            type="text"
+                            id="phoneType"
+                            name="phoneType"
+                            value={formData.phoneType}
+                            onChange={handleChange}
+                            className="input-field w-full text-gray-800 !pl-12"
+                            required
+                            placeholder={t('phone_type_placeholder')}
+                            disabled={isLoading}
+                          />
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              )}
-              {currentStep === 2 && (
-                <div className="space-y-5">
-                  <div>
-                    <label htmlFor="ownerName" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
-                  <User className="w-4 h-4 text-[#0a4d8c]" />
-                  {t('owner_name')}
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <User className="h-4 w-4 text-gray-500" />
-                  </div>
-                  <input
-                    type="text"
-                    id="ownerName"
-                    name="ownerName"
-                    value={formData.registerType === 'mine' ? maskName(formData.ownerName) : formData.ownerName}
-                    onChange={handleChange}
-                    className="input-field w-full text-gray-800 !pl-12"
-                    style={{ direction: 'ltr', textAlign: 'left' }}
-                    disabled={formData.registerType === 'mine' || isLoading}
-                    required
-                    placeholder={t('owner_name_placeholder')}
-                  />
-                </div>
-              </div>
-              <div>
-                <label htmlFor="phoneNumber" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
-                  <Phone className="w-4 h-4 text-[#0a4d8c]" />
-                  {t('phone_label')}
-                </label>
-                <div className="flex gap-2 items-center">
-                  <CountryCodeSelector
-                    value={countryCode}
-                    onChange={setCountryCode}
-                    disabled={formData.registerType === 'mine' || isLoading}
-                  />
-                  <div className="relative w-full">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <Phone className="h-4 w-4 text-gray-500" />
+                  )}
+                  {currentStep === 2 && (
+                    <div className="space-y-5">
+                      <div>
+                        <label htmlFor="ownerName" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
+                          <User className="w-4 h-4 text-[#0a4d8c]" />
+                          {t('owner_name')}
+                        </label>
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <User className="h-4 w-4 text-gray-500" />
+                          </div>
+                          <input
+                            type="text"
+                            id="ownerName"
+                            name="ownerName"
+                            value={formData.registerType === 'mine' ? maskName(formData.ownerName) : formData.ownerName}
+                            onChange={handleChange}
+                            className="input-field w-full text-gray-800 !pl-12"
+                            style={{ direction: 'ltr', textAlign: 'left' }}
+                            disabled={formData.registerType === 'mine' || isLoading}
+                            required
+                            placeholder={t('owner_name_placeholder')}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label htmlFor="phoneNumber" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
+                          <Phone className="w-4 h-4 text-[#0a4d8c]" />
+                          {t('phone_label')}
+                        </label>
+                        <div className="flex gap-2 items-center">
+                          <CountryCodeSelector
+                            value={countryCode}
+                            onChange={setCountryCode}
+                            disabled={formData.registerType === 'mine' || isLoading}
+                          />
+                          <div className="relative w-full">
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                              <Phone className="h-4 w-4 text-gray-500" />
+                            </div>
+                            <input
+                              type="tel"
+                              id="phoneNumber"
+                              name="phoneNumber"
+                              value={formData.registerType === 'mine' ? maskPhoneNumber(formData.phoneNumber) : formData.phoneNumber}
+                              onChange={handleChange}
+                              className="input-field w-full text-gray-800 !pl-12"
+                              disabled={formData.registerType === 'mine' || isLoading}
+                              required
+                              placeholder={t('phone_placeholder')}
+                              dir="ltr"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      {/* حقل الإيميل */}
+                      <div>
+                        <label htmlFor="email" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
+                          <Mail className="w-4 h-4 text-[#0a4d8c]" />
+                          {t('email')}
+                        </label>
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <Mail className="h-4 w-4 text-gray-500" />
+                          </div>
+                          <input
+                            type="email"
+                            id="email"
+                            name="email"
+                            value={formData.registerType === 'mine' ? maskEmail(formData.email) : formData.email}
+                            onChange={e => setFormData(prev => ({ ...prev, email: e.target.value }))}
+                            className="input-field w-full text-gray-800 !pl-12"
+                            style={{ direction: 'ltr', textAlign: 'left' }}
+                            disabled={formData.registerType === 'mine' || isLoading}
+                            required
+                            placeholder={t('email_placeholder')}
+                          />
+                        </div>
+                      </div>
+                      {/* حقل آخر 6 أرقام من البطاقة الشخصية */}
+                      <div>
+                        <label htmlFor="id_last6" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
+                          <CreditCard className="w-4 h-4 text-[#0a4d8c]" />
+                          {t('id_last_6_digits')}
+                        </label>
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <CreditCard className="h-4 w-4 text-gray-500" />
+                          </div>
+                          <input
+                            type="text"
+                            id="id_last6"
+                            name="id_last6"
+                            value={formData.registerType === 'mine' ? maskIdLast6(formData.id_last6) : formData.id_last6}
+                            onChange={handleChange}
+                            className="input-field w-full text-gray-800 !pl-12"
+                            maxLength={6}
+                            pattern="[0-9]*"
+                            inputMode="numeric"
+                            disabled={formData.registerType === 'mine' || isLoading}
+                            required
+                            placeholder={t('id_last_6_digits_placeholder')}
+                            style={{ direction: 'ltr', textAlign: 'left' }}
+                          />
+                        </div>
+                      </div>
                     </div>
-                    <input
-                      type="tel"
-                      id="phoneNumber"
-                      name="phoneNumber"
-                      value={formData.registerType === 'mine' ? maskPhoneNumber(formData.phoneNumber) : formData.phoneNumber}
-                      onChange={handleChange}
-                      className="input-field w-full text-gray-800 !pl-12"
-                      disabled={formData.registerType === 'mine' || isLoading}
-                      required
-                      placeholder={t('phone_placeholder')}
-                      dir="ltr"
-                    />
-                  </div>
+                  )}
+                  {currentStep === 3 && (
+                    <div className="space-y-5">
+                      <div>
+                        <label htmlFor="password" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
+                          <KeyRound className="w-4 h-4 text-[#0a4d8c]" />
+                          {t('password')}
+                        </label>
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <KeyRound className="h-4 w-4 text-gray-500" />
+                          </div>
+                          <input
+                            type="password"
+                            id="password"
+                            name="password"
+                            value={formData.password}
+                            onChange={handleChange}
+                            className="input-field w-full text-gray-800 !pl-12"
+                            required
+                            placeholder={t('password_placeholder')}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label htmlFor="confirmPassword" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
+                          <KeyRound className="w-4 h-4 text-[#0a4d8c]" />
+                          {t('confirm_password')}
+                        </label>
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <KeyRound className="h-4 w-4 text-gray-500" />
+                          </div>
+                          <input
+                            type="password"
+                            id="confirmPassword"
+                            name="confirmPassword"
+                            value={formData.confirmPassword}
+                            onChange={handleChange}
+                            className="input-field w-full text-gray-800 !pl-12"
+                            required
+                            placeholder={t('confirm_password_placeholder')}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {currentStep === 4 && (
+                    <div className="space-y-4">
+                      <h3 className="text-gray-800 text-lg font-semibold">{t('upload_images')}</h3>
+                      {imageTypesData.map(renderImageUpload)}
+                    </div>
+                  )}
                 </div>
               </div>
-              {/* حقل الإيميل */}
-              <div>
-                <label htmlFor="email" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
-                  <Mail className="w-4 h-4 text-[#0a4d8c]" />
-                  {t('email')}
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Mail className="h-4 w-4 text-gray-500" />
-                  </div>
-                  <input
-                    type="email"
-                    id="email"
-                    name="email"
-                    value={formData.registerType === 'mine' ? maskEmail(formData.email) : formData.email}
-                    onChange={e => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                    className="input-field w-full text-gray-800 !pl-12"
-                    style={{ direction: 'ltr', textAlign: 'left' }}
-                    disabled={formData.registerType === 'mine' || isLoading}
-                    required
-                    placeholder={t('email_placeholder')}
-                  />
-                </div>
+              <div className="flex gap-3 mt-5">
+                {currentStep > 1 && (
+                  <Button
+                    type="button"
+                    onClick={handlePrevStep}
+                    disabled={isLoading || isSubmitting}
+                    className="flex-1 rounded-lg border border-slate-300 bg-slate-100 px-4 py-3 text-slate-700 font-semibold transition hover:bg-slate-200"
+                  >
+                    {t('previous')}
+                  </Button>
+                )}
+                <Button
+                  type="submit"
+                  className="flex-1 rounded-lg bg-gradient-to-r from-sky-600 to-cyan-500 px-4 py-3 text-white font-semibold shadow-lg transition hover:from-sky-700 hover:to-cyan-600"
+                  disabled={isSubmitting || imeiError !== '' || hasReachedRegisterLimit}
+                >
+                  {currentStep < 4 ? t('next') : (isSubmitting ? t('submitting') : t('register_phone'))}
+                </Button>
               </div>
-              {/* حقل آخر 6 أرقام من البطاقة الشخصية */}
-              <div>
-                <label htmlFor="id_last6" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
-                  <CreditCard className="w-4 h-4 text-[#0a4d8c]" />
-                  {t('id_last_6_digits')}
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <CreditCard className="h-4 w-4 text-gray-500" />
-                  </div>
-                  <input
-                    type="text"
-                    id="id_last6"
-                    name="id_last6"
-                    value={formData.registerType === 'mine' ? maskIdLast6(formData.id_last6) : formData.id_last6}
-                    onChange={handleChange}
-                    className="input-field w-full text-gray-800 !pl-12"
-                    maxLength={6}
-                    pattern="[0-9]*"
-                    inputMode="numeric"
-                    disabled={formData.registerType === 'mine' || isLoading}
-                    required
-                    placeholder={t('id_last_6_digits_placeholder')}
-                    style={{ direction: 'ltr', textAlign: 'left' }}
-                  />
-                </div>
-              </div>
-                </div>
-              )}
-              {currentStep === 3 && (
-                <div className="space-y-5">
-                  <div>
-                    <label htmlFor="password" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
-                  <KeyRound className="w-4 h-4 text-[#0a4d8c]" />
-                  {t('password')}
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <KeyRound className="h-4 w-4 text-gray-500" />
-                  </div>
-                  <input
-                    type="password"
-                    id="password"
-                    name="password"
-                    value={formData.password}
-                    onChange={handleChange}
-                    className="input-field w-full text-gray-800 !pl-12"
-                    required
-                    placeholder={t('password_placeholder')}
-                  />
-                </div>
-              </div>
-              <div>
-                <label htmlFor="confirmPassword" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
-                  <KeyRound className="w-4 h-4 text-[#0a4d8c]" />
-                  {t('confirm_password')}
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <KeyRound className="h-4 w-4 text-gray-500" />
-                  </div>
-                  <input
-                    type="password"
-                    id="confirmPassword"
-                    name="confirmPassword"
-                    value={formData.confirmPassword}
-                    onChange={handleChange}
-                    className="input-field w-full text-gray-800 !pl-12"
-                    required
-                    placeholder={t('confirm_password_placeholder')}
-                  />
-                </div>
-              </div>
-                </div>
-              )}
-              {currentStep === 4 && (
-                <div className="space-y-4">
-                  <h3 className="text-gray-800 text-lg font-semibold">{t('upload_images')}</h3>
-                  {imageTypesData.map(renderImageUpload)}
-                </div>
-              )}
-            </div>
-          </div>
-          <div className="flex gap-3 mt-5">
-            {currentStep > 1 && (
-              <Button
-                type="button"
-                onClick={handlePrevStep}
-                disabled={isLoading || isSubmitting}
-                className="flex-1 rounded-lg border border-slate-300 bg-slate-100 px-4 py-3 text-slate-700 font-semibold transition hover:bg-slate-200"
-              >
-                {t('previous')}
-              </Button>
-            )}
-            <Button
-              type="submit"
-              className="flex-1 rounded-lg bg-gradient-to-r from-sky-600 to-cyan-500 px-4 py-3 text-white font-semibold shadow-lg transition hover:from-sky-700 hover:to-cyan-600"
-              disabled={isSubmitting || imeiError !== '' || hasReachedRegisterLimit}
-            >
-              {currentStep < 4 ? t('next') : (isSubmitting ? t('submitting') : t('register_phone'))}
-            </Button>
-          </div>
-        </form>
+            </form>
           </CardContent>
         </Card>
         {/* نافذة عرض الصورة الكاملة */}

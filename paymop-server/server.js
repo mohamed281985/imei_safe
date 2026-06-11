@@ -4790,7 +4790,7 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
         }
         if (matchingPhone.status === 'sold') {
           // تم نقل الملكية - فقط المشتري الجديد يقدر يسجله
-          return res.json({ exists: true, isOtherUser: false, phoneDetails: matchingPhone, isSold: true });
+          return res.json({ exists: true, isOtherUser: false, phoneDetails: null, isSold: true });
         }
         // نسمح له بتحديث البيانات - فك تشفير البيانات قبل إرجاعها
         let decryptedPhoneNumber = null;
@@ -4848,7 +4848,7 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
             exists: true,
             isOtherUser: false,
             isSold: true,
-            phoneDetails: matchingPhone
+            phoneDetails: null
           });
         }
       }
