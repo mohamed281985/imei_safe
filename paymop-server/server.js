@@ -4790,7 +4790,7 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
         }
         if (matchingPhone.status === 'sold') {
           // تم نقل الملكية - فقط المشتري الجديد يقدر يسجله
-          return res.json({ exists: true, isOtherUser: false, isSold: true });
+          return res.json({ exists: true, isOtherUser: true, phoneDetails: null, isSold: true });
         }
         // نسمح له بتحديث البيانات - فك تشفير البيانات قبل إرجاعها
         let decryptedPhoneNumber = null;
@@ -4843,38 +4843,22 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
           // تم رفض التسجيل سابقًا - السماح بإعادة التسجيل
           return res.json({ exists: false, phoneDetails: null, isRejected: true });
         }
-        console.log('JWT USER:', req.user?.id);
-        console.log('BODY USER:', req.body?.userId);
-        console.log('PHONE USER:', matchingPhone?.user_id);
-        // في دالة /api/check-imei
-        if (
-          matchingPhone.status === 'sold' &&
-          String(matchingPhone.user_id) === String(requesterId)
-        ) {
+        if (matchingPhone.status === 'sold') {
           return res.json({
             exists: true,
-            isOwnPhone: true,
+            isOtherUser: false,
             isSold: true,
             phoneDetails: null
           });
         }
-
-        // الهاتف مباع لكنه يخص مستخدم آخر
-        return res.json({
-          exists: true,
-          isOtherUser: true,
-          isSold: true,
-          phoneDetails: null
-        });
       }
     }
-  
 
     res.json({ exists: false, phoneDetails: null });
-} catch (error) {
-  console.error('Error checking IMEI:', error);
-  return sendError(res, 500, 'حدث خطأ في الخادم', error);
-}
+  } catch (error) {
+    console.error('Error checking IMEI:', error);
+    return sendError(res, 500, 'حدث خطأ في الخادم', error);
+  }
 });
 
 // نقطة نهاية لتسجيل الهاتف
