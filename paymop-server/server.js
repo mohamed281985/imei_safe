@@ -1470,10 +1470,9 @@ const maskEmail = (email) => {
 const maskIdLast6 = (id) => {
   if (!id) return '';
   const cleanId = String(id).replace(/\D/g, '');
-  if (cleanId.length <= 4) return cleanId;
-  const lastFourDigits = cleanId.slice(-4);
-  const starsCount = Math.max(0, Math.min(cleanId.length - 4, 6));
-  return '*'.repeat(starsCount) + lastFourDigits;
+  if (cleanId.length <= 6) return cleanId;
+  // إذا كانت أطول من 6، أظهر آخر 6 أرقام بدون إخفاء
+  return cleanId.slice(-6);
 };
 
 // إخفاء رقم واتساب/هاتف: يُظهر أول 3 أرقام وآخر رقمين فقط
@@ -4871,20 +4870,14 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
           const decryptedPhone = decryptField(userData.phone) || '';
           const decryptedIdLast6 = decryptField(userData.id_last6) || '';
 
-          // إنشاء نسخ مُقنّعة (masked) للعرض العام
-          const maskedOwner = maskName(decryptedFullName);
-          const maskedPhone = maskPhoneNumber(decryptedPhone);
-          const maskedId = maskIdLast6(decryptedIdLast6);
-
           // إرجاع البيانات للملء التلقائي مع تحديد أنها للقراءة فقط
-          // نُرجع النسخ المقنعة للعرض فقط (لا نُدرج القيم الخام في الاستجابة العامة)
           return res.json({
             exists: false,
             phoneDetails: null,
             autoFillData: {
-              ownerName: maskedOwner,
-              phoneNumber: maskedPhone,
-              idLast6: maskedId,
+              ownerName: decryptedFullName,
+              phoneNumber: decryptedPhone,
+              idLast6: decryptedIdLast6,
               isReadOnly: true // البيانات للقراءة فقط
             }
           });
