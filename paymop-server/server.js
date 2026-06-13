@@ -880,9 +880,12 @@ app.post('/api/supabase-auth-webhook', (req, res) => {
 });
 
 // ⭐ نقطة نهاية للتحقق الشامل من IMEI (البلاغات، التسجيل، والإعلانات السابقة)
+// ⭐ نقطة نهاية للتحقق الشامل من IMEI (البلاغات، التسجيل، والإعلانات السابقة)
 app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
   try {
     const { imei } = req.body;
+    const userId = req.user?.id; // جلب معرف المستخدم من التوكن
+    
     if (!imei) return res.status(400).json({ error: 'IMEI is required' });
     const normalizedImei = String(imei).replace(/\D/g, '');
 
@@ -922,16 +925,55 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
         found: true,
         isRegistered: true,
         phone_type: reg.phone_type,
-        isOwner: req.user?.id === reg.user_id
+        isOwner: userId === reg.user_id
       });
     }
 
+    // 4. ⭐ التعديل الجديد: إذا لم يتم العثور على IMEI، جلب بيانات المستخدم الحالي للملء التلقائي (مقنعة)
+    if (!reg && userId) {
+      try {
+        // جلب بيانات المستخدم الحالي من جدول users
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('full_name, phone, id_last6')
+          .eq('id', userId)
+          .maybeSingle();
+
+        if (!userError && userData) {
+          // فك تشفير بيانات المستخدم
+          const decryptedFullName = decryptField(userData.full_name) || '';
+          const decryptedPhone = decryptField(userData.phone) || '';
+          const decryptedIdLast6 = decryptField(userData.id_last6) || '';
+
+          // ⭐ إخفاء البيانات (Masking)
+          const maskedFullName = maskName(decryptedFullName);
+          const maskedPhone = maskPhoneNumber(decryptedPhone);
+          const maskedIdLast6 = maskIdLast6(decryptedIdLast6);
+
+          // إرجاع البيانات المقنعة للملء التلقائي
+          return res.json({
+            found: false,
+            autoFillData: {
+              ownerName: maskedFullName, // الاسم مقنع
+              phoneNumber: maskedPhone, // رقم الهاتف مقنع
+              idLast6: maskedIdLast6, // آخر 6 أرقام مقنعة
+              isReadOnly: true // البيانات للقراءة فقط
+            }
+          });
+        }
+      } catch (e) {
+        console.error('[imei-masked-info] Error fetching user data for auto-fill:', e);
+      }
+    }
+
+    // إذا لم يتم العثور على أي شيء
     return res.json({ found: false });
   } catch (err) {
     console.error('imei-masked-info error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
 
 // Internal endpoint: create application `users` row after auth signup
 // Frontend calls this after `supabase.auth.signUp` to persist encrypted app user data.
