@@ -757,6 +757,7 @@ const handleWhatsAppCheckboxChange = async () => {
             result.fromServerProfile = af.fromServerProfile ?? true;
             result.maskedOwnerName = af.ownerName || af.maskedOwnerName || '';
             result.maskedPhoneNumber = af.phoneNumber || af.maskedPhoneNumber || '';
+            result.autoFillCountryCode = af.countryCode || af.autoFillCountryCode || '';
             result.maskedIdLast6 = af.idLast6 || af.maskedIdLast6 || '';
             result.autoFillIsReadOnly = af.isReadOnly ?? true;
           }
@@ -788,6 +789,14 @@ const handleWhatsAppCheckboxChange = async () => {
               receiptImage: null,
               reportImage: null,
             })));
+            // إذا أرسل الخادم رمز البلد منفصلاً، اعرضه في محدد رمز الدولة
+            if (result.autoFillCountryCode || result.countryCode) {
+              try {
+                setCountryCode(String(result.autoFillCountryCode || result.countryCode));
+              } catch (e) {
+                // تجاهل
+              }
+            }
             setOriginalData({ ownerName: '', phoneNumber: '', idLast6: '' });
             setFieldReadOnlyState({ ownerName: true, phoneNumber: true, lossLocation: false, lossTime: false, receiptImage: false, reportImage: false });
             setIsImeiRegistered(false);

@@ -253,6 +253,21 @@ export function registerOwnershipRoutes({
             const phoneReal = meta.phone || profile.phone || '';
             const idLast6Real = meta.id_last6 || profile.id_last6 || '';
 
+            // تفكيك كود البلد من رقم الهاتف إن وُجد
+            let countryCode = '';
+            let localPhone = String(phoneReal || '');
+            try {
+              const m = String(phoneReal || '').trim().match(/^\+(\d{1,3})(.*)$/);
+              if (m) {
+                countryCode = `+${m[1]}`;
+                localPhone = m[2].replace(/\D/g, '');
+              } else {
+                localPhone = localPhone.replace(/\D/g, '');
+              }
+            } catch (e) {
+              localPhone = localPhone.replace(/\D/g, '');
+            }
+
             return res.json({
               found: false,
               masked: true,
@@ -260,7 +275,8 @@ export function registerOwnershipRoutes({
               isRegistered: false,
               hasActiveReport: false,
               maskedOwnerName: maskName(String(ownerNameReal)),
-              maskedPhoneNumber: maskPhoneNumber(String(phoneReal)),
+              maskedPhoneNumber: maskPhoneNumber(String(localPhone)),
+              autoFillCountryCode: countryCode,
               maskedIdLast6: maskIdLast6(String(idLast6Real || '')),
               // include a hint that these are masked display values coming from the server
               fromServerProfile: true

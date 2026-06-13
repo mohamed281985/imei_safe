@@ -1470,9 +1470,11 @@ const maskEmail = (email) => {
 const maskIdLast6 = (id) => {
   if (!id) return '';
   const cleanId = String(id).replace(/\D/g, '');
-  if (cleanId.length <= 6) return cleanId;
-  // إذا كانت أطول من 6، أظهر آخر 6 أرقام بدون إخفاء
-  return cleanId.slice(-6);
+  if (cleanId.length <= 4) return cleanId;
+  // إظهار آخر 4 أرقام ثم إخفاء الباقي بنجوم (حتى 6 نجوم كحد أقصى)
+  const last4 = cleanId.slice(-4);
+  const stars = '*'.repeat(Math.min(Math.max(0, cleanId.length - 4), 6));
+  return last4 + stars;
 };
 
 // إخفاء رقم واتساب/هاتف: يُظهر أول 3 أرقام وآخر رقمين فقط
@@ -4870,13 +4872,30 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
           const decryptedFullName = decryptField(userData.full_name) || '';
           const decryptedPhone = decryptField(userData.phone) || '';
           const decryptedIdLast6 = decryptField(userData.id_last6) || '';
+          // حاول تفكيك كود البلد من رقم الهاتف إن كان يبدأ بـ+
+          let countryCode = '';
+          let localPhone = String(decryptedPhone || '');
+          try {
+            const m = String(decryptedPhone || '').trim().match(/^\+(\d{1,3})(.*)$/);
+            if (m) {
+              countryCode = `+${m[1]}`;
+              localPhone = m[2].replace(/\D/g, '');
+            } else {
+              // إن لم يكن هناك بادئة +، حاول إزالة أي حروف غير رقمية
+              localPhone = localPhone.replace(/\D/g, '');
+            }
+          } catch (e) {
+            localPhone = localPhone.replace(/\D/g, '');
+          }
 
           return res.json({
             exists: false,
             phoneDetails: null,
             autoFillData: {
               ownerName: maskName(String(decryptedFullName)),
-              phoneNumber: maskPhoneNumber(String(decryptedPhone)),
+              // أرسل نسخة مقنعة من الرقم المحلي فقط (بدون كود البلد)
+              phoneNumber: maskPhoneNumber(String(localPhone)),
+              countryCode: countryCode,
               idLast6: maskIdLast6 ? maskIdLast6(String(decryptedIdLast6 || '')) : (String(decryptedIdLast6 || '').slice(-4) + '*'.repeat(Math.max(0, (String(decryptedIdLast6 || '').length - 4)))),
               isReadOnly: true,
               fromServerProfile: true
