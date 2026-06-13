@@ -749,6 +749,18 @@ const handleWhatsAppCheckboxChange = async () => {
             result.phoneDetails = checkResult.phoneDetails;
           }
 
+          // إذا أعاد check-imei بيانات autoFillData (نسخة مقنعة من بروفايل المستخدم)،
+          // حولها إلى نفس حقل الاستجابة الذي تتعامل معه الواجهة (`masked`/`fromServerProfile`)
+          if (checkResult.autoFillData) {
+            const af = checkResult.autoFillData;
+            result.masked = true;
+            result.fromServerProfile = af.fromServerProfile ?? true;
+            result.maskedOwnerName = af.ownerName || af.maskedOwnerName || '';
+            result.maskedPhoneNumber = af.phoneNumber || af.maskedPhoneNumber || '';
+            result.maskedIdLast6 = af.idLast6 || af.maskedIdLast6 || '';
+            result.autoFillIsReadOnly = af.isReadOnly ?? true;
+          }
+
           // دمج مؤشرات الملكية والمرسل
           const inferredIsOwnReport = typeof (checkResult?.isOwnReport) === 'boolean'
             ? checkResult.isOwnReport

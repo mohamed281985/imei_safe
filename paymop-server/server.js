@@ -4865,20 +4865,21 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
           .maybeSingle();
 
         if (!userError && userData) {
-          // فك تشفير بيانات المستخدم
+          // فك تشفير بيانات المستخدم ولكن لا نعيد القيم الحقيقية إلى العميل
+          // بدلاً من ذلك نعيد نسخة مقنعة (masked) للعرض فقط
           const decryptedFullName = decryptField(userData.full_name) || '';
           const decryptedPhone = decryptField(userData.phone) || '';
           const decryptedIdLast6 = decryptField(userData.id_last6) || '';
 
-          // إرجاع البيانات للملء التلقائي مع تحديد أنها للقراءة فقط
           return res.json({
             exists: false,
             phoneDetails: null,
             autoFillData: {
-              ownerName: decryptedFullName,
-              phoneNumber: decryptedPhone,
-              idLast6: decryptedIdLast6,
-              isReadOnly: true // البيانات للقراءة فقط
+              ownerName: maskName(String(decryptedFullName)),
+              phoneNumber: maskPhoneNumber(String(decryptedPhone)),
+              idLast6: maskIdLast6 ? maskIdLast6(String(decryptedIdLast6 || '')) : (String(decryptedIdLast6 || '').slice(-4) + '*'.repeat(Math.max(0, (String(decryptedIdLast6 || '').length - 4)))),
+              isReadOnly: true,
+              fromServerProfile: true
             }
           });
         }
