@@ -1512,9 +1512,11 @@ const maskEmail = (email) => {
 const maskIdLast6 = (id) => {
   if (!id) return '';
   const cleanId = String(id).replace(/\D/g, '');
-  if (cleanId.length <= 6) return cleanId;
-  // إذا كانت أطول من 6، أظهر آخر 6 أرقام بدون إخفاء
-  return cleanId.slice(-6);
+  // إذا كانت قصيرة جداً، أعدها كما هي
+  if (cleanId.length <= 4) return cleanId;
+  // اعرض نجوماً ثم آخر 4 أرقام (مقنع أكثر للـ id الأخيرة)
+  const starsCount = Math.min(Math.max(0, cleanId.length - 4), 6);
+  return '*'.repeat(starsCount) + cleanId.slice(-4);
 };
 
 // إخفاء رقم واتساب/هاتف: يُظهر أول 3 أرقام وآخر رقمين فقط
