@@ -406,7 +406,10 @@ const handleWhatsAppCheckboxChange = async () => {
     // تحقق من صحة آخر 6 أرقام
     // إذا كان الهاتف مسجل مسبقاً، نتخطى التحقق لأن البيانات موجودة في originalData
     if (!isImeiRegisteredStatus && data.idLast6 !== REGISTERED_IN_SYSTEM) {
-      if (!data.idLast6 || data.idLast6.length !== 6 || !/^\d{6}$/.test(data.idLast6)) {
+      const val = String(data.idLast6 || '');
+      const isMasked = /\*/.test(val); // server may return masked value containing '*'
+      const isNumeric6 = /^\d{6}$/.test(val);
+      if (!isMasked && !isNumeric6) {
         toast({ title: t('error'), description: t('id_last6_invalid'), variant: 'destructive' });
         return false;
       }
@@ -779,7 +782,7 @@ const handleWhatsAppCheckboxChange = async () => {
               ...prev,
               ownerName: ownerName || '',
               phoneNumber: phoneNumber || '',
-              idLast6: idLast6 ? maskIdNumber(String(idLast6)) : '',
+              idLast6: idLast6 ? (/\*/.test(String(idLast6)) ? String(idLast6) : maskIdNumber(String(idLast6))) : '',
             }));
             
             // تحديث البيانات الأصلية
@@ -1134,21 +1137,21 @@ const handleWhatsAppCheckboxChange = async () => {
       if (effectiveOwnerName && effectiveOwnerName.includes('*')) {
         const r = resultRef.current;
         if (r && r.autoFillData) {
-          effectiveOwnerName = r.autoFillData.ownerName || effectiveOwnerName;
+          effectiveOwnerName = r.autoFillData.ownerNameRaw || r.autoFillData.ownerName || effectiveOwnerName;
         }
       }
 
       if (effectivePhoneNumber && effectivePhoneNumber.includes('*')) {
         const r = resultRef.current;
         if (r && r.autoFillData) {
-          effectivePhoneNumber = r.autoFillData.phoneNumber || effectivePhoneNumber;
+          effectivePhoneNumber = r.autoFillData.phoneNumberRaw || r.autoFillData.phoneNumber || effectivePhoneNumber;
         }
       }
 
       if (effectiveIdLast6 && effectiveIdLast6.includes('*')) {
         const r = resultRef.current;
         if (r && r.autoFillData) {
-          effectiveIdLast6 = r.autoFillData.idLast6 || effectiveIdLast6;
+          effectiveIdLast6 = r.autoFillData.idLast6Raw || r.autoFillData.idLast6 || effectiveIdLast6;
         }
       }
 
