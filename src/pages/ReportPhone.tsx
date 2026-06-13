@@ -35,7 +35,7 @@ interface ExtendedUser {
   [key: string]: any;
 }
 
-// تعريف واجهة البيانات للنموذجا
+// تعريف واجهة البيانات للنموذج
 interface FormData {
   ownerName: string;
   phoneNumber: string;
@@ -220,6 +220,7 @@ const ReportPhone: React.FC = () => {
     lossTime: false,
     receiptImage: false, // تم التغيير من phoneImage
     reportImage: false,
+    idLast6: false, // إضافة خاصية idLast6
   });
 
   // حالة التحميل والإرسال
@@ -679,6 +680,7 @@ const handleWhatsAppCheckboxChange = async () => {
         lossTime: false,
         receiptImage: false, // اجعل صورة الفاتورة قابلة للرفع عند IMEI جديد أو عليه بلاغ
         reportImage: false,
+        idLast6: false, // إضافة idLast6
       });
       setIsImeiRegistered(false);
       setDbPassword(null);
@@ -766,6 +768,40 @@ const handleWhatsAppCheckboxChange = async () => {
           setIsImeiRegistered(false);
           setIsImeiValid(true);
           setActiveReportWarning('phone_not_registered_can_report');
+          
+          // ⭐ التعديل الجديد: التعامل مع البيانات المقنعة من الخادم
+          if (result.autoFillData) {
+            const { ownerName, phoneNumber, idLast6, isReadOnly } = result.autoFillData;
+            
+            // ملء الحقول بالبيانات المقنعة
+            setFormData(prev => ({
+              ...prev,
+              ownerName: ownerName || '',
+              phoneNumber: phoneNumber || '',
+              idLast6: idLast6 || '',
+            }));
+            
+            // تحديث البيانات الأصلية
+            setOriginalData({
+              ownerName: ownerName || '',
+              phoneNumber: phoneNumber || '',
+              idLast6: idLast6 || '',
+            });
+            
+            // جعل الحقول للقراءة فقط إذا كانت البيانات مقنعة
+            if (isReadOnly) {
+              setFieldReadOnlyState({
+                ownerName: true,
+                phoneNumber: true,
+                idLast6: true, // جعل حقل آخر 6 أرقام للقراءة فقط
+                lossLocation: false,
+                lossTime: false,
+                receiptImage: false,
+                reportImage: false,
+              });
+            }
+          }
+          
           return;
         }
 
@@ -805,6 +841,7 @@ const handleWhatsAppCheckboxChange = async () => {
           setFieldReadOnlyState({
             ownerName: true, phoneNumber: true, lossLocation: true, lossTime: true,
             receiptImage: true, reportImage: true,
+            idLast6: true, // إضافة idLast6
           });
           setActiveReportWarning('imei_already_reported_by_your_account');
           setIsImeiValid(false);
@@ -835,6 +872,7 @@ const handleWhatsAppCheckboxChange = async () => {
             lossTime: false,
             receiptImage: true,
             reportImage: false,
+            idLast6: true, // إضافة idLast6
           });
           setIsImeiRegistered(false);
           setIsReadOnly(false);
@@ -870,6 +908,7 @@ const handleWhatsAppCheckboxChange = async () => {
             lossTime: true,
             receiptImage: true,
             reportImage: true,
+            idLast6: true, // إضافة idLast6
           });
           setIsImeiRegistered(true);
           setIsImeiValid(false);
@@ -890,6 +929,7 @@ const handleWhatsAppCheckboxChange = async () => {
           setFieldReadOnlyState({
             ownerName: true, phoneNumber: true, lossLocation: true, lossTime: true,
             receiptImage: true, reportImage: true,
+            idLast6: true, // إضافة idLast6
           });
           setActiveReportWarning('imei_already_reported_as_lost_detail');
           setIsImeiValid(false);
@@ -1088,6 +1128,29 @@ const handleWhatsAppCheckboxChange = async () => {
       let effectivePhoneNumber = isImeiRegistered ? originalData.phoneNumber : `${countryCode}${formData.phoneNumber}`;
       let effectiveIdLast6 = isImeiRegistered ? originalData.idLast6 : formData.idLast6;
 
+      // ⭐ التعديل الجديد: التعامل مع البيانات المقنعة
+      // إذا كانت البيانات مقنعة (تحتوي على نجوم)، نستخدم القيم من resultRef.current
+      if (effectiveOwnerName && effectiveOwnerName.includes('*')) {
+        const r = resultRef.current;
+        if (r && r.autoFillData) {
+          effectiveOwnerName = r.autoFillData.ownerName || effectiveOwnerName;
+        }
+      }
+
+      if (effectivePhoneNumber && effectivePhoneNumber.includes('*')) {
+        const r = resultRef.current;
+        if (r && r.autoFillData) {
+          effectivePhoneNumber = r.autoFillData.phoneNumber || effectivePhoneNumber;
+        }
+      }
+
+      if (effectiveIdLast6 && effectiveIdLast6.includes('*')) {
+        const r = resultRef.current;
+        if (r && r.autoFillData) {
+          effectiveIdLast6 = r.autoFillData.idLast6 || effectiveIdLast6;
+        }
+      }
+
       if (effectiveOwnerName === REGISTERED_IN_SYSTEM || effectivePhoneNumber === REGISTERED_IN_SYSTEM || effectiveIdLast6 === REGISTERED_IN_SYSTEM) {
         // حاول الحصول عليها من نتيجة الاستعلام المحفوظة
         const r = resultRef.current;
@@ -1167,7 +1230,8 @@ const handleWhatsAppCheckboxChange = async () => {
       setIsReadOnly(true);
       setFieldReadOnlyState({
         ownerName: true, phoneNumber: true, lossLocation: true, lossTime: true,
-        receiptImage: true, reportImage: true
+        receiptImage: true, reportImage: true,
+        idLast6: true, // إضافة idLast6
       });
       setTimeout(() => {
         navigate('/dashboard');
@@ -1412,7 +1476,7 @@ const handleWhatsAppCheckboxChange = async () => {
                             ? registeredInSystemLabel
                             : (formData.idLast6 && /^[*]+$/.test(formData.idLast6) ? registeredInSystemLabel : t('id_last_6_digits_placeholder'))
                         }
-                        disabled={isImeiRegistered || isReadOnly || isSubmitting || formData.idLast6 === REGISTERED_IN_SYSTEM}
+                        disabled={fieldReadOnlyState.idLast6 || isReadOnly || isSubmitting || formData.idLast6 === REGISTERED_IN_SYSTEM}
                       />
                     </div>
                   </div>
