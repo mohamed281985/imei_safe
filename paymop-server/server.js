@@ -926,48 +926,6 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
       });
     }
 
-    // إذا لم يُعثر على الهاتف في أي جدول، حاول إرجاع قيم مقنعة مأخوذة من صف المستخدم الحالي
-    try {
-      const uid = req.user && req.user.id ? req.user.id : null;
-      if (uid) {
-        const { data: userRow, error: userErr } = await supabase.from('users').select('owner_name, phone, id_last6, email').eq('id', uid).maybeSingle();
-        if (!userErr && userRow) {
-          const ownerReal = decryptField(userRow.owner_name) || userRow.owner_name || '';
-          const phoneReal = decryptField(userRow.phone) || userRow.phone || '';
-          const idLast6Real = decryptField(userRow.id_last6) || userRow.id_last6 || '';
-
-          const maskName = (name) => {
-            if (!name) return '';
-            const s = String(name).trim();
-            if (s.length <= 1) return '*';
-            return s[0] + '*'.repeat(Math.max(1, s.length - 1));
-          };
-          const maskPhone = (p) => {
-            if (!p) return '';
-            const d = String(p).replace(/\D/g, '');
-            if (d.length <= 4) return '*'.repeat(d.length);
-            return d.slice(0, 3) + '*'.repeat(Math.max(0, d.length - 5)) + d.slice(-2);
-          };
-          const maskId = (idv) => {
-            if (!idv) return '';
-            const d = String(idv).replace(/\D/g, '');
-            if (d.length <= 2) return '*'.repeat(d.length);
-            return '*'.repeat(Math.max(0, d.length - 2)) + d.slice(-2);
-          };
-
-          return res.json({
-            found: false,
-            prefillFromUser: true,
-            maskedOwnerName: maskName(ownerReal),
-            maskedPhoneNumber: maskPhone(phoneReal),
-            maskedIdLast6: maskId(idLast6Real)
-          });
-        }
-      }
-    } catch (e) {
-      console.warn('imei-masked-info: failed to fetch user prefill', e && (e.message || e));
-    }
-
     return res.json({ found: false });
   } catch (err) {
     console.error('imei-masked-info error:', err);

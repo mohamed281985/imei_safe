@@ -22,23 +22,11 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
         return out;
       }
 
-      // If it's a string, attempt to parse JSON first (some fields are stored as JSON strings)
+      // If it's a string, attempt to decrypt; if decryptField returns null
+      // and the original looks like an encrypted payload, return null to avoid
+      // exposing encryptedData/iv/authTag. Otherwise return the decrypted
+      // result or the original string.
       if (typeof value === 'string') {
-        // Try to parse JSON string that may contain encrypted payload
-        try {
-          const parsed = JSON.parse(value);
-          if (parsed && typeof parsed === 'object') {
-            if (parsed.encryptedData && parsed.iv && parsed.authTag) {
-              return decryptField(parsed);
-            }
-            // If parsed is a plain object, recursively decrypt its keys
-            return decryptDeep(parsed);
-          }
-        } catch (e) {
-          // not JSON — fallthrough to regular decrypt attempt
-        }
-
-        // Fallback: attempt direct decrypt (in case encryptor used a compact string)
         const attempted = decryptField(value);
         if (attempted === null) {
           // if original contains obvious encrypted markers, don't return raw
