@@ -236,6 +236,41 @@ export function registerOwnershipRoutes({
       }
 
       console.log('[IMEI-MASKED-INFO] Not registered: found=false');
+      // عندما لا يكون الهاتف مسجلاً، نحاول جلب بيانات المستخدم الحالية من جدول users
+      // وإرجاع نسخة مقنعة (masked) للعرض في الواجهة دون تسريب البيانات الحقيقية
+      try {
+        if (req.user && req.user.id) {
+          const { data: profile, error: profileErr } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', req.user.id)
+            .maybeSingle();
+
+          if (!profileErr && profile) {
+            // حاول استخراج الحقول من user_metadata كأولوية
+            const meta = profile.user_metadata || {};
+            const ownerNameReal = meta.name || profile.username || profile.email || '';
+            const phoneReal = meta.phone || profile.phone || '';
+            const idLast6Real = meta.id_last6 || profile.id_last6 || '';
+
+            return res.json({
+              found: false,
+              masked: true,
+              isOwner: true,
+              isRegistered: false,
+              hasActiveReport: false,
+              maskedOwnerName: maskName(String(ownerNameReal)),
+              maskedPhoneNumber: maskPhoneNumber(String(phoneReal)),
+              maskedIdLast6: maskIdLast6(String(idLast6Real || '')),
+              // include a hint that these are masked display values coming from the server
+              fromServerProfile: true
+            });
+          }
+        }
+      } catch (e) {
+        console.warn('imei-masked-info: failed to hydrate user profile for masked display', e);
+      }
+
       return res.json({ found: false, masked: false, isOwner: false, isRegistered: false, hasActiveReport: false });
     } catch (error) {
       console.error('Error in imei-masked-info:', error);
