@@ -97,8 +97,9 @@ const maskIdNumber = (id: string): string => {
   // الحصول على آخر 4 أرقام
   const lastFourDigits = cleanId.slice(-4);
 
-  // إظهار الأرقام أولاً ثم النجوم (بدون مسافات) - مثل صفحة الشراء
-  return lastFourDigits + '*'.repeat(Math.min(cleanId.length - 4, 6));
+  // إظهار النجوم ثم آخر 4 أرقام (أكثر شيوعاً لعرض الأرقام الحساسة)
+  const starsCount = Math.min(cleanId.length - 4, 6);
+  return '*'.repeat(starsCount) + lastFourDigits;
 };
 
 const maskEmail = (email: string | null): string => {
@@ -778,7 +779,7 @@ const handleWhatsAppCheckboxChange = async () => {
               ...prev,
               ownerName: ownerName || '',
               phoneNumber: phoneNumber || '',
-              idLast6: idLast6 || '',
+              idLast6: idLast6 ? maskIdNumber(String(idLast6)) : '',
             }));
             
             // تحديث البيانات الأصلية
