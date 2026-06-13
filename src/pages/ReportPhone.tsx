@@ -216,6 +216,7 @@ const ReportPhone: React.FC = () => {
   const [fieldReadOnlyState, setFieldReadOnlyState] = useState({
     ownerName: false,
     phoneNumber: false,
+    idLast6: false,
     lossLocation: false,
     lossTime: false,
     receiptImage: false, // تم التغيير من phoneImage
@@ -403,7 +404,7 @@ const handleWhatsAppCheckboxChange = async () => {
     }
     // تحقق من صحة آخر 6 أرقام
     // إذا كان الهاتف مسجل مسبقاً، نتخطى التحقق لأن البيانات موجودة في originalData
-    if (!isImeiRegisteredStatus && data.idLast6 !== REGISTERED_IN_SYSTEM) {
+    if (!isImeiRegisteredStatus && data.idLast6 !== REGISTERED_IN_SYSTEM && !currentFieldReadOnlyState.idLast6) {
       if (!data.idLast6 || data.idLast6.length !== 6 || !/^\d{6}$/.test(data.idLast6)) {
         toast({ title: t('error'), description: t('id_last6_invalid'), variant: 'destructive' });
         return false;
@@ -675,6 +676,7 @@ const handleWhatsAppCheckboxChange = async () => {
       setFieldReadOnlyState({
         ownerName: false,
         phoneNumber: false,
+        idLast6: false,
         lossLocation: false,
         lossTime: false,
         receiptImage: false, // اجعل صورة الفاتورة قابلة للرفع عند IMEI جديد أو عليه بلاغ
@@ -798,7 +800,7 @@ const handleWhatsAppCheckboxChange = async () => {
               }
             }
             setOriginalData({ ownerName: '', phoneNumber: '', idLast6: '' });
-            setFieldReadOnlyState({ ownerName: true, phoneNumber: true, lossLocation: false, lossTime: false, receiptImage: false, reportImage: false });
+            setFieldReadOnlyState({ ownerName: true, phoneNumber: true, idLast6: true, lossLocation: false, lossTime: false, receiptImage: false, reportImage: false });
             setIsImeiRegistered(false);
             setIsImeiValid(true);
             setActiveReportWarning('phone_not_registered_can_report');
@@ -846,7 +848,7 @@ const handleWhatsAppCheckboxChange = async () => {
         )) {
           setIsReadOnly(true);
           setFieldReadOnlyState({
-            ownerName: true, phoneNumber: true, lossLocation: true, lossTime: true,
+            ownerName: true, phoneNumber: true, idLast6: true, lossLocation: true, lossTime: true,
             receiptImage: true, reportImage: true,
           });
           setActiveReportWarning('imei_already_reported_by_your_account');
@@ -874,6 +876,7 @@ const handleWhatsAppCheckboxChange = async () => {
           setFieldReadOnlyState({
             ownerName: true,
             phoneNumber: true,
+            idLast6: true,
             lossLocation: false,
             lossTime: false,
             receiptImage: true,
@@ -909,6 +912,7 @@ const handleWhatsAppCheckboxChange = async () => {
           setFieldReadOnlyState({
             ownerName: true,
             phoneNumber: true,
+            idLast6: true,
             lossLocation: true,
             lossTime: true,
             receiptImage: true,
@@ -931,7 +935,7 @@ const handleWhatsAppCheckboxChange = async () => {
         if (result.found && !result.isRegistered) {
           setIsReadOnly(true);
           setFieldReadOnlyState({
-            ownerName: true, phoneNumber: true, lossLocation: true, lossTime: true,
+            ownerName: true, phoneNumber: true, idLast6: true, lossLocation: true, lossTime: true,
             receiptImage: true, reportImage: true,
           });
           setActiveReportWarning('imei_already_reported_as_lost_detail');
@@ -1208,10 +1212,10 @@ const handleWhatsAppCheckboxChange = async () => {
 
       toast({ title: t('success'), description: t('report_submitted_successfully') });
       setIsReadOnly(true);
-      setFieldReadOnlyState({
-        ownerName: true, phoneNumber: true, lossLocation: true, lossTime: true,
-        receiptImage: true, reportImage: true
-      });
+          setFieldReadOnlyState({
+            ownerName: true, phoneNumber: true, idLast6: true, lossLocation: true, lossTime: true,
+            receiptImage: true, reportImage: true
+          });
       setTimeout(() => {
         navigate('/dashboard');
       }, 2000);
@@ -1441,10 +1445,11 @@ const handleWhatsAppCheckboxChange = async () => {
                         onChange={handleChange}
                         className={`input-field w-full bg-[#c0dee5] text-gray-800 !pl-12 ${/^[*]+$/.test(formData.idLast6) || formData.idLast6.length < 2 ? 'text-gray-400 italic' : ''}`}
                         style={(() => {
+                          // Force LTR for idLast6 so masked digits keep natural left-to-right order
                           if (/^[*]+$/.test(formData.idLast6) || formData.idLast6.length < 2) {
-                            return { letterSpacing: '0.2em' };
+                            return { letterSpacing: '0.2em', direction: 'ltr', textAlign: 'left' };
                           }
-                          return /[a-zA-Z0-9]/.test(formData.idLast6) ? { direction: 'ltr', textAlign: 'left' } : { direction: 'rtl', textAlign: 'right' };
+                          return { direction: 'ltr', textAlign: 'left' };
                         })()}
                         maxLength={6}
                         pattern="[0-9]{6}"
@@ -1455,7 +1460,7 @@ const handleWhatsAppCheckboxChange = async () => {
                             ? registeredInSystemLabel
                             : (formData.idLast6 && /^[*]+$/.test(formData.idLast6) ? registeredInSystemLabel : t('id_last_6_digits_placeholder'))
                         }
-                        disabled={isImeiRegistered || isReadOnly || isSubmitting || formData.idLast6 === REGISTERED_IN_SYSTEM}
+                        disabled={isImeiRegistered || isReadOnly || isSubmitting || formData.idLast6 === REGISTERED_IN_SYSTEM || fieldReadOnlyState.idLast6}
                       />
                     </div>
                   </div>
