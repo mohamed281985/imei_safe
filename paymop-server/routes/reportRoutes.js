@@ -168,6 +168,27 @@ app.post('/api/report-lost-phone', verifyJwtToken, async (req, res) => {
       }
     }
 
+    // إذا كانت الواجهة أرسلت قيماً مقنعة (masked) - مثل نجوم أو placeholder - لا نعتمد تلك القيم
+    // عند وجود مستخدم مسجل في التوكن، نحضر البيانات الحقيقية من جدول `users` ونستخدمها للحفظ
+    try {
+      const looksMasked = (v) => typeof v === 'string' && (v.includes('*') || v === PLACEHOLDER_REGISTERED || v.trim().startsWith('******'));
+      if (req.user && req.user.id && (looksMasked(data.ownerName) || looksMasked(data.phoneNumber) || looksMasked(data.idLast6))) {
+        const { data: profile, error: profileErr } = await supabase.from('users').select('*').eq('id', req.user.id).maybeSingle();
+        if (!profileErr && profile) {
+          const meta = profile.user_metadata || {};
+          const ownerNameReal = meta.name || profile.username || profile.email || '';
+          const phoneReal = meta.phone || profile.phone || '';
+          const idLast6Real = meta.id_last6 || profile.id_last6 || '';
+
+          if (ownerNameReal) data.ownerName = ownerNameReal;
+          if (phoneReal) data.phoneNumber = phoneReal;
+          if (idLast6Real) data.idLast6 = idLast6Real;
+        }
+      }
+    } catch (e) {
+      console.warn('report-lost-phone: failed to hydrate masked fields from users table', e);
+    }
+
     // الآن بعد تعبئة الحقول من registered_phones، نفّذ تحقق روابط الصور النهائي
     if (!('receipt_image_url' in data) || !data.receipt_image_url || !isValidImageUrl(data.receipt_image_url)) {
       return res.status(400).json({ success: false, error: 'يجب رفع صورة الفاتورة بشكل صحيح (رابط صالح).' });
