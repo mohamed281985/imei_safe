@@ -168,6 +168,48 @@ app.post('/api/report-lost-phone', verifyJwtToken, async (req, res) => {
       }
     }
 
+    // حالياً: إذا الهاتف غير مسجل، قد تكون الواجهة أرسلت قيماً مقنعة (masked/placeholder).
+    // استبدل هذه القيم هنا بقيم المستخدم الحقيقية من جدول `users` قبل التشفير والحفظ.
+    if (!registeredPhoneForReport) {
+      try {
+        const uid = req.user?.id || data.user_id || null;
+        if (uid) {
+          const { data: userRow, error: userErr } = await supabase.from('users').select('owner_name, phone, id_last6, email').eq('id', uid).maybeSingle();
+          if (!userErr && userRow) {
+            const ownerReal = decryptField(userRow.owner_name) || userRow.owner_name || null;
+            const phoneReal = decryptField(userRow.phone) || userRow.phone || null;
+            const idLast6Real = decryptField(userRow.id_last6) || userRow.id_last6 || null;
+
+            const looksLikePlaceholder = (v) => {
+              if (!v) return false;
+              try {
+                const s = String(v);
+                if (s === 'undefined' || s === 'null') return false;
+                if (s.includes('*')) return true;
+                if (s.includes('REGISTERED_IN_SYSTEM') || s.includes('__REGISTERED_IN_SYSTEM__')) return true;
+                return false;
+              } catch (e) { return false; }
+            };
+
+            if (looksLikePlaceholder(data.ownerName) || !data.ownerName) {
+              if (ownerReal) data.ownerName = ownerReal;
+            }
+            if (looksLikePlaceholder(data.phoneNumber) || !data.phoneNumber) {
+              if (phoneReal) data.phoneNumber = phoneReal;
+            }
+            if (looksLikePlaceholder(data.idLast6) || !data.idLast6) {
+              if (idLast6Real) data.idLast6 = idLast6Real;
+            }
+            if ((!data.email || looksLikePlaceholder(data.email)) && userRow.email) {
+              data.email = decryptField(userRow.email) || userRow.email || data.email;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('report-lost-phone: failed to hydrate placeholders from users', e && (e.message || e));
+      }
+    }
+
     // الآن بعد تعبئة الحقول من registered_phones، نفّذ تحقق روابط الصور النهائي
     if (!('receipt_image_url' in data) || !data.receipt_image_url || !isValidImageUrl(data.receipt_image_url)) {
       return res.status(400).json({ success: false, error: 'يجب رفع صورة الفاتورة بشكل صحيح (رابط صالح).' });
