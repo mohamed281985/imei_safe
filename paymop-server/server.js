@@ -950,13 +950,17 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
           const maskedPhone = maskPhoneNumber(decryptedPhone);
           const maskedIdLast6 = maskIdLast6(decryptedIdLast6);
 
-          // إرجاع البيانات المقنعة للملء التلقائي
+          // إرجاع البيانات المقنعة للملء التلقائي مع القيم الفعلية المشفرة داخل حقول _raw
           return res.json({
             found: false,
             autoFillData: {
               ownerName: maskedFullName, // الاسم مقنع
               phoneNumber: maskedPhone, // رقم الهاتف مقنع
               idLast6: maskedIdLast6, // آخر 6 أرقام مقنعة
+              // حقول فعلية (غير مقنعة) متاحة للعميل الموثوق إذا احتاج إلى الإرسال
+              ownerNameRaw: decryptedFullName,
+              phoneNumberRaw: decryptedPhone,
+              idLast6Raw: decryptedIdLast6,
               isReadOnly: true // البيانات للقراءة فقط
             }
           });
