@@ -4931,9 +4931,10 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
           return res.json({ exists: false, phoneDetails: null, isRejected: true });
         }
         if (matchingPhone.status === 'sold') {
+          // الهاتف مُباع ومسجّل لحساب آخر — عيّن isOtherUser=true لتمييزه بوضوح
           return res.json({
             exists: true,
-            isOtherUser: false,
+            isOtherUser: true,
             isSold: true,
             phoneDetails: null
           });

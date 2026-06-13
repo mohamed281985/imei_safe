@@ -618,6 +618,13 @@ toast({ title: t('success'), description: t('biometric_enabled_success') });
                 throw new Error(t('invalid_csrf') || 'Invalid or missing CSRF token');
             }
 
+            // Safe debug logging: don't log full password
+            try {
+                const maskedPwd = pwd ? '*'.repeat(Math.min(6, pwd.length)) : '';
+                console.debug('[change-phone] tokenPresent=', !!token, 'csrfPresent=', !!csrfToken);
+                console.debug('[change-phone] requestBody=', { newPhone: normalizedPhone, last6, password: maskedPwd });
+            } catch (e) { }
+
             const resp = await fetch(`${API_BASE_URL}/api/change-phone`, {
                 method: 'POST',
                 credentials: 'include',
@@ -1039,7 +1046,7 @@ toast({ title: t('success'), description: t('biometric_enabled_success') });
                                         value={verificationPassword}
                                         onChange={(e) => setVerificationPassword(e.target.value)}
                                         className="w-full rounded-lg border-gray-300 focus:border-[#289c8e] focus:ring-[#289c8e]"
-                                        placeholder={t('enter_current_password')}
+                                        placeholder={t('enter_account_password') || t('enter_current_password')}
                                         name={pwdNameRef.current}
                                         autoComplete="new-password"
                                     />
