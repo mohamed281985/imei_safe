@@ -4360,7 +4360,18 @@ app.post('/api/change-phone', verifyJwtToken, async (req, res) => {
     }
 
     // تحقق من كلمة المرور عن طريق إعادة التوثيق عبر Supabase Auth
-    const email = (req.user && req.user.email) ? req.user.email : (userRow.email || null);
+    // Prefer authenticated token email; fall back to decrypted stored email if token lacks it
+    let email = null;
+    if (req.user && req.user.email) {
+      email = req.user.email;
+    } else if (userRow && userRow.email) {
+      try {
+        email = decryptField(userRow.email) || null;
+      } catch (e) {
+        console.warn('/api/change-phone failed to decrypt stored email, falling back to raw value');
+        email = userRow.email || null;
+      }
+    }
     if (!email) return res.status(400).json({ success: false, error: 'User email not available for password verification' });
 
     // استدعاء نقطة الدخول الخاصة بـ Supabase Auth للتحقق من كلمة المرور
