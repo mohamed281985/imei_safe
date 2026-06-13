@@ -4390,8 +4390,36 @@ app.post('/api/change-phone', verifyJwtToken, async (req, res) => {
 
     if (!verifyResp.ok) {
       const txt = await verifyResp.text();
-      console.warn('/api/change-phone password verification failed', verifyResp.status, txt);
-      return res.status(401).json({ success: false, error: 'Invalid password' });
+      // Mask email for safe logging
+      const maskEmail = (e) => {
+        try {
+          if (!e) return 'unknown';
+          const parts = String(e).split('@');
+          if (parts.length !== 2) return String(e).replace(/.(?=.{2})/g, '*');
+          const name = parts[0];
+          const domain = parts[1];
+          const visible = name.length > 2 ? name.slice(0, 2) + '...' : name.charAt(0) + '...';
+          return `${visible}@${domain}`;
+        } catch (e) { return 'masked'; }
+      };
+
+      console.warn('/api/change-phone password verification failed', { status: verifyResp.status, email: maskEmail(email), body: txt });
+
+      // Try to surface the auth service message when helpful (development), otherwise generic
+      let clientMsg = 'Invalid password';
+      try {
+        const parsed = JSON.parse(txt || '{}');
+        if (parsed && (parsed.error || parsed.msg || parsed.message)) {
+          clientMsg = parsed.error || parsed.msg || parsed.message;
+        }
+      } catch (e) {
+        // not JSON, keep raw txt
+        if (txt) clientMsg = txt;
+      }
+
+      // Use the upstream status when it's a 4xx to reflect client error
+      const statusToReturn = verifyResp.status && verifyResp.status >= 400 && verifyResp.status < 500 ? verifyResp.status : 401;
+      return res.status(statusToReturn).json({ success: false, error: clientMsg });
     }
 
     // تشفير رقم الهاتف الجديد
