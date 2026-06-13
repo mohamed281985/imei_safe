@@ -957,7 +957,9 @@ export function registerOwnershipRoutes({
         return res.status(429).json({ error: 'Rate limit exceeded', retryAfter });
       }
 
-      if (found.email !== req.user.email && found.user_id !== req.user.id) {
+      // Compare decrypted stored email (if encrypted) with authenticated user's email
+      const storedEmail = (typeof found.email === 'string') ? (decryptField(found.email) || found.email) : (decryptField(found.email) || null);
+      if ((storedEmail && storedEmail !== req.user.email) && found.user_id !== req.user.id) {
         recordAuthFailure(userKey);
         return res.status(403).json({ error: 'Not authorized to reset password for this phone' });
       }

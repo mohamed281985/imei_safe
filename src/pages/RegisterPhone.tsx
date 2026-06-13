@@ -243,6 +243,7 @@ const RegisterPhone: React.FC = () => {
   const passedImei = location.state?.imei || '';
   const [countryCode, setCountryCode] = useState('+20');
   const [currentStep, setCurrentStep] = useState(1);
+  const [showOtherButton, setShowOtherButton] = useState(false); // للتحكم في ظهور الزر
 
   const stepItems = [
     { title: t('step_device_info_title'), description: t('step_device_info_desc') },
@@ -449,8 +450,10 @@ const RegisterPhone: React.FC = () => {
   }, [user, fromPurchase, t, toast, formData.registerType]);
   // ...existing code...
   // Restore checkImeiExists definition here if missing
-  const checkImeiExists = useCallback(async (imei: string): Promise<{ exists: boolean; phoneDetails: Partial<PhoneData> | null; isOtherUser?: boolean; isSold?: boolean;
- hasActiveReport?: boolean; isStolen?: boolean; isOwnReport?: boolean; isRejected?: boolean }> => {
+  const checkImeiExists = useCallback(async (imei: string): Promise<{
+    exists: boolean; phoneDetails: Partial<PhoneData> | null; isOtherUser?: boolean; isSold?: boolean;
+    hasActiveReport?: boolean; isStolen?: boolean; isOwnReport?: boolean; isRejected?: boolean
+  }> => {
     try {
       // ملاحظة: تم تشفير رقم IMEI بالفعل قبل استدعاء هذه الدالة باستخدام AES
       // ملاحظة أمنية: استخدام JWT Token للمصادقة بدلاً من مفتاح API
@@ -580,7 +583,7 @@ const RegisterPhone: React.FC = () => {
               phoneImage: null,
             }));
             setPreviews(prev => ({ ...prev, phoneImage: '' }));
-          } else  if(exists && isSold && !isOtherUser) {
+          } else if (exists && isSold && !isOtherUser) {
             setImeiError('imei_registered_to_you');
             setIsImeiValid(false);
 
@@ -1063,7 +1066,7 @@ const RegisterPhone: React.FC = () => {
       <div className="pb-3">
         <AppNavbar />
         <PageAdvertisement pageName="registerphone" />
-        <div className="flex items-center mb-6 pt-3" style={{ background: 'linear-gradient(to top, #053060 0%, #0a4d8c 100%)', padding: '0.3rem', borderRadius: '1rem', marginTop: '1rem' }}>
+        <div className="flex items-center mb-0 pt-3" style={{ background: 'linear-gradient(to top, #053060 0%, #0a4d8c 100%)', padding: '0.3rem', borderRadius: '1rem', marginTop: '1rem' }}>
           <BackButton to="/dashboard" className="mr-4" />
           <h1
             className="flex-1 text-center text-2xl font-bold"
@@ -1080,20 +1083,28 @@ const RegisterPhone: React.FC = () => {
             <form onSubmit={handleSubmit} className="space-y-6">
               {/* أزرار نوع التسجيل */}
               <div className="flex gap-4 mb-4">
-                <button
-                  type="button"
-                  className={`flex-1 py-2 rounded-lg font-bold border-2 transition-all duration-200 ${formData.registerType === 'mine' ? 'bg-green-600 text-white border-green-700 shadow-lg' : 'bg-white text-green-700 border-green-400 hover:bg-green-50'}`}
-                  onClick={() => setFormData(prev => ({ ...prev, registerType: 'mine' }))}
-                >
-                  {t('register_for_me')}
-                </button>
-                <button
-                  type="button"
-                  className={`flex-1 py-2 rounded-lg font-bold border-2 transition-all duration-200 ${formData.registerType === 'other' ? 'bg-orange-600 text-white border-orange-700 shadow-lg' : 'bg-white text-orange-700 border-orange-400 hover:bg-orange-50'}`}
-                  onClick={() => setFormData(prev => ({ ...prev, registerType: 'other' }))}
-                >
-                  {t('register_for_other')}
-                </button>
+                {showOtherButton && (
+
+                  <button
+                    type="button"
+                    className={`flex-1 py-2 rounded-lg font-bold border-2 transition-all duration-200 ${formData.registerType === 'mine' ? 'bg-green-600 text-white border-green-700 shadow-lg' : 'bg-white text-green-700 border-green-400 hover:bg-green-50'}`}
+                    onClick={() => setFormData(prev => ({ ...prev, registerType: 'mine' }))}
+                  >
+                    {t('register_for_me')}
+                  </button>
+                )}
+                {showOtherButton && (
+
+                  <button
+                    type="button"
+                    className={`flex-1 py-2 rounded-lg font-bold border-2 transition-all duration-200 ${formData.registerType === 'other' ? 'bg-orange-600 text-white border-orange-700 shadow-lg' : 'bg-white text-orange-700 border-orange-400 hover:bg-orange-50'}`}
+                    onClick={() => setFormData(prev => ({ ...prev, registerType: 'other' }))}
+                  >
+                    {t('register_for_other')}
+              
+                  </button>
+                )}
+
               </div>
               <div className="w-full px-0 mb-4">
                 <div className="relative w-full py-4">
@@ -1111,10 +1122,10 @@ const RegisterPhone: React.FC = () => {
                         <div key={item.title} className="flex min-w-0 flex-col items-center text-center">
                           <div
                             className={`relative flex h-14 w-14 items-center justify-center rounded-full text-sm font-semibold shadow-sm transition-all duration-300 ${isCompleted
-                                ? 'bg-emerald-500 text-white'
-                                : isActive
-                                  ? 'bg-gradient-to-br from-sky-500 to-cyan-400 text-white shadow-xl'
-                                  : 'bg-white border border-slate-300 text-slate-600'
+                              ? 'bg-emerald-500 text-white'
+                              : isActive
+                                ? 'bg-gradient-to-br from-sky-500 to-cyan-400 text-white shadow-xl'
+                                : 'bg-white border border-slate-300 text-slate-600'
                               }`}
                           >
                             {isCompleted ? <CheckCircle className="h-5 w-5" /> : stepIndex}
