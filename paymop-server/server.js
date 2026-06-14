@@ -378,6 +378,143 @@ app.use((err, req, res, next) => {
   return next(err);
 });
 
+// Request owner approval for a transfer: notify owner (email/notification) with instructions
+app.post('/api/request-transfer-approval', verifyJwtToken, async (req, res) => {
+  try {
+    const requesterId = req.user?.id;
+    if (!requesterId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { imei } = req.body || {};
+    if (!imei) return res.status(400).json({ error: 'IMEI is required' });
+
+    // Find registered phone
+    const { data: allPhones, error: phonesFetchError } = await supabase
+      .from('registered_phones')
+      .select('id, user_id, owner_name, phone_number, id_last6, phone_type, receipt_image_url, phone_image_url, email')
+      .limit(1000);
+
+    if (phonesFetchError) {
+      console.error('/api/request-transfer-approval supabase error', phonesFetchError);
+      return res.status(500).json({ error: 'Server error' });
+    }
+
+    const matchingPhone = (allPhones || []).find(p => {
+      try { return normalizeDigitsOnly(decryptField(p.imei || p.imei)) === normalizeDigitsOnly(imei); } catch (e) { return false; }
+    });
+
+    if (!matchingPhone) return res.status(404).json({ error: 'Phone not found' });
+
+    const ownerId = matchingPhone.user_id;
+    if (!ownerId) return res.status(404).json({ error: 'Owner not found' });
+
+    // Don't notify owner if requester is owner
+    if (ownerId === requesterId) return res.json({ ok: true, message: 'Owner is requester' });
+
+    // Try to resolve owner's email
+    let ownerEmail = null;
+    try {
+      const { data: urow } = await supabase.from('users').select('email').eq('id', ownerId).maybeSingle();
+      if (urow && urow.email) ownerEmail = decryptField(urow.email) || urow.email;
+    } catch (e) { }
+
+    // Create in-app notification
+    try {
+      const notif = {
+        user_id: ownerId,
+        title: 'طلب تأكيد نقل ملكية هاتف',
+        body: `طلب مستخدم للتحقق من ملكية الهاتف IMEI:${String(imei).slice(-6)}. الرجاء الدخول لتأكيد كلمة المرور.`,
+        is_read: false,
+        notification_type: 'transfer_request',
+        created_at: new Date().toISOString()
+      };
+      await supabase.from('notifications').insert(notif);
+    } catch (e) {
+      console.error('Failed to insert notification for owner:', e);
+    }
+
+    // Send email if available (non-blocking)
+    if (ownerEmail && resend) {
+      try {
+        const confirmUrl = `${SUPABASE_URL ? SUPABASE_URL.replace(/\/$/, '') : ''}/owner/confirm-transfer?imei=${encodeURIComponent(imei)}`;
+        await resend.emails.send({
+          from: 'no-reply@imei-safe.me',
+          to: ownerEmail,
+          subject: 'طلب تأكيد نقل ملكية هاتف',
+          html: `<p>لقد وصلك طلب من مستخدم آخر لطلب تفاصيل هاتفك (IMEI ending ${String(imei).slice(-6)}).</p>
+                 <p>الرجاء فتح التطبيق وتأكيد كلمة المرور لإظهار البيانات أو رفض الطلب.</p>
+                 <p>رابط للتعليمات: <a href="${confirmUrl}">فتح التطبيق لتأكيد النقل</a></p>`
+        });
+      } catch (e) {
+        console.error('/api/request-transfer-approval resend error:', e);
+      }
+    }
+
+    return res.json({ ok: true, message: 'Owner notified' });
+  } catch (err) {
+    console.error('/api/request-transfer-approval error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Endpoint for owner (authenticated) to confirm by entering their password and retrieve decrypted owner fields
+app.post('/api/owner-confirm-by-password', verifyJwtToken, async (req, res) => {
+  try {
+    const ownerId = req.user?.id;
+    if (!ownerId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { imei, password } = req.body || {};
+    if (!imei || !password) return res.status(400).json({ error: 'imei and password are required' });
+
+    // Find registered phone owned by this user
+    const { data: phones, error: phonesErr } = await supabase.from('registered_phones').select('*').eq('user_id', ownerId);
+    if (phonesErr) {
+      console.error('/api/owner-confirm-by-password supabase error', phonesErr);
+      return res.status(500).json({ error: 'Server error' });
+    }
+
+    const target = (phones || []).find(p => {
+      try { return normalizeDigitsOnly(decryptField(p.imei)) === normalizeDigitsOnly(imei); } catch (e) { return false; }
+    });
+
+    if (!target) return res.status(404).json({ error: 'Phone not found for owner' });
+
+    // Verify stored bcrypt password if exists (registered_phones.password)
+    const storedHash = target.password || null;
+    let matched = false;
+    if (storedHash) {
+      try {
+        matched = await bcrypt.compare(String(password), String(storedHash));
+      } catch (e) { matched = false; }
+    } else {
+      // Fallback: verify against Supabase Auth (email+password)
+      let ownerEmail = null;
+      try { const { data: urow } = await supabase.from('users').select('email').eq('id', ownerId).maybeSingle(); ownerEmail = urow && urow.email ? decryptField(urow.email) || urow.email : null; } catch (e) { }
+      if (ownerEmail && SUPABASE_URL && SUPABASE_KEY) {
+        try {
+          const verifyResp = await fetch(`${SUPABASE_URL.replace(/\/$/, '')}/auth/v1/token?grant_type=password`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` },
+            body: JSON.stringify({ email: ownerEmail, password })
+          });
+          matched = verifyResp.ok;
+        } catch (e) { matched = false; }
+      }
+    }
+
+    if (!matched) return res.status(401).json({ error: 'Invalid password' });
+
+    // Return decrypted owner data
+    const ownerName = decryptField(target.owner_name) || target.owner_name || '';
+    const ownerPhone = decryptField(target.phone_number) || target.phone_number || '';
+    const ownerIdLast6 = decryptField(target.id_last6) || target.id_last6 || '';
+
+    return res.json({ ok: true, owner: { name: ownerName, phone: ownerPhone, idLast6: ownerIdLast6 }, phone_type: target.phone_type || null, receipt_image_url: target.receipt_image_url || null, phone_image_url: target.phone_image_url || null });
+  } catch (err) {
+    console.error('/api/owner-confirm-by-password error:', err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // If behind a proxy (Render, Heroku, etc.) trust proxy headers so req.secure and x-forwarded-proto work
 // Use 1 instead of true for single proxy (Render/Heroku) to avoid rate-limit bypass warnings
 app.set('trust proxy', TRUST_PROXY);
