@@ -601,7 +601,7 @@ const BusinessTransferBuy: React.FC = () => {
           setShowUnmaskedSellerInfo(Boolean(pick(details, ['owner_name', 'owner_phone', 'owner_id_last6', 'maskedOwnerName', 'maskedPhoneNumber', 'maskedIdLast6'])));
 
         // حالة 2: يوجد سجل (exists === true) لكن تفاصيل الهاتف غير موجودة
-        } else if (registeredPhone && registeredPhone.exists && !registeredPhone.phoneDetails) {
+          } else if (registeredPhone && registeredPhone.exists && !registeredPhone.phoneDetails) {
           // إذا كان هناك بلاغ نشط، أعلِم المستخدم وملأ بعض الحالات إن أمكن
           if (registeredPhone.hasActiveReport) {
             setIsPhoneReported(true);
@@ -623,22 +623,39 @@ const BusinessTransferBuy: React.FC = () => {
 
             const source = maskedData && (maskedData.maskedOwnerName || maskedData.maskedPhoneNumber) ? maskedData : registeredPhone;
 
+            // Debug: show minimal server response shape to help diagnose missing fields
+            if (process.env.NODE_ENV !== 'production') {
+              try { console.debug('[check-imei] registeredPhone (exists, no details):', { exists: registeredPhone.exists, keys: Object.keys(registeredPhone || {}) }); } catch (e) { }
+            }
+
             setIsImeiRegisteredToOtherUser(true);
+            const derivedName = sanitizeServerValue(pick(source, ['owner_name', 'ownerName', 'maskedOwnerName', 'owner', 'name']));
+            const derivedPhone = sanitizeServerValue(decryptPhoneIfEncrypted(pick(source, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber', 'phone', 'owner_phone_number'])));
+            const derivedId = sanitizeServerValue(pick(source, ['owner_id_last6', 'ownerIdLast6', 'maskedIdLast6', 'id_last6']));
+
             setOtherOwnerInfo({
-              name: pick(source, ['owner_name', 'ownerName', 'maskedOwnerName', 'owner', 'name']),
-              phone: pick(source, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber', 'phone', 'owner_phone_number']),
-              idLast6: pick(source, ['owner_id_last6', 'ownerIdLast6', 'maskedIdLast6', 'id_last6']),
-              phoneType: pick(source, ['phone_type', 'phoneType', 'model'])
+              name: derivedName || undefined,
+              phone: derivedPhone || undefined,
+              idLast6: derivedId || undefined,
+              phoneType: pick(source, ['phone_type', 'phoneType', 'model']) || undefined
             });
-            // السجل موجود لحساب آخر ولكن بدون phoneDetails التفصيلية - املأ الحقول المتاحة
-            setSellerName(sanitizeServerValue(pick(source, ['owner_name', 'ownerName', 'maskedOwnerName', 'owner', 'name'])));
-            setSellerPhone(sanitizeServerValue(decryptPhoneIfEncrypted(pick(source, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber', 'phone', 'owner_phone_number']))));
-            setSellerIdLast6(sanitizeServerValue(pick(source, ['owner_id_last6', 'ownerIdLast6', 'maskedIdLast6', 'id_last6'])));
+
+            // If server provided no usable masked info, show a privacy placeholder so UI is not empty
+            if (!derivedName && !derivedPhone && !derivedId) {
+              setSellerName(t('name_hidden_for_privacy') || 'مستخدم مسجل');
+              setSellerPhone('');
+              setSellerIdLast6('');
+              setShowUnmaskedSellerInfo(false);
+            } else {
+              setSellerName(derivedName);
+              setSellerPhone(derivedPhone);
+              setSellerIdLast6(derivedId);
+              setShowUnmaskedSellerInfo(Boolean(derivedName || derivedPhone || derivedId));
+            }
+
             setPhoneType(pick(source, ['phone_type', 'phoneType', 'model']));
             setPhoneImage(await resolveImageUrl(pick(source, ['phone_image_url', 'phoneImageUrl', 'phone_image'])));
             setOriginalReceiptImage(await resolveImageUrl(pick(source, ['receipt_image_url', 'receiptImageUrl'])));
-            // عرض القيم غير المقنعة (أو الحقيقية إن وفرت)
-            setShowUnmaskedSellerInfo(Boolean(pick(source, ['owner_name', 'owner_phone', 'owner_id_last6', 'maskedOwnerName', 'maskedPhoneNumber', 'maskedIdLast6'])));
             // تخزين المرجع للسجل المسترجع إن لزم لاحقاً
             setCurrentRegisteredPhone(registeredPhone);
           } else {
