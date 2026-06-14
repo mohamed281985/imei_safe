@@ -4932,11 +4932,36 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
         }
         if (matchingPhone.status === 'sold') {
           // الهاتف مُباع ومسجّل لحساب آخر — عيّن isOtherUser=true لتمييزه بوضوح
+          // حاول استخراج بعض الحقول المقنعة (بدون كشف البيانات الحقيقية)
+          let ownerName = null;
+          let ownerPhone = null;
+          let ownerIdLast6 = null;
+          try {
+            ownerName = decryptField(matchingPhone.owner_name) || null;
+          } catch (e) { ownerName = null; }
+          try {
+            ownerPhone = decryptField(matchingPhone.phone_number) || null;
+          } catch (e) { ownerPhone = null; }
+          try {
+            ownerIdLast6 = decryptField(matchingPhone.id_last6) || null;
+          } catch (e) { ownerIdLast6 = null; }
+
           return res.json({
             exists: true,
             isOtherUser: true,
             isSold: true,
-            phoneDetails: null
+            phoneDetails: null,
+            ownerMasked: {
+              name: maskName(ownerName || ''),
+              phone: maskPhoneNumber(ownerPhone || ''),
+              idLast6: maskIdLast6(ownerIdLast6 || '')
+            },
+            // hints for the client about whether any real data existed server-side
+            ownerHints: {
+              hasName: !!ownerName,
+              hasPhone: !!ownerPhone,
+              hasIdLast6: !!ownerIdLast6
+            }
           });
         }
       }
