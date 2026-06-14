@@ -621,7 +621,24 @@ const BusinessTransferBuy: React.FC = () => {
               console.debug('Failed to fetch masked IMEI info:', err);
             }
 
-            const source = maskedData && (maskedData.maskedOwnerName || maskedData.maskedPhoneNumber) ? maskedData : registeredPhone;
+            // Prefer server-provided `ownerMasked` when available (new server behavior)
+            let source: any = registeredPhone;
+            if (registeredPhone && registeredPhone.ownerMasked && (registeredPhone.ownerMasked.name || registeredPhone.ownerMasked.phone || registeredPhone.ownerMasked.idLast6)) {
+              source = {
+                owner_name: registeredPhone.ownerMasked.name,
+                owner_phone: registeredPhone.ownerMasked.phone,
+                owner_id_last6: registeredPhone.ownerMasked.idLast6,
+                phone_type: registeredPhone.phone_type,
+                phone_image_url: registeredPhone.phone_image_url,
+                receipt_image_url: registeredPhone.receipt_image_url,
+                // carry hints if present
+                ownerHints: registeredPhone.ownerHints || {}
+              };
+            } else if (maskedData && (maskedData.maskedOwnerName || maskedData.maskedPhoneNumber || maskedData.ownerName || maskedData.phoneNumber)) {
+              source = maskedData;
+            } else {
+              source = registeredPhone;
+            }
 
             // Debug: show minimal server response shape to help diagnose missing fields
             if (process.env.NODE_ENV !== 'production') {

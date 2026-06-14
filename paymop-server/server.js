@@ -4962,6 +4962,11 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
               hasPhone: !!ownerPhone,
               hasIdLast6: !!ownerIdLast6
             }
+            ,
+            // include phone type and image/receipt references so client can show model and receipt
+            phone_type: matchingPhone.phone_type || null,
+            phone_image_url: matchingPhone.phone_image_url || null,
+            receipt_image_url: matchingPhone.receipt_image_url || null
           });
         }
       }
