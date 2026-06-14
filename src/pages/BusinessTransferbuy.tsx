@@ -265,6 +265,27 @@ const BusinessTransferBuy: React.FC = () => {
   });
 
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
+  const [showRequestApproval, setShowRequestApproval] = useState(false);
+
+  const requestOwnerApproval = async () => {
+    setIsLoading(true);
+    try {
+      let jwt = '';
+      try { const { data: { session } } = await supabase.auth.getSession(); jwt = session?.access_token || ''; } catch(e) { jwt = ''; }
+      const resp = await axiosInstance.post('/api/request-transfer-approval', { imei: debouncedImei || imei }, { headers: jwt ? { Authorization: `Bearer ${jwt}` } : {}, validateStatus: () => true });
+      if (resp && resp.status === 200) {
+        setShowRequestApproval(true);
+        toast({ title: t('success'), description: t('owner_notified') || 'تم إرسال طلب تأكيد البائع' });
+      } else {
+        throw new Error(resp?.data?.error || `Status ${resp?.status}`);
+      }
+    } catch (err) {
+      console.error('requestOwnerApproval error', err);
+      toast({ title: t('error'), description: t('failed_notify_owner') || 'فشل إرسال طلب التأكيد للبائع', variant: 'destructive' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
   const [sellerPassword, setSellerPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
@@ -797,8 +818,26 @@ const BusinessTransferBuy: React.FC = () => {
       }
 
       // Show password dialog to continue; sensitive verification and transfer happen server-side
+      // If the phone details belong to current user, ask for password here (owner flow)
+      const pd = phone && phone.phoneDetails ? phone.phoneDetails : null;
+      const isOwnedByCurrentUser = (pd && pd.user_id && user && pd.user_id === user.id) || phone.isOwnReport === true;
       setCurrentRegisteredPhone(phone);
-      setShowPasswordDialog(true);
+      if (isOwnedByCurrentUser) {
+        setShowPasswordDialog(true);
+      } else {
+        // For phones owned by another user: do NOT show a password input to the buyer.
+        // Instead request the owner to confirm via server notification/email.
+        setShowRequestApproval(true);
+        try {
+          let jwt = '';
+          try { const { data: { session } } = await supabase.auth.getSession(); jwt = session?.access_token || ''; } catch(e) { jwt = ''; }
+          await axiosInstance.post('/api/request-transfer-approval', { imei: debouncedImei || imei }, { headers: jwt ? { Authorization: `Bearer ${jwt}` } : {}, validateStatus: () => true });
+          toast({ title: t('success'), description: t('owner_notified') || 'تم إرسال طلب تأكيد البائع' });
+        } catch (err) {
+          console.error('request-transfer-approval error', err);
+          toast({ title: t('error'), description: t('failed_notify_owner') || 'فشل إرسال طلب التأكيد للبائع', variant: 'destructive' });
+        }
+      }
       setIsLoading(false);
       return;
 
