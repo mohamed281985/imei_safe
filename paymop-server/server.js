@@ -1,5 +1,6 @@
 import { google } from 'googleapis';
 import fs from 'fs';
+import vm from 'vm';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import dotenv from 'dotenv';
@@ -1725,7 +1726,52 @@ registerReportRoutes({
   sendFCMNotificationV1,
   resend,
   crypto
-});
+}, getTranslations);
+
+// Translation loader for server-side notifications
+const TRANSLATIONS_DIR = path.resolve(__dirname, '../src/translations');
+const TRANSLATIONS_CACHE = new Map();
+
+function safeParseTsDefaultExport(content) {
+  // remove `export default` and trailing semicolon
+  const m = content.match(/export\s+default\s+([\s\S]*);?\s*$/m);
+  if (!m || !m[1]) return null;
+  const objLiteral = m[1];
+  try {
+    // evaluate object literal in a safe VM context
+    const script = new vm.Script('(' + objLiteral + ')');
+    const result = script.runInNewContext({});
+    return result;
+  } catch (e) {
+    console.error('Failed to parse translation TS file:', e);
+    return null;
+  }
+}
+
+function getTranslations(lang) {
+  const code = String((lang || 'ar')).toLowerCase().slice(0,2);
+  const key = code;
+  if (TRANSLATIONS_CACHE.has(key)) return TRANSLATIONS_CACHE.get(key);
+  try {
+    const filePath = path.join(TRANSLATIONS_DIR, `${key}.ts`);
+    if (!fs.existsSync(filePath)) {
+      // fallback to English then Arabic
+      const fallback = fs.existsSync(path.join(TRANSLATIONS_DIR, 'en.ts')) ? 'en' : 'ar';
+      const fbPath = path.join(TRANSLATIONS_DIR, `${fallback}.ts`);
+      const content = fs.readFileSync(fbPath, 'utf8');
+      const parsed = safeParseTsDefaultExport(content) || {};
+      TRANSLATIONS_CACHE.set(key, parsed);
+      return parsed;
+    }
+    const content = fs.readFileSync(filePath, 'utf8');
+    const parsed = safeParseTsDefaultExport(content) || {};
+    TRANSLATIONS_CACHE.set(key, parsed);
+    return parsed;
+  } catch (e) {
+    console.error('getTranslations error:', e);
+    return {};
+  }
+}
 
 // Admin routes (general utilities that may decrypt provided payloads)
 registerAdminRoutes({
