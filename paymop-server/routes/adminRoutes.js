@@ -696,7 +696,11 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       if (!updatedPhone) return res.status(404).json({ success: false, error: 'phone_not_found' });
 
       const targetUserId = updatedPhone.user_id || null;
-
+const { data: userRow } = await supabase
+  .from('users')
+  .select('language')
+  .eq('id', targetUserId)
+  .single();
       // Insert a notification for the phone owner using server service-role client
       const notif = {
         user_id: targetUserId,
@@ -788,7 +792,11 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       if (!updatedPhone) return res.status(404).json({ success: false, error: 'phone_not_found' });
 
       const targetUserId = updatedPhone.user_id || null;
-
+const { data: userRow } = await supabase
+  .from('users')
+  .select('language')
+  .eq('id', targetUserId)
+  .single();
       // Insert a notification for the phone owner using server service-role client
       const notif = {
         user_id: targetUserId,
