@@ -311,7 +311,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       return res.status(500).json({ error: 'Server error' });
     }
   });
-  
+
   // PATCH /admin/accessories/:id - update accessory (admin light endpoint)
   app.patch('/admin/accessories/:id', async (req, res) => {
     try {
@@ -341,27 +341,27 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       return res.status(500).json({ ok: false, error: 'Server error' });
     }
   });
-  
+
   // GET /admin/phones - list phones (decrypted) with images
   app.get('/admin/phones', async (req, res) => {
     try {
       const limit = Math.min(Number(req.query.limit || 200), 1000);
-      
+
       // جلب بيانات الهواتف فقط
       const { data: phones, error: phonesError } = await supabase
         .from('phones')
         .select('*')
         .order('id', { ascending: false })
         .limit(limit);
-      
+
       if (phonesError) {
         console.error('Error fetching phones:', phonesError);
         throw phonesError;
       }
-      
+
       // جلب معرفات الهواتف
       const phoneIds = phones.map(p => p.id);
-      
+
       // جلب الصور لجميع الهواتف دفعة واحدة
       let imagesMap = {};
       if (phoneIds.length > 0) {
@@ -370,40 +370,40 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
           .from('phone_images')
           .select('id, phone_id, image_path, main_image')
           .in('phone_id', phoneIds);
-        
+
         if (imagesError) {
           console.error('Error fetching phone images:', imagesError);
         } else if (images) {
           // تنظيم الصور في خريطة حسب معرف الهاتف
-            imagesMap = images.reduce((acc, img) => {
+          imagesMap = images.reduce((acc, img) => {
             if (!acc[img.phone_id]) {
               acc[img.phone_id] = [];
             }
             acc[img.phone_id].push({
               id: img.id,
               image_path: img.image_path,
-                main_image: img.main_image
+              main_image: img.main_image
             });
             return acc;
           }, {});
         }
       }
-      
+
       // معالجة البيانات وفك تشفيرها
       const out = (phones || []).map(p => {
         // فك تشفير بيانات الهاتف
         const decryptedPhone = decryptDeep(p);
-        
+
         // إضافة الصور من الخريطة
         const images = imagesMap[p.id] || [];
-        
+
         return {
           id: p.id,
           ...decryptedPhone,
           images: images
         };
       });
-      
+
       return res.json({ ok: true, phones: out });
     } catch (err) {
       console.error('/admin/phones error', err);
@@ -415,22 +415,22 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
   app.get('/admin/accessories', async (req, res) => {
     try {
       const limit = Math.min(Number(req.query.limit || 200), 1000);
-      
+
       // جلب بيانات الإكسسوارات فقط
       const { data: accessories, error: accessoriesError } = await supabase
         .from('accessories')
         .select('*')
         .order('id', { ascending: false })
         .limit(limit);
-      
+
       if (accessoriesError) {
         console.error('Error fetching accessories:', accessoriesError);
         throw accessoriesError;
       }
-      
+
       // جلب معرفات الإكسسوارات
       const accessoryIds = accessories.map(a => a.id);
-      
+
       // جلب الصور لجميع الإكسسوارات دفعة واحدة
       let imagesMap = {};
       if (accessoryIds.length > 0) {
@@ -439,40 +439,40 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
           .from('accessory_images')
           .select('id, accessory_id, image_path, main_image')
           .in('accessory_id', accessoryIds);
-        
+
         if (imagesError) {
           console.error('Error fetching accessory images:', imagesError);
         } else if (images) {
           // تنظيم الصور في خريطة حسب معرف الإكسسوار
-            imagesMap = images.reduce((acc, img) => {
+          imagesMap = images.reduce((acc, img) => {
             if (!acc[img.accessory_id]) {
               acc[img.accessory_id] = [];
             }
             acc[img.accessory_id].push({
               id: img.id,
               image_path: img.image_path,
-                main_image: img.main_image
+              main_image: img.main_image
             });
             return acc;
           }, {});
         }
       }
-      
+
       // معالجة البيانات وفك تشفيرها
       const out = (accessories || []).map(a => {
         // فك تشفير بيانات الإكسسوار
         const decryptedAccessory = decryptDeep(a);
-        
+
         // إضافة الصور من الخريطة
         const images = imagesMap[a.id] || [];
-        
+
         return {
           id: a.id,
           ...decryptedAccessory,
           images: images
         };
       });
-      
+
       return res.json({ ok: true, accessories: out });
     } catch (err) {
       console.error('/admin/accessories error', err);
@@ -496,70 +496,70 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
     }
   });
 
- // POST /admin/update-ads-price - update ads prices (admin only)
-app.post('/admin/update-ads-price', verifyJwtToken, async (req, res) => {
-  try {
-    const { prices } = req.body;
-    
-    if (!prices || !Array.isArray(prices)) {
-      return res.status(400).json({ error: 'بيانات الأسعار غير صالحة' });
-    }
-
-    // تحديث كل سعر في قاعدة البيانات
-    const updatePromises = prices.map(async (price) => {
-      const { id, duration_days, amount } = price; // إزالة bonus_offer
-      
-      if (!id) {
-        throw new Error('معرف السعر مفقود');
-      }
-
-      const { data, error } = await supabase
-        .from('ads_price')
-        .update({
-          duration_days,
-          amount
-          // إزالة bonus_offer
-        })
-        .eq('id', id);
-
-      if (error) {
-        throw error;
-      }
-
-      return data;
-    });
-
-    await Promise.all(updatePromises);
-
-    // تسجيل العملية في سجل التدقيق
+  // POST /admin/update-ads-price - update ads prices (admin only)
+  app.post('/admin/update-ads-price', verifyJwtToken, async (req, res) => {
     try {
-      const acting = req.user || null;
-      if (typeof logAudit === 'function') {
-        await logAudit({
-          userId: acting && acting.id ? acting.id : null,
-          action: 'admin_update_ads_price',
-          resourceType: 'ads_price',
-          resourceId: null,
-          details: { count: prices.length },
-          ip: req.ip,
-          userAgent: req.headers['user-agent']
-        });
-      }
-    } catch (e) {
-      console.warn('/admin/update-ads-price: audit failed', e);
-    }
+      const { prices } = req.body;
 
-    res.status(200).json({ 
-      success: true, 
-      message: 'تم تحديث الأسعار بنجاح' 
-    });
-  } catch (error) {
-    console.error('خطأ في تحديث الأسعار:', error);
-    res.status(500).json({ 
-      error: error.message || 'حدث خطأ أثناء تحديث الأسعار' 
-    });
-  }
-});
+      if (!prices || !Array.isArray(prices)) {
+        return res.status(400).json({ error: 'بيانات الأسعار غير صالحة' });
+      }
+
+      // تحديث كل سعر في قاعدة البيانات
+      const updatePromises = prices.map(async (price) => {
+        const { id, duration_days, amount } = price; // إزالة bonus_offer
+
+        if (!id) {
+          throw new Error('معرف السعر مفقود');
+        }
+
+        const { data, error } = await supabase
+          .from('ads_price')
+          .update({
+            duration_days,
+            amount
+            // إزالة bonus_offer
+          })
+          .eq('id', id);
+
+        if (error) {
+          throw error;
+        }
+
+        return data;
+      });
+
+      await Promise.all(updatePromises);
+
+      // تسجيل العملية في سجل التدقيق
+      try {
+        const acting = req.user || null;
+        if (typeof logAudit === 'function') {
+          await logAudit({
+            userId: acting && acting.id ? acting.id : null,
+            action: 'admin_update_ads_price',
+            resourceType: 'ads_price',
+            resourceId: null,
+            details: { count: prices.length },
+            ip: req.ip,
+            userAgent: req.headers['user-agent']
+          });
+        }
+      } catch (e) {
+        console.warn('/admin/update-ads-price: audit failed', e);
+      }
+
+      res.status(200).json({
+        success: true,
+        message: 'تم تحديث الأسعار بنجاح'
+      });
+    } catch (error) {
+      console.error('خطأ في تحديث الأسعار:', error);
+      res.status(500).json({
+        error: error.message || 'حدث خطأ أثناء تحديث الأسعار'
+      });
+    }
+  });
 
   // GET /admin/game_win - list game wins
   app.get('/admin/game_win', async (req, res) => {
@@ -709,34 +709,35 @@ app.post('/admin/update-ads-price', verifyJwtToken, async (req, res) => {
 
       const { error: insertErr } = await supabase.from('notifications').insert(notif);
       try {
-  const { data: userRow, error: userErr } = await supabase
-    .from('users')
-    .select('fcm_token, language')
-.eq('id', updatedPhone.user_id)
-    .single();
+        const { data: userRow, error: userErr } = await supabase
+          .from('users')
+          .select('fcm_token, language')
+          .eq('id', updatedPhone.user_id)
+          .single();
 
-  if (!userErr && userRow?.fcm_token) {
-    console.log('FCM TOKEN =', userRow.fcm_token);
- let title;
-let body;
-if (userRow?.language === 'EN') {
-  title = 'Phone Registration Rejected';
-  body = `Reason: ${rejectReason}`;
-} else {
-  title = 'تم رفض تسجيل الهاتف';
-  body = `سبب الرفض: ${rejectReason}`;
-}
-    await sendFCMNotificationV1({
-      token: userRow.fcm_token,
-      title: title,
-      body: body
-    });
+        if (!userErr && userRow?.fcm_token) {
+          console.log('FCM TOKEN =', userRow.fcm_token);
+          let title;
+          let body;
 
-    console.log('FCM reject sent successfully');
-  }
-} catch (err) {
-  console.error('FCM Reject Error:', err);
-}
+          if ((userRow?.language || '').toLowerCase() === 'en') {
+            title = 'Phone Registration Rejected';
+            body = 'Please check the app for more details.';
+          } else {
+            title = 'تم رفض تسجيل الهاتف';
+            body = 'يرجى مراجعة التطبيق لمعرفة التفاصيل.';
+          }
+          await sendFCMNotificationV1({
+            token: userRow.fcm_token,
+            title: title,
+            body: body
+          });
+
+          console.log('FCM reject sent successfully');
+        }
+      } catch (err) {
+        console.error('FCM Reject Error:', err);
+      }
       if (insertErr) console.warn('/admin/reject-phone: notification insert failed', insertErr);
 
       try {
@@ -800,35 +801,35 @@ if (userRow?.language === 'EN') {
 
       const { error: insertErr } = await supabase.from('notifications').insert(notif);
       try {
-  const { data: userRow, error: userErr } = await supabase
-    .from('users')
-    .select('fcm_token, language')
-    .eq('id', targetUserId)
-    .single();
+        const { data: userRow, error: userErr } = await supabase
+          .from('users')
+          .select('fcm_token, language')
+          .eq('id', targetUserId)
+          .single();
 
-  if (!userErr && userRow?.fcm_token)
-    console.log('FCM TOKEN =', userRow?.fcm_token); {
-  let title;
-let body;
+        if (!userErr && userRow?.fcm_token)
+          console.log('FCM TOKEN =', userRow?.fcm_token); {
+          let title;
+          let body;
 
-if (userRow?.language === 'EN') {
-  title = 'Phone Registration Approved';
-  body = 'Your phone registration request has been approved';
-} else {
-  title = 'تمت الموافقة على تسجيل الهاتف';
-  body = 'تمت مراجعة طلب تسجيل الهاتف والموافقة عليه';
-}
-    await sendFCMNotificationV1({
-      token: userRow.fcm_token,
-      title: title,
-      body: body
-    });
+          if (userRow?.language === 'EN') {
+            title = 'Phone Registration Approved';
+            body = 'Your phone registration request has been approved';
+          } else {
+            title = 'تمت الموافقة على تسجيل الهاتف';
+            body = 'تمت مراجعة طلب تسجيل الهاتف والموافقة عليه';
+          }
+          await sendFCMNotificationV1({
+            token: userRow.fcm_token,
+            title: title,
+            body: body
+          });
 
-    console.log('FCM sent successfully');
-  }
-} catch (err) {
-  console.error('FCM Error:', err);
-}
+          console.log('FCM sent successfully');
+        }
+      } catch (err) {
+        console.error('FCM Error:', err);
+      }
 
       if (insertErr) console.warn('/admin/approve-phone: notification insert failed', insertErr);
 
@@ -958,66 +959,66 @@ if (userRow?.language === 'EN') {
 
       const role = userRow.role || null;
       const expiresAt = userRow.expires_at || null;
-    // 2) جلب الخطة (مطابقة على عمود `type`) — استخدم Supabase بدلاً من `db`
-    let publishAdsCount = 0;
-    let planRow = null;
+      // 2) جلب الخطة (مطابقة على عمود `type`) — استخدم Supabase بدلاً من `db`
+      let publishAdsCount = 0;
+      let planRow = null;
 
-    if (role) {
-      // محاولة تطابق حالة غير حساسة لحالة الأحرف على عمود `type`
-      try {
-        const { data: exactPlan, error: exactErr } = await supabase.from('plans').select('*').ilike('type', role).maybeSingle();
-        if (exactErr) console.warn('/admin/package-ads: plan exact fetch warning', exactErr);
-        planRow = exactPlan || null;
-      } catch (e) {
-        console.warn('/admin/package-ads: plan exact fetch exception', e);
+      if (role) {
+        // محاولة تطابق حالة غير حساسة لحالة الأحرف على عمود `type`
+        try {
+          const { data: exactPlan, error: exactErr } = await supabase.from('plans').select('*').ilike('type', role).maybeSingle();
+          if (exactErr) console.warn('/admin/package-ads: plan exact fetch warning', exactErr);
+          planRow = exactPlan || null;
+        } catch (e) {
+          console.warn('/admin/package-ads: plan exact fetch exception', e);
+        }
       }
-    }
 
-    if (!planRow && role) {
-      try {
-        const { data: likeType, error: likeTypeErr } = await supabase.from('plans').select('*').ilike('type', `%${role}%`).limit(1);
-        if (likeTypeErr) console.warn('/admin/package-ads: plan like-type warning', likeTypeErr);
-        if (Array.isArray(likeType) && likeType.length) planRow = likeType[0];
-      } catch (e) {
-        console.warn('/admin/package-ads: plan like-type exception', e);
+      if (!planRow && role) {
+        try {
+          const { data: likeType, error: likeTypeErr } = await supabase.from('plans').select('*').ilike('type', `%${role}%`).limit(1);
+          if (likeTypeErr) console.warn('/admin/package-ads: plan like-type warning', likeTypeErr);
+          if (Array.isArray(likeType) && likeType.length) planRow = likeType[0];
+        } catch (e) {
+          console.warn('/admin/package-ads: plan like-type exception', e);
+        }
       }
-    }
 
-    if (!planRow && role) {
-      try {
-        const { data: likeName, error: likeNameErr } = await supabase.from('plans').select('*').ilike('name', `%${role}%`).limit(1);
-        if (likeNameErr) console.warn('/admin/package-ads: plan like-name warning', likeNameErr);
-        if (Array.isArray(likeName) && likeName.length) planRow = likeName[0];
-      } catch (e) {
-        console.warn('/admin/package-ads: plan like-name exception', e);
+      if (!planRow && role) {
+        try {
+          const { data: likeName, error: likeNameErr } = await supabase.from('plans').select('*').ilike('name', `%${role}%`).limit(1);
+          if (likeNameErr) console.warn('/admin/package-ads: plan like-name warning', likeNameErr);
+          if (Array.isArray(likeName) && likeName.length) planRow = likeName[0];
+        } catch (e) {
+          console.warn('/admin/package-ads: plan like-name exception', e);
+        }
       }
-    }
 
-    // كحل احتياطي: خذ أول خطة إن لم نجد تطابقاً
-    if (!planRow) {
-      try {
-        const { data: anyPlans, error: anyErr } = await supabase.from('plans').select('*').limit(1);
-        if (anyErr) console.warn('/admin/package-ads: fallback plan fetch warning', anyErr);
-        if (Array.isArray(anyPlans) && anyPlans.length) planRow = anyPlans[0];
-      } catch (e) {
-        console.warn('/admin/package-ads: fallback plan fetch exception', e);
+      // كحل احتياطي: خذ أول خطة إن لم نجد تطابقاً
+      if (!planRow) {
+        try {
+          const { data: anyPlans, error: anyErr } = await supabase.from('plans').select('*').limit(1);
+          if (anyErr) console.warn('/admin/package-ads: fallback plan fetch warning', anyErr);
+          if (Array.isArray(anyPlans) && anyPlans.length) planRow = anyPlans[0];
+        } catch (e) {
+          console.warn('/admin/package-ads: fallback plan fetch exception', e);
+        }
       }
-    }
 
-    if (planRow) {
-      publishAdsCount = Number(
-        planRow.publish_ad ??
-        planRow.Publish_Ad ??
-        planRow.PublishAd ??
-        planRow.publishAd ??
-        planRow.publish_ads ??
-        0
-      ) || 0;
-    } else {
-      publishAdsCount = 0;
-    }
+      if (planRow) {
+        publishAdsCount = Number(
+          planRow.publish_ad ??
+          planRow.Publish_Ad ??
+          planRow.PublishAd ??
+          planRow.publishAd ??
+          planRow.publish_ads ??
+          0
+        ) || 0;
+      } else {
+        publishAdsCount = 0;
+      }
 
-    console.debug('package-ads: role=', role, 'matchedPlan=', planRow ? (planRow.type || planRow.name) : null, 'publishAdsCount=', publishAdsCount);
+      console.debug('package-ads: role=', role, 'matchedPlan=', planRow ? (planRow.type || planRow.name) : null, 'publishAdsCount=', publishAdsCount);
 
       // 3) latest paid package row for the user (prefer payment_date then upload_date)
       const { data: paidRows, error: paidErr } = await supabase
