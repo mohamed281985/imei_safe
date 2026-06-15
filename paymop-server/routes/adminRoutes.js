@@ -708,6 +708,27 @@ app.post('/admin/update-ads-price', verifyJwtToken, async (req, res) => {
       };
 
       const { error: insertErr } = await supabase.from('notifications').insert(notif);
+      try {
+  const { data: userRow, error: userErr } = await supabase
+    .from('users')
+    .select('fcm_token')
+    .eq('id', user_id)
+    .single();
+
+  if (!userErr && userRow?.fcm_token) {
+    console.log('FCM TOKEN =', userRow.fcm_token);
+
+    await sendFCMNotificationV1({
+      token: userRow.fcm_token,
+      title: 'تم رفض تسجيل الهاتف',
+      body: 'تم رفض طلب تسجيل الهاتف، يرجى مراجعة البيانات وإعادة التقديم'
+    });
+
+    console.log('FCM reject sent successfully');
+  }
+} catch (err) {
+  console.error('FCM Reject Error:', err);
+}
       if (insertErr) console.warn('/admin/reject-phone: notification insert failed', insertErr);
 
       try {
