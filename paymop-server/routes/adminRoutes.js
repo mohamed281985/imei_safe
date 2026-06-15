@@ -769,6 +769,27 @@ app.post('/admin/update-ads-price', verifyJwtToken, async (req, res) => {
       };
 
       const { error: insertErr } = await supabase.from('notifications').insert(notif);
+      try {
+  const { data: userRow, error: userErr } = await supabase
+    .from('users')
+    .select('fcm_token')
+    .eq('id', targetUserId)
+    .single();
+
+  if (!userErr && userRow?.fcm_token)
+    console.log('FCM TOKEN =', userRow?.fcm_token); {
+    await sendFCMNotificationV1({
+      token: userRow.fcm_token,
+      title: 'تمت الموافقة على تسجيل الهاتف',
+      body: 'تمت مراجعة طلب تسجيل الهاتف والموافقة عليه'
+    });
+
+    console.log('FCM sent successfully');
+  }
+} catch (err) {
+  console.error('FCM Error:', err);
+}
+
       if (insertErr) console.warn('/admin/approve-phone: notification insert failed', insertErr);
 
       try {
