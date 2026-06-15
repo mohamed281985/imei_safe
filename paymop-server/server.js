@@ -3696,53 +3696,6 @@ registerProfileRoutes({
   devBypassToken: DEV_BYPASS_TOKEN,
 });
 
-// Endpoint: جلب بيانات المستخدم الحالي (مُفكَّكة الحقول الحساسة)
-app.get('/api/users/me', verifyJwtToken, async (req, res) => {
-  try {
-    const userId = req.user && req.user.id;
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-
-    const { data: userRow, error: userErr } = await supabase.from('users').select('*').eq('id', userId).maybeSingle();
-    if (userErr) {
-      console.error('/api/users/me users fetch error:', userErr);
-      return res.status(500).json({ error: 'Failed to fetch user' });
-    }
-
-    if (!userRow) return res.status(404).json({ error: 'User not found' });
-
-    // فك الحقول المشفّرة إن وجدت
-    const out = {
-      id: userRow.id,
-      email: userRow.email || null,
-      role: userRow.role || null,
-      full_name: null,
-      phone: null,
-      id_last6: null
-    };
-
-    try {
-      out.full_name = decryptField(userRow.full_name) || null;
-    } catch (e) {
-      console.warn('/api/users/me decrypt full_name failed', e);
-    }
-    try {
-      out.phone = decryptField(userRow.phone) || null;
-    } catch (e) {
-      console.warn('/api/users/me decrypt phone failed', e);
-    }
-    try {
-      out.id_last6 = decryptField(userRow.id_last6) || null;
-    } catch (e) {
-      console.warn('/api/users/me decrypt id_last6 failed', e);
-    }
-
-    return res.json(out);
-  } catch (err) {
-    console.error('/api/users/me error', err);
-    return res.status(500).json({ error: 'Server error' });
-  }
-});
-
 app.get('/api/get-contact-info', verifyJwtToken, async (req, res) => {
   try {
     const requesterId = req.user?.id;
