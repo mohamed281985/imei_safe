@@ -26,9 +26,10 @@ const BusinessTransfer: React.FC = () => {
     fetchStoreName();
   }, [user]);
 
-  const handleBuyClick = () => {
-    navigate('/BusinessTransferbuy');
-  };
+  // تم تعليق دالة الشراء مؤقتاً
+  // const handleBuyClick = () => {
+  //   navigate('/BusinessTransferbuy');
+  // };
 
   const handleSellClick = () => {
     navigate('/BusinessTransfersell');
@@ -46,25 +47,30 @@ const BusinessTransfer: React.FC = () => {
         </div>
         <h1 className="text-2xl md:text-3xl font-bold text-black mb-8 text-center">{storeName}</h1>
         <div className="space-y-4 w-full">
-        <button
-          onClick={handleBuyClick}
-          className="w-full bg-imei-cyan hover:bg-imei-cyan/90 text-white py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all duration-300 shadow-lg shadow-black/30 hover:shadow-xl hover:shadow-black/50"
-        >
-          {t('buy')}
-        </button>
-        <button
-          onClick={handleSellClick}
-          className="w-full bg-orange-500 hover:bg-orange-600 text-white py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all duration-300 shadow-lg shadow-black/30 hover:shadow-xl hover:shadow-black/50"
-        >
-          {t('sell')}
-        </button>
-        <button
-          onClick={handlePhoneLogClick}
-          className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all duration-300 shadow-lg shadow-black/30 hover:shadow-xl hover:shadow-black/50"
-        >
-          {t('phone_log')}
-        </button>
-      </div>
+        
+          {/* تم إخفاء زر الشراء مؤقتاً باستخدام التعليقات */}
+          {/* 
+          <button
+            onClick={handleBuyClick}
+            className="w-full bg-imei-cyan hover:bg-imei-cyan/90 text-white py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all duration-300 shadow-lg shadow-black/30 hover:shadow-xl hover:shadow-black/50"
+          >
+            {t('buy')}
+          </button>
+          */}
+          
+          <button
+            onClick={handleSellClick}
+            className="w-full bg-orange-500 hover:bg-orange-600 text-white py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all duration-300 shadow-lg shadow-black/30 hover:shadow-xl hover:shadow-black/50"
+          >
+            {t('sell')}
+          </button>
+          <button
+            onClick={handlePhoneLogClick}
+            className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all duration-300 shadow-lg shadow-black/30 hover:shadow-xl hover:shadow-black/50"
+          >
+            {t('phone_log')}
+          </button>
+        </div>
       </div>
     </div>
   );
