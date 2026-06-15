@@ -717,7 +717,9 @@ app.post('/admin/update-ads-price', verifyJwtToken, async (req, res) => {
 
   if (!userErr && userRow?.fcm_token) {
     console.log('FCM TOKEN =', userRow.fcm_token);
-if (userRow?.language === 'en') {
+ let title;
+let body;
+if (userRow?.language === 'EN') {
   title = 'Phone Registration Rejected';
   body = `Reason: ${rejectReason}`;
 } else {
@@ -809,7 +811,7 @@ if (userRow?.language === 'en') {
   let title;
 let body;
 
-if (userRow?.language === 'en') {
+if (userRow?.language === 'EN') {
   title = 'Phone Registration Approved';
   body = 'Your phone registration request has been approved';
 } else {
