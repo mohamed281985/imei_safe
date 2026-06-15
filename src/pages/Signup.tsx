@@ -19,7 +19,7 @@ import CountryCodeSelector from '../components/CountryCodeSelector';
 // Custom Components
 import PageContainer from '../components/PageContainer';
 import Logo from '../components/Logo';
-import BackButton from '../components/BackButton';
+import BackButton from '@/components/BackButton';
 import { supabase } from '@/lib/supabase';
 
 interface SignupFormData {
@@ -96,7 +96,7 @@ const Signup: React.FC = () => {
     setIsSubmitting(true);
     setSignupError(null);
     const { email, password, confirmPassword, username, phoneNumber, idLast6 } = formData;
-    const fullPhoneNumber = countryCode + phoneNumber;
+    // ملاحظة: لم نعد نستخدم fullPhoneNumber هنا، سنرسل الرقم ورمز الدولة بشكل منفصل
 
     if (password !== confirmPassword) {
       setSignupError(t('passwords_dont_match'));
@@ -183,7 +183,10 @@ const Signup: React.FC = () => {
                 id: returnedId,
                 email,
                 full_name: username,
-                phone: fullPhoneNumber,
+                // --- التعديل هنا: إرسال الهاتف ورمز الدولة بشكل منفصل ---
+                phone: phoneNumber,           // رقم الهاتف فقط
+                country_code: countryCode,    // مفتاح الدولة (+20, +966, ...)
+                // -------------------------------------------------------
                 id_last6: idLast6,
                 role: 'free_user'
               })
