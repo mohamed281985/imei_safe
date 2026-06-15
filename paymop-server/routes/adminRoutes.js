@@ -711,17 +711,23 @@ app.post('/admin/update-ads-price', verifyJwtToken, async (req, res) => {
       try {
   const { data: userRow, error: userErr } = await supabase
     .from('users')
-    .select('fcm_token')
+    .select('fcm_token, language')
 .eq('id', updatedPhone.user_id)
     .single();
 
   if (!userErr && userRow?.fcm_token) {
     console.log('FCM TOKEN =', userRow.fcm_token);
-
+if (userRow?.language === 'en') {
+  title = 'Phone Registration Rejected';
+  body = `Reason: ${rejectReason}`;
+} else {
+  title = 'تم رفض تسجيل الهاتف';
+  body = `سبب الرفض: ${rejectReason}`;
+}
     await sendFCMNotificationV1({
       token: userRow.fcm_token,
-      title: 'تم رفض تسجيل الهاتف',
-      body: 'تم رفض طلب تسجيل الهاتف، يرجى مراجعة البيانات وإعادة التقديم'
+      title: title,
+      body: body
     });
 
     console.log('FCM reject sent successfully');
@@ -794,16 +800,26 @@ app.post('/admin/update-ads-price', verifyJwtToken, async (req, res) => {
       try {
   const { data: userRow, error: userErr } = await supabase
     .from('users')
-    .select('fcm_token')
+    .select('fcm_token, language')
     .eq('id', targetUserId)
     .single();
 
   if (!userErr && userRow?.fcm_token)
     console.log('FCM TOKEN =', userRow?.fcm_token); {
+  let title;
+let body;
+
+if (userRow?.language === 'en') {
+  title = 'Phone Registration Approved';
+  body = 'Your phone registration request has been approved';
+} else {
+  title = 'تمت الموافقة على تسجيل الهاتف';
+  body = 'تمت مراجعة طلب تسجيل الهاتف والموافقة عليه';
+}
     await sendFCMNotificationV1({
       token: userRow.fcm_token,
-      title: 'تمت الموافقة على تسجيل الهاتف',
-      body: 'تمت مراجعة طلب تسجيل الهاتف والموافقة عليه'
+      title: title,
+      body: body
     });
 
     console.log('FCM sent successfully');
