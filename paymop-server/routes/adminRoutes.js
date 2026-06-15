@@ -1,4 +1,7 @@
 import { sendFCMNotificationV1 } from '../server.js';
+import fs from 'fs';
+import path from 'path';
+import vm from 'vm';
 export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToken, logAudit }) {
   // Deep decrypt helper: recursively decrypt strings or encrypted objects.
   const decryptDeep = (value) => {
@@ -41,6 +44,56 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       return value;
     } catch (e) {
       return null;
+    }
+  };
+
+  // Load translations (best-effort) from frontend `src/translations` folder.
+  const translations = {};
+  const loadTranslations = () => {
+    try {
+      const translationsDir = path.resolve(process.cwd(), 'src', 'translations');
+      if (!fs.existsSync(translationsDir)) return;
+      const files = fs.readdirSync(translationsDir);
+      for (const f of files) {
+        try {
+          if (!f.endsWith('.ts') && !f.endsWith('.js') && !f.endsWith('.json')) continue;
+          const full = path.join(translationsDir, f);
+          const content = fs.readFileSync(full, 'utf8');
+          // Convert a TS `export default { ... }` into a JS module export and evaluate safely
+          let js = content;
+          js = js.replace(/export\s+default/, 'module.exports =');
+          const sandbox = { module: { exports: {} }, exports: {} };
+          vm.createContext(sandbox);
+          try {
+            vm.runInContext(js, sandbox, { timeout: 1000 });
+          } catch (e) {
+            // If parsing fails, skip
+          }
+          const obj = sandbox.module && sandbox.module.exports ? sandbox.module.exports : sandbox.exports;
+          const lang = f.split('.')[0];
+          translations[lang] = obj || {};
+        } catch (e) {
+          // ignore individual file errors
+        }
+      }
+    } catch (e) {
+      console.warn('loadTranslations failed', e);
+    }
+  };
+  loadTranslations();
+
+  const getLangKey = (lang) => (lang || '').toString().toLowerCase();
+
+  const getNotificationText = (lang, key, fallbackEn, fallbackAr) => {
+    try {
+      const k = key || '';
+      const l = getLangKey(lang);
+      if (l && translations[l] && translations[l][k]) return translations[l][k];
+      // try simple language match
+      if (l && l.startsWith('ar')) return fallbackAr || fallbackEn;
+      return fallbackEn || fallbackAr || key;
+    } catch (e) {
+      return fallbackEn || fallbackAr || key;
     }
   };
 
@@ -702,10 +755,12 @@ const { data: userRow } = await supabase
   .eq('id', targetUserId)
   .single();
       // Insert a notification for the phone owner using server service-role client
+      const notifTitle = getNotificationText(userRow?.language, 'admin.reject_phone_title', 'Phone Registration Rejected', 'تم رفض تسجيل الهاتف');
+      const notifBody = getNotificationText(userRow?.language, 'admin.reject_phone_body', `Rejection reason: ${rejectReason}`, `سبب الرفض: ${rejectReason}`);
       const notif = {
         user_id: targetUserId,
-        title: 'تم رفض تسجيل الهاتف',
-        body: `سبب الرفض: ${rejectReason}`,
+        title: notifTitle,
+        body: notifBody,
         type: 'phone_rejected',
         is_read: false,
         created_at: new Date().toISOString()
@@ -721,20 +776,12 @@ const { data: userRow } = await supabase
 
         if (!userErr && userRow?.fcm_token) {
           console.log('FCM TOKEN =', userRow.fcm_token);
-          let title;
-          let body;
-
-          if ((userRow?.language || '').toLowerCase() === 'en') {
-            title = 'Phone Registration Rejected';
-            body = 'Please check the app for more details.';
-          } else {
-            title = 'تم رفض تسجيل الهاتف';
-            body = 'يرجى مراجعة التطبيق لمعرفة التفاصيل.';
-          }
+          const fcmTitle = getNotificationText(userRow?.language, 'admin.reject_phone_fcm_title', 'Phone Registration Rejected', 'تم رفض تسجيل الهاتف');
+          const fcmBody = getNotificationText(userRow?.language, 'admin.reject_phone_fcm_body', 'Please check the app for more details.', 'يرجى مراجعة التطبيق لمعرفة التفاصيل.');
           await sendFCMNotificationV1({
             token: userRow.fcm_token,
-            title: title,
-            body: body
+            title: fcmTitle,
+            body: fcmBody
           });
 
           console.log('FCM reject sent successfully');
@@ -798,10 +845,12 @@ const { data: userRow } = await supabase
   .eq('id', targetUserId)
   .single();
       // Insert a notification for the phone owner using server service-role client
+      const notifTitle = getNotificationText(userRow?.language, 'admin.approve_phone_title', 'Phone Registration Approved', 'تمت الموافقة على تسجيل الهاتف');
+      const notifBody = getNotificationText(userRow?.language, 'admin.approve_phone_body', 'Your phone registration request has been approved', 'تمت مراجعة طلب تسجيل الهاتف والموافقة عليه');
       const notif = {
         user_id: targetUserId,
-        title: 'تمت الموافقة على تسجيل الهاتف',
-        body: 'تمت مراجعة طلب تسجيل الهاتف والموافقة عليه',
+        title: notifTitle,
+        body: notifBody,
         type: 'phone_approved',
         is_read: false,
         created_at: new Date().toISOString()
@@ -815,22 +864,14 @@ const { data: userRow } = await supabase
           .eq('id', targetUserId)
           .single();
 
-        if (!userErr && userRow?.fcm_token)
-          console.log('FCM TOKEN =', userRow?.fcm_token); {
-          let title;
-          let body;
-
-          if (userRow?.language === 'EN') {
-            title = 'Phone Registration Approved';
-            body = 'Your phone registration request has been approved';
-          } else {
-            title = 'تمت الموافقة على تسجيل الهاتف';
-            body = 'تمت مراجعة طلب تسجيل الهاتف والموافقة عليه';
-          }
+        if (!userErr && userRow?.fcm_token) {
+          console.log('FCM TOKEN =', userRow?.fcm_token);
+          const fcmTitle = getNotificationText(userRow?.language, 'admin.approve_phone_fcm_title', 'Phone Registration Approved', 'تمت الموافقة على تسجيل الهاتف');
+          const fcmBody = getNotificationText(userRow?.language, 'admin.approve_phone_fcm_body', 'Your phone registration request has been approved', 'تمت مراجعة طلب تسجيل الهاتف والموافقة عليه');
           await sendFCMNotificationV1({
             token: userRow.fcm_token,
-            title: title,
-            body: body
+            title: fcmTitle,
+            body: fcmBody
           });
 
           console.log('FCM sent successfully');
