@@ -712,7 +712,7 @@ app.post('/admin/update-ads-price', verifyJwtToken, async (req, res) => {
   const { data: userRow, error: userErr } = await supabase
     .from('users')
     .select('fcm_token')
-    .eq('id', user_id)
+.eq('id', updatedPhone.user_id)
     .single();
 
   if (!userErr && userRow?.fcm_token) {
