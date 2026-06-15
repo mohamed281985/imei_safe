@@ -1,36 +1,4 @@
-async function sendFCMNotificationV1({ token, title, body, data }) {
-  const client = await auth.getClient();
-  const accessToken = await client.getAccessToken();
-  // تأكد أن الرسالة تحتوي على notification ليظهر الإشعار في الخارج
-  const message = {
-    message: {
-      token,
-      notification: { title, body }, // هذا المفتاح ضروري لظهور الإشعار في الخارج
-      android: {
-        priority: 'high'
-      },
-      apns: {
-        headers: {
-          'apns-priority': '10'
-        }
-      },
-      data: data || {},
-    },
-  };
-  const res = await fetch(`https://fcm.googleapis.com/v1/projects/${PROJECT_ID}/messages:send`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${accessToken.token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(message),
-  });
-  if (!res.ok) {
-    const error = await res.text();
-    throw new Error(`FCM V1 Error: ${error}`);
-  }
-  return await res.json();
-}
+import { sendFCMNotificationV1 } from '../server.js';
 export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToken, logAudit }) {
   // Deep decrypt helper: recursively decrypt strings or encrypted objects.
   const decryptDeep = (value) => {
