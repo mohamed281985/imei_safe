@@ -1074,7 +1074,7 @@ app.post('/api/register-user', createAppUserLimiter, async (req, res) => {
   }
 });
 
-// Simple direct register endpoint (operator-requested)
+// نقطة نهاية التسجيل المباشر (Simple direct register endpoint)
 app.post('/api/register', async (req, res) => {
   try {
     console.log('REGISTER REQUEST');
@@ -1083,7 +1083,8 @@ app.post('/api/register', async (req, res) => {
       id,
       email,
       full_name,
-      phone,
+      phone,           // رقم الهاتف فقط (بدون رمز الدولة)
+      country_code,    // رمز الدولة (مثل +20)
       id_last6,
       role,
       store_name,
@@ -1093,21 +1094,29 @@ app.post('/api/register', async (req, res) => {
 
     console.log('DATA RECEIVED:', req.body);
 
-    // Encrypt sensitive fields before storing
+    // التحقق من وجود البيانات الأساسية
+    if (!phone || !country_code) {
+      return res.status(400).json({ error: 'رقم الهاتف ورمز الدولة مطلوبان' });
+    }
+
+    // تشفير البيانات الحساسة قبل التخزين
     const encFullName = encryptObject(full_name);
-    const encPhone = encryptObject(phone);
+    const encPhone = encryptObject(phone); // تشفير رقم الهاتف فقط
     const encIdLast6 = encryptObject(id_last6);
     const encAddress = encryptObject(address);
 
+    // إعداد البيانات لإدراجها في جدول users
     const userPayload = {
       id,
       email: email || '',
       full_name: encFullName ? JSON.stringify(encFullName) : null,
-      phone: encPhone ? JSON.stringify(encPhone) : null,
+      phone: encPhone ? JSON.stringify(encPhone) : null, // حفظ الرقم المشفر
+      country_code: country_code, // حفظ رمز الدولة كنص عادي (غير مشفر عادة)
       id_last6: encIdLast6 ? JSON.stringify(encIdLast6) : null,
       role: role || null
     };
 
+    // إدراج البيانات في جدول users
     const { error: userError } = await supabase
       .from('users')
       .insert(userPayload);
@@ -1117,23 +1126,27 @@ app.post('/api/register', async (req, res) => {
       return res.status(400).json(userError);
     }
 
+    // إذا كان المستخدم تاجراً (business)، قم بتحديث جدول businesses أيضاً
     if (role === 'free_business') {
       const businessPayload = {
         user_id: id,
         email: email || '',
         store_name: store_name || '',
         owner_name: encFullName ? JSON.stringify(encFullName) : null,
-        phone: encPhone ? JSON.stringify(encPhone) : null,
+        phone: encPhone ? JSON.stringify(encPhone) : null, // حفظ الرقم المشفر
+        country_code: country_code, // حفظ رمز الدولة
         address: encAddress ? JSON.stringify(encAddress) : null,
         id_last6: encIdLast6 ? JSON.stringify(encIdLast6) : null,
         business_type: business_type || ''
       };
+      
       const { error: businessError } = await supabase
         .from('businesses')
         .insert(businessPayload);
 
       if (businessError) {
         console.error('BUSINESS ERROR:', businessError);
+        // ملاحظة: قد ترغب في حذف سجل المستخدم هنا إذا فشل إنشاء سجل الأعمال للحفاظ على الاتساق
         return res.status(400).json(businessError);
       }
     }
@@ -1149,6 +1162,7 @@ app.post('/api/register', async (req, res) => {
     });
   }
 });
+
 
 // The old `POST /api/register-business` route was removed.
 // Registration now uses the auth flow + DB trigger/webhook:
