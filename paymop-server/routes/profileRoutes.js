@@ -52,7 +52,9 @@ export function registerProfileRoutes({
             full_name: decryptField(userRow.full_name),
             phone: decryptField(userRow.phone),
             id_last6: decryptField(userRow.id_last6),
-            role: userRow.role || null
+            role: userRow.role || null,
+            // ✅ إضافة country_code
+            country_code: userRow.country_code || null 
           };
         } catch (error) {
           console.error('/api/decrypted-user user decrypt error:', error?.message || error);
@@ -70,7 +72,9 @@ export function registerProfileRoutes({
             phone: decryptField(businessRow.phone),
             address: decryptField(businessRow.address),
             business_type: businessRow.business_type || null,
-            id_last6: decryptField(businessRow.id_last6)
+            id_last6: decryptField(businessRow.id_last6),
+            // ✅ إضافة country_code
+            country_code: businessRow.country_code || null
           };
         } catch (error) {
           console.error('/api/decrypted-user business decrypt error:', error?.message || error);
