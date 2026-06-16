@@ -4959,10 +4959,9 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
           // تم رفض التسجيل سابقًا - السماح بإعادة التسجيل
           return res.json({ exists: false, phoneDetails: null, isRejected: true });
         }
-        if (matchingPhone.status === 'sold') {
-          // تم نقل الملكية - فقط المشتري الجديد يقدر يسجله
-          return res.json({ exists: true, isOtherUser: false, phoneDetails: null, isSold: true });
-        }
+        // Allow current owner to continue even if status is 'sold'
+        // (do NOT short-circuit here with phoneDetails: null) — fall through to decrypt and return details so
+        // the current signed-in owner can view/edit/transfer the phone even when status === 'sold'.
         // نسمح له بتحديث البيانات - فك تشفير البيانات قبل إرجاعها
         let decryptedPhoneNumber = null;
         try {
