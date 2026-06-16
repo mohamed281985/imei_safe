@@ -4892,7 +4892,7 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
     // جلب جميع السجلات للتحقق منها
     const { data: allPhones, error: phonesFetchError } = await supabase
       .from('registered_phones')
-      .select('owner_name, phone_number, phone_image_url, phone_type, status, user_id, imei, id_last6, country_code, country_key');
+      .select('owner_name, phone_number, phone_image_url, phone_type, status, user_id, imei, id_last6, country_code');
 
     if (phonesFetchError) {
       console.error('Error fetching registered_phones:', phonesFetchError);
