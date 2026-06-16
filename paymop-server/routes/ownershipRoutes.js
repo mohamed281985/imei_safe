@@ -507,6 +507,18 @@ export function registerOwnershipRoutes({
         }
       }
 
+      // Store buyer country code separately (plain) and encrypted country_key for compatibility
+      if (typeof newOwner.country_code !== 'undefined') {
+        if (newOwner.country_code === null || newOwner.country_code === '') {
+          updateData.country_code = null;
+          updateData.country_key = null;
+        } else {
+          updateData.country_code = newOwner.country_code;
+          const encC = encryptAES(newOwner.country_code);
+          if (encC) updateData.country_key = JSON.stringify({ encryptedData: encC.encryptedData, iv: encC.iv, authTag: encC.authTag });
+        }
+      }
+
       if (typeof newOwner.id_last6 !== 'undefined') {
         if (newOwner.id_last6 === null || newOwner.id_last6 === '') {
           updateData.id_last6 = null;
@@ -576,6 +588,36 @@ export function registerOwnershipRoutes({
         return JSON.stringify({ encryptedData: enc.encryptedData, iv: enc.iv, authTag: enc.authTag });
       };
 
+      const buyerMergedPhone = (() => {
+        try {
+          const rawCode = (newOwner.country_code || '').toString();
+          const rawPhone = (newOwner.phone_number || '').toString();
+          if (!rawCode && !rawPhone) return null;
+
+          // Normalize
+          const code = rawCode.trim();
+          let phone = rawPhone.trim();
+
+          // If phone already starts with + keep as-is
+          if (phone.startsWith('+')) return phone;
+
+          // Ensure code starts with + when prefixing
+          const plusCode = code ? (code.startsWith('+') ? code : `+${code}`) : '';
+
+          // If phone already begins with the numeric code (without +), avoid duplicating
+          const numericCode = code.replace(/^\+/, '');
+          if (numericCode && phone.startsWith(numericCode)) {
+            return `+${phone}`;
+          }
+
+          // Otherwise prefix code (if available)
+          if (plusCode) return `${plusCode}${phone}`;
+          return phone;
+        } catch (e) {
+          return (newOwner.country_code || '') + (newOwner.phone_number || '');
+        }
+      })();
+
       const transferRecord = {
         date: new Date().toISOString(),
         imei: encryptToJson(imei),
@@ -584,7 +626,7 @@ export function registerOwnershipRoutes({
         seller_phone: encryptToJson(previousOwnerPhone),
         seller_id_last6: encryptToJson(previousOwnerIdLast6),
         buyer_name: encryptToJson(newOwner.owner_name || ''),
-        buyer_phone: encryptToJson(newOwner.phone_number || ''),
+        buyer_phone: encryptToJson(buyerMergedPhone || (newOwner.phone_number || '')),
         buyer_id_last6: encryptToJson(newOwner.id_last6 || null),
         receipt_image:
           uploadedReceiptPath ||

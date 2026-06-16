@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useToast } from '@/hooks/use-toast';
 import { Camera, Upload, History, ArrowLeft, AlertCircle, CheckCircle, XCircle, Image as ImageIcon, ChevronDown, FileText, AlertTriangle } from 'lucide-react';
-import { supabase } from '../lib/supabase'; // استيراد Supabase
+import { supabase } from '../lib/supabase';
 import { mockPhoneReports } from '../services/mockData';
 import jsPDF from 'jspdf';
 import { processArabicTextWithEncoding as processArabicText, loadArabicFontSafe as loadArabicFont } from '../utils/pdf/arabic-final-solution';
@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { useAuth } from '../contexts/AuthContext'; // استيراد useAuth
+import { useAuth } from '../contexts/AuthContext';
 import ImageViewer from '@/components/ImageViewer';
 import PageContainer from '@/components/PageContainer';
 import Logo from '@/components/Logo';
@@ -22,23 +22,20 @@ import imageCompression from 'browser-image-compression';
 import axiosInstance from '@/services/axiosInterceptor';
 import { decryptPhoneNumber } from '../lib/imeiCrypto';
 
-// دالة مساعدة للتحقق من أدوار المستخدم التجاري
+// Helper function to check business roles
 const isBusinessRole = (role?: string) => ['business', 'free_business', 'gold_business', 'silver_business'].includes(role || '');
 
-// دالة مساعدة لفك تشفير رقم الهاتف
+// Helper function to decrypt phone number
 const decryptPhoneIfEncrypted = (phone: any): string => {
   if (!phone) return '';
   try {
-    // تحويل البيانات إلى نص إذا كانت كائناً للتعامل مع التشفير
     let phoneStr = typeof phone === 'object' ? JSON.stringify(phone) : String(phone);
 
-    // تحقق مما إذا كان النص يبدو مشفراً
     if (phoneStr.includes('encryptedData') ||
       (/^[A-Za-z0-9+/=]+$/.test(phoneStr) && phoneStr.length > 20)) {
 
       const decrypted = decryptPhoneNumber(phoneStr);
 
-      // إذا نجح فك التشفير وأعطى نتيجة مختلفة عن النص الأصلي، فارجعها
       if (decrypted && decrypted !== phoneStr && !decrypted.includes('encryptedData')) {
         return decrypted;
       }
@@ -49,28 +46,15 @@ const decryptPhoneIfEncrypted = (phone: any): string => {
   }
 };
 
-// interface TransferRecord { // لم تعد هذه الواجهة مستخدمة بشكل مباشر هنا لإنشاء سجل جديد
-//   id: string;
-//   date: string;
-//   imei: string;
-//   phoneType: string;
-//   seller: {
-//     name: string;
-//     phone: string;
-//     idImage: string;
-//     selfie: string;
-//   };
-//   buyer: {
-//     name: string;
-//     phone: string;
-//     idImage: string;
-//     selfie: string;
-//   };
-//   receiptImage: string;
-//   phoneImage: string;
-// }
+// Helper function to pick values from objects with multiple possible key names
+const pick = (obj: any, keys: string[]) => {
+  if (!obj) return '';
+  for (const k of keys) {
+    if (obj[k] !== undefined && obj[k] !== null && String(obj[k]).trim() !== '') return obj[k];
+  }
+  return '';
+};
 
-// إضافة مكون ImageUploader
 const ImageUploader: React.FC<{
   label: string;
   image: string;
@@ -84,8 +68,7 @@ const ImageUploader: React.FC<{
   const [showOptions, setShowOptions] = useState(false);
   const optionsRef = useRef<HTMLDivElement>(null);
 
-  // إضافة مستمع للنقر خارج المربع المنسدل
-  React.useEffect(() => {
+  useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (optionsRef.current && !optionsRef.current.contains(event.target as Node)) {
         setShowOptions(false);
@@ -103,9 +86,8 @@ const ImageUploader: React.FC<{
       return;
     }
 
-    // Validation
     const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
-    const maxSizeBytes = 10 * 1024 * 1024; // 10 MB
+    const maxSizeBytes = 10 * 1024 * 1024;
     if (!allowedTypes.includes(file.type)) {
       toast({ title: t('invalid_file_type') || 'نوع الملف غير مدعوم', description: t('please_upload_images_only') || 'يرجى رفع صور فقط (jpg, png, webp)', variant: 'destructive' });
       e.currentTarget.value = '';
@@ -138,7 +120,6 @@ const ImageUploader: React.FC<{
     onCameraClick();
     setShowOptions(false);
   };
-
 
   return (
     <div className="space-y-2">
@@ -227,9 +208,8 @@ const BusinessTransfer: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? 'https://imei-safe.me' : '/api');
-  // دالة تلتقط صورة الفاتورة وتعمل على الهاتف (Capacitor) أو المتصفح
+  
   const handleReceiptCamera = async () => {
-    // تحقق من وجود منصة Capacitor أو جهاز جوال
     if ((typeof navigator !== 'undefined') && (navigator.userAgent.includes('Capacitor') || navigator.userAgent.includes('Android') || navigator.userAgent.includes('iPhone'))) {
       try {
         const image = await CapacitorCamera.getPhoto({
@@ -250,14 +230,14 @@ const BusinessTransfer: React.FC = () => {
       openCamera('receipt');
     }
   };
+  
   const videoRef = useRef<HTMLVideoElement>(null);
   const receiptFileInputRef = useRef<HTMLInputElement>(null);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [currentSelfieType, setCurrentSelfieType] = useState<'seller' | 'sellerId' | 'receipt' | null>(null);
-  const [showRegisterDialog, setShowRegisterDialog] = useState(false); // حالة جديدة للنافذة المنبثقة
+  const [showRegisterDialog, setShowRegisterDialog] = useState(false);
   const [isFormLocked, setIsFormLocked] = useState(false);
 
-  // حالة عرض الصور المكبرة
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
 
@@ -269,6 +249,8 @@ const BusinessTransfer: React.FC = () => {
   const [sellerName, setSellerName] = useState('');
   const [sellerIdLast6, setSellerIdLast6] = useState('');
   const [sellerPhone, setSellerPhone] = useState('');
+  // NEW: Add seller country code state
+  const [sellerCountryCode, setSellerCountryCode] = useState('+20');
   const [buyerName, setBuyerName] = useState('');
   const [buyerPhone, setBuyerPhone] = useState('');
   const [buyerCountryCode, setBuyerCountryCode] = useState('+20');
@@ -277,11 +259,8 @@ const BusinessTransfer: React.FC = () => {
   const [paid, setPaid] = useState(false);
   const [success, setSuccess] = useState(false);
   const [isPhoneReported, setIsPhoneReported] = useState<boolean | null>(null);
-
-  // رسالة تظهر أسفل حقل IMEI عندما يكون الهاتف مسجل لمستخدم آخر أو منقول
   const [imeiNotice, setImeiNotice] = useState('');
 
-  // Image states
   const [sellerIdImage, setSellerIdImage] = useState<string>('');
   const [sellerSelfie, setSellerSelfie] = useState<string>('');
   const [receiptImage, setReceiptImage] = useState<string>('');
@@ -300,21 +279,17 @@ const BusinessTransfer: React.FC = () => {
   });
 
   const [newOwnerName, setNewOwnerName] = useState('');
-  // أزلنا الحالة العامة password لأنها غير مستخدمة وتتسبب في تحقق خاطئ
   const [sellerPassword, setSellerPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [currentRegisteredPhone, setCurrentRegisteredPhone] = useState<any>(null); // لتخزين سجل الهاتف من registered_phones
+  const [currentRegisteredPhone, setCurrentRegisteredPhone] = useState<any>(null);
 
-  // دالة مساعدة لبناء رابط الصورة الكامل من Supabase أو من الخادم (signed URL)
   const resolveImageUrl = async (path: string | null | undefined) => {
     if (!path || typeof path !== 'string') return '';
     const cleanPath = path.trim();
     if (cleanPath.startsWith('http') || cleanPath.startsWith('data:') || cleanPath.startsWith('blob:')) return cleanPath;
 
-
-    // 2) اطلب signed URL من الخادم (يتطلب توكن الجلسة)
     try {
       let token = '';
       try { const { data: { session } } = await supabase.auth.getSession(); token = session?.access_token || ''; } catch (e) { token = ''; }
@@ -408,6 +383,8 @@ const BusinessTransfer: React.FC = () => {
       setSellerName('');
       setSellerIdLast6('');
       setSellerPhone('');
+      // Reset country code when IMEI changes
+      setSellerCountryCode('+20');
     }
     setPhoneType('');
     setPhoneImage('');
@@ -416,7 +393,6 @@ const BusinessTransfer: React.FC = () => {
     setShowRegisterDialog(false);
   };
 
-  // Debounce IMEI similar to buy flow
   useEffect(() => {
     setShowRegisterDialog(false);
     const handler = setTimeout(() => {
@@ -426,7 +402,6 @@ const BusinessTransfer: React.FC = () => {
     return () => clearTimeout(handler);
   }, [imei]);
 
-  // Fetch data for debounced IMEI using server endpoint and supabase for reports
   useEffect(() => {
     if (!debouncedImei) {
       setIsLoading(false);
@@ -451,7 +426,7 @@ const BusinessTransfer: React.FC = () => {
           console.log('🔴 هاتف مبلغ عنه:', debouncedImei, '| reportCount:', reportCount);
           toast({ title: t('warning'), description: t('phone_is_reported_as_lost'), variant: 'destructive' });
           setIsLoading(false);
-          return; // التوقف إذا كان هناك بلاغ - IMPORTANT: return here
+          return;
         }
 
         let jwtToken = '';
@@ -476,10 +451,9 @@ const BusinessTransfer: React.FC = () => {
         }
 
         const registeredPhone = resp.data;
-        // احفظ استجابة السيرفر لتستخدم في العرض (مثلاً إظهار أن الهاتف مسجل لمستخدم آخر)
+        console.log('📱 بيانات الهاتف من السيرفر:', registeredPhone);
         setCurrentRegisteredPhone(registeredPhone || null);
 
-        // التحقق من البلاغات من استجابة السيرفر
         if (registeredPhone?.hasActiveReport || registeredPhone?.isStolen) {
           console.log('🔴 هاتف مبلغ عنه من السيرفر:', { hasActiveReport: registeredPhone?.hasActiveReport, isStolen: registeredPhone?.isStolen });
           setIsPhoneReported(true);
@@ -488,7 +462,6 @@ const BusinessTransfer: React.FC = () => {
           return;
         }
 
-        // التحقق من isOtherUser: إذا كان الهاتف مسجل لمستخدم آخر فقط
         if (registeredPhone?.isOtherUser && !registeredPhone?.phoneDetails) {
           setSellerName('');
           setSellerPhone('');
@@ -505,21 +478,11 @@ const BusinessTransfer: React.FC = () => {
 
         if (!registeredPhone) throw new Error('Failed to fetch phone info');
 
-        const pick = (obj: any, keys: string[]) => {
-          if (!obj) return '';
-          for (const k of keys) {
-            if (obj[k] !== undefined && obj[k] !== null && String(obj[k]).trim() !== '') return obj[k];
-          }
-          return '';
-        };
-
         if (registeredPhone && registeredPhone.phoneDetails) {
           const details = registeredPhone.phoneDetails;
-          // إذا أعاد السيرفر أن الهاتف موجود لكنه مملوك لمستخدم آخر أو مُنقَل
-          // استثناء: إذا كانت الحالة منقولة (`isTransferred`) ولكن تفاصيل الهاتف تحوي `user_id`
-          // يطابق المستخدم الحالي، فاعتبر الهاتف مملوكًا للمستخدم الحالي بدلاً من حظره.
+          console.log('📋 تفاصيل الهاتف:', details);
+          
           if (registeredPhone.isOtherUser || (registeredPhone.isTransferred && !(details && details.user_id && user && details.user_id === user.id))) {
-            // لا نملأ الحقول الحساسة؛ نعرض رسالة تحت حقل IMEI بدلاً من تعبئتها
             setSellerName('');
             setSellerPhone('');
             setSellerIdLast6('');
@@ -532,23 +495,23 @@ const BusinessTransfer: React.FC = () => {
             setIsLoading(false);
             return;
           }
-          // اعتبر الهاتف مملوكًا للمستخدم الحالي فقط إذا كان معرف المالك مطابقًا لمعرف المستخدم الحالي.
-          // لا نعتمد على العلم `isOwnReport` وحده لأن بعض الاستجابات قد تكون مضللة.
+          
           const isOwnedByCurrentUser = Boolean(details && details.user_id && user && details.user_id === user.id);
           if (isOwnedByCurrentUser) {
             setImeiNotice('');
-            // إذا كان الهاتف مسجلاً الآن لحساب المستخدم الحالي بعد نقل الملكية
-            // نعبئ حقول البائع بمعلومات المالك الحالي ونعرض رسالة بالعربية
             setSellerName(pick(details, ['owner_name', 'ownerName', 'maskedOwnerName', 'owner', 'name']) || (user?.username || user?.email || ''));
-            // حاول الحصول على رقم الهاتف من عدة حقول ثم من user metadata قبل الاستعلام عن جداول غير مؤكدة
-            let resolvedPhone = pick(details, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber', 'phone', 'owner_phone_number']) || (user as any)?.phone || '';
-            // فحص user metadata كخيار سريع
+            
+            // Get country code from API response
+            const countryCode = pick(details, ['country_code', 'countryKey', 'country_key']) || '+20';
+            console.log('🌍 كود الدولة من السيرفر:', countryCode);
+            setSellerCountryCode(countryCode);
+            
+            let resolvedPhone = pick(details, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber', 'phone', 'owner_phone_number', 'phone_number']) || (user as any)?.phone || '';
             const userMetaPhone = (user as any)?.user_metadata?.phone || (user as any)?.user_metadata?.phone_number || '';
             if ((!resolvedPhone || String(resolvedPhone).trim() === '') && userMetaPhone) {
               resolvedPhone = userMetaPhone;
             }
 
-            // إذا بقي الرقم فارغاً، حاول جلبه من server endpoint (مفك التشفير)
             if ((!resolvedPhone || String(resolvedPhone).trim() === '') && user?.id) {
               try {
                 const { data: { session } } = await supabase.auth.getSession();
@@ -570,7 +533,6 @@ const BusinessTransfer: React.FC = () => {
               }
             }
 
-            // لا داعي لمحاولة جدول businesses الآن لأننا استخدمنا server endpoint
             if ((!resolvedPhone || String(resolvedPhone).trim() === '') && user?.id) {
               try {
                 const response = await axiosInstance.get('/api/decrypted-user');
@@ -584,8 +546,17 @@ const BusinessTransfer: React.FC = () => {
               }
             }
 
-            // Phone from server is already decrypted
-            setSellerPhone(resolvedPhone || '');
+            // Extract country code from phone number if available (as fallback)
+            if (resolvedPhone && resolvedPhone.startsWith('+')) {
+              const match = resolvedPhone.match(/^\+(\d{1,3})(.*)$/);
+              if (match) {
+                setSellerCountryCode(`+${match[1]}`);
+                setSellerPhone(match[2] || '');
+              }
+            } else {
+              setSellerPhone(resolvedPhone);
+            }
+
             setSellerIdLast6(pick(details, ['owner_id_last6', 'ownerIdLast6', 'maskedIdLast6', 'id_last6']) || '');
             setPhoneType(pick(details, ['phone_type', 'phoneType', 'model']) || '');
             {
@@ -612,7 +583,23 @@ const BusinessTransfer: React.FC = () => {
 
           setImeiNotice('');
           setSellerName(pick(details, ['owner_name', 'ownerName', 'maskedOwnerName', 'owner', 'name']));
-          setSellerPhone(decryptPhoneIfEncrypted(pick(details, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber', 'phone', 'owner_phone_number'])));
+          
+          // Get country code from API response
+          const countryCode = pick(details, ['country_code', 'countryKey', 'country_key']) || '+20';
+          console.log('🌍 كود الدولة من السيرفر:', countryCode);
+          setSellerCountryCode(countryCode);
+          
+          let phoneToDecrypt = pick(details, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber', 'phone', 'owner_phone_number', 'phone_number']);
+          // Extract country code from phone number if available (as fallback)
+          if (phoneToDecrypt && phoneToDecrypt.startsWith('+')) {
+            const match = phoneToDecrypt.match(/^\+(\d{1,3})(.*)$/);
+            if (match) {
+              setSellerCountryCode(`+${match[1]}`);
+              phoneToDecrypt = match[2] || '';
+            }
+          }
+          setSellerPhone(decryptPhoneIfEncrypted(phoneToDecrypt));
+          
           setSellerIdLast6(pick(details, ['owner_id_last6', 'ownerIdLast6', 'maskedIdLast6', 'id_last6']));
           setPhoneType(pick(details, ['phone_type', 'phoneType', 'model']));
           {
@@ -628,7 +615,23 @@ const BusinessTransfer: React.FC = () => {
         } else if (registeredPhone && registeredPhone.exists) {
           setImeiNotice('');
           setSellerName(pick(registeredPhone, ['owner_name', 'ownerName', 'maskedOwnerName']));
-          setSellerPhone(decryptPhoneIfEncrypted(pick(registeredPhone, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber'])));
+          
+          // Get country code from API response
+          const countryCode = pick(registeredPhone, ['country_code', 'countryKey', 'country_key']) || '+20';
+          console.log('🌍 كود الدولة من السيرفر:', countryCode);
+          setSellerCountryCode(countryCode);
+          
+          let phoneToDecrypt = pick(registeredPhone, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber']);
+          // Extract country code from phone number if available (as fallback)
+          if (phoneToDecrypt && phoneToDecrypt.startsWith('+')) {
+            const match = phoneToDecrypt.match(/^\+(\d{1,3})(.*)$/);
+            if (match) {
+              setSellerCountryCode(`+${match[1]}`);
+              phoneToDecrypt = match[2] || '';
+            }
+          }
+          setSellerPhone(decryptPhoneIfEncrypted(phoneToDecrypt));
+          
           setSellerIdLast6(pick(registeredPhone, ['owner_id_last6', 'maskedIdLast6']));
           setPhoneType(pick(registeredPhone, ['phone_type', 'phoneType']));
           {
@@ -659,13 +662,12 @@ const BusinessTransfer: React.FC = () => {
     setIsLoading(true);
 
     try {
-      if (!imei || !buyerName || !buyerPhone || !sellerName || !buyerIdLast6 || !buyerEmail) { // التأكد من وجود اسم البائع أيضاً
+      if (!imei || !buyerName || !buyerPhone || !sellerName || !buyerIdLast6 || !buyerEmail) {
         toast({ title: 'خطأ', description: 'يرجى ملء جميع الحقول المطلوبة', variant: 'destructive' });
         setIsLoading(false);
         return;
       }
 
-      // التحقق من صحة الإيميل
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(buyerEmail)) {
         toast({ title: 'خطأ', description: 'يرجى إدخال بريد إلكتروني صحيح', variant: 'destructive' });
@@ -679,7 +681,6 @@ const BusinessTransfer: React.FC = () => {
         return;
       }
 
-      // Request masked info from server instead of direct DB read
       let jwtTokenForSubmit = '';
       try { const { data: { session } } = await supabase.auth.getSession(); jwtTokenForSubmit = session?.access_token || ''; } catch (e) { jwtTokenForSubmit = ''; }
 
@@ -699,8 +700,6 @@ const BusinessTransfer: React.FC = () => {
       }
 
       const phone = resp.data;
-
-      // Some server responses use `exists` while older code expected `isRegistered`.
       const isRegistered = !!(phone?.isRegistered || phone?.exists);
       if (!isRegistered) {
         toast({ title: 'خطأ', description: 'لم يتم العثور على الهاتف في قاعدة البيانات للتسجيل الأولي', variant: 'destructive', className: 'bg-red-50 text-red-800 font-bold rtl border-2 border-red-500' });
@@ -708,7 +707,6 @@ const BusinessTransfer: React.FC = () => {
         return;
       }
 
-      // التحقق من بيانات المشتري قبل المتابعة
       try {
         const validateResp = await axiosInstance.post('/api/validate-buyer-data',
           {
@@ -720,13 +718,11 @@ const BusinessTransfer: React.FC = () => {
           { validateStatus: () => true }
         );
 
-        // إذا كان الحساب موجود وبياناته لا تطابق → نرفض
         if (validateResp.status >= 200 && validateResp.status < 300 && validateResp.data?.valid === true) {
-          // البيانات مطابقة ✓
+          // Valid data
         } else if (validateResp.status === 404 || validateResp.data?.error === 'buyer_not_found') {
-          // لا يوجد حساب للمشتري → نسمح بالمتابعة
+          // No account for buyer
         } else {
-          // البيانات لا تطابق الحساب المسجل
           toast({
             title: 'بيانات المشتري لا تطابق الحساب',
             description: 'الاسم أو البريد الإلكتروني أو رقم الهاتف لا يطابق بيانات المستخدم المسجلة لدينا',
@@ -738,29 +734,16 @@ const BusinessTransfer: React.FC = () => {
         }
       } catch (validateErr) {
         console.error('Buyer validation error:', validateErr);
-        // في حالة خطأ في التحقق، نسمح بالمتابعة (لا نمنع المستخدم بسبب خطأ في الخادم)
       }
 
-      // Save masked phone info for UI; sensitive verification and final update happen server-side
       setCurrentRegisteredPhone(phone);
       setShowPasswordDialog(true);
       setIsLoading(false);
       return;
-
-      // تم تعطيل هذا الكود واستبداله بنافذة الحوار المخصصة
-      /* 
-      const newPassword = prompt('...');
-      */
-
-      // تم حذف كود prompt القديم
-
-      // Removed old client-side direct DB update code. Operations now delegated to server endpoints.
     } catch (error: any) {
       console.error("Error during ownership transfer:", error);
-      // تحسين رسالة الخطأ لتكون أكثر تحديدًا
       let errorMessage = 'حدث خطأ أثناء معالجة الطلب';
       if (error && error.message) {
-        // عرض رسالة الخطأ من Supabase مباشرة إذا كانت متاحة
         errorMessage = error.message;
       }
       toast({ title: 'خطأ', description: errorMessage, variant: 'destructive' });
@@ -772,7 +755,6 @@ const BusinessTransfer: React.FC = () => {
   const handlePasswordSubmit = async () => {
     setIsLoading(true);
     try {
-      // 1) تحقق المدخلات في مربع الحوار - بالعربية وبدقة
       if (!sellerPassword || sellerPassword.trim().length === 0) {
         toast({
           title: 'كلمة المرور مطلوبة',
@@ -815,9 +797,7 @@ const BusinessTransfer: React.FC = () => {
         return;
       }
 
-      // 2) تحقق الهوية وكلمة المرور عبر السيرفر بدلاً من قراءة الحقول الحساسة في العميل
       if (!(user && user.role === 'business')) {
-        // Let axios interceptor handle Authorization header automatically
         const verifyResp = await axiosInstance.post('/api/verify-seller-password',
           { imei, password: sellerPassword, sellerIdLast6 },
           { validateStatus: () => true }
@@ -830,7 +810,6 @@ const BusinessTransfer: React.FC = () => {
           return;
         }
 
-        // read JSON and ensure server validated the password
         const verifyJson = verifyResp.data;
         if (!verifyJson || verifyJson.ok !== true) {
           const message = verifyJson && verifyJson.error ? verifyJson.error : t('seller_verification_failed') || 'تعذر التحقق من بيانات البائع';
@@ -842,26 +821,25 @@ const BusinessTransfer: React.FC = () => {
         console.log('🚫 تم تخطي تحقق رقم بطاقة البائع لأن البائع مستخدم تجاري.');
       }
 
-      // 3) رفع صورة الفاتورة الجديدة (إذا وجدت)
       let newReceiptImagePath: string | null = null;
 
-      // 4) Delegate the transfer and update to server-side endpoint to handle sensitive writes
       let jwtTokenTransfer = '';
       try { const { data: { session } } = await supabase.auth.getSession(); jwtTokenTransfer = session?.access_token || ''; } catch (e) { jwtTokenTransfer = ''; }
+      
       const transferPayload: any = {
         imei: String(imei).trim(),
         sellerPassword,
-        receiptImage, // أضف هذا السطر
-
+        receiptImage,
+        sellerCountryCode, // Include seller country code in the transfer payload
         newOwner: {
           owner_name: buyerName,
-          phone_number: `${buyerCountryCode}${buyerPhone}`,
+          // Send phone number separate from country code
+          phone_number: buyerPhone,
+          country_code: buyerCountryCode,
           id_last6: buyerIdLast6 || null,
           email: buyerEmail || null,
           password: newPassword,
           phone_type: phoneType || null,
-          // لا نرسل معرف المستخدم الحالي هنا لأن العميل (المشتري) قد يختلف عن المستخدم المسجّل الآن.
-          // اتركه null حتى يحدده الخادم من التوكن أو يبقى غير مرتبط إذا لم يكن للمشتري حساب.
           user_id: null
         },
         new_receipt_image_url: newReceiptImagePath || currentRegisteredPhone?.receipt_image_url,
@@ -881,7 +859,6 @@ const BusinessTransfer: React.FC = () => {
         throw new Error(errMsg);
       }
 
-      // 5) نجاح
       toast({
         title: 'تمت العملية بنجاح',
         description: 'تم تحديث كلمة المرور ونقل ملكية الهاتف بنجاح',
@@ -902,17 +879,14 @@ const BusinessTransfer: React.FC = () => {
     }
   };
 
-  // يجب استدعاء setCurrentPhoneReport عند الحاجة، مثلاً عند اختيار بلاغ معين للتعامل معه
-  // هذا الجزء من الكود غير مكتمل في الملف الأصلي لكيفية تعيين currentPhone
-
   useEffect(() => {
     let logoutTimer: NodeJS.Timeout;
 
     const resetTimer = () => {
       if (logoutTimer) clearTimeout(logoutTimer);
       logoutTimer = setTimeout(() => {
-        navigate('/logout'); // Redirect to logout page
-      }, 5 * 60 * 1000); // 5 minutes in milliseconds
+        navigate('/logout');
+      }, 5 * 60 * 1000);
     };
 
     const handleVisibilityChange = () => {
@@ -935,11 +909,9 @@ const BusinessTransfer: React.FC = () => {
   useEffect(() => {
     const fetchBusinessData = async () => {
       console.log('تشغيل useEffect لجلب بيانات المتجر. بيانات user:', user);
-      // Check if the user is a business user
       if (user && isBusinessRole(user.role)) {
         setIsLoading(true);
         try {
-          // Use server endpoint that properly decrypts all fields
           const response = await axiosInstance.get('/api/decrypted-user');
           const decryptedData = response.data;
 
@@ -947,35 +919,57 @@ const BusinessTransfer: React.FC = () => {
             throw new Error('No data returned from decrypted-user endpoint');
           }
 
-          // Use business data if available, otherwise fall back to user data
           const businessData = decryptedData.business;
           const userData = decryptedData.user;
 
           if (businessData) {
             console.log('نتيجة استعلام businesses (مفك التشفير):', businessData);
 
-            // تعبئة اسم ورقم هاتف البائع تلقائياً للمستخدم التجاري
             const nameFromBusiness = businessData.owner_name?.trim() || businessData.store_name?.trim();
-            const phoneFromBusiness = businessData.phone?.trim();
+            let phoneFromBusiness = businessData.phone?.trim();
             const emailFromBusiness = businessData.email?.trim();
+
+            // Get country code from API response
+            const countryCode = pick(businessData, ['country_code', 'countryKey', 'country_key']) || '+20';
+            console.log('🌍 كود الدولة من بيانات المتجر:', countryCode);
+            setSellerCountryCode(countryCode);
+            
+            // Extract country code from phone number if available (as fallback)
+            if (phoneFromBusiness && phoneFromBusiness.startsWith('+')) {
+              const match = phoneFromBusiness.match(/^\+(\d{1,3})(.*)$/);
+              if (match) {
+                setSellerCountryCode(`+${match[1]}`);
+                phoneFromBusiness = match[2] || '';
+              }
+            }
 
             const sellerNameValue = nameFromBusiness || user?.username || user?.email || 'اسم غير متوفر';
             setSellerName(sellerNameValue);
             console.log('تعبئة اسم البائع:', sellerNameValue);
-            // Phone is already decrypted from server
             setSellerPhone(phoneFromBusiness || (user as any)?.phone || '');
 
-            // تعبئة بيانات البائع فقط، بدون بيانات المشتري
             const idLast6Value = businessData.id_last6 || userData?.id_last6 || '';
             setSellerIdLast6(idLast6Value);
           } else if (userData) {
-            // Fallback to user data if no business data
+            let phoneFromUser = userData.phone?.trim();
+            
+            // Get country code from API response
+            const countryCode = pick(userData, ['country_code', 'countryKey', 'country_key']) || '+20';
+            console.log('🌍 كود الدولة من بيانات المستخدم:', countryCode);
+            setSellerCountryCode(countryCode);
+            
+            // Extract country code from phone number if available (as fallback)
+            if (phoneFromUser && phoneFromUser.startsWith('+')) {
+              const match = phoneFromUser.match(/^\+(\d{1,3})(.*)$/);
+              if (match) {
+                setSellerCountryCode(`+${match[1]}`);
+                phoneFromUser = match[2] || '';
+              }
+            }
+            
             const sellerNameValue = userData.full_name?.trim() || user?.username || user?.email || 'اسم غير متوفر';
             setSellerName(sellerNameValue);
-            // Phone is already decrypted from server
-            setSellerPhone(userData.phone?.trim() || '');
-
-            // تعبئة البائع فقط، لا نملأ حقول المشتري
+            setSellerPhone(phoneFromUser || '');
             setSellerIdLast6(userData.id_last6 || '');
           }
         } catch (error) {
@@ -1033,7 +1027,6 @@ const BusinessTransfer: React.FC = () => {
           </div>
           <h2 className="text-2xl font-bold text-orange-500 mb-6 text-center">{t('transfer_ownership')}</h2>
           {isLoading && <p className="text-center text-white my-4">{t('loading')}...</p>}
-          {/* Removed top duplicated Alert — message now shown under IMEI input */}
           {success ? (
             <div className="text-green-500 text-center text-lg font-semibold py-8">
               {t('ownership_transferred')}
@@ -1101,7 +1094,7 @@ const BusinessTransfer: React.FC = () => {
                     onChange={e => setPhoneType(e.target.value)}
                     className="input-field w-full"
                     required
-                    disabled={!!phoneType || isLoading || isFormLocked} // يبقى معطلاً إذا تم ملؤه تلقائياً
+                    disabled={!!phoneType || isLoading || isFormLocked}
                     readOnly={!!phoneType}
                   />
                 </div>
@@ -1133,18 +1126,26 @@ const BusinessTransfer: React.FC = () => {
                         ⚠️ البيانات مشفرة. يرجى تحديث الصفحة.
                       </div>
                     )}
-                    <input
-                      type="text"
-                      value={sellerPhone}
-                      onChange={e => setSellerPhone(e.target.value.replace(/\D/g, ''))}
-                      className="input-field w-full"
-                      dir="ltr"
-                      inputMode="tel"
-                      maxLength={15}
-                      required
-                      disabled={isLoading || user?.role === 'business' || isFormLocked}
-                      readOnly
-                    />
+                    {/* NEW: Modified seller phone input to include country code selector */}
+                    <div className="flex gap-2 items-center">
+                      <CountryCodeSelector
+                        value={sellerCountryCode}
+                        onChange={setSellerCountryCode}
+                        disabled={isLoading || user?.role === 'business' || isFormLocked}
+                      />
+                      <input
+                        type="text"
+                        value={sellerPhone}
+                        onChange={e => setSellerPhone(e.target.value.replace(/\D/g, ''))}
+                        className="input-field w-full"
+                        dir="ltr"
+                        inputMode="tel"
+                        maxLength={15}
+                        required
+                        disabled={isLoading || user?.role === 'business' || isFormLocked}
+                        readOnly
+                      />
+                    </div>
                   </div>
                   {phoneImage && (
                     <div className="space-y-2">
@@ -1319,7 +1320,7 @@ const BusinessTransfer: React.FC = () => {
                   <Button
                     type="submit"
                     className="flex-1 bg-imei-cyan hover:bg-imei-cyan-dark text-white py-3 px-4 rounded-xl font-bold transition-all duration-300 shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/30"
-                    disabled={isLoading || isPhoneReported === true || isFormLocked} // تعطيل إذا كان الهاتف مبلغ عنه - تم إلغاء شرط الدفع مؤقتاً
+                    disabled={isLoading || isPhoneReported === true || isFormLocked}
                   >
                     {isLoading ? t('processing') : t('transfer_ownership')}
                   </Button>
@@ -1343,7 +1344,7 @@ const BusinessTransfer: React.FC = () => {
                   variant="outline"
                   onClick={() => {
                     setShowRegisterDialog(false);
-                    setImei(''); // مسح حقل IMEI عند الضغط على "لا"
+                    setImei('');
                   }}
                   className="text-white border-gray-600 hover:bg-gray-700"
                 >
@@ -1358,6 +1359,7 @@ const BusinessTransfer: React.FC = () => {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+          
           <Dialog open={showPasswordDialog} onOpenChange={setShowPasswordDialog}>
             <DialogContent className="bg-white/90 backdrop-blur-lg text-gray-800 w-[90%] sm:max-w-md border-2 border-orange-400 shadow-2xl rounded-2xl">
               <DialogHeader>
@@ -1369,7 +1371,6 @@ const BusinessTransfer: React.FC = () => {
                 </DialogDescription>
               </DialogHeader>
 
-              {/* ✅ التعديل هنا: تحويل الـ div إلى form */}
               <form onSubmit={(e) => { e.preventDefault(); handlePasswordSubmit(); }} className="space-y-4">
                 <div className="space-y-2">
                   <label className="block text-gray-800 text-sm font-medium mb-1">
@@ -1406,7 +1407,7 @@ const BusinessTransfer: React.FC = () => {
                 <DialogFooter>
                   <Button
                     variant="outline"
-                    type="button" // مهم: وضع type="button" لمنع إرسال الفورم عند الإلغاء
+                    type="button"
                     onClick={() => setShowPasswordDialog(false)}
                     className="text-white border-gray-600 hover:bg-gray-700"
                     disabled={isLoading}
@@ -1414,7 +1415,7 @@ const BusinessTransfer: React.FC = () => {
                     {t('cancel')}
                   </Button>
                   <Button
-                    type="submit" // التعديل: تحويل زر التأكيد إلى زر إرسال للفورم
+                    type="submit"
                     className="bg-imei-cyan hover:bg-imei-cyan-dark text-white"
                     disabled={isLoading}
                   >
@@ -1422,13 +1423,9 @@ const BusinessTransfer: React.FC = () => {
                   </Button>
                 </DialogFooter>
               </form>
-              {/* نهاية التعديل */}
-
             </DialogContent>
           </Dialog>
 
-
-          {/* مكون عارض الصور */}
           <ImageViewer
             imageUrl={selectedImage || ''}
             isOpen={isImageViewerOpen}
