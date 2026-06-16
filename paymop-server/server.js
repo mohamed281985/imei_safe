@@ -4861,72 +4861,23 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
     if (!imei) return res.status(400).json({ error: 'IMEI is required' });
     const normalizedImei = String(imei).replace(/\D/g, '');
 
-    // 1. التحقق من جدول الهواتف (phones)
-    const { data: phoneData } = await supabase
-      .from('phones')
-      .select(`
-        id,
-        imei,
-        phone_type,
-        status,
-        user_id,
-        owner_name,
-        phone_number,
-        phone_image_url,
-        id_last6,
-        country_key
-      `)
-      .eq('imei', normalizedImei)
-      .maybeSingle();
-
-    if (phoneData) {
-      // فك تشفير البيانات
-      const decryptedOwnerName = decryptField(phoneData.owner_name) || '';
-      const decryptedPhoneNumber = decryptField(phoneData.phone_number) || '';
-      const decryptedIdLast6 = decryptField(phoneData.id_last6) || '';
-      const decryptedCountryKey = decryptField(phoneData.country_key) || '';
-      
-      // التحقق إذا كان المستخدم هو المالك
-      const isOtherUser = userId && userId !== phoneData.user_id;
-
-      return res.json({
-        exists: true,
-        phoneDetails: {
-          owner_name: decryptedOwnerName,
-          phone_number: decryptedPhoneNumber,
-          phone_image_url: phoneData.phone_image_url,
-          phone_type: phoneData.phone_type,
-          status: phoneData.status,
-          user_id: phoneData.user_id,
-          imei: phoneData.imei,
-          id_last6: decryptedIdLast6,
-          countryKey: decryptedCountryKey // إضافة مفتاح الدولة
-        },
-        isOtherUser: isOtherUser
-      });
-    }
-
-    // 2. التحقق من جدول التسجيل (registered_phones)
-    const { data: registeredData } = await supabase
+    // 1. التحقق من جدول التسجيل (registered_phones) أولاً
+    const { data: registeredData, error: registeredError } = await supabase
       .from('registered_phones')
-      .select(`
-        imei,
-        phone_type,
-        user_id,
-        owner_name,
-        phone_number,
-        id_last6,
-        country_key
-      `)
+      .select('*') // جلب جميع الأعمدة للتحقق
       .eq('imei', normalizedImei)
       .maybeSingle();
 
-    if (registeredData) {
-      // فك تشفير البيانات
-      const decryptedOwnerName = decryptField(registeredData.owner_name) || '';
-      const decryptedPhoneNumber = decryptField(registeredData.phone_number) || '';
-      const decryptedIdLast6 = decryptField(registeredData.id_last6) || '';
-      const decryptedCountryKey = decryptField(registeredData.country_key) || '';
+    if (registeredData && !registeredError) {
+      console.log('Found in registered_phones:', registeredData); // للتصحيح
+      
+      // فك تشفير جميع البيانات
+      const decryptedOwnerName = decryptField(registeredData.owner_name);
+      const decryptedPhoneNumber = decryptField(registeredData.phone_number);
+      const decryptedIdLast6 = decryptField(registeredData.id_last6);
+      const decryptedCountryKey = decryptField(registeredData.country_key);
+      
+      console.log('Decrypted country key:', decryptedCountryKey); // للتصحيح
       
       // التحقق إذا كان المستخدم هو المالك
       const isOtherUser = userId && userId !== registeredData.user_id;
@@ -4934,40 +4885,67 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
       return res.json({
         exists: true,
         phoneDetails: {
-          owner_name: decryptedOwnerName,
-          phone_number: decryptedPhoneNumber,
+          owner_name: decryptedOwnerName || '',
+          phone_number: decryptedPhoneNumber || '',
           phone_type: registeredData.phone_type,
+          status: 'registered',
           user_id: registeredData.user_id,
           imei: registeredData.imei,
-          id_last6: decryptedIdLast6,
-          countryKey: decryptedCountryKey // إضافة مفتاح الدولة
+          id_last6: decryptedIdLast6 || '',
+          countryKey: decryptedCountryKey || '' // إضافة مفتاح الدولة
+        },
+        isOtherUser: isOtherUser
+      });
+    }
+
+    // 2. التحقق من جدول الهواتف (phones)
+    const { data: phoneData, error: phoneError } = await supabase
+      .from('phones')
+      .select('*') // جلب جميع الأعمدة للتحقق
+      .eq('imei', normalizedImei)
+      .maybeSingle();
+
+    if (phoneData && !phoneError) {
+      // فك تشفير البيانات
+      const decryptedOwnerName = decryptField(phoneData.owner_name);
+      const decryptedPhoneNumber = decryptField(phoneData.phone_number);
+      const decryptedIdLast6 = decryptField(phoneData.id_last6);
+      const decryptedCountryKey = decryptField(phoneData.country_key);
+      
+      // التحقق إذا كان المستخدم هو المالك
+      const isOtherUser = userId && userId !== phoneData.user_id;
+
+      return res.json({
+        exists: true,
+        phoneDetails: {
+          owner_name: decryptedOwnerName || '',
+          phone_number: decryptedPhoneNumber || '',
+          phone_image_url: phoneData.phone_image_url,
+          phone_type: phoneData.phone_type,
+          status: phoneData.status,
+          user_id: phoneData.user_id,
+          imei: phoneData.imei,
+          id_last6: decryptedIdLast6 || '',
+          countryKey: decryptedCountryKey || '' // إضافة مفتاح الدولة
         },
         isOtherUser: isOtherUser
       });
     }
 
     // 3. التحقق من جدول البلاغات (phone_reports)
-    const { data: reportData } = await supabase
+    const { data: reportData, error: reportError } = await supabase
       .from('phone_reports')
-      .select(`
-        imei,
-        phone_type,
-        user_id,
-        owner_name,
-        phone_number,
-        id_last6,
-        country_key
-      `)
+      .select('*') // جلب جميع الأعمدة للتحقق
       .eq('imei', normalizedImei)
       .eq('status', 'active')
       .maybeSingle();
 
-    if (reportData) {
+    if (reportData && !reportError) {
       // فك تشفير البيانات
-      const decryptedOwnerName = decryptField(reportData.owner_name) || '';
-      const decryptedPhoneNumber = decryptField(reportData.phone_number) || '';
-      const decryptedIdLast6 = decryptField(reportData.id_last6) || '';
-      const decryptedCountryKey = decryptField(reportData.country_key) || '';
+      const decryptedOwnerName = decryptField(reportData.owner_name);
+      const decryptedPhoneNumber = decryptField(reportData.phone_number);
+      const decryptedIdLast6 = decryptField(reportData.id_last6);
+      const decryptedCountryKey = decryptField(reportData.country_key);
       
       // التحقق إذا كان المستخدم هو المالك
       const isOtherUser = userId && userId !== reportData.user_id;
@@ -4975,13 +4953,14 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
       return res.json({
         exists: true,
         phoneDetails: {
-          owner_name: decryptedOwnerName,
-          phone_number: decryptedPhoneNumber,
+          owner_name: decryptedOwnerName || '',
+          phone_number: decryptedPhoneNumber || '',
           phone_type: reportData.phone_type,
+          status: 'reported',
           user_id: reportData.user_id,
           imei: reportData.imei,
-          id_last6: decryptedIdLast6,
-          countryKey: decryptedCountryKey // إضافة مفتاح الدولة
+          id_last6: decryptedIdLast6 || '',
+          countryKey: decryptedCountryKey || '' // إضافة مفتاح الدولة
         },
         isOtherUser: isOtherUser
       });
