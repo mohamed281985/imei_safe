@@ -931,45 +931,69 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
     }
 
     // 4. ⭐ التعديل الجديد: إذا لم يتم العثور على IMEI، جلب بيانات المستخدم الحالي للملء التلقائي (مقنعة)
-    if (!reg && userId) {
-      try {
-        // جلب بيانات المستخدم الحالي من جدول users
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .select('full_name, phone, id_last6, country_code')
-          .eq('id', userId)
-          .maybeSingle();
+if (!reg && userId) {
+  try {
+    // جلب بيانات المستخدم الحالي من جدول users
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('full_name, phone, id_last6, country_code')
+      .eq('id', userId)
+      .maybeSingle();
 
-        if (!userError && userData) {
-          // فك تشفير بيانات المستخدم
-          const decryptedFullName = decryptField(userData.full_name) || '';
-          const decryptedPhone = decryptField(userData.phone) || '';
-          const decryptedIdLast6 = decryptField(userData.id_last6) || '';
-
-          // ⭐ إخفاء البيانات (Masking)
-          const maskedFullName = maskName(decryptedFullName);
-          const maskedPhone = maskPhoneNumber(decryptedPhone);
-          const maskedIdLast6 = maskIdLast6(decryptedIdLast6);
-
-          // إرجاع البيانات المقنعة للملء التلقائي مع القيم الفعلية المشفرة داخل حقول _raw
-          return res.json({
-            found: false,
-            autoFillData: {
-              ownerName: maskedFullName, // الاسم مقنع
-              phoneNumber: maskedPhone, // رقم الهاتف مقنع
-              idLast6: maskedIdLast6, // آخر 6 أرقام مقنعة
-              // حقول فعلية (غير مقنعة) متاحة للعميل الموثوق إذا احتاج إلى الإرسال
-              ownerNameRaw: decryptedFullName,
-              phoneNumberRaw: decryptedPhone,
-              idLast6Raw: decryptedIdLast6,
-              isReadOnly: true // البيانات للقراءة فقط
-            }
-          });
+    if (!userError && userData) {
+      // فك تشفير بيانات المستخدم
+      const decryptedFullName = decryptField(userData.full_name) || '';
+      const decryptedPhone = decryptField(userData.phone) || '';
+      const decryptedIdLast6 = decryptField(userData.id_last6) || '';
+      
+      // ⭐ استخراج كود الدولة
+      let countryCode = userData.country_code || '';
+      
+      // إذا لم يكن كود الدولة موجوداً، حاول استخراجه من رقم الهاتف
+      if (!countryCode && decryptedPhone) {
+        const cleanPhone = decryptedPhone.replace(/\D/g, '');
+        const knownCountryCodes = ['966', '20', '971', '965', '974', '973', '968', '970'];
+        
+        for (const code of knownCountryCodes) {
+          if (cleanPhone.startsWith(code)) {
+            countryCode = `+${code}`;
+            break;
+          }
         }
-      } catch (e) {
-        console.error('[imei-masked-info] Error fetching user data for auto-fill:', e);
       }
+      
+      // إذا لم يتم العثور على كود الدولة، استخدم كود افتراضي (مثلاً السعودية)
+      if (!countryCode) {
+        countryCode = '+966';
+      }
+
+      // ⭐ إخفاء البيانات (Masking)
+      const maskedFullName = maskName(decryptedFullName);
+      const maskedPhone = maskPhoneNumber(decryptedPhone);
+      const maskedIdLast6 = maskIdLast6(decryptedIdLast6);
+
+      // إرجاع البيانات المقنعة للملء التلقائي مع القيم الفعلية المشفرة داخل حقول _raw
+      return res.json({
+        found: false,
+        autoFillData: {
+          ownerName: maskedFullName, // الاسم مقنع
+          phoneNumber: maskedPhone, // رقم الهاتف مقنع
+          idLast6: maskedIdLast6, // آخر 6 أرقام مقنعة
+          // حقول فعلية (غير مقنعة) متاحة للعميل الموثوق إذا احتاج إلى الإرسال
+          ownerNameRaw: decryptedFullName,
+          phoneNumberRaw: decryptedPhone,
+          idLast6Raw: decryptedIdLast6,
+          // ⭐ إضافة كود الدولة إلى الاستجابة
+          country_code: countryCode,
+          isReadOnly: true // البيانات للقراءة فقط
+        }
+      });
     }
+  } catch (e) {
+    console.error('[imei-masked-info] Error fetching user data for auto-fill:', e);
+  }
+}
+
 
     // إذا لم يتم العثور على أي شيء
     return res.json({ found: false });
