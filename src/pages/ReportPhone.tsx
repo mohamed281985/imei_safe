@@ -662,7 +662,7 @@ const ReportPhone: React.FC = () => {
             } = result.autoFillData;
 
             // فصل رمز الدولة عن الرقم إذا كانا مدمجين
-            const providedCountry = countryKey || country_code || country_key || '';
+            const providedCountry = country_code || countryKey || country_key || '';
             let extractedCountryCode = providedCountry || '+20';
             let extractedPhoneNumber = phoneNumber || '';
 
@@ -752,9 +752,9 @@ const ReportPhone: React.FC = () => {
           // فصل رمز الدولة عن الرقم
           let registeredCountryCode =
             result.phoneDetails?.country_code ||
+            result.country_code ||
             result.phoneDetails?.countryKey ||
             result.phoneDetails?.country_key ||
-            result.country_code ||
             result.countryKey ||
             result.country_key ||
             '+20';
@@ -1036,7 +1036,7 @@ const ReportPhone: React.FC = () => {
         if (r && r.autoFillData) {
           effectivePhoneNumber = r.autoFillData.phoneNumberRaw || r.autoFillData.phoneNumber || effectivePhoneNumber;
           // تحديث رمز الدولة إذا كان متوفراً في البيانات الأصلية
-          const afCountry = r.autoFillData.countryKey || r.autoFillData.country_code || r.autoFillData.country_key;
+          const afCountry = r.autoFillData.country_code || r.autoFillData.countryKey || r.autoFillData.country_key;
           if (afCountry) {
             effectiveCountryCode = afCountry;
           }
@@ -1057,8 +1057,8 @@ const ReportPhone: React.FC = () => {
           const maybePhone = r.phone_number || r.phoneNumber || r.phone || r.owner_phone || null;
           const maybeId6 = r.id_last6 || r.idLast6 || r.id_last_6 || null;
           const maybeCountryCode =
-            r.countryKey || r.country_key || r.country_code ||
-            r.phoneDetails?.countryKey || r.phoneDetails?.country_key || r.phoneDetails?.country_code ||
+            r.country_code || r.countryKey || r.country_key ||
+            r.phoneDetails?.country_code || r.phoneDetails?.countryKey || r.phoneDetails?.country_key ||
             '+20';
 
           if (maybeOwner) effectiveOwnerName = maybeOwner;
@@ -1086,8 +1086,8 @@ const ReportPhone: React.FC = () => {
             const maybePhone = json?.phone_number || json?.phoneNumber || null;
             const maybeId6 = json?.id_last6 || json?.idLast6 || null;
             const maybeCountryCode =
-              json?.countryKey || json?.country_key || json?.country_code ||
-              json?.phoneDetails?.countryKey || json?.phoneDetails?.country_key || json?.phoneDetails?.country_code ||
+              json?.country_code || json?.countryKey || json?.country_key ||
+              json?.phoneDetails?.country_code || json?.phoneDetails?.countryKey || json?.phoneDetails?.country_key ||
               '+20';
 
             if (maybeOwner) effectiveOwnerName = maybeOwner;

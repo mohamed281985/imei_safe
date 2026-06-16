@@ -155,7 +155,16 @@ export function registerOwnershipRoutes({
           return res.json(response);
         }
 
-        return res.json({ found: true, masked: false, isRegistered: false, isOwner: false, hasActiveReport: true });
+        // Attempt to include caller's country code for autofill when phone is not registered
+        let callerCountryKey = null;
+        try {
+          const { data: urow } = await supabase.from('users').select('country_code,country_key').eq('id', userId).maybeSingle();
+          if (urow) callerCountryKey = urow.country_key || urow.country_code || null;
+        } catch (e) {
+          console.warn('[IMEI-MASKED-INFO] failed to fetch caller country key:', e);
+        }
+
+        return res.json({ found: true, masked: false, isRegistered: false, isOwner: false, hasActiveReport: true, country_key: callerCountryKey });
       }
 
       if (registeredPhone) {
@@ -257,8 +266,16 @@ export function registerOwnershipRoutes({
         return res.json(response);
       }
 
+      // Not registered: include caller country code to assist client autofill
       console.log('[IMEI-MASKED-INFO] Not registered: found=false');
-      return res.json({ found: false, masked: false, isOwner: false, isRegistered: false, hasActiveReport: false });
+      let callerCountryKey2 = null;
+      try {
+        const { data: urow } = await supabase.from('users').select('country_code,country_key').eq('id', userId).maybeSingle();
+        if (urow) callerCountryKey2 = urow.country_key || urow.country_code || null;
+      } catch (e) {
+        console.warn('[IMEI-MASKED-INFO] failed to fetch caller country key:', e);
+      }
+      return res.json({ found: false, masked: false, isOwner: false, isRegistered: false, hasActiveReport: false, country_key: callerCountryKey2 });
     } catch (error) {
       console.error('Error in imei-masked-info:', error);
       return res.status(500).json({ error: 'Server error', details: error?.message || '' });
