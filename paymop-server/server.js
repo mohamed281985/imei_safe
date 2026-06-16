@@ -1542,6 +1542,15 @@ const maskIdLast6 = (id) => {
   return '*'.repeat(starsCount) + cleanId.slice(-4);
 };
 
+// إخفاء مفتاح الدولة: نُظهر الحرف الأول ونخفي الباقي
+const maskCountryKey = (k) => {
+  if (!k && k !== 0) return '';
+  const s = String(k);
+  if (!s) return '';
+  if (s.length <= 1) return s;
+  return s.slice(0, 1) + '*'.repeat(Math.max(0, s.length - 1));
+};
+
 // إخفاء رقم واتساب/هاتف: يُظهر أول 3 أرقام وآخر رقمين فقط
 const maskWhatsAppNumber = (phone) => {
   if (!phone) return null;

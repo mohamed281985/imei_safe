@@ -650,15 +650,24 @@ const ReportPhone: React.FC = () => {
           
           // ⭐ التعديل الجديد: التعامل مع البيانات المقنعة من الخادم
           if (result.autoFillData) {
-            const { ownerName, phoneNumber, idLast6, isReadOnly, country_code } = result.autoFillData;
-            
+            const {
+              ownerName,
+              phoneNumber,
+              idLast6,
+              isReadOnly,
+              // support multiple possible server field names
+              countryKey,
+              country_key,
+              country_code
+            } = result.autoFillData;
+
             // فصل رمز الدولة عن الرقم إذا كانا مدمجين
-            let extractedCountryCode = country_code || '+20';
+            const providedCountry = countryKey || country_code || country_key || '';
+            let extractedCountryCode = providedCountry || '+20';
             let extractedPhoneNumber = phoneNumber || '';
 
             // إذا لم يكن هناك رمز دولة صريح، حاول فصله من الرقم
-            if (!country_code && phoneNumber && phoneNumber.startsWith('+')) {
-              // افتراض بسيط: الرمز هو أول 4 أحرف (+20x أو +966)
+            if (!providedCountry && phoneNumber && phoneNumber.startsWith('+')) {
               const match = phoneNumber.match(/^\+(\d{1,3})(.*)$/);
               if (match) {
                 extractedCountryCode = `+${match[1]}`;
@@ -668,21 +677,21 @@ const ReportPhone: React.FC = () => {
 
             // تحديث الحالة
             setCountryCode(extractedCountryCode);
-            
+
             setFormData(prev => ({
               ...prev,
               ownerName: ownerName || '',
               phoneNumber: extractedPhoneNumber.replace(/\D/g, ''), // حفظ الرقم فقط بدون رمز
               idLast6: idLast6 ? (/\*/.test(String(idLast6)) ? String(idLast6) : maskIdNumber(String(idLast6))) : '',
             }));
-            
+
             setOriginalData({
               ownerName: ownerName || '',
               phoneNumber: extractedPhoneNumber.replace(/\D/g, ''),
               idLast6: idLast6 || '',
               countryCode: extractedCountryCode
             });
-            
+
             if (isReadOnly) {
               setFieldReadOnlyState({
                 ownerName: true,
@@ -741,11 +750,19 @@ const ReportPhone: React.FC = () => {
         if (result.found && result.isRegistered && inferredIsOwner) {
           // ⭐ التعديل الجديد: التعامل مع البيانات المسجلة للمالك الحالي
           // فصل رمز الدولة عن الرقم
-          let registeredCountryCode = result.phoneDetails?.country_code || result.country_code || '+20';
+          let registeredCountryCode =
+            result.phoneDetails?.country_code ||
+            result.phoneDetails?.countryKey ||
+            result.phoneDetails?.country_key ||
+            result.country_code ||
+            result.countryKey ||
+            result.country_key ||
+            '+20';
+
           let registeredPhoneNumber = result.phoneDetails?.phone_number || result.phone_number || '';
-          
+
           // إذا لم يكن هناك رمز دولة صريح، حاول فصله من الرقم
-          if (!registeredCountryCode && registeredPhoneNumber && registeredPhoneNumber.startsWith('+')) {
+          if ((!registeredCountryCode || registeredCountryCode === '+') && registeredPhoneNumber && registeredPhoneNumber.startsWith('+')) {
             const match = registeredPhoneNumber.match(/^\+(\d{1,3})(.*)$/);
             if (match) {
               registeredCountryCode = `+${match[1]}`;
@@ -1019,8 +1036,9 @@ const ReportPhone: React.FC = () => {
         if (r && r.autoFillData) {
           effectivePhoneNumber = r.autoFillData.phoneNumberRaw || r.autoFillData.phoneNumber || effectivePhoneNumber;
           // تحديث رمز الدولة إذا كان متوفراً في البيانات الأصلية
-          if (r.autoFillData.country_code) {
-            effectiveCountryCode = r.autoFillData.country_code;
+          const afCountry = r.autoFillData.countryKey || r.autoFillData.country_code || r.autoFillData.country_key;
+          if (afCountry) {
+            effectiveCountryCode = afCountry;
           }
         }
       }
@@ -1038,7 +1056,10 @@ const ReportPhone: React.FC = () => {
           const maybeOwner = r.owner_name || r.ownerName || r.owner || r.name || null;
           const maybePhone = r.phone_number || r.phoneNumber || r.phone || r.owner_phone || null;
           const maybeId6 = r.id_last6 || r.idLast6 || r.id_last_6 || null;
-          const maybeCountryCode = r.country_code || r.phoneDetails?.country_code || '+20';
+          const maybeCountryCode =
+            r.countryKey || r.country_key || r.country_code ||
+            r.phoneDetails?.countryKey || r.phoneDetails?.country_key || r.phoneDetails?.country_code ||
+            '+20';
 
           if (maybeOwner) effectiveOwnerName = maybeOwner;
           if (maybePhone) {
@@ -1064,7 +1085,10 @@ const ReportPhone: React.FC = () => {
             const maybeOwner = json?.owner_name || json?.ownerName || null;
             const maybePhone = json?.phone_number || json?.phoneNumber || null;
             const maybeId6 = json?.id_last6 || json?.idLast6 || null;
-            const maybeCountryCode = json?.country_code || json?.phoneDetails?.country_code || '+20';
+            const maybeCountryCode =
+              json?.countryKey || json?.country_key || json?.country_code ||
+              json?.phoneDetails?.countryKey || json?.phoneDetails?.country_key || json?.phoneDetails?.country_code ||
+              '+20';
 
             if (maybeOwner) effectiveOwnerName = maybeOwner;
             if (maybePhone) {
