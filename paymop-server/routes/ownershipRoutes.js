@@ -28,7 +28,7 @@ export function registerOwnershipRoutes({
 
       const { data: reports, error: reportError } = await supabase
         .from('phone_reports')
-        .select('imei')
+        .select('imei, owner_name, phone_number, id_last6')
         .eq('status', 'active');
 
       if (reportError) throw reportError;
@@ -93,6 +93,7 @@ export function registerOwnershipRoutes({
                 phone_number: phoneNumber,
                 id_last6: idLast6,
                 country_key: countryKeyRaw,
+                country_code: countryKeyRaw,
                 maskedCountryKey: maskedCountryKey,
                 maskedOwnerName: maskName(ownerName),
                 maskedPhoneNumber: maskPhoneNumber(phoneNumber),
@@ -124,6 +125,8 @@ export function registerOwnershipRoutes({
               isTransferred: true,
               isRegistered: true,
               receipt_image_url: registeredPhone.receipt_image_url,
+              country_key: countryKeyRaw,
+              country_code: countryKeyRaw,
               ...maskedPhoneDetails
             });
           }
@@ -144,6 +147,7 @@ export function registerOwnershipRoutes({
             hasActiveReport: true,
             receipt_image_url: registeredPhone.receipt_image_url,
             country_key: countryKeyRaw,
+            country_code: countryKeyRaw,
             maskedCountryKey: maskedCountryKey,
             maskedOwnerName: maskName(ownerName),
             maskedPhoneNumber: maskPhoneNumber(phoneNumber),
@@ -155,7 +159,7 @@ export function registerOwnershipRoutes({
           return res.json(response);
         }
 
-        // Attempt to include caller's country code for autofill when phone is not registered
+        // Attempt to include caller's country code and autofill data when phone is not registered
         let callerCountryKey = null;
         try {
           const { data: urow } = await supabase.from('users').select('country_code,country_key').eq('id', userId).maybeSingle();
@@ -164,7 +168,29 @@ export function registerOwnershipRoutes({
           console.warn('[IMEI-MASKED-INFO] failed to fetch caller country key:', e);
         }
 
-        return res.json({ found: true, masked: false, isRegistered: false, isOwner: false, hasActiveReport: true, country_key: callerCountryKey });
+        // Try to derive autofill values from the active report row if available
+        let autoFill = null;
+        try {
+          if (activeReport) {
+            const ownerRaw = activeReport.owner_name ? (decryptField(activeReport.owner_name) || activeReport.owner_name) : '';
+            const phoneRaw = activeReport.phone_number ? (decryptField(activeReport.phone_number) || activeReport.phone_number) : '';
+            const id6Raw = activeReport.id_last6 ? (decryptField(activeReport.id_last6) || activeReport.id_last6) : '';
+            autoFill = {
+              ownerName: maskName(ownerRaw || ''),
+              phoneNumber: maskPhoneNumber(phoneRaw || ''),
+              idLast6: maskIdLast6(id6Raw || ''),
+              ownerNameRaw: ownerRaw || null,
+              phoneNumberRaw: phoneRaw || null,
+              idLast6Raw: id6Raw || null,
+              isReadOnly: true,
+              country_code: callerCountryKey || null
+            };
+          }
+        } catch (e) {
+          console.warn('[IMEI-MASKED-INFO] failed to build autoFill from activeReport:', e);
+        }
+
+        return res.json({ found: true, masked: false, isRegistered: false, isOwner: false, hasActiveReport: true, country_key: callerCountryKey, country_code: callerCountryKey, autoFillData: autoFill });
       }
 
       if (registeredPhone) {
@@ -198,6 +224,7 @@ export function registerOwnershipRoutes({
               phone_number: phoneNumber,
               id_last6: idLast6,
               country_key: countryKeyRaw,
+              country_code: countryKeyRaw,
               maskedCountryKey: maskedCountryKey,
               maskedOwnerName: maskName(ownerName),
               maskedPhoneNumber: maskPhoneNumber(phoneNumber),
@@ -235,6 +262,8 @@ export function registerOwnershipRoutes({
             isRegistered: true,
             hasActiveReport: false,
             receipt_image_url: registeredPhone.receipt_image_url,
+            country_key: countryKeyRaw,
+            country_code: countryKeyRaw,
             ...maskedPhoneDetails
           });
         }
@@ -255,6 +284,7 @@ export function registerOwnershipRoutes({
           hasActiveReport: false,
           receipt_image_url: registeredPhone.receipt_image_url,
           country_key: countryKeyRaw,
+          country_code: countryKeyRaw,
           maskedCountryKey: maskedCountryKey,
           maskedOwnerName: maskName(ownerName),
           maskedPhoneNumber: maskPhoneNumber(phoneNumber),
@@ -275,7 +305,18 @@ export function registerOwnershipRoutes({
       } catch (e) {
         console.warn('[IMEI-MASKED-INFO] failed to fetch caller country key:', e);
       }
-      return res.json({ found: false, masked: false, isOwner: false, isRegistered: false, hasActiveReport: false, country_key: callerCountryKey2 });
+      // Provide empty autoFillData but include caller country code so client can preselect
+      const emptyAutoFill = {
+        ownerName: null,
+        phoneNumber: null,
+        idLast6: null,
+        ownerNameRaw: null,
+        phoneNumberRaw: null,
+        idLast6Raw: null,
+        isReadOnly: false,
+        country_code: callerCountryKey2 || null
+      };
+      return res.json({ found: false, masked: false, isOwner: false, isRegistered: false, hasActiveReport: false, country_key: callerCountryKey2, country_code: callerCountryKey2, autoFillData: emptyAutoFill });
     } catch (error) {
       console.error('Error in imei-masked-info:', error);
       return res.status(500).json({ error: 'Server error', details: error?.message || '' });
