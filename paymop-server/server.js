@@ -936,7 +936,7 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
         // جلب بيانات المستخدم الحالي من جدول users
         const { data: userData, error: userError } = await supabase
           .from('users')
-          .select('full_name, phone, id_last6')
+          .select('full_name, phone, id_last6, country_code')
           .eq('id', userId)
           .maybeSingle();
 
