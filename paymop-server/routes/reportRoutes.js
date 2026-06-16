@@ -884,31 +884,80 @@ export function registerReportRoutes({
       const [userResult, businessResult] = await Promise.allSettled([
         supabase
           .from('users')
-          .select('phone') // تصحيح: اسم العمود هو 'phone' وليس 'phone_number'
+          .select('phone, country_code') // ⭐ إضافة country_code للاستعلام
           .eq('id', userId)
           .single(),
         supabase
           .from('businesses')
-          .select('phone') // تصحيح: اسم العمود هو 'phone' وليس 'phone_number'
-          .eq('user_id', userId) // تصحيح: البحث باستخدام user_id بدلاً من id
+          .select('phone, country_code') // ⭐ إضافة country_code للاستعلام
+          .eq('user_id', userId) // البحث باستخدام user_id بدلاً من id
           .single()
       ]);
 
       // ⭐ تحقق من نتيجة البحث في جدول users
       if (userResult.status === 'fulfilled' && userResult.value.data && !userResult.value.error) {
-        finderPhoneNumber = decryptField(userResult.value.data.phone) || userResult.value.data.phone;
-        console.log('تم العثور على رقم هاتف في جدول users:', finderPhoneNumber);
+        const decryptedPhone = decryptField(userResult.value.data.phone) || userResult.value.data.phone;
+        const countryCode = userResult.value.data.country_code || '+20'; // ⭐ استخراج كود الدولة
+
+        if (decryptedPhone) {
+          // ⭐ دمج كود الدولة مع رقم الهاتف
+          const cleanPhone = decryptedPhone.replace(/\D/g, '');
+          const fullPhone = countryCode.replace('+', '') + cleanPhone;
+          finderPhoneNumber = fullPhone;
+          console.log('تم العثور على رقم هاتف في جدول users:', finderPhoneNumber);
+        }
       }
 
       // ⭐ إذا لم يتم العثوره في users، تحقق من نتيجة البحث في جدول businesses
       if (!finderPhoneNumber && businessResult.status === 'fulfilled' && businessResult.value.data && !businessResult.value.error) {
-        finderPhoneNumber = decryptField(businessResult.value.data.phone) || businessResult.value.data.phone;
-        console.log('تم العثور على رقم هاتف في جدول businesses:', finderPhoneNumber);
+        const decryptedPhone = decryptField(businessResult.value.data.phone) || businessResult.value.data.phone;
+        const countryCode = businessResult.value.data.country_code || '+20'; // ⭐ استخراج كود الدولة
+
+        if (decryptedPhone) {
+          // ⭐ دمج كود الدولة مع رقم الهاتف
+          const cleanPhone = decryptedPhone.replace(/\D/g, '');
+          const fullPhone = countryCode.replace('+', '') + cleanPhone;
+          finderPhoneNumber = fullPhone;
+          console.log('تم العثور على رقم هاتف في جدول businesses:', finderPhoneNumber);
+        }
       }
 
       // إذا تم العثور على الرقم في أي من الجدولين، أرسله
       if (finderPhoneNumber) {
-        res.status(200).json({ finderPhone: finderPhoneNumber });
+        // إذا أرسلت الواجهة imei أو reportId، احفظ الهاتف كـ finder_phone في سجل البلاغ المناسب
+        const { imei, reportId } = req.body || {};
+        let updated = false;
+        if (imei || reportId) {
+          try {
+            const enc = encryptAES(String(finderPhoneNumber));
+            const encryptedVal = enc ? JSON.stringify({ encryptedData: enc.encryptedData, iv: enc.iv, authTag: enc.authTag }) : String(finderPhoneNumber);
+
+            if (reportId) {
+              const { error: upErr } = await supabase.from('phone_reports').update({ finder_phone: encryptedVal, finder_user_id: userId }).eq('id', reportId);
+              if (!upErr) updated = true;
+            } else if (imei) {
+              // بحث عن البلاغات المطابقة للـ IMEI المشفّر
+              const { data: allReports, error: reportErr } = await supabase.from('phone_reports').select('id, imei').limit(1000);
+              if (!reportErr && allReports && allReports.length) {
+                for (const r of allReports) {
+                  try {
+                    const dec = decryptField(r.imei) || r.imei;
+                    if (dec && String(dec).replace(/\D/g, '') === String(imei).replace(/\D/g, '')) {
+                      const { error: upErr2 } = await supabase.from('phone_reports').update({ finder_phone: encryptedVal, finder_user_id: userId }).eq('id', r.id);
+                      if (!upErr2) { updated = true; break; }
+                    }
+                  } catch (e) {
+                    // ignore decryption failures for individual rows
+                  }
+                }
+              }
+            }
+          } catch (saveErr) {
+            console.error('Failed to save finder phone to phone_reports:', saveErr);
+          }
+        }
+
+        return res.status(200).json({ finderPhone: finderPhoneNumber, updated });
       } else {
         // إذا لم يتم العثور عليه في أي من الجدولين
         console.log('لم يتم العثور على رقم هاتف للمستخدم في أي من الجدولين.');

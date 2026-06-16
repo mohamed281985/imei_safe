@@ -649,48 +649,54 @@ const ReportPhone: React.FC = () => {
           setActiveReportWarning('phone_not_registered_can_report');
           
           // ⭐ التعديل الجديد: التعامل مع البيانات المقنعة من الخادم
-          if (result.autoFillData) {
-            const {
-              ownerName,
-              phoneNumber,
-              idLast6,
-              isReadOnly,
-              // support multiple possible server field names
-              countryKey,
-              country_key,
-              country_code
-            } = result.autoFillData;
+        // في دالة fetchMaskedImeiInfo
+if (result.autoFillData) {
+  const {
+    ownerName,
+    phoneNumber,
+    phoneNumberRaw, // استخدام الرقم الفعلي (غير المقنع) إذا كان متوفراً
+    idLast6,
+    isReadOnly,
+    countryKey,
+    country_key,
+    country_code
+  } = result.autoFillData;
 
-            // فصل رمز الدولة عن الرقم إذا كانا مدمجين
-            const providedCountry = country_code || countryKey || country_key || '';
-            let extractedCountryCode = providedCountry || '+20';
-            let extractedPhoneNumber = phoneNumber || '';
+  // فصل رمز الدولة عن الرقم إذا كانا مدمجين
+  const providedCountry = country_code || countryKey || country_key || '';
+  let extractedCountryCode = providedCountry || '+20';
+  
+  // استخدام الرقم الفعلي (غير المقنع) إذا كان متوفراً، وإلا استخدام الرقم المقنع للعرض
+  let extractedPhoneNumber = phoneNumberRaw || phoneNumber || '';
+  let displayPhoneNumber = phoneNumber || ''; // الرقم المقنع للعرض
 
-            // إذا لم يكن هناك رمز دولة صريح، حاول فصله من الرقم
-            if (!providedCountry && phoneNumber && phoneNumber.startsWith('+')) {
-              const match = phoneNumber.match(/^\+(\d{1,3})(.*)$/);
-              if (match) {
-                extractedCountryCode = `+${match[1]}`;
-                extractedPhoneNumber = match[2];
-              }
-            }
+  // إذا لم يكن هناك رمز دولة صريح، حاول فصله من الرقم الفعلي
+  if (!providedCountry && extractedPhoneNumber && extractedPhoneNumber.startsWith('+')) {
+    const match = extractedPhoneNumber.match(/^\+(\d{1,3})(.*)$/);
+    if (match) {
+      extractedCountryCode = `+${match[1]}`;
+      extractedPhoneNumber = match[2];
+    }
+  }
 
-            // تحديث الحالة
-            setCountryCode(extractedCountryCode);
+  // تحديث الحالة
+  setCountryCode(extractedCountryCode);
 
-            setFormData(prev => ({
-              ...prev,
-              ownerName: ownerName || '',
-              phoneNumber: extractedPhoneNumber.replace(/\D/g, ''), // حفظ الرقم فقط بدون رمز
-              idLast6: idLast6 ? (/\*/.test(String(idLast6)) ? String(idLast6) : maskIdNumber(String(idLast6))) : '',
-            }));
+  setFormData(prev => ({
+    ...prev,
+    ownerName: ownerName || '',
+    // استخدام الرقم المقنع للعرض، والرقم الفعلي للحفظ في originalData
+    phoneNumber: displayPhoneNumber, // استخدام الرقم المقنع للعرض
+    idLast6: idLast6 ? (/\*/.test(String(idLast6)) ? String(idLast6) : maskIdNumber(String(idLast6))) : '',
+  }));
 
-            setOriginalData({
-              ownerName: ownerName || '',
-              phoneNumber: extractedPhoneNumber.replace(/\D/g, ''),
-              idLast6: idLast6 || '',
-              countryCode: extractedCountryCode
-            });
+  setOriginalData({
+    ownerName: ownerName || '',
+    phoneNumber: extractedPhoneNumber.replace(/\D/g, ''), // حفظ الرقم الفعلي بدون رمز
+    idLast6: idLast6 || '',
+    countryCode: extractedCountryCode
+  });
+
 
             if (isReadOnly) {
               setFieldReadOnlyState({
