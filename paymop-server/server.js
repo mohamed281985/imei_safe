@@ -882,102 +882,41 @@ app.post('/api/supabase-auth-webhook', (req, res) => {
 
 // ⭐ نقطة نهاية للتحقق الشامل من IMEI (البلاغات، التسجيل، والإعلانات السابقة)
 // ⭐ نقطة نهاية للتحقق الشامل من IMEI (البلاغات، التسجيل، والإعلانات السابقة)
-app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
+app.post('/api/imei-masked-info', async (req, res) => {
   try {
     const { imei } = req.body;
-    const userId = req.user?.id; // جلب معرف المستخدم من التوكن
-    
-    if (!imei) return res.status(400).json({ error: 'IMEI is required' });
-    const normalizedImei = String(imei).replace(/\D/g, '');
 
-    // 1. التحقق من جدول البلاغات (active reports)
-    const { data: reports } = await supabase.from('phone_reports').select('imei').eq('status', 'active');
-    const isStolen = (reports || []).some(r => {
-      const dec = decryptField(r.imei);
-      return dec && String(dec).replace(/\D/g, '') === normalizedImei;
-    });
-    if (isStolen) return res.json({ found: true, hasActiveReport: true });
+    const { data, error } = await supabase
+      .from('registered_phones')
+      .select('owner_name, phone_number, country_code, id_last6, ...')
+      .eq('imei', imei)
+      .single();
 
-    // 2. ⭐ التحقق من جدول phones (وجود إعلان سابق)
-    const { data: ads } = await supabase.from('phones').select('id, imei, phone_type').neq('status', 'deleted');
-    const existingAd = (ads || []).find(a => {
-      const dec = decryptField(a.imei);
-      return dec && String(dec).replace(/\D/g, '') === normalizedImei;
-    });
-
-    if (existingAd) {
-      return res.json({
-        found: true,
-        hasActiveAd: true,
-        adId: existingAd.id,
-        phone_type: existingAd.phone_type
-      });
+    if (error || !data) {
+      return res.status(404).json({ found: false });
     }
 
-    // 3. التحقق من جدول التسجيل (registered_phones)
-    const { data: registered } = await supabase.from('registered_phones').select('imei, phone_type, user_id');
-    const reg = (registered || []).find(r => {
-      const dec = decryptField(r.imei);
-      return dec && String(dec).replace(/\D/g, '') === normalizedImei;
-    });
-
-    if (reg) {
-      return res.json({
-        found: true,
-        isRegistered: true,
-        phone_type: reg.phone_type,
-        isOwner: userId === reg.user_id
-      });
-    }
-
-    // 4. ⭐ التعديل الجديد: إذا لم يتم العثور على IMEI، جلب بيانات المستخدم الحالي للملء التلقائي (مقنعة)
-    if (!reg && userId) {
-      try {
-        // جلب بيانات المستخدم الحالي من جدول users
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .select('full_name, phone, id_last6')
-          .eq('id', userId)
-          .maybeSingle();
-
-        if (!userError && userData) {
-          // فك تشفير بيانات المستخدم
-          const decryptedFullName = decryptField(userData.full_name) || '';
-          const decryptedPhone = decryptField(userData.phone) || '';
-          const decryptedIdLast6 = decryptField(userData.id_last6) || '';
-
-          // ⭐ إخفاء البيانات (Masking)
-          const maskedFullName = maskName(decryptedFullName);
-          const maskedPhone = maskPhoneNumber(decryptedPhone);
-          const maskedIdLast6 = maskIdLast6(decryptedIdLast6);
-
-          // إرجاع البيانات المقنعة للملء التلقائي مع القيم الفعلية المشفرة داخل حقول _raw
-          return res.json({
-            found: false,
-            autoFillData: {
-              ownerName: maskedFullName, // الاسم مقنع
-              phoneNumber: maskedPhone, // رقم الهاتف مقنع
-              idLast6: maskedIdLast6, // آخر 6 أرقام مقنعة
-              // حقول فعلية (غير مقنعة) متاحة للعميل الموثوق إذا احتاج إلى الإرسال
-              ownerNameRaw: decryptedFullName,
-              phoneNumberRaw: decryptedPhone,
-              idLast6Raw: decryptedIdLast6,
-              isReadOnly: true // البيانات للقراءة فقط
-            }
-          });
-        }
-      } catch (e) {
-        console.error('[imei-masked-info] Error fetching user data for auto-fill:', e);
+    // تجهيز البيانات المقنعة
+    return res.status(200).json({
+      found: true,
+      // ... حقول أخرى
+      // إرسال الرمز والرقم منفصلين
+      phone_number: data.phone_number, 
+      country_code: data.country_code,
+      // إذا كان لديك منطق autoFillData
+      autoFillData: {
+        ownerName: maskName(data.owner_name),
+        phoneNumber: maskPhoneNumber(data.phone_number),
+        country_code: data.country_code, // تأكد من إضافته هنا
+        // ...
       }
-    }
-
-    // إذا لم يتم العثور على أي شيء
-    return res.json({ found: false });
-  } catch (err) {
-    console.error('imei-masked-info error:', err);
-    res.status(500).json({ error: 'Internal server error' });
+    });
+  } catch (error) {
+    console.error('Error fetching masked info:', error);
+    return res.status(500).json({ error: 'Server error' });
   }
 });
+
 
 
 // Internal endpoint: create application `users` row after auth signup
