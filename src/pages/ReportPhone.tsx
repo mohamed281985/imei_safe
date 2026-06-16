@@ -16,7 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import PageAdvertisement from '@/components/advertisements/PageAdvertisement';
 import AdsOfferSlider from '@/components/advertisements/AdsOfferSlider';
 import { useScrollToTop } from '../hooks/useScrollToTop';
-import { supabase } from '@/lib/supabase'; // استيراد Supabase
+import { supabase } from '@/lib/supabase';
 
 import { useAuth } from '../contexts/AuthContext';
 import CountryCodeSelector from '../components/CountryCodeSelector';
@@ -40,7 +40,7 @@ interface FormData {
   ownerName: string;
   phoneNumber: string;
   imei: string;
-  phone_type: string; // نوع الهاتف
+  phone_type: string;
   lossLocation: string;
   lossTime: string;
   receiptImage: string | File | null;
@@ -50,54 +50,32 @@ interface FormData {
   idLast6: string;
 }
 
-type ImageType = 'receiptImage' | 'reportImage'; // تم التغيير من phoneImage
-
+type ImageType = 'receiptImage' | 'reportImage';
 
 // دوال مساعدة لتنسيق عرض البيانات
 const maskName = (name: string): string => {
   if (!name) return '';
-
-  // تقسيم الاسم إلى كلمات
   const words = name.trim().split(/\s+/);
-
-  // معالجة كل كلمة - النجوم أولاً والحرف الأول في النهاية
   const maskedWords = words.map(word => {
     if (word.length <= 1) return word;
-    // 6 نجوم متبوعة بالحرف الأول من الكلمة
     return '******' + word.charAt(0);
   });
-
-  // إعادة تجميع الكلمات بالترتيب الأصلي مع فاصل واحد بين الأسماء
-  return maskedWords.join(' ');  // مسافة واحدة بين كل اسم
+  return maskedWords.join(' ');
 };
 
 const maskPhoneNumber = (phone: string): string => {
   if (!phone) return '';
-
-  // إزالة أي أحرف غير رقمية
   const cleanPhone = phone.replace(/\D/g, '');
-
   if (cleanPhone.length <= 2) return cleanPhone;
-
-  // الحصول على آخر رقمين
   const lastTwoDigits = cleanPhone.slice(-2);
-
-  // إظهار الرقمين أولاً ثم النجوم (بدون مسافات)
   return lastTwoDigits + '*'.repeat(Math.min(cleanPhone.length - 2, 8));
 };
 
 const maskIdNumber = (id: string): string => {
   if (!id) return '';
-
-  // إزالة أي أحرف غير رقمية
   const cleanId = id.replace(/\D/g, '');
-
   if (cleanId.length <= 4) return cleanId;
-
-  // الحصول على آخر 4 أرقام
   const lastFourDigits = cleanId.slice(-4);
-
-  // إظهار النجوم ثم آخر 4 أرقام (أكثر شيوعاً لعرض الأرقام الحساسة)
   const starsCount = Math.min(cleanId.length - 4, 6);
   return '*'.repeat(starsCount) + lastFourDigits;
 };
@@ -105,10 +83,8 @@ const maskIdNumber = (id: string): string => {
 const maskEmail = (email: string | null): string => {
   if (!email) return '';
   const parts = email.split('@');
-  if (parts.length !== 2) return '***'; // صيغة بريد إلكتروني غير صالحة
-
+  if (parts.length !== 2) return '***';
   const [localPart, domain] = parts;
-
   if (localPart.length <= 3) {
     return `${localPart.charAt(0)}**@${domain}`;
   }
@@ -135,23 +111,11 @@ const validateImageFile = (file: File): Promise<boolean> => {
         for(let i = 0; i < arr.length; i++) {
            header += arr[i].toString(16);
         }
-        
-        // JPEG: ffd8...
-        // PNG: 89504e47
-        // GIF: 47494638
-        // WebP: 52494646 (RIFF)
-        
         let isValid = false;
-        if (header.startsWith('ffd8')) {
-            isValid = true; // JPEG
-        } else if (header === '89504e47') {
-            isValid = true; // PNG
-        } else if (header === '47494638') {
-            isValid = true; // GIF
-        } else if (header === '52494646') {
-            isValid = true; // WebP
-        }
-        
+        if (header.startsWith('ffd8')) isValid = true; // JPEG
+        else if (header === '89504e47') isValid = true; // PNG
+        else if (header === '47494638') isValid = true; // GIF
+        else if (header === '52494646') isValid = true; // WebP
         resolve(isValid);
       } else {
         resolve(false);
@@ -165,34 +129,34 @@ const validateImageFile = (file: File): Promise<boolean> => {
 const ReportPhone: React.FC = () => {
   useScrollToTop();
   const resultRef = useRef<any>(null);
+  
   // حالة لتخزين القيم الأصلية
   const [originalData, setOriginalData] = useState({
     ownerName: '',
     phoneNumber: '',
-    idLast6: ''
+    idLast6: '',
+    countryCode: '' // إضافة رمز الدولة للبيانات الأصلية
   });
   
-  // تخزين الروابط المؤقتة للصور لتنظيفها عند إلغاء المكون
   const [imageUrls, setImageUrls] = useState<string[]>([]);
   
-  // دالة لتنظيف الروابط المؤقتة
   const cleanupImageUrls = useCallback(() => {
     imageUrls.forEach(url => URL.revokeObjectURL(url));
     setImageUrls([]);
   }, []);
   
-  // تنظيف الروابط عند إلغاء المكون
   useEffect(() => {
     return cleanupImageUrls;
   }, []);
+  
   const { t } = useLanguage();
   const REGISTERED_IN_SYSTEM = '__REGISTERED_IN_SYSTEM__';
   const registeredInSystemLabel = t('registered_in_system');
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { user } = useAuth(); // جلب المستخدم الحالي
+  const { user } = useAuth();
 
-  const [countryCode, setCountryCode] = useState('+20'); // Default to Egypt for the country code
+  const [countryCode, setCountryCode] = useState('+20');
   const [formData, setFormData] = useState<FormData>({
     ownerName: '',
     phoneNumber: '',
@@ -207,28 +171,22 @@ const ReportPhone: React.FC = () => {
     idLast6: '',
   });
 
-  // حالة المعاينة للصور (Data URL أو مسار ملف)
   const [reportImagePreview, setReportImagePreview] = useState<string | null>(null);
-  const [receiptImagePreview, setReceiptImagePreview] = useState<string | null>(null); // تم التغيير من phoneImagePreview
+  const [receiptImagePreview, setReceiptImagePreview] = useState<string | null>(null);
 
-  // حالة لتتبع ما إذا كان النموذج للقراءة فقط بشكل كامل
   const [isReadOnly, setIsReadOnly] = useState(false);
-  // حالة لتتبع الحقول التي يجب أن تكون للقراءة فقط بشكل انتقائي
   const [fieldReadOnlyState, setFieldReadOnlyState] = useState({
     ownerName: false,
     phoneNumber: false,
     lossLocation: false,
     lossTime: false,
-    receiptImage: false, // تم التغيير من phoneImage
+    receiptImage: false,
     reportImage: false,
-    idLast6: false, // إضافة خاصية idLast6
+    idLast6: false,
   });
 
-  // حالة التحميل والإرسال
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // حالة لتتبع ما إذا كان IMEI مسجلاً مسبقاً
   const [isImeiRegistered, setIsImeiRegistered] = useState(false);
   const [currentStep, setCurrentStep] = useState(1);
 
@@ -239,63 +197,48 @@ const ReportPhone: React.FC = () => {
     { title: t('step_attachments_title'), description: t('step_attachments_desc') },
   ];
 
-  const [dbPassword, setDbPassword] = useState<string | null>(null); // لتخزين كلمة المرور من قاعدة البيانات للتحقق
-  const [registeredPhoneEmail, setRegisteredPhoneEmail] = useState<string | null>(null); // لتخزين إيميل الهاتف المسجل
-  // حالة نافذة كلمة المرور المنبثقة
+  const [dbPassword, setDbPassword] = useState<string | null>(null);
+  const [registeredPhoneEmail, setRegisteredPhoneEmail] = useState<string | null>(null);
   const [modalPassword, setModalPassword] = useState('');
   const [modalConfirmPassword, setModalConfirmPassword] = useState('');
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [isImeiValid, setIsImeiValid] = useState(false);
 
-  // حالة الإعلان المتحرك
-  const [currentAdIndex, setCurrentAdIndex] = useState(0);
-
   const [isImageViewerOpen, setImageViewerOpen] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
-  // حالة لعرض الصورة الكاملة
   const [showFullImage, setShowFullImage] = useState(false);
   const [fullImageUrl, setFullImageUrl] = useState<string | null>(null);
 
-  // حالة لعرض رسالة تحذير إذا كان هناك بلاغ فعال موجود
   const [activeReportWarning, setActiveReportWarning] = useState<string | null>(null);
 
-  // Refs لعناصر إدخال الملفات
   const reportImageInputRef = React.useRef<HTMLInputElement>(null);
-  const receiptImageInputRef = React.useRef<HTMLInputElement>(null); // تم التغيير من phoneImageInputRef
+  const receiptImageInputRef = React.useRef<HTMLInputElement>(null);
 
-  // إضافة حالة لمربع اختيار مشاركة الواتساب
   const [shareWhatsApp, setShareWhatsApp] = useState(false);
   const [showUpgradeDialog, setShowUpgradeDialog] = useState(false);
   
-  // إضافة حالة لتخزين دور المستخدم من قاعدة البيانات
   const [userRole, setUserRole] = useState<string | null>(null);
   const [isCheckingRole, setIsCheckingRole] = useState(false);
 
-  // دالة للتحقق من دور المستخدم من قاعدة البيانات
   const checkUserRole = async () => {
     if (!user || !user.email) {
       setUserRole(null);
       return;
     }
-
     setIsCheckingRole(true);
     try {
-      // البحث في جدول users باستخدام البريد الإلكتروني دون مراعاة حالة الأحرف
       const { data, error } = await supabase
         .from('users')
         .select('role')
-        .ilike('email', user.email) // استخدام ilike بدلاً من eq للمقارنة غير الحساسة لحالة الأحرف
+        .ilike('email', user.email)
         .single();
 
       if (error) {
         console.error('خطأ في جلب دور المستخدم:', error);
-        // في حالة الخطأ، حاول استخدام user_metadata كخيار احتياطي
         const extendedUser = user as ExtendedUser;
         const fallbackRole = extendedUser.user_metadata?.role;
         if (fallbackRole) {
-          console.log('استخدام الدور من user_metadata:', fallbackRole);
-          // التأكد من تحويل الدور إلى أحرف صغيرة
           setUserRole(fallbackRole.toLowerCase());
         } else {
           setUserRole(null);
@@ -304,16 +247,11 @@ const ReportPhone: React.FC = () => {
       }
 
       if (data && data.role) {
-        console.log('دور المستخدم من قاعدة البيانات:', data.role);
-        // التأكد من تحويل الدور إلى أحرف صغيرة
         setUserRole(data.role.toLowerCase());
       } else {
-        // في حالة عدم وجود دور في قاعدة البيانات، حاول استخدام user_metadata
         const extendedUser = user as ExtendedUser;
         const fallbackRole = extendedUser.user_metadata?.role;
         if (fallbackRole) {
-          console.log('استخدام الدور من user_metadata:', fallbackRole);
-          // التأكد من تحويل الدور إلى أحرف صغيرة
           setUserRole(fallbackRole.toLowerCase());
         } else {
           setUserRole(null);
@@ -321,12 +259,9 @@ const ReportPhone: React.FC = () => {
       }
     } catch (error) {
       console.error('خطأ في جلب دور المستخدم:', error);
-      // في حالة الخطأ، حاول استخدام user_metadata كخيار احتياطي
       const extendedUser = user as ExtendedUser;
       const fallbackRole = extendedUser.user_metadata?.role;
       if (fallbackRole) {
-        console.log('استخدام الدور من user_metadata:', fallbackRole);
-        // التأكد من تحويل الدور إلى أحرف صغيرة
         setUserRole(fallbackRole.toLowerCase());
       } else {
         setUserRole(null);
@@ -336,78 +271,48 @@ const ReportPhone: React.FC = () => {
     }
   };
 
-  // تحميل دور المستخدم عند تحميل المكون
   useEffect(() => {
     checkUserRole();
   }, [user]);
-// دالة للتعامل مع تغيير مربع اختيار الواتساب
-const handleWhatsAppCheckboxChange = async () => {
-  console.log('=== بدء التحقق من دور المستخدم ===');
-  
-  if (!user) {
-    console.log('المستخدم غير مسجل الدخول');
-    toast({
-      title: t('error'),
-      description: t('must_be_logged_in'),
-      variant: 'destructive',
-    });
-    return;
-  }
 
-  // التحقق من دور المستخدم من قاعدة البيانات
-  if (isCheckingRole) {
-    console.log('جاري التحقق من دور المستخدم حالياً');
-    toast({
-      title: t('info'),
-      description: t('checking_user_role'),
-      variant: 'default',
-    });
-    return;
-  }
+  const handleWhatsAppCheckboxChange = async () => {
+    if (!user) {
+      toast({
+        title: t('error'),
+        description: t('must_be_logged_in'),
+        variant: 'destructive',
+      });
+      return;
+    }
 
-  console.log('التحقق من دور المستخدم:', userRole);
-  console.log('نوع البيانات:', typeof userRole);
-  console.log('القيمة بعد التحويل للنص:', String(userRole));
-  
-  // تنظيف القيمة من المسافات الزائدة
-  const cleanedRole = userRole ? userRole.trim() : '';
-  console.log('الدور بعد التنظيف:', cleanedRole);
-  console.log('طول الدور الأصلي:', userRole ? userRole.length : 0);
-  console.log('طول الدور بعد التنظيف:', cleanedRole.length);
-  
-  // التحقق من الدور بشكل صريح
-  const isGoldUser = cleanedRole === 'gold_user' || cleanedRole === 'gold_business';
-  
-  console.log('هل المستخدم لديه دور ذهبي؟', isGoldUser);
-  console.log('مقارنة مع gold_user:', cleanedRole === 'gold_user');
-  console.log('مقارنة مع gold_business:', cleanedRole === 'gold_business');
-  
-  if (isGoldUser) {
-    // المستخدم لديه دور ذهبي، السماح بالمشاركة
-    console.log('المستخدم لديه دور ذهبي، السماح بالمشاركة');
-    setShareWhatsApp(!shareWhatsApp);
-  } else {
-    // المستخدم ليس لديه دور ذهبي، عرض نافذة الترقية
-    console.log('المستخدم ليس لديه دور ذهبي، عرض نافذة الترقية');
-    setShowUpgradeDialog(true);
-  }
-  
-  console.log('=== انتهى التحقق من دور المستخدم ===');
-};
+    if (isCheckingRole) {
+      toast({
+        title: t('info'),
+        description: t('checking_user_role'),
+        variant: 'default',
+      });
+      return;
+    }
+    
+    const cleanedRole = userRole ? userRole.trim() : '';
+    const isGoldUser = cleanedRole === 'gold_user' || cleanedRole === 'gold_business';
+    
+    if (isGoldUser) {
+      setShareWhatsApp(!shareWhatsApp);
+    } else {
+      setShowUpgradeDialog(true);
+    }
+  };
 
-
-  // دالة موحدة للتحقق من صحة الحقول
   const validateForm = (data: FormData, isImeiRegisteredStatus: boolean, actualDbPassword: string | null, currentFieldReadOnlyState: typeof fieldReadOnlyState): boolean => {
-    // التحقق من الحقول المطلوبة
     if (!data.ownerName || !data.phoneNumber || !data.imei || !data.phone_type || !data.lossLocation || !data.lossTime || !data.idLast6) {
       toast({ title: t('error'), description: t('please_fill_all_fields'), variant: 'destructive' });
       return false;
     }
-    // تحقق من صحة آخر 6 أرقام
-    // إذا كان الهاتف مسجل مسبقاً، نتخطى التحقق لأن البيانات موجودة في originalData
+    
     if (!isImeiRegisteredStatus && data.idLast6 !== REGISTERED_IN_SYSTEM) {
       const val = String(data.idLast6 || '');
-      const isMasked = /\*/.test(val); // server may return masked value containing '*'
+      const isMasked = /\*/.test(val);
       const isNumeric6 = /^\d{6}$/.test(val);
       if (!isMasked && !isNumeric6) {
         toast({ title: t('error'), description: t('id_last6_invalid'), variant: 'destructive' });
@@ -415,23 +320,18 @@ const handleWhatsAppCheckboxChange = async () => {
       }
     }
 
-    // التحقق من كلمة المرور للهواتف المسجلة
     if (isImeiRegisteredStatus) {
-      // إذا كان IMEI مسجلاً، يجب إدخال كلمة المرور في الحقل الرئيسي للتحقق
       if (!data.password) {
         toast({ title: t('error'), description: t('please_enter_password_to_confirm'), variant: 'destructive' });
         return false;
       }
     }
-    // التحقق من الصور المطلوبة
-    // صورة الفاتورة مطلوبة فقط إذا كان الحقل قابلاً للتعديل ولم تكن بيانات النظام
+    
     if (!currentFieldReadOnlyState.receiptImage) {
-      // إذا لم تكن بيانات النظام، يجب رفع صورة
       if (!data.receiptImage && data.ownerName !== REGISTERED_IN_SYSTEM) {
         toast({ title: t('error'), description: t('receipt_image_required'), variant: 'destructive' });
         return false;
       }
-      // إذا كانت بيانات النظام، يجب التأكد من وجود رابط صورة الفاتورة في بيانات التسجيل
       if (
         data.ownerName === REGISTERED_IN_SYSTEM && (
           !resultRef.current ||
@@ -445,15 +345,14 @@ const handleWhatsAppCheckboxChange = async () => {
         return false;
       }
     }
-    // صورة المحضر مطلوبة إذا كان الحقل قابلاً للتعديل
+    
     if (!currentFieldReadOnlyState.reportImage && !data.reportImage) {
-      toast({ title: t('error'), description: t('report_image_required'), variant: 'destructive' }); // قد تحتاج لإضافة مفتاح الترجمة هذا
+      toast({ title: t('error'), description: t('report_image_required'), variant: 'destructive' });
       return false;
     }
 
     return true;
   };
-
 
   const handleForgotPassword = async () => {
     if (!isImeiRegistered) {
@@ -476,14 +375,12 @@ const handleWhatsAppCheckboxChange = async () => {
     }
   };
 
-
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     let updatedValue = value;
     if (name === 'phoneNumber' || name === 'idLast6') {
       updatedValue = value.replace(/\D/g, '');
     }
-    // منع الصفر الأول في رقم الهاتف عند اختيار مصر
     if (name === 'phoneNumber' && updatedValue.startsWith('0')) {
       updatedValue = updatedValue.replace(/^0+/, '');
     }
@@ -494,10 +391,8 @@ const handleWhatsAppCheckboxChange = async () => {
   };
 
   const updateImage = useCallback(async (file: File, fileType: ImageType, setPreview: React.Dispatch<React.SetStateAction<string | null>>) => {
-    // Show preview immediately
     const imageUrl = URL.createObjectURL(file);
     setPreview(imageUrl);
-    // تخزين الرابط المؤقت لتنظيفه لاحقاً
     setImageUrls(prev => [...prev, imageUrl]);
 
     const options = {
@@ -510,16 +405,14 @@ const handleWhatsAppCheckboxChange = async () => {
     try {
       toast({ description: t('compressing_image') });
       const compressedFile = await imageCompression(file, options);
-
       setFormData(prev => ({ ...prev, [fileType]: compressedFile }));
       toast({ title: t('success'), description: t('image_compressed_successfully') });
     } catch (error) {
       toast({ title: t('error'), description: t('image_compression_failed'), variant: 'destructive' });
-      setFormData(prev => ({ ...prev, [fileType]: file })); // Fallback to original file
+      setFormData(prev => ({ ...prev, [fileType]: file }));
     }
   }, [t, toast, imageUrls]);
 
-  // دالة لالتقاط الصورة باستخدام الكاميرا
   const startCamera = useCallback(async (fileType: ImageType, setPreview: React.Dispatch<React.SetStateAction<string | null>>) => {
     if (fieldReadOnlyState[fileType] || isReadOnly) return;
 
@@ -547,26 +440,23 @@ const handleWhatsAppCheckboxChange = async () => {
     }
   }, [fieldReadOnlyState, isReadOnly, toast, t, updateImage, imageUrls]);
 
-  // دالة لاختيار صورة من المعرض/الملفات
   const handleImageFileChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>, fileType: ImageType, setPreview: React.Dispatch<React.SetStateAction<string | null>>) => {
     if (fieldReadOnlyState[fileType] || isReadOnly) return;
 
     const file = event.target.files?.[0];
     if (file) {
-      // التحقق من نوع الملف (MIME Type)
       if (!file.type.startsWith('image/')) {
         toast({ title: t('error'), description: t('invalid_file_type'), variant: 'destructive' });
         return;
       }
 
-      // التحقق من التوقيع السحري (Magic Bytes)
       const isValidImage = await validateImageFile(file);
       if (!isValidImage) {
         toast({ title: t('error'), description: t('invalid_image_file'), variant: 'destructive' });
         return;
       }
 
-      if (file.size > 10 * 1024 * 1024) { // 10MB limit
+      if (file.size > 10 * 1024 * 1024) {
         toast({ title: t('error'), description: t('file_too_large_10mb'), variant: 'destructive' });
         return;
       }
@@ -577,7 +467,6 @@ const handleWhatsAppCheckboxChange = async () => {
     }
   }, [fieldReadOnlyState, isReadOnly, toast, t, updateImage]);
 
-  // دالة مساعدة لعرض حقول تحميل الصور
   const renderImageUpload = (
     label: string,
     fileType: ImageType,
@@ -586,12 +475,10 @@ const handleWhatsAppCheckboxChange = async () => {
     Icon: React.ElementType,
     UploadIcon: React.ElementType,
     config: { showCaptureButton: boolean; showUploadButton: boolean },
-    inputRef: React.RefObject<HTMLInputElement> // إضافة Ref كمعامل
+    inputRef: React.RefObject<HTMLInputElement>
   ) => {
-    // منطق واضح: حقل صورة الفاتورة قابل للرفع دائماً بغض النظر عن حالة القراءة فقط
     let isFieldReadOnly = fieldReadOnlyState[fileType] || isReadOnly;
     if (fileType === 'receiptImage') {
-      // إذا كانت بيانات المستخدم مسجل بالنظام، اجعل صورة الفاتورة للقراءة فقط
       isFieldReadOnly = (
         formData.ownerName === REGISTERED_IN_SYSTEM ||
         formData.phone_type === REGISTERED_IN_SYSTEM ||
@@ -655,9 +542,6 @@ const handleWhatsAppCheckboxChange = async () => {
     );
   };
 
-
-  // تأثير لتحميل البيانات عند تغيير IMEI
-  // تعديل دالة التحقق من IMEI
   const initialFormDataRef = React.useRef({
     ownerName: '',
     phoneNumber: '',
@@ -670,7 +554,6 @@ const handleWhatsAppCheckboxChange = async () => {
     confirmPassword: ''
   });
 
-
   useEffect(() => {
     const imeiValue = formData.imei.trim();
 
@@ -682,9 +565,9 @@ const handleWhatsAppCheckboxChange = async () => {
         phoneNumber: false,
         lossLocation: false,
         lossTime: false,
-        receiptImage: false, // اجعل صورة الفاتورة قابلة للرفع عند IMEI جديد أو عليه بلاغ
+        receiptImage: false,
         reportImage: false,
-        idLast6: false, // إضافة idLast6
+        idLast6: false,
       });
       setIsImeiRegistered(false);
       setDbPassword(null);
@@ -706,8 +589,9 @@ const handleWhatsAppCheckboxChange = async () => {
       setIsReadOnly(false);
       setActiveReportWarning(null);
       setIsImeiValid(false);
-      // إعادة تعيين حالة مشاركة الواتساب عند تغيير IMEI
       setShareWhatsApp(false);
+      // إعادة تعيين رمز الدولة عند إعادة تعيين النموذج
+      setCountryCode('+20');
     };
 
     const fetchMaskedImeiInfo = async () => {
@@ -728,7 +612,6 @@ const handleWhatsAppCheckboxChange = async () => {
         const result = resp?.data;
         resultRef.current = result;
 
-        // Try to get explicit report flags from the server if available
         let checkResult: any = null;
         try {
           const resp2 = await axiosInstance.post('/api/check-imei', { imei: imeiValue, userId: user?.id });
@@ -737,36 +620,28 @@ const handleWhatsAppCheckboxChange = async () => {
           // endpoint may not exist or be unreachable; ignore
         }
 
-        // If checkResult provides active-report flags, prefer them for UI decisions
         if (checkResult) {
-          // دمج نتائج check-imei مع نتيجة imei-masked-info
-          // تأكد من تحويل أشكال الاستجابة المختلفة إلى حقول متوقعة في الواجهة
           result.hasActiveReport = result.hasActiveReport ?? (checkResult.hasActiveReport ?? checkResult.active ?? false);
-
-          // اعتبر وجود phoneDetails أو exists كدليل على أن الجهاز موجود / مسجل
           const checkIndicatesFound = Boolean(
             checkResult.found || checkResult.exists || (checkResult.phoneDetails && Object.keys(checkResult.phoneDetails).length > 0)
           );
           result.found = result.found ?? checkIndicatesFound;
           result.isRegistered = result.isRegistered ?? (checkResult.isRegistered ?? checkResult.exists ?? (checkResult.phoneDetails ? true : false));
 
-          // دمج تفاصيل الهاتف إذا وفّرت
           if (!result.phoneDetails && checkResult.phoneDetails) {
             result.phoneDetails = checkResult.phoneDetails;
           }
 
-          // دمج مؤشرات الملكية والمرسل
           const inferredIsOwnReport = typeof (checkResult?.isOwnReport) === 'boolean'
             ? checkResult.isOwnReport
             : ((checkResult?.reporter_user_id === user?.id) || (checkResult?.userId === user?.id));
           result.isOwnReport = result.isOwnReport ?? inferredIsOwnReport;
           result.reporter_user_id = result.reporter_user_id ?? (checkResult.reporter_user_id ?? checkResult.userId ?? checkResult.reporterId);
 
-          // حالات مساعدة أخرى من شكل الاستجابة القديم
           result.isOtherUser = result.isOtherUser ?? (checkResult.isOtherUser ?? false);
         }
 
-        // حالة 1: هاتف جديد (غير مسجل) - يمكن الإبلاغ مع تنبيه بالتسجيل
+        // حالة 1: هاتف جديد (غير مسجل)
         if (!result.found) {
           resetFormForNewReport();
           setIsImeiRegistered(false);
@@ -775,29 +650,44 @@ const handleWhatsAppCheckboxChange = async () => {
           
           // ⭐ التعديل الجديد: التعامل مع البيانات المقنعة من الخادم
           if (result.autoFillData) {
-            const { ownerName, phoneNumber, idLast6, isReadOnly } = result.autoFillData;
+            const { ownerName, phoneNumber, idLast6, isReadOnly, country_code } = result.autoFillData;
             
-            // ملء الحقول بالبيانات المقنعة
+            // فصل رمز الدولة عن الرقم إذا كانا مدمجين
+            let extractedCountryCode = country_code || '+20';
+            let extractedPhoneNumber = phoneNumber || '';
+
+            // إذا لم يكن هناك رمز دولة صريح، حاول فصله من الرقم
+            if (!country_code && phoneNumber && phoneNumber.startsWith('+')) {
+              // افتراض بسيط: الرمز هو أول 4 أحرف (+20x أو +966)
+              const match = phoneNumber.match(/^\+(\d{1,3})(.*)$/);
+              if (match) {
+                extractedCountryCode = `+${match[1]}`;
+                extractedPhoneNumber = match[2];
+              }
+            }
+
+            // تحديث الحالة
+            setCountryCode(extractedCountryCode);
+            
             setFormData(prev => ({
               ...prev,
               ownerName: ownerName || '',
-              phoneNumber: phoneNumber || '',
+              phoneNumber: extractedPhoneNumber.replace(/\D/g, ''), // حفظ الرقم فقط بدون رمز
               idLast6: idLast6 ? (/\*/.test(String(idLast6)) ? String(idLast6) : maskIdNumber(String(idLast6))) : '',
             }));
             
-            // تحديث البيانات الأصلية
             setOriginalData({
               ownerName: ownerName || '',
-              phoneNumber: phoneNumber || '',
+              phoneNumber: extractedPhoneNumber.replace(/\D/g, ''),
               idLast6: idLast6 || '',
+              countryCode: extractedCountryCode
             });
             
-            // جعل الحقول للقراءة فقط إذا كانت البيانات مقنعة
             if (isReadOnly) {
               setFieldReadOnlyState({
                 ownerName: true,
                 phoneNumber: true,
-                idLast6: true, // جعل حقل آخر 6 أرقام للقراءة فقط
+                idLast6: true,
                 lossLocation: false,
                 lossTime: false,
                 receiptImage: false,
@@ -810,9 +700,6 @@ const handleWhatsAppCheckboxChange = async () => {
         }
 
         // حالة 2: الهاتف مسجل للمالك الحالي
-        // Consider server `isOwner`, but also treat transferred phones as owned by current session
-        // if the masked owner name/phone matches the current user's metadata (fallback when API
-        // doesn't mark `isOwner` correctly after a transfer).
         const serverIsOwner = Boolean(result.isOwner === true);
         let inferredIsOwner = serverIsOwner;
         try {
@@ -826,7 +713,6 @@ const handleWhatsAppCheckboxChange = async () => {
               inferredIsOwner = true;
             }
           }
-          // Additional: if phoneDetails includes a user_id equal to current user, treat as owner
           if (!inferredIsOwner && result.phoneDetails && user && result.phoneDetails.user_id && String(result.phoneDetails.user_id) === String(user.id)) {
             inferredIsOwner = true;
           }
@@ -834,7 +720,6 @@ const handleWhatsAppCheckboxChange = async () => {
           console.debug('Error inferring owner from masked values:', e);
         }
 
-        // New case: active report exists and belongs to current user
         if (result.found && (
           result.isOwnReport === true ||
           result.reporter_user_id === user?.id ||
@@ -845,7 +730,7 @@ const handleWhatsAppCheckboxChange = async () => {
           setFieldReadOnlyState({
             ownerName: true, phoneNumber: true, lossLocation: true, lossTime: true,
             receiptImage: true, reportImage: true,
-            idLast6: true, // إضافة idLast6
+            idLast6: true,
           });
           setActiveReportWarning('imei_already_reported_by_your_account');
           setIsImeiValid(false);
@@ -854,6 +739,22 @@ const handleWhatsAppCheckboxChange = async () => {
         }
 
         if (result.found && result.isRegistered && inferredIsOwner) {
+          // ⭐ التعديل الجديد: التعامل مع البيانات المسجلة للمالك الحالي
+          // فصل رمز الدولة عن الرقم
+          let registeredCountryCode = result.phoneDetails?.country_code || result.country_code || '+20';
+          let registeredPhoneNumber = result.phoneDetails?.phone_number || result.phone_number || '';
+          
+          // إذا لم يكن هناك رمز دولة صريح، حاول فصله من الرقم
+          if (!registeredCountryCode && registeredPhoneNumber && registeredPhoneNumber.startsWith('+')) {
+            const match = registeredPhoneNumber.match(/^\+(\d{1,3})(.*)$/);
+            if (match) {
+              registeredCountryCode = `+${match[1]}`;
+              registeredPhoneNumber = match[2];
+            }
+          }
+
+          setCountryCode(registeredCountryCode);
+          
           setFormData(prev => (({
             ...prev,
             ownerName: REGISTERED_IN_SYSTEM,
@@ -876,7 +777,7 @@ const handleWhatsAppCheckboxChange = async () => {
             lossTime: false,
             receiptImage: true,
             reportImage: false,
-            idLast6: true, // إضافة idLast6
+            idLast6: true,
           });
           setIsImeiRegistered(false);
           setIsReadOnly(false);
@@ -885,7 +786,7 @@ const handleWhatsAppCheckboxChange = async () => {
           return;
         }
 
-        // حالة 3: الهاتف مسجل لغير المالك - منع البلاغ تماماً
+        // حالة 3: الهاتف مسجل لغير المالك
         if (result.found && result.isRegistered && !inferredIsOwner) {
           setFormData(prev => (({
             ...initialFormDataRef.current,
@@ -904,7 +805,7 @@ const handleWhatsAppCheckboxChange = async () => {
           setReceiptImagePreview(null);
           setReportImagePreview(null);
           setRegisteredPhoneEmail(null);
-          setOriginalData({ ownerName: '', phoneNumber: '', idLast6: '' });
+          setOriginalData({ ownerName: '', phoneNumber: '', idLast6: '', countryCode: '' });
           setFieldReadOnlyState({
             ownerName: true,
             phoneNumber: true,
@@ -912,12 +813,11 @@ const handleWhatsAppCheckboxChange = async () => {
             lossTime: true,
             receiptImage: true,
             reportImage: true,
-            idLast6: true, // إضافة idLast6
+            idLast6: true,
           });
           setIsImeiRegistered(true);
           setIsImeiValid(false);
           setIsReadOnly(true);
-          // منع تقديم البلاغ تماماً - الهاتف مسجل لحساب آخر
           setActiveReportWarning('this_phone_registered_to_another_account_cannot_report');
           toast({
             title: t('access_denied'),
@@ -933,7 +833,7 @@ const handleWhatsAppCheckboxChange = async () => {
           setFieldReadOnlyState({
             ownerName: true, phoneNumber: true, lossLocation: true, lossTime: true,
             receiptImage: true, reportImage: true,
-            idLast6: true, // إضافة idLast6
+            idLast6: true,
           });
           setActiveReportWarning('imei_already_reported_as_lost_detail');
           setIsImeiValid(false);
@@ -955,7 +855,6 @@ const handleWhatsAppCheckboxChange = async () => {
     setCurrentStep((prev) => Math.max(prev - 1, 1));
   };
 
-  // تعديل دالة معالجة الإرسال
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -964,12 +863,10 @@ const handleWhatsAppCheckboxChange = async () => {
       return;
     }
 
-    // التحقق من صحة النموذج مع تمرير حالة القراءة فقط للحقول
     if (!validateForm(formData, isImeiRegistered, dbPassword, fieldReadOnlyState)) {
       return;
     }
 
-    // إذا كان الهاتف مسجلاً لحساب آخر، لا تسمح بتقديم البلاغ
     if (isImeiRegistered) {
       toast({
         title: t('access_denied'),
@@ -979,31 +876,22 @@ const handleWhatsAppCheckboxChange = async () => {
       return;
     }
 
-    // إذا كان IMEI غير مسجل، اعرض نافذة كلمة المرور المنبثقة
     setShowPasswordModal(true);
   };
 
-  // دالة معالجة إرسال النافذة المنبثقة لكلمة المرور
   const handleModalSubmit = async () => {
-    // التحقق من تطابق كلمات المرور في النافذة المنبثقة
     if (!modalPassword || !modalConfirmPassword || modalPassword !== modalConfirmPassword) {
       toast({ title: t('error'), description: t('passwords_do_not_match'), variant: 'destructive' });
       return;
     }
 
-    // استدعاء دالة حفظ البلاغ مع كلمة المرور من النافذة المنبثقة
     await saveReport(modalPassword);
-
-    // إغلاق النافذة المنبثقة (سيتم إغلاقها أيضاً في saveReport عند النجاح، ولكن هذا يضمن الإغلاق حتى لو لم يتم الانتقال للصفحة)
     setShowPasswordModal(false);
   };
 
-
-  // دالة لحفظ البلاغ عبر API السيرفر
   const saveReport = async (password: string) => {
     setIsSubmitting(true);
     try {
-      // تجهيز الصور Base64 إذا كانت من نوع File
       const getBase64 = (file: File) => new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result as string);
@@ -1011,7 +899,6 @@ const handleWhatsAppCheckboxChange = async () => {
         reader.readAsDataURL(file);
       });
 
-      // Generate a random opaque id for filenames to avoid leaking IMEI in storage paths
       const generateRandomId = (): string => {
         try {
           if (typeof crypto !== 'undefined' && typeof (crypto as any).randomUUID === 'function') {
@@ -1021,9 +908,7 @@ const handleWhatsAppCheckboxChange = async () => {
         return `${Date.now()}_${Math.floor(Math.random() * 1e9)}`;
       };
 
-      // دالة رفع صورة عبر السيرفر: سترسل base64 إلى endpoint سيرفري يقوم بالرفع باستخدام service-role
       const uploadToSupabase = async (file: File | Blob, type: 'receipt' | 'report') => {
-        // determine extension
         let fileExt = 'jpg';
         if (file instanceof File && file.name && file.name.endsWith('.webp')) fileExt = 'webp';
         else if ((file as any).type === 'image/webp') fileExt = 'webp';
@@ -1031,10 +916,8 @@ const handleWhatsAppCheckboxChange = async () => {
         else if ((file as any).type === 'image/jpeg' || (file as any).type === 'image/jpg') fileExt = 'jpg';
         else if ((file as any).type) fileExt = (file as any).type.split('/').pop() || 'jpg';
 
-        // convert to base64 (data URL)
         const base64 = await getBase64(file as File);
 
-        // POST to server upload endpoint
         try {
           const resp = await axiosInstance.post('/api/upload-report-image', {
             fileBase64: base64,
@@ -1053,11 +936,9 @@ const handleWhatsAppCheckboxChange = async () => {
 
       let receiptImageToSend: string | null = null;
       if (formData.ownerName === REGISTERED_IN_SYSTEM) {
-        // إذا كان الهاتف مسجل بالنظام، جلب صورة الفاتورة من نتيجة الاستعلام أو من جدول registered_phones
         let url = resultRef.current && resultRef.current.receipt_image_url;
         if (!url) {
           try {
-            // طلب للسيرفر للحصول على بيانات الصورة (السيرفر يتكفل بفك التشفير والتأكد من الملكية)
             let jwtToken = '';
             try { const sessionResp = await supabase.auth.getSession(); jwtToken = (sessionResp?.data as any)?.session?.access_token || ''; } catch(e) { jwtToken = ''; }
 
@@ -1070,12 +951,10 @@ const handleWhatsAppCheckboxChange = async () => {
             } catch (e) {
               console.error('فشل جلب receipt_image_url عبر /api/imei-masked-info:');
             }
-            // result logged removed to avoid leaking data
           } catch (e) {
             console.error('فشل جلب receipt_image_url عبر /api/imei-masked-info:');
           }
         }
-        // إذا لم يكن الرابط عامًا، اطلب من السيرفر توليد/إرجاع رابط عام موثوق
         if (typeof url === 'string' && (!url.startsWith('https://') || !url.includes('/storage/v1/object/public/'))) {
           try {
             const resp = await axiosInstance.post('/api/get-public-url', { url });
@@ -1107,32 +986,26 @@ const handleWhatsAppCheckboxChange = async () => {
         return;
       }
 
-      // لا ترسل blob: أو base64 كرابط نهائي
       if (reportImageToSend && (reportImageToSend.startsWith('blob:') || reportImageToSend.startsWith('data:'))) {
         toast({ title: t('error'), description: t('failed_to_upload_image'), variant: 'destructive' });
         setIsSubmitting(false);
         return;
       }
-      // إذا بقيت الصورة فارغة، أظهر رسالة خطأ واضحة
+      
       if (!reportImageToSend) {
         toast({ title: t('error'), description: t('report_image_required'), variant: 'destructive' });
         setIsSubmitting(false);
         return;
       }
 
-      // لا نعتمد على localStorage لتوكن FCM.
-      // يتم تحديث fcm_token عبر registerFCMToken في قاعدة البيانات من جهة العميل،
-      // والسيرفر يستخدم القيمة المخزنة للمستخدم/البلاغ.
       let fcmToken = '';
 
-      // تشفير كلمة المرور قبل الإرسال
-      // تجهيز البيانات للإرسال
-      // إذا كانت الحقول تشير إلى REGISTERED_IN_SYSTEM، حاول جلب القيم الحقيقية من resultRef.current
+      // ⭐ التعديل الجديد: التعامل مع البيانات المقنعة عند الإرسال
       let effectiveOwnerName = isImeiRegistered ? originalData.ownerName : formData.ownerName;
-      let effectivePhoneNumber = isImeiRegistered ? originalData.phoneNumber : `${countryCode}${formData.phoneNumber}`;
+      let effectivePhoneNumber = isImeiRegistered ? originalData.phoneNumber : formData.phoneNumber;
       let effectiveIdLast6 = isImeiRegistered ? originalData.idLast6 : formData.idLast6;
+      let effectiveCountryCode = isImeiRegistered ? originalData.countryCode : countryCode;
 
-      // ⭐ التعديل الجديد: التعامل مع البيانات المقنعة
       // إذا كانت البيانات مقنعة (تحتوي على نجوم)، نستخدم القيم من resultRef.current
       if (effectiveOwnerName && effectiveOwnerName.includes('*')) {
         const r = resultRef.current;
@@ -1145,6 +1018,10 @@ const handleWhatsAppCheckboxChange = async () => {
         const r = resultRef.current;
         if (r && r.autoFillData) {
           effectivePhoneNumber = r.autoFillData.phoneNumberRaw || r.autoFillData.phoneNumber || effectivePhoneNumber;
+          // تحديث رمز الدولة إذا كان متوفراً في البيانات الأصلية
+          if (r.autoFillData.country_code) {
+            effectiveCountryCode = r.autoFillData.country_code;
+          }
         }
       }
 
@@ -1156,23 +1033,29 @@ const handleWhatsAppCheckboxChange = async () => {
       }
 
       if (effectiveOwnerName === REGISTERED_IN_SYSTEM || effectivePhoneNumber === REGISTERED_IN_SYSTEM || effectiveIdLast6 === REGISTERED_IN_SYSTEM) {
-        // حاول الحصول عليها من نتيجة الاستعلام المحفوظة
         const r = resultRef.current;
         if (r) {
-          // server may return decrypted fields under multiple keys; try common ones
           const maybeOwner = r.owner_name || r.ownerName || r.owner || r.name || null;
           const maybePhone = r.phone_number || r.phoneNumber || r.phone || r.owner_phone || null;
           const maybeId6 = r.id_last6 || r.idLast6 || r.id_last_6 || null;
+          const maybeCountryCode = r.country_code || r.phoneDetails?.country_code || '+20';
 
           if (maybeOwner) effectiveOwnerName = maybeOwner;
           if (maybePhone) {
-            // ensure country code
-            if (maybePhone.startsWith('+')) effectivePhoneNumber = maybePhone;
-            else effectivePhoneNumber = `${countryCode}${maybePhone}`;
+            // إذا كان الرقم يبدأ بـ +، نفصله
+            if (maybePhone.startsWith('+')) {
+              const match = maybePhone.match(/^\+(\d{1,3})(.*)$/);
+              if (match) {
+                effectiveCountryCode = `+${match[1]}`;
+                effectivePhoneNumber = match[2];
+              }
+            } else {
+              effectivePhoneNumber = maybePhone;
+            }
           }
           if (maybeId6) effectiveIdLast6 = maybeId6;
+          if (maybeCountryCode) effectiveCountryCode = maybeCountryCode;
         } else {
-          // Fallback: request server for decrypted info (trusted endpoint)
           try {
             const sessionResp = await supabase.auth.getSession();
             const jwt = (sessionResp?.data as any)?.session?.access_token || '';
@@ -1181,40 +1064,47 @@ const handleWhatsAppCheckboxChange = async () => {
             const maybeOwner = json?.owner_name || json?.ownerName || null;
             const maybePhone = json?.phone_number || json?.phoneNumber || null;
             const maybeId6 = json?.id_last6 || json?.idLast6 || null;
+            const maybeCountryCode = json?.country_code || json?.phoneDetails?.country_code || '+20';
+
             if (maybeOwner) effectiveOwnerName = maybeOwner;
-            if (maybePhone) effectivePhoneNumber = maybePhone.startsWith('+') ? maybePhone : `${countryCode}${maybePhone}`;
+            if (maybePhone) {
+              if (maybePhone.startsWith('+')) {
+                const match = maybePhone.match(/^\+(\d{1,3})(.*)$/);
+                if (match) {
+                  effectiveCountryCode = `+${match[1]}`;
+                  effectivePhoneNumber = match[2];
+                }
+              } else {
+                effectivePhoneNumber = maybePhone;
+              }
+            }
             if (maybeId6) effectiveIdLast6 = maybeId6;
+            if (maybeCountryCode) effectiveCountryCode = maybeCountryCode;
           } catch (e) {
             console.error('Failed to fetch real owner data for REGISTERED_IN_SYSTEM fallback:', e);
           }
         }
       }
 
-      // Avoid logging large data URLs or sensitive image contents
-      console.log('Submitting report payload (sanitized):', {
-        ownerName: effectiveOwnerName ? '[REDACTED_NAME]' : null,
-        phoneNumber: effectivePhoneNumber ? '[REDACTED_PHONE]' : null,
-        imei: formData.imei,
-      });
-
+      // ⭐ التعديل الجديد: إرسال البيانات منفصلة
       const payload = {
         ownerName: effectiveOwnerName,
-        phoneNumber: effectivePhoneNumber,
+        phoneNumber: effectivePhoneNumber.replace(/\D/g, ''), // إرسال الرقم فقط
+        country_code: effectiveCountryCode, // إرسال رمز الدولة منفصلاً
         imei: formData.imei,
         phone_type: formData.phone_type === REGISTERED_IN_SYSTEM ? (resultRef.current?.phone_type || '') : formData.phone_type,
         loss_location: formData.lossLocation,
         loss_time: formData.lossTime,
         receipt_image_url: receiptImageToSend,
         report_image_url: reportImageToSend,
-        password: password, // أرسل كلمة المرور نصية خام
+        password: password,
         id_last6: effectiveIdLast6,
         user_id: user?.id || null,
         email: user?.email || '',
         fcm_token: fcmToken,
-        whatsapp: shareWhatsApp, // إضافة حالة مشاركة الواتساب
+        whatsapp: shareWhatsApp,
       };
 
-      // جلب التوكن من localStorage (Supabase)
       let jwtToken = '';
       try {
         const sessionResp = await supabase.auth.getSession();
@@ -1223,7 +1113,6 @@ const handleWhatsAppCheckboxChange = async () => {
         jwtToken = '';
       }
 
-      // إرسال الطلب إلى السيرفر مع التوكن
       const resp = await axiosInstance.post('/api/report-lost-phone', payload);
       const result = resp?.data;
       if (!result.success) {
@@ -1235,13 +1124,12 @@ const handleWhatsAppCheckboxChange = async () => {
       setFieldReadOnlyState({
         ownerName: true, phoneNumber: true, lossLocation: true, lossTime: true,
         receiptImage: true, reportImage: true,
-        idLast6: true, // إضافة idLast6
+        idLast6: true,
       });
       setTimeout(() => {
         navigate('/dashboard');
       }, 2000);
     } catch (error: any) {
-      // مسح حقول كلمة المرور في حالة الخطأ لتسهيل إعادة المحاولة
       if (error.message && (error.message.includes('كلمة المرور') || error.message.toLowerCase().includes('password'))) {
         setFormData(prev => ({ ...prev, password: '' }));
         setModalPassword('');
@@ -1254,7 +1142,6 @@ const handleWhatsAppCheckboxChange = async () => {
       setShowPasswordModal(false);
     }
   };
-
 
   return (
     <PageContainer>
@@ -1274,7 +1161,6 @@ const handleWhatsAppCheckboxChange = async () => {
 
         <form onSubmit={handleSubmit} className="space-y-6 px-1 pb-10 pt-0">
           <div className="max-w-5xl mx-auto space-y-6">
-            {/* شريط تقدم الخطوات الاحترافي - ثابت عند التمرير وخلف الإعلانات */}
             <div className="mb-8 px-2 sticky top-0 z-0 bg-white/95 backdrop-blur-sm py-2 rounded-xl">
               <div className="flex items-center justify-between relative">
                 {[1, 2, 3, 4].map((step) => (
@@ -1616,7 +1502,6 @@ const handleWhatsAppCheckboxChange = async () => {
                     </div>
                   )}
 
-                  {/* إضافة مربع اختيار مشاركة الواتساب */}
                   <div className="flex items-center space-x-2 space-x-reverse mb-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
                     <input
                       type="checkbox"
@@ -1745,7 +1630,6 @@ const handleWhatsAppCheckboxChange = async () => {
           </DialogContent>
         </Dialog>
 
-        {/* ترقية: عرض المودال المخصص كـ portal */}
         {showUpgradeDialog && createPortal(
           <div className="fixed inset-0 z-50 flex items-center justify-center">
             <div className="absolute inset-0 bg-black/30" onClick={() => setShowUpgradeDialog(false)} />

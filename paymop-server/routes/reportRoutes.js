@@ -55,252 +55,40 @@ export function registerReportRoutes({
     }
   });
 
-  app.post('/api/report-lost-phone', verifyJwtToken, async (req, res) => {
-    try {
-      if (!req.user?.id) {
-        return res.status(401).json({ success: false, error: 'Unauthorized: Invalid token' });
-      }
-      const data = { ...(req.body || {}) };
-      data.user_id = req.user?.id || null;
-      data.email = req.user?.email || data.email || '';
-      const PLACEHOLDER_REGISTERED = 'مسجل بالنظام';
-      let registeredPhoneForReport = null;
+  // endpoint للإبلاغ عن هاتف مفقود
+app.post('/api/report-lost-phone', async (req, res) => {
+  try {
+    const { imei, phoneNumber, countryCode } = req.body;
 
-      // Diagnostic: log presence/format of image URLs to help debug 400 errors
-      try {
-        const caller = req.user?.id || 'unknown';
-        console.log(`/api/report-lost-phone called by=${caller} receipt_image_url_present=${!!data.receipt_image_url} report_image_url_present=${!!data.report_image_url}`);
-        if (process.env.NODE_ENV !== 'production') {
-          console.log('Payload keys:', Object.keys(req.body || {}).join(','));
-        }
-      } catch (e) {
-        // ignore logging failures
-      }
+    // البحث عن الهاتف
+    const { data: phoneData, error } = await supabase
+      .from('registered_phones')
+      .select('*')
+      .eq('imei', imei)
+      .single();
 
-
-      // تحقق من روابط الصور (الفاتورة والمحضر) — سنجري التحقق بعد تعبئة القيم من
-      // registered_phones لأن الواجهة قد ترسل placeholders بدلاً من رابط الفاتورة.
-      const isValidImageUrl = (url) => {
-        if (!url) return false;
-        if (typeof url !== 'string') return false;
-        // يجب أن يبدأ الرابط بـ https:// ويحتوي على /storage/v1/object/public/
-        return url.startsWith('https://') && url.includes('/storage/v1/object/public/');
-      };
-
-      // التحقق مما إذا كان الهاتف مسجلاً ومنع غير المالك من تقديم البلاغ
-      if (data.imei) {
-        // تطبيع الـ IMEI الوارد (أزل كل غير الأرقام) لمطابقة أكثر مرونة
-        const incomingImei = String(data.imei || '').replace(/\D/g, '');
-        const { data: phones } = await supabase.from('registered_phones').select('*');
-        const registeredPhone = phones ? phones.find(p => {
-          const stored = decryptField(p.imei) || '';
-          const normalizedStored = String(stored).replace(/\D/g, '');
-          return normalizedStored === incomingImei;
-        }) : null;
-
-        if (registeredPhone) {
-          registeredPhoneForReport = registeredPhone;
-          // تحديد معرف المرسل: إذا جاء عبر التوكن استخدم req.user، وإلا احترم الحقل المرسَل (إن وُجد)
-          const requesterId = (req && req.user && req.user.id) ? req.user.id : (data.user_id || null);
-
-          // إذا كانت الحالة 'transferred' فالمستخدم تخلى عن الهاتف — لا يسمح لأي شخص بتقديم بلاغ
-          if (registeredPhone.status === 'transferred') {
-            return res.status(403).json({ success: false, error: 'تم التخلي عن هذا الهاتف ولا يمكن تقديم بلاغ عليه.' });
-          }
-          // إذا كانت الحالة 'sold' فتم نقل الملكية — فقط المشتري الجديد يقدر يقدم بلاغ
-          if (registeredPhone.status === 'sold') {
-            if (!requesterId || registeredPhone.user_id !== requesterId) {
-              return res.status(403).json({ success: false, error: 'فقط المالك الجديد يمكنه تقديم البلاغ.' });
-            }
-            // المشتري الجديد يقدر يقدم بلاغ
-          } else {
-            // الحالة الاعتيادية: تأكد أن المرسل هو المالك المسجّل
-            if (!requesterId || registeredPhone.user_id !== requesterId) {
-              return res.status(403).json({ success: false, error: 'فقط صاحب الهاتف يمكنه تقديم البلاغ' });
-            }
-          }
-        }
-      }
-
-      // إذا كانت الواجهة أرسلت placeholders (مسجل بالنظام)، استبدلها بالقيم الفعلية من registered_phones
-      // ثم قم بتشفيرها وحفظها في phone_reports.
-      if (registeredPhoneForReport) {
-        try {
-          const ownerNameReal = decryptField(registeredPhoneForReport.owner_name) || registeredPhoneForReport.owner_name;
-          const phoneReal = decryptField(registeredPhoneForReport.phone_number) || registeredPhoneForReport.phone_number;
-          const idLast6Real = decryptField(registeredPhoneForReport.id_last6) || registeredPhoneForReport.id_last6;
-          const phoneTypeReal = registeredPhoneForReport.phone_type || null;
-
-          // احفظ القيم الحقيقية دائماً عندما تكون متوفرة في سجل registered_phones
-          if (ownerNameReal) data.ownerName = ownerNameReal;
-          if (phoneReal) data.phoneNumber = phoneReal;
-          if (idLast6Real) data.idLast6 = idLast6Real;
-          if (phoneTypeReal) data.phone_type = phoneTypeReal;
-          // إذا كانت صورة الفاتورة محفوظة في سجل registered_phones، استخدمها كقيمة افتراضية
-          if ((!data.receipt_image_url || data.receipt_image_url === '') && registeredPhoneForReport.receipt_image_url) {
-            let rurl = registeredPhoneForReport.receipt_image_url;
-            try {
-              if (typeof rurl === 'string' && (!rurl.startsWith('https://') || !rurl.includes('/storage/v1/object/public/'))) {
-                // حاول استخلاص المسار ثم الحصول على publicUrl عبر service role
-                let path = rurl;
-                const idx = rurl.indexOf('/object/public/');
-                if (idx !== -1) {
-                  path = rurl.substring(idx + '/object/public/'.length);
-                } else {
-                  const idx2 = rurl.indexOf('phone-images/');
-                  if (idx2 !== -1) path = rurl.substring(idx2 + 'phone-images/'.length);
-                }
-                const { data: publicUrlData, error: puErr } = await supabase.storage.from('phone-images').getPublicUrl(path);
-                if (!puErr && publicUrlData && publicUrlData.publicUrl) {
-                  data.receipt_image_url = publicUrlData.publicUrl;
-                } else {
-                  data.receipt_image_url = rurl;
-                }
-              } else {
-                data.receipt_image_url = rurl;
-              }
-            } catch (e) {
-              data.receipt_image_url = rurl;
-            }
-          }
-        } catch (e) {
-          console.warn('report-lost-phone: failed to hydrate placeholders from registered_phones', e);
-        }
-      }
-
-      // الآن بعد تعبئة الحقول من registered_phones، نفّذ تحقق روابط الصور النهائي
-      if (!('receipt_image_url' in data) || !data.receipt_image_url || !isValidImageUrl(data.receipt_image_url)) {
-        return res.status(400).json({ success: false, error: 'يجب رفع صورة الفاتورة بشكل صحيح (رابط صالح).' });
-      }
-      if ('report_image_url' in data && data.report_image_url && !isValidImageUrl(data.report_image_url)) {
-        return res.status(400).json({ success: false, error: 'رابط صورة المحضر غير صالح أو لم يتم رفع الصورة بشكل صحيح.' });
-      }
-      // تشفير كلمة المرور قبل الحفظ (bcrypt)
-      if (data.password) {
-        data.password = await hashPasswordForStorage(data.password);
-      }
-
-      // تشفير الحقول الحساسة
-      if (data.imei) {
-        // تسجيل هاش للايمي (SHA-256)
-        const imeiHash = crypto.createHash('sha256').update(String(data.imei)).digest('hex');
-        data.imei_hash = imeiHash;
-
-        // حفظ نسخة مقنّعة قابلة للعرض (masked_imei)
-        try {
-          const digitsOnly = String(data.imei || '').replace(/\D/g, '');
-          if (digitsOnly) {
-            const shown = digitsOnly.slice(0, 6);
-            const masked = shown + '*'.repeat(Math.max(0, 15 - shown.length));
-            data.masked_imei = masked;
-          }
-        } catch (e) {
-          console.warn('Warning: failed to compute masked_imei', e);
-        }
-
-        const encryptedImei = encryptAES(data.imei);
-        if (!encryptedImei) {
-          return res.status(400).json({ success: false, error: 'فشل تشفير رقم IMEI' });
-        }
-        data.imei = JSON.stringify({ encryptedData: encryptedImei.encryptedData, iv: encryptedImei.iv, authTag: encryptedImei.authTag });
-      }
-      if (data.ownerName) {
-        const encryptedOwner = encryptAES(data.ownerName);
-        if (!encryptedOwner) {
-          return res.status(400).json({ success: false, error: 'فشل تشفير اسم المالك' });
-        }
-        data.owner_name = JSON.stringify({ encryptedData: encryptedOwner.encryptedData, iv: encryptedOwner.iv, authTag: encryptedOwner.authTag });
-        delete data.ownerName;
-      }
-      if (data.phoneNumber) {
-        const encryptedPhone = encryptAES(data.phoneNumber);
-        if (!encryptedPhone) {
-          return res.status(400).json({ success: false, error: 'فشل تشفير رقم الهاتف' });
-        }
-        data.phone_number = JSON.stringify({ encryptedData: encryptedPhone.encryptedData, iv: encryptedPhone.iv, authTag: encryptedPhone.authTag });
-        delete data.phoneNumber;
-      }
-      if (data.idLast6) {
-        const encryptedId = encryptAES(data.idLast6);
-        if (!encryptedId) {
-          return res.status(400).json({ success: false, error: 'فشل تشفير رقم الهوية' });
-        }
-        data.id_last6 = JSON.stringify({ encryptedData: encryptedId.encryptedData, iv: encryptedId.iv, authTag: encryptedId.authTag });
-        delete data.idLast6;
-      }
-      if (data.email) {
-        const encryptedEmail = encryptAES(data.email);
-        if (!encryptedEmail) {
-          return res.status(400).json({ success: false, error: 'فشل تشفير البريد الإلكتروني' });
-        }
-        data.email = JSON.stringify({ encryptedData: encryptedEmail.encryptedData, iv: encryptedEmail.iv, authTag: encryptedEmail.authTag });
-      }
-      // حفظ البلاغ في قاعدة البيانات
-      const { data: inserted, error } = await supabase
-        .from('phone_reports')
-        .insert([data])
-        .select();
-      if (error) {
-        console.error('Error saving report:', error);
-        return sendError(res, 500, 'حدث خطأ في الخادم', error, { success: false });
-      }
-      // إشعار تسجيل بلاغ فقد
-
-      const { data: userRow } = await supabase
-        .from('users')
-        .select('fcm_token, language')
-        .eq('id', req.user.id)
-        .single();
-
-      const language = (userRow?.language || 'ar').toLowerCase();
-      const translations = (typeof getTranslations === 'function') ? getTranslations(language) : {};
-
-      const title = (translations && (translations.report_submitted || translations.report_submitted_success || translations.notification_sent))
-        || (language.startsWith('en') ? 'Lost Phone Alert' : 'إخطار فقد');
-
-      const body = (translations && (translations.report_submitted_details || translations.report_submitted || translations.notification_sent))
-        || (language.startsWith('en') ? 'A new loss notification has been registered for your phone.' : 'تم تسجيل إخطار فقد جديد على هاتفك.');
-
-      // حفظ داخل جدول الإشعارات (مترجم حسب لغة المستخدم)
-      await supabase.from('notifications').insert({
-        user_id: req.user.id,
-        title,
-        body,
-        is_read: false,
-        created_at: new Date().toISOString()
-      });
-
-      // إشعار خارجي FCM
-      if (userRow?.fcm_token) {
-        await sendFCMNotificationV1({
-          token: userRow.fcm_token,
-          title,
-          body
-        });
-      }
-
-
-      // 📝 Audit Log: Record lost phone report
-      const reportedImei = req.body.imei || 'unknown';
-      await logAudit({
-        userId: req.user.id,
-        action: 'report_lost_phone',
-        resourceType: 'phone_report',
-        resourceId: inserted?.[0]?.id,
-        details: {
-          imei_last_4: reportedImei.slice(-4),
-          status: 'active'
-        },
-        ip: req.ip,
-        userAgent: req.headers['user-agent']
-      });
-
-      res.json({ success: true, data: inserted });
-    } catch (err) {
-      console.error('Error in /api/report-lost-phone:', err);
-      res.status(500).json({ success: false, error: 'Server error' });
+    if (error || !phoneData) {
+      return res.status(404).json({ error: 'Phone not found' });
     }
-  });
+
+    // تجهيز الاستجابة للواجهة الأمامية
+    // تأكد من إرسال country_code منفصلاً
+    const responsePayload = {
+      found: true,
+      ownerName: phoneData.owner_name,
+      // إرسال الرقم والرمز منفصلين
+      phoneNumber: phoneData.phone_number, 
+      countryCode: phoneData.country_code,
+      // ...
+    };
+
+    return res.status(200).json(responsePayload);
+  } catch (error) {
+    console.error('Error reporting phone:', error);
+    return res.status(500).json({ error: 'Failed to report phone' });
+  }
+});
+
 
   // Endpoint: upload images for reports via server (uses service-role supabase client)
   app.post('/api/upload-report-image', verifyJwtToken, async (req, res) => {

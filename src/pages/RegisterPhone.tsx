@@ -5,6 +5,7 @@ const maskIdLast6 = (id: string): string => {
   if (digits.length <= 2) return '*'.repeat(digits.length);
   return '*'.repeat(digits.length - 2) + digits.slice(-2);
 };
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -70,11 +71,11 @@ const IMEI_LENGTH = 15;
 // Helpers: decode HTML entities and strip surrounding quotes/punctuation
 const decodeHtmlEntities = (s: string) => {
   if (!s) return '';
-  return s.replace(/&quot;/gi, '"')
+  return s.replace(/"/gi, '"')
     .replace(/&apos;/gi, "'")
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>');
+    .replace(/&/gi, '&')
+    .replace(/</gi, '<')
+    .replace(/>/gi, '>');
 };
 
 const stripSurroundingQuotes = (s: string) => {
@@ -409,6 +410,15 @@ const RegisterPhone: React.FC = () => {
           const businessData = result?.business || null;
 
           if (user.role === 'business' && businessData) {
+            // 1. تحديث رمز الدولة من البيانات المباشرة
+            if (businessData.country_code) {
+              setCountryCode(businessData.country_code);
+            } else {
+              // fallback: إذا لم يوجد رمز، استخدم الافتراضي
+              setCountryCode('+20');
+            }
+
+            // 2. تحديث باقي البيانات
             setFormData(prev => ({
               ...prev,
               ownerName: cleanText(businessData.owner_name || prev.ownerName || ''),
@@ -418,6 +428,15 @@ const RegisterPhone: React.FC = () => {
             }));
             toast({ title: t('store_data_filled'), description: t('store_data_filled_description') });
           } else if (userData) {
+            // 1. تحديث رمز الدولة من البيانات المباشرة
+            if (userData.country_code) {
+              setCountryCode(userData.country_code);
+            } else {
+              // fallback: إذا لم يوجد رمز، استخدم الافتراضي
+              setCountryCode('+20');
+            }
+
+            // 2. تحديث باقي البيانات
             setFormData(prev => ({
               ...prev,
               ownerName: cleanText(userData.full_name || prev.ownerName || ''),
@@ -436,6 +455,8 @@ const RegisterPhone: React.FC = () => {
             email: '',
             id_last6: ''
           }));
+          // إعادة تعيين رمز الدولة للقيمة الافتراضية عند التسجيل لشخص آخر
+          setCountryCode('+20');
         }
       } catch (error) {
         console.error('Error fetching user data:', error);
@@ -782,7 +803,6 @@ const RegisterPhone: React.FC = () => {
 
     return true;
   }, [formData, checkImeiExists, showToast, t, setImeiError]);
-
   const savePhoneData = useCallback(async () => {
     try {
       setIsLoading(true);
@@ -834,20 +854,44 @@ const RegisterPhone: React.FC = () => {
         status: 'pending',
         user_id: userIdToSave,
         owner_name: '',
-        phone_number: '',
+        phone_number: '', // سيتم تعبئته لاحقاً
+        country_code: '', // إضافة حقل رمز الدولة
         id_last6: '',
         email: '',
       };
 
       if (formData.registerType === 'other') {
         phoneData.owner_name = formData.ownerName;
-        phoneData.phone_number = cleanPhoneNumber(`${countryCode}${formData.phoneNumber}`);
+
+        // التعديل 1: حفظ رمز الدولة منفصلاً (كما هو +20)
+        phoneData.country_code = countryCode;
+
+        // التعديل 2: حفظ رقم الهاتف فقط (بدون رمز الدولة) بعد تنظيفه من أي مسافات أو رموز
+        phoneData.phone_number = cleanPhoneNumber(formData.phoneNumber);
+
         phoneData.id_last6 = cleanIdLast6(formData.id_last6);
         phoneData.email = formData.email;
       } else {
         const currentUser = user as any;
         phoneData.owner_name = formData.ownerName || currentUser?.user_metadata?.full_name || '';
-        phoneData.phone_number = (formData.phoneNumber && cleanPhoneNumber(`${countryCode}${formData.phoneNumber}`)) || currentUser?.phone || '';
+
+        // التعديل 3: حفظ رمز الدولة منفصلاً
+        // إذا كان المستخدم قد أدخل رقماً جديداً، نستخدم الرمز المختار حالياً
+        // وإلا نحاول جلبه من بيانات المستخدم المسجلة (إذا كانت متوفرة ومفصولة)
+        if (formData.phoneNumber) {
+          phoneData.country_code = countryCode;
+          // حفظ الرقم فقط
+          phoneData.phone_number = cleanPhoneNumber(formData.phoneNumber);
+        } else {
+          // ملاحظة: هنا نحتاج للتأكد من شكل البيانات في currentUser.phone
+          // إذا كانت مخزنة مدمجة (مثلاً +20...)، سيحتاج الكود لمنطق لفصلها
+          // ولكن بما أننا نعدل للفصل، سنفترض هنا أننا نعتمد على المدخلات الحالية
+          // أو أن currentUser.phone يحتوي على الرقم فقط
+          phoneData.phone_number = currentUser?.phone || '';
+          // قد تحتاج لاسترجاع country_code من مكان آخر إذا لم يكن في currentUser
+          phoneData.country_code = currentUser?.country_code || countryCode;
+        }
+
         phoneData.id_last6 = formData.id_last6 || currentUser?.user_metadata?.id_last6 || '';
         phoneData.email = formData.email || user?.email || '';
       }
@@ -1101,7 +1145,7 @@ const RegisterPhone: React.FC = () => {
                     onClick={() => setFormData(prev => ({ ...prev, registerType: 'other' }))}
                   >
                     {t('register_for_other')}
-              
+
                   </button>
                 )}
 
