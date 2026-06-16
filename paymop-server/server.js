@@ -4892,7 +4892,7 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
     // جلب جميع السجلات للتحقق منها
     const { data: allPhones, error: phonesFetchError } = await supabase
       .from('registered_phones')
-      .select('owner_name, phone_number, phone_image_url, phone_type, status, user_id, imei, id_last6');
+      .select('owner_name, phone_number, phone_image_url, phone_type, status, user_id, imei, id_last6, country_code, country_key');
 
     if (phonesFetchError) {
       console.error('Error fetching registered_phones:', phonesFetchError);
@@ -4970,7 +4970,8 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
           imei: decryptField(matchingPhone.imei),
           phone_number: decryptedPhoneNumber || '',
           id_last6: decryptedIdLast6 || '',
-          owner_name: decryptedOwnerName
+            owner_name: decryptedOwnerName,
+            country_key: decryptField(matchingPhone.country_key) || matchingPhone.country_key || matchingPhone.country_code || ''
         };
         if (process.env.NODE_ENV !== 'production') {
           console.log('[check-imei] Returning decrypted phoneDetails for current user:', {
@@ -4996,6 +4997,7 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
           let ownerName = null;
           let ownerPhone = null;
           let ownerIdLast6 = null;
+          let ownerCountryKey = null;
           try {
             ownerName = decryptField(matchingPhone.owner_name) || null;
           } catch (e) { ownerName = null; }
@@ -5005,6 +5007,7 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
           try {
             ownerIdLast6 = decryptField(matchingPhone.id_last6) || null;
           } catch (e) { ownerIdLast6 = null; }
+          try { ownerCountryKey = decryptField(matchingPhone.country_key) || matchingPhone.country_key || matchingPhone.country_code || null; } catch(e) { ownerCountryKey = null; }
 
           return res.json({
             exists: true,
@@ -5026,7 +5029,9 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
             // include phone type and image/receipt references so client can show model and receipt
             phone_type: matchingPhone.phone_type || null,
             phone_image_url: matchingPhone.phone_image_url || null,
-            receipt_image_url: matchingPhone.receipt_image_url || null
+            receipt_image_url: matchingPhone.receipt_image_url || null,
+            // include masked country key hint
+            maskedCountryKey: ownerCountryKey ? (String(ownerCountryKey).slice(0,1) + '*'.repeat(Math.max(0, String(ownerCountryKey).length - 1))) : null
           });
         }
       }
