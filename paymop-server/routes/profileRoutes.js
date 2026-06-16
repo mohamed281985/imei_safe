@@ -88,4 +88,43 @@ export function registerProfileRoutes({
       return sendError(res, 500, 'Server error', error);
     }
   });
+
+      // Endpoint: تسجيل/تحديث FCM token عند تسجيل الدخول من الجهاز
+      app.post('/api/register-fcm-token', async (req, res) => {
+        try {
+          const { fcm_token: fcmToken } = req.body || {};
+          if (!fcmToken || typeof fcmToken !== 'string') return res.status(400).json({ error: 'Missing fcm_token' });
+
+          // احصل على معرف المستخدم عبر Authorization header أو تجاوز التطوير
+          let userId = null;
+          const authHeader = req.headers['authorization'];
+          if (authHeader && String(authHeader).startsWith('Bearer ')) {
+            const token = String(authHeader).slice(7);
+            const { data: authData, error: authErr } = await supabase.auth.getUser(token);
+            if (authErr) {
+              console.error('/api/register-fcm-token auth error:', authErr?.message || authErr);
+              return res.status(401).json({ error: 'Failed to verify token' });
+            }
+            if (!authData || !authData.user) return res.status(401).json({ error: 'Unauthorized - no user data' });
+            userId = authData.user.id;
+          } else if (isDevelopment && devBypassToken && req.headers['x-api-key'] === devBypassToken) {
+            userId = req.body.user_id || req.query.user_id;
+            if (!userId) return res.status(400).json({ error: 'missing user_id (dev bypass)' });
+          } else {
+            return res.status(401).json({ error: 'Unauthorized - missing auth' });
+          }
+
+          // تحديث حقل fcm_token في جدول users
+          const { data, error } = await supabase.from('users').update({ fcm_token: fcmToken }).eq('id', userId).select().maybeSingle();
+          if (error) {
+            console.error('/api/register-fcm-token update error:', error);
+            return sendError(res, 500, 'Failed to update fcm_token', error);
+          }
+
+          return res.json({ success: true, data });
+        } catch (err) {
+          console.error('/api/register-fcm-token error:', err);
+          return sendError(res, 500, 'Server error', err);
+        }
+      });
 }
