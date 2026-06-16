@@ -79,6 +79,8 @@ export function registerOwnershipRoutes({
               const idLast6 = decryptField(registeredPhone.id_last6) || registeredPhone.id_last6 || '';
               const phoneType = registeredPhone.phone_type || '';
               const phoneImageUrl = registeredPhone.phone_image_url || '';
+              const countryKeyRaw = decryptField(registeredPhone.country_key) || registeredPhone.country_key || registeredPhone.country_code || registeredPhone.countryKey || '';
+              const maskedCountryKey = countryKeyRaw ? (String(countryKeyRaw).slice(0, 1) + '*'.repeat(Math.max(0, String(countryKeyRaw).length - 1))) : '';
               return res.json({
                 found: true,
                 masked: false,
@@ -90,6 +92,8 @@ export function registerOwnershipRoutes({
                 owner_name: ownerName,
                 phone_number: phoneNumber,
                 id_last6: idLast6,
+                country_key: countryKeyRaw,
+                maskedCountryKey: maskedCountryKey,
                 maskedOwnerName: maskName(ownerName),
                 maskedPhoneNumber: maskPhoneNumber(phoneNumber),
                 maskedIdLast6: maskIdLast6(idLast6 || ''),
@@ -102,10 +106,13 @@ export function registerOwnershipRoutes({
             const decryptedPhoneNumber = decryptField(registeredPhone.phone_number);
             const decryptedIdLast6 = decryptField(registeredPhone.id_last6);
             const decryptedOwnerName = decryptField(registeredPhone.owner_name) || registeredPhone.owner_name || '';
+            const countryKeyRaw = decryptField(registeredPhone.country_key) || registeredPhone.country_key || registeredPhone.country_code || registeredPhone.countryKey || '';
+            const maskedCountryKey = countryKeyRaw ? (String(countryKeyRaw).slice(0, 1) + '*'.repeat(Math.max(0, String(countryKeyRaw).length - 1))) : '';
             const maskedPhoneDetails = {
               maskedOwnerName: maskName(decryptedOwnerName),
               maskedPhoneNumber: maskPhoneNumber(decryptedPhoneNumber),
               maskedIdLast6: maskIdLast6(decryptedIdLast6 || ''),
+              maskedCountryKey: maskedCountryKey,
               phone_type: registeredPhone.phone_type || '',
               phone_image_url: registeredPhone.phone_image_url || ''
             };
@@ -127,6 +134,8 @@ export function registerOwnershipRoutes({
           const phoneType = registeredPhone.phone_type || '';
           const phoneImageUrl = registeredPhone.phone_image_url || '';
 
+          const countryKeyRaw = decryptField(registeredPhone.country_key) || registeredPhone.country_key || registeredPhone.country_code || registeredPhone.countryKey || '';
+          const maskedCountryKey = countryKeyRaw ? (String(countryKeyRaw).slice(0, 1) + '*'.repeat(Math.max(0, String(countryKeyRaw).length - 1))) : '';
           const response = {
             found: true,
             masked: false,
@@ -134,6 +143,8 @@ export function registerOwnershipRoutes({
             isOwner,
             hasActiveReport: true,
             receipt_image_url: registeredPhone.receipt_image_url,
+            country_key: countryKeyRaw,
+            maskedCountryKey: maskedCountryKey,
             maskedOwnerName: maskName(ownerName),
             maskedPhoneNumber: maskPhoneNumber(phoneNumber),
             maskedIdLast6: maskIdLast6(idLast6),
@@ -164,6 +175,8 @@ export function registerOwnershipRoutes({
             const idLast6 = decryptField(registeredPhone.id_last6) || registeredPhone.id_last6 || '';
             const phoneType = registeredPhone.phone_type || '';
             const phoneImageUrl = registeredPhone.phone_image_url || '';
+            const countryKeyRaw = decryptField(registeredPhone.country_key) || registeredPhone.country_key || registeredPhone.country_code || registeredPhone.countryKey || '';
+            const maskedCountryKey = countryKeyRaw ? (String(countryKeyRaw).slice(0, 1) + '*'.repeat(Math.max(0, String(countryKeyRaw).length - 1))) : '';
             return res.json({
               found: true,
               masked: false,
@@ -175,6 +188,8 @@ export function registerOwnershipRoutes({
               owner_name: ownerName,
               phone_number: phoneNumber,
               id_last6: idLast6,
+              country_key: countryKeyRaw,
+              maskedCountryKey: maskedCountryKey,
               maskedOwnerName: maskName(ownerName),
               maskedPhoneNumber: maskPhoneNumber(phoneNumber),
               maskedIdLast6: maskIdLast6(idLast6 || ''),
@@ -193,10 +208,13 @@ export function registerOwnershipRoutes({
               return registeredPhone.owner_name || '';
             }
           })();
+          const countryKeyRaw = decryptField(registeredPhone.country_key) || registeredPhone.country_key || registeredPhone.country_code || registeredPhone.countryKey || '';
+          const maskedCountryKey = countryKeyRaw ? (String(countryKeyRaw).slice(0, 1) + '*'.repeat(Math.max(0, String(countryKeyRaw).length - 1))) : '';
           const maskedPhoneDetails = {
             maskedOwnerName: maskName(maskedOwnerRaw),
             maskedPhoneNumber: maskPhoneNumber(decryptedPhoneNumber),
             maskedIdLast6: maskIdLast6(decryptedIdLast6 || ''),
+            maskedCountryKey: maskedCountryKey,
             phone_type: registeredPhone.phone_type || '',
             phone_image_url: registeredPhone.phone_image_url || ''
           };
@@ -218,6 +236,8 @@ export function registerOwnershipRoutes({
         const phoneType = registeredPhone.phone_type || '';
         const phoneImageUrl = registeredPhone.phone_image_url || '';
 
+        const countryKeyRaw = decryptField(registeredPhone.country_key) || registeredPhone.country_key || registeredPhone.country_code || registeredPhone.countryKey || '';
+        const maskedCountryKey = countryKeyRaw ? (String(countryKeyRaw).slice(0, 1) + '*'.repeat(Math.max(0, String(countryKeyRaw).length - 1))) : '';
         const response = {
           found: true,
           masked: true,
@@ -225,6 +245,8 @@ export function registerOwnershipRoutes({
           isRegistered: true,
           hasActiveReport: false,
           receipt_image_url: registeredPhone.receipt_image_url,
+          country_key: countryKeyRaw,
+          maskedCountryKey: maskedCountryKey,
           maskedOwnerName: maskName(ownerName),
           maskedPhoneNumber: maskPhoneNumber(phoneNumber),
           maskedIdLast6: maskIdLast6(idLast6),
