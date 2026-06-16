@@ -162,8 +162,8 @@ export function registerOwnershipRoutes({
         // Attempt to include caller's country code for autofill when phone is not registered
         let callerCountryKey = null;
         try {
-          const { data: urow } = await supabase.from('users').select('country_code,country_key').eq('id', userId).maybeSingle();
-          if (urow) callerCountryKey = urow.country_key || urow.country_code || null;
+          const { data: urow } = await supabase.from('users').select('country_code').eq('id', userId).maybeSingle();
+          if (urow) callerCountryKey = urow.country_code || null;
         } catch (e) {
           console.warn('[IMEI-MASKED-INFO] failed to fetch caller country key:', e);
         }
@@ -278,7 +278,7 @@ export function registerOwnershipRoutes({
       console.log('[IMEI-MASKED-INFO] Not registered: found=false');
       let callerCountryKey2 = null;
       try {
-        const { data: urow } = await supabase.from('users').select('country_code,country_key').eq('id', userId).maybeSingle();
+        const { data: urow } = await supabase.from('users').select('country_code').eq('id', userId).maybeSingle();
         if (urow) callerCountryKey2 = urow.country_key || urow.country_code || null;
       } catch (e) {
         console.warn('[IMEI-MASKED-INFO] failed to fetch caller country key:', e);
