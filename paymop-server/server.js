@@ -933,10 +933,10 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
     // 4. ⭐ التعديل الجديد: إذا لم يتم العثور على IMEI، جلب بيانات المستخدم الحالي للملء التلقائي (مقنعة)
     if (!reg && userId) {
       try {
-        // جلب بيانات المستخدم الحالي من جدول users
+        // جلب بيانات المستخدم الحالي من جدول users مع إضافة حقل country_key
         const { data: userData, error: userError } = await supabase
           .from('users')
-          .select('full_name, phone, id_last6')
+          .select('full_name, phone, id_last6, country_key') // إضافة country_key للاستعلام
           .eq('id', userId)
           .maybeSingle();
 
@@ -945,11 +945,13 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
           const decryptedFullName = decryptField(userData.full_name) || '';
           const decryptedPhone = decryptField(userData.phone) || '';
           const decryptedIdLast6 = decryptField(userData.id_last6) || '';
+          const decryptedCountryKey = decryptField(userData.country_key) || ''; // فك تشفير مفتاح الدولة
 
           // ⭐ إخفاء البيانات (Masking)
           const maskedFullName = maskName(decryptedFullName);
           const maskedPhone = maskPhoneNumber(decryptedPhone);
           const maskedIdLast6 = maskIdLast6(decryptedIdLast6);
+          const maskedCountryKey = maskCountryKey(decryptedCountryKey); // إخفاء مفتاح الدولة
 
           // إرجاع البيانات المقنعة للملء التلقائي مع القيم الفعلية المشفرة داخل حقول _raw
           return res.json({
@@ -958,10 +960,12 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
               ownerName: maskedFullName, // الاسم مقنع
               phoneNumber: maskedPhone, // رقم الهاتف مقنع
               idLast6: maskedIdLast6, // آخر 6 أرقام مقنعة
+              countryKey: maskedCountryKey, // مفتاح الدولة مقنع
               // حقول فعلية (غير مقنعة) متاحة للعميل الموثوق إذا احتاج إلى الإرسال
               ownerNameRaw: decryptedFullName,
               phoneNumberRaw: decryptedPhone,
               idLast6Raw: decryptedIdLast6,
+              countryKeyRaw: decryptedCountryKey, // مفتاح الدولة الفعلي
               isReadOnly: true // البيانات للقراءة فقط
             }
           });
