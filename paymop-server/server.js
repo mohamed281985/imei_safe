@@ -933,10 +933,10 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
     // 4. ⭐ التعديل الجديد: إذا لم يتم العثور على IMEI، جلب بيانات المستخدم الحالي للملء التلقائي (مقنعة)
     if (!reg && userId) {
       try {
-        // جلب بيانات المستخدم الحالي من جدول users مع إضافة حقل country_key
+        // جلب بيانات المستخدم الحالي من جدول users
         const { data: userData, error: userError } = await supabase
           .from('users')
-          .select('full_name, phone, id_last6, country_key') // إضافة country_key للاستعلام
+          .select('full_name, phone, id_last6')
           .eq('id', userId)
           .maybeSingle();
 
@@ -945,13 +945,11 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
           const decryptedFullName = decryptField(userData.full_name) || '';
           const decryptedPhone = decryptField(userData.phone) || '';
           const decryptedIdLast6 = decryptField(userData.id_last6) || '';
-          const decryptedCountryKey = decryptField(userData.country_key) || ''; // فك تشفير مفتاح الدولة
 
           // ⭐ إخفاء البيانات (Masking)
           const maskedFullName = maskName(decryptedFullName);
           const maskedPhone = maskPhoneNumber(decryptedPhone);
           const maskedIdLast6 = maskIdLast6(decryptedIdLast6);
-          const maskedCountryKey = maskCountryKey(decryptedCountryKey); // إخفاء مفتاح الدولة
 
           // إرجاع البيانات المقنعة للملء التلقائي مع القيم الفعلية المشفرة داخل حقول _raw
           return res.json({
@@ -960,12 +958,10 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
               ownerName: maskedFullName, // الاسم مقنع
               phoneNumber: maskedPhone, // رقم الهاتف مقنع
               idLast6: maskedIdLast6, // آخر 6 أرقام مقنعة
-              countryKey: maskedCountryKey, // مفتاح الدولة مقنع
               // حقول فعلية (غير مقنعة) متاحة للعميل الموثوق إذا احتاج إلى الإرسال
               ownerNameRaw: decryptedFullName,
               phoneNumberRaw: decryptedPhone,
               idLast6Raw: decryptedIdLast6,
-              countryKeyRaw: decryptedCountryKey, // مفتاح الدولة الفعلي
               isReadOnly: true // البيانات للقراءة فقط
             }
           });
@@ -1540,15 +1536,6 @@ const maskIdLast6 = (id) => {
   // اعرض نجوماً ثم آخر 4 أرقام (مقنع أكثر للـ id الأخيرة)
   const starsCount = Math.min(Math.max(0, cleanId.length - 4), 6);
   return '*'.repeat(starsCount) + cleanId.slice(-4);
-};
-
-// إخفاء مفتاح الدولة: نُظهر الحرف الأول ونخفي الباقي
-const maskCountryKey = (k) => {
-  if (!k && k !== 0) return '';
-  const s = String(k);
-  if (!s) return '';
-  if (s.length <= 1) return s;
-  return s.slice(0, 1) + '*'.repeat(Math.max(0, s.length - 1));
 };
 
 // إخفاء رقم واتساب/هاتف: يُظهر أول 3 أرقام وآخر رقمين فقط
@@ -4863,126 +4850,233 @@ const updateRegisterUsage = async (userId) => {
 
 // نقطة نهاية للتحقق من وجود IMEI
 app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
+  const { imei } = req.body;
+  const requesterId = req.user?.id;
+
+  // ✅ Ownership verification: يمكن فقط للمستخدم التحقق من IMEIs الخاصة به
+  if (!requesterId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
   try {
-    const { imei } = req.body;
-    const userId = req.user?.id; // جلب معرف المستخدم من التوكن
-    
-    if (!imei) return res.status(400).json({ error: 'IMEI is required' });
-    const normalizedImei = String(imei).replace(/\D/g, '');
-
-    // 1. التحقق من جدول التسجيل (registered_phones) أولاً
-    const { data: registeredData, error: registeredError } = await supabase
-      .from('registered_phones')
-      .select('*') // جلب جميع الأعمدة للتحقق
-      .eq('imei', normalizedImei)
-      .maybeSingle();
-
-    if (registeredData && !registeredError) {
-      console.log('Found in registered_phones:', registeredData); // للتصحيح
-      
-      // فك تشفير جميع البيانات
-      const decryptedOwnerName = decryptField(registeredData.owner_name);
-      const decryptedPhoneNumber = decryptField(registeredData.phone_number);
-      const decryptedIdLast6 = decryptField(registeredData.id_last6);
-      const decryptedCountryKey = decryptField(registeredData.country_key);
-      
-      console.log('Decrypted country key:', decryptedCountryKey); // للتصحيح
-      
-      // التحقق إذا كان المستخدم هو المالك
-      const isOtherUser = userId && userId !== registeredData.user_id;
-
-      return res.json({
-        exists: true,
-        phoneDetails: {
-          owner_name: decryptedOwnerName || '',
-          phone_number: decryptedPhoneNumber || '',
-          phone_type: registeredData.phone_type,
-          status: 'registered',
-          user_id: registeredData.user_id,
-          imei: registeredData.imei,
-          id_last6: decryptedIdLast6 || '',
-          countryKey: decryptedCountryKey || '' // إضافة مفتاح الدولة
-        },
-        isOtherUser: isOtherUser
-      });
-    }
-
-    // 2. التحقق من جدول الهواتف (phones)
-    const { data: phoneData, error: phoneError } = await supabase
-      .from('phones')
-      .select('*') // جلب جميع الأعمدة للتحقق
-      .eq('imei', normalizedImei)
-      .maybeSingle();
-
-    if (phoneData && !phoneError) {
-      // فك تشفير البيانات
-      const decryptedOwnerName = decryptField(phoneData.owner_name);
-      const decryptedPhoneNumber = decryptField(phoneData.phone_number);
-      const decryptedIdLast6 = decryptField(phoneData.id_last6);
-      const decryptedCountryKey = decryptField(phoneData.country_key);
-      
-      // التحقق إذا كان المستخدم هو المالك
-      const isOtherUser = userId && userId !== phoneData.user_id;
-
-      return res.json({
-        exists: true,
-        phoneDetails: {
-          owner_name: decryptedOwnerName || '',
-          phone_number: decryptedPhoneNumber || '',
-          phone_image_url: phoneData.phone_image_url,
-          phone_type: phoneData.phone_type,
-          status: phoneData.status,
-          user_id: phoneData.user_id,
-          imei: phoneData.imei,
-          id_last6: decryptedIdLast6 || '',
-          countryKey: decryptedCountryKey || '' // إضافة مفتاح الدولة
-        },
-        isOtherUser: isOtherUser
-      });
-    }
-
-    // 3. التحقق من جدول البلاغات (phone_reports)
-    const { data: reportData, error: reportError } = await supabase
+    // أولاً: التحقق من جدول البلاغات (phone_reports) قبل أي شيء
+    // جلب جميع السجلات للتحقق منها
+    const { data: allReports, error: reportsFetchError } = await supabase
       .from('phone_reports')
-      .select('*') // جلب جميع الأعمدة للتحقق
-      .eq('imei', normalizedImei)
-      .eq('status', 'active')
-      .maybeSingle();
+      .select('id, user_id, imei')
+      .eq('status', 'active');
 
-    if (reportData && !reportError) {
-      // فك تشفير البيانات
-      const decryptedOwnerName = decryptField(reportData.owner_name);
-      const decryptedPhoneNumber = decryptField(reportData.phone_number);
-      const decryptedIdLast6 = decryptField(reportData.id_last6);
-      const decryptedCountryKey = decryptField(reportData.country_key);
-      
-      // التحقق إذا كان المستخدم هو المالك
-      const isOtherUser = userId && userId !== reportData.user_id;
+    if (reportsFetchError) {
+      console.error('Error fetching phone_reports:', reportsFetchError);
+    } else if (allReports && allReports.length > 0) {
+      // فك تشفير جميع أرقام IMEI والمقارنة
+      const matchingReport = allReports.find(report => {
+        const decryptedImei = decryptField(report.imei);
+        if (process.env.NODE_ENV !== 'production') console.log('[check-imei] report decrypted IMEI:', decryptedImei, 'normalized:', normalizeDigitsOnly(decryptedImei));
+        return normalizeDigitsOnly(decryptedImei) === normalizeDigitsOnly(imei);
+      });
 
-      return res.json({
-        exists: true,
-        phoneDetails: {
-          owner_name: decryptedOwnerName || '',
-          phone_number: decryptedPhoneNumber || '',
-          phone_type: reportData.phone_type,
-          status: 'reported',
-          user_id: reportData.user_id,
-          imei: reportData.imei,
-          id_last6: decryptedIdLast6 || '',
-          countryKey: decryptedCountryKey || '' // إضافة مفتاح الدولة
-        },
-        isOtherUser: isOtherUser
+      if (matchingReport) {
+        // يوجد بلاغ فعال لهذا الـ IMEI، لا يسمح بالتسجيل في أي حال
+        // التحقق مما إذا كان البلاغ يخص المستخدم الحالي
+        if (requesterId && matchingReport.user_id === requesterId) {
+          // المستخدم الحالي هو صاحب البلاغ، لكن لا نسمح له بالتسجيل
+          return res.json({ exists: true, phoneDetails: null, isOtherUser: false, hasActiveReport: true, isOwnReport: true, isStolen: true });
+        }
+        // يوجد بلاغ فعال لمستخدم آخر، نعتبره موجوداً ومملوكاً لآخر لمنع التسجيل وإظهار التحذير
+        return res.json({ exists: true, phoneDetails: null, isOtherUser: true, hasActiveReport: true, isStolen: true });
+      }
+    }
+
+    // ثانياً: التحقق من جدول الهواتف المسجلة (registered_phones)
+    // جلب جميع السجلات للتحقق منها
+    const { data: allPhones, error: phonesFetchError } = await supabase
+      .from('registered_phones')
+      .select('owner_name, phone_number, phone_image_url, phone_type, status, user_id, imei, id_last6');
+
+    if (phonesFetchError) {
+      console.error('Error fetching registered_phones:', phonesFetchError);
+      return res.status(500).json({ error: 'Error fetching registered phones' });
+    }
+
+    // فك تشفير جميع أرقام IMEI والبحث عن المطابقة (بما في ذلك الهواتف التي قد تكون بحالة 'transferred')
+    const matchingPhone = allPhones ? allPhones.find(phone => {
+      const decryptedImei = decryptField(phone.imei);
+      if (process.env.NODE_ENV !== 'production') console.log('[check-imei] phone row decrypted IMEI:', decryptedImei, 'normalized:', normalizeDigitsOnly(decryptedImei));
+      return normalizeDigitsOnly(decryptedImei) === normalizeDigitsOnly(imei);
+    }) : null;
+
+    // If not found, in non-prod print a summary of all decrypted IMEIs to help debugging
+    if (!matchingPhone && process.env.NODE_ENV !== 'production') {
+      console.log('[check-imei] incoming IMEI raw/norm ->', imei, '/', normalizeDigitsOnly(imei));
+      console.log('[check-imei] registered_phones rows count ->', (allPhones || []).length);
+      console.log('[check-imei] No matching phone found. Listing decrypted IMEIs (first 50 rows):');
+      (allPhones || []).slice(0, 50).forEach((p, idx) => {
+        try {
+          const d = decryptField(p.imei);
+          const norm = normalizeDigitsOnly(d);
+          console.log(`  [${idx}] id_last6=${p.id_last6} user_id=${p.user_id} status=${p.status} decryptedImei=${d} normalized=${norm}`);
+        } catch (e) {
+          console.log(`  [${idx}] error decrypting row:`, e?.message || e);
+        }
       });
     }
 
-    // إذا لم يتم العثور على أي شيء
-    return res.json({ exists: false });
-  } catch (err) {
-    console.error('check-imei error:', err);
-    res.status(500).json({ error: 'Internal server error' });
+    // إذا كان الهاتف مسجلاً
+    if (matchingPhone) {
+      // التحقق مما إذا كان مسجلاً لمستخدم آخر أو منقول الملكية
+      if (requesterId && matchingPhone.user_id === requesterId) {
+        // الهاتف مسجل للمستخدم الحالي
+        if (matchingPhone.status === 'transferred') {
+          // المستخدم تخلى عن الهاتف (قال "هذا ليس هاتفي") - يُسمح بتسجيله من جديد
+          return res.json({ exists: false, phoneDetails: null, isTransferred: true });
+        }
+        if (matchingPhone.status === 'rejected') {
+          // تم رفض التسجيل سابقًا - السماح بإعادة التسجيل
+          return res.json({ exists: false, phoneDetails: null, isRejected: true });
+        }
+        if (matchingPhone.status === 'sold') {
+          // تم نقل الملكية - فقط المشتري الجديد يقدر يسجله
+          return res.json({ exists: true, isOtherUser: false, phoneDetails: null, isSold: true });
+        }
+        // نسمح له بتحديث البيانات - فك تشفير البيانات قبل إرجاعها
+        let decryptedPhoneNumber = null;
+        try {
+          decryptedPhoneNumber = decryptField(matchingPhone.phone_number);
+          if (!decryptedPhoneNumber) {
+            console.warn('[check-imei] decryptField returned null/empty for phone_number, using original');
+            decryptedPhoneNumber = matchingPhone.phone_number;
+          }
+        } catch (e) {
+          console.error('[check-imei] Error decrypting phone_number:', e);
+          decryptedPhoneNumber = matchingPhone.phone_number;
+        }
+
+        let decryptedIdLast6 = null;
+        try {
+          decryptedIdLast6 = decryptField(matchingPhone.id_last6);
+          if (!decryptedIdLast6) {
+            console.warn('[check-imei] decryptField returned null/empty for id_last6, using original');
+            decryptedIdLast6 = matchingPhone.id_last6;
+          }
+        } catch (e) {
+          console.error('[check-imei] Error decrypting id_last6:', e);
+          decryptedIdLast6 = matchingPhone.id_last6;
+        }
+
+        const decryptedOwnerName = decryptField(matchingPhone.owner_name) || matchingPhone.owner_name || '';
+        const decryptedPhone = {
+          ...matchingPhone,
+          imei: decryptField(matchingPhone.imei),
+          phone_number: decryptedPhoneNumber || '',
+          id_last6: decryptedIdLast6 || '',
+          owner_name: decryptedOwnerName
+        };
+        if (process.env.NODE_ENV !== 'production') {
+          console.log('[check-imei] Returning decrypted phoneDetails for current user:', {
+            phone_number: decryptedPhoneNumber,
+            id_last6: decryptedIdLast6,
+            owner_name: decryptedOwnerName
+          });
+        }
+        return res.json({ exists: true, phoneDetails: decryptedPhone, isOtherUser: false });
+      } else {
+        // مسجل لمستخدم آخر
+        if (matchingPhone.status === 'transferred') {
+          // المستخدم تخلى عن الهاتف - يُسمح بتسجيله من جديد
+          return res.json({ exists: false, phoneDetails: null, isTransferred: true });
+        }
+        if (matchingPhone.status === 'rejected') {
+          // تم رفض التسجيل سابقًا - السماح بإعادة التسجيل
+          return res.json({ exists: false, phoneDetails: null, isRejected: true });
+        }
+        if (matchingPhone.status === 'sold') {
+          // الهاتف مُباع ومسجّل لحساب آخر — عيّن isOtherUser=true لتمييزه بوضوح
+          // حاول استخراج بعض الحقول المقنعة (بدون كشف البيانات الحقيقية)
+          let ownerName = null;
+          let ownerPhone = null;
+          let ownerIdLast6 = null;
+          try {
+            ownerName = decryptField(matchingPhone.owner_name) || null;
+          } catch (e) { ownerName = null; }
+          try {
+            ownerPhone = decryptField(matchingPhone.phone_number) || null;
+          } catch (e) { ownerPhone = null; }
+          try {
+            ownerIdLast6 = decryptField(matchingPhone.id_last6) || null;
+          } catch (e) { ownerIdLast6 = null; }
+
+          return res.json({
+            exists: true,
+            isOtherUser: true,
+            isSold: true,
+            phoneDetails: null,
+            ownerMasked: {
+              name: maskName(ownerName || ''),
+              phone: maskPhoneNumber(ownerPhone || ''),
+              idLast6: maskIdLast6(ownerIdLast6 || '')
+            },
+            // hints for the client about whether any real data existed server-side
+            ownerHints: {
+              hasName: !!ownerName,
+              hasPhone: !!ownerPhone,
+              hasIdLast6: !!ownerIdLast6
+            }
+            ,
+            // include phone type and image/receipt references so client can show model and receipt
+            phone_type: matchingPhone.phone_type || null,
+            phone_image_url: matchingPhone.phone_image_url || null,
+            receipt_image_url: matchingPhone.receipt_image_url || null
+          });
+        }
+      }
+    }
+
+    /// ⭐ التعديل الرئيسي: إذا لم يتم العثور على الهاتف، جلب بيانات المستخدم الحالي للملء التلقائي
+if (!matchingPhone) {
+  try {
+    // جلب بيانات المستخدم الحالي
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('full_name, phone, id_last6')
+      .eq('id', requesterId)
+      .maybeSingle();
+
+    if (!userError && userData) {
+      // فك تشفير بيانات المستخدم
+      const decryptedFullName = decryptField(userData.full_name) || '';
+      const decryptedPhone = decryptField(userData.phone) || '';
+      const decryptedIdLast6 = decryptField(userData.id_last6) || '';
+
+      // ✅ إخفاء البيانات (Masking) قبل الإرجاع
+      const maskedFullName = maskName(decryptedFullName);
+      const maskedPhone = maskPhoneNumber(decryptedPhone);
+      const maskedIdLast6 = maskIdLast6(decryptedIdLast6);
+
+      // إرجاع البيانات المقنعة للملء التلقائي
+      return res.json({
+        exists: false,
+        phoneDetails: null,
+        autoFillData: {
+          ownerName: maskedFullName,  // ✅ صحيح: مقنعة
+          phoneNumber: maskedPhone,    // ✅ صحيح: مقنعة
+          idLast6: maskedIdLast6,      // ✅ صحيح: مقنعة
+          isReadOnly: true
+        }
+      });
+    }
+  } catch (e) {
+    console.error('[check-imei] Error fetching user data for auto-fill:', e);
+  }
+}
+
+
+    res.json({ exists: false, phoneDetails: null });
+  } catch (error) {
+    console.error('Error checking IMEI:', error);
+    return sendError(res, 500, 'حدث خطأ في الخادم', error);
   }
 });
-
 
 
 // نقطة نهاية لتسجيل الهاتف
