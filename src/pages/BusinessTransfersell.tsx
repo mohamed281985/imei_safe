@@ -20,6 +20,7 @@ import { useScrollToTop } from '@/hooks/useScrollToTop';
 import CountryCodeSelector from '../components/CountryCodeSelector';
 import imageCompression from 'browser-image-compression';
 import axiosInstance from '@/services/axiosInterceptor';
+import { countries } from '@/data/countries';
 import { decryptPhoneNumber } from '../lib/imeiCrypto';
 
 // Helper function to check business roles
@@ -285,17 +286,33 @@ const BusinessTransfer: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [currentRegisteredPhone, setCurrentRegisteredPhone] = useState<any>(null);
 
+  // Debug: log changes to seller phone and country code
+  useEffect(() => {
+    try {
+      console.log('STATE UPDATE: sellerCountryCode ->', sellerCountryCode);
+    } catch (e) {}
+  }, [sellerCountryCode]);
+
+  useEffect(() => {
+    try {
+      console.log('STATE UPDATE: sellerPhone ->', sellerPhone);
+    } catch (e) {}
+  }, [sellerPhone]);
+
   const resolveImageUrl = async (path: string | null | undefined) => {
     if (!path || typeof path !== 'string') return '';
-    const cleanPath = path.trim();
+    const cleanPath = String(path).trim().replace(/^\/+/, '');
     if (cleanPath.startsWith('http') || cleanPath.startsWith('data:') || cleanPath.startsWith('blob:')) return cleanPath;
+
+    // Choose bucket: receipts/* are uploaded to transfer-assets, others to registerphone
+    const bucket = cleanPath.startsWith('receipts/') ? 'transfer-assets' : 'registerphone';
 
     try {
       let token = '';
       try { const { data: { session } } = await supabase.auth.getSession(); token = session?.access_token || ''; } catch (e) { token = ''; }
       const headers: any = token ? { Authorization: `Bearer ${token}` } : {};
       const resp = await axiosInstance.get('/api/signed-url', {
-        params: { bucket: 'registerphone', path: cleanPath, expiresIn: 300 },
+        params: { bucket, path: cleanPath, expiresIn: 300 },
         headers,
         validateStatus: () => true
       });
@@ -409,6 +426,27 @@ const BusinessTransfer: React.FC = () => {
     }
     const fetchData = async () => {
       setIsLoading(true);
+      // Helper: parse a phone string into country code and local part using known country codes
+      const parsePhoneAndCountry = (phoneRaw: string, fallbackCountry = '+20') => {
+        let cc = fallbackCountry || '+20';
+        let local = phoneRaw || '';
+        if (typeof local !== 'string') local = String(local);
+        if (local.startsWith('+')) {
+          // find the longest matching country code from our `countries` list
+          // sort codes by length desc to match the longest first
+          const codes = (countries || []).map(c => c.code).sort((a, b) => b.length - a.length);
+          for (const code of codes) {
+            if (local.startsWith(code)) {
+              cc = code;
+              local = local.slice(code.length);
+              break;
+            }
+          }
+        }
+        // normalize local by removing leading zeros
+        local = local.replace(/^0+/, '');
+        return { cc, local };
+      };
       try {
         console.log('🔍 جاري البحث عن بلاغات للـ IMEI:', debouncedImei);
         const { count: reportCount, error: reportError } = await supabase
@@ -481,6 +519,14 @@ const BusinessTransfer: React.FC = () => {
         if (registeredPhone && registeredPhone.phoneDetails) {
           const details = registeredPhone.phoneDetails;
           console.log('📋 تفاصيل الهاتف:', details);
+          console.log('🔎 debug - raw phone fields:', {
+            owner_phone: details.owner_phone,
+            ownerPhone: details.ownerPhone,
+            phone: details.phone,
+            phone_number: details.phone_number,
+            country_code: details.country_code,
+            country_key: details.country_key
+          });
           
           if (registeredPhone.isOtherUser || (registeredPhone.isTransferred && !(details && details.user_id && user && details.user_id === user.id))) {
             setSellerName('');
@@ -503,7 +549,7 @@ const BusinessTransfer: React.FC = () => {
             
             // Get country code from API response
             const countryCode = pick(details, ['country_code', 'countryKey', 'country_key']) || '+20';
-            console.log('🌍 كود الدولة من السيرفر:', countryCode);
+            console.log('🌍 كود الدولة من السيرفر (owned):', countryCode);
             setSellerCountryCode(countryCode);
             
             let resolvedPhone = pick(details, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber', 'phone', 'owner_phone_number', 'phone_number']) || (user as any)?.phone || '';
@@ -546,16 +592,11 @@ const BusinessTransfer: React.FC = () => {
               }
             }
 
-            // Extract country code from phone number if available (as fallback)
-            if (resolvedPhone && resolvedPhone.startsWith('+')) {
-              const match = resolvedPhone.match(/^\+(\d{1,3})(.*)$/);
-              if (match) {
-                setSellerCountryCode(`+${match[1]}`);
-                setSellerPhone(match[2] || '');
-              }
-            } else {
-              setSellerPhone(resolvedPhone);
-            }
+            // Parse and normalize phone+country deterministically, then set both states together
+            const { cc: parsedCC, local: parsedLocal } = parsePhoneAndCountry(resolvedPhone, countryCode);
+            setSellerCountryCode(parsedCC);
+            setSellerPhone(decryptPhoneIfEncrypted(parsedLocal));
+            console.log('🔎 debug - parsed result (owned):', { resolvedPhone, parsedCC, parsedLocal });
 
             setSellerIdLast6(pick(details, ['owner_id_last6', 'ownerIdLast6', 'maskedIdLast6', 'id_last6']) || '');
             setPhoneType(pick(details, ['phone_type', 'phoneType', 'model']) || '');
@@ -590,15 +631,12 @@ const BusinessTransfer: React.FC = () => {
           setSellerCountryCode(countryCode);
           
           let phoneToDecrypt = pick(details, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber', 'phone', 'owner_phone_number', 'phone_number']);
-          // Extract country code from phone number if available (as fallback)
-          if (phoneToDecrypt && phoneToDecrypt.startsWith('+')) {
-            const match = phoneToDecrypt.match(/^\+(\d{1,3})(.*)$/);
-            if (match) {
-              setSellerCountryCode(`+${match[1]}`);
-              phoneToDecrypt = match[2] || '';
-            }
-          }
-          setSellerPhone(decryptPhoneIfEncrypted(phoneToDecrypt));
+          // Parse phoneToDecrypt and set states together
+          const { cc: parsedCC, local: parsedLocal } = parsePhoneAndCountry(phoneToDecrypt, countryCode);
+          setSellerCountryCode(parsedCC);
+          const decrypted = decryptPhoneIfEncrypted(parsedLocal);
+          setSellerPhone(decrypted);
+          console.log('🔎 debug - parsed phoneToDecrypt:', { phoneToDecrypt, parsedCC, parsedLocal, decrypted });
           
           setSellerIdLast6(pick(details, ['owner_id_last6', 'ownerIdLast6', 'maskedIdLast6', 'id_last6']));
           setPhoneType(pick(details, ['phone_type', 'phoneType', 'model']));
@@ -622,15 +660,10 @@ const BusinessTransfer: React.FC = () => {
           setSellerCountryCode(countryCode);
           
           let phoneToDecrypt = pick(registeredPhone, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber']);
-          // Extract country code from phone number if available (as fallback)
-          if (phoneToDecrypt && phoneToDecrypt.startsWith('+')) {
-            const match = phoneToDecrypt.match(/^\+(\d{1,3})(.*)$/);
-            if (match) {
-              setSellerCountryCode(`+${match[1]}`);
-              phoneToDecrypt = match[2] || '';
-            }
-          }
-          setSellerPhone(decryptPhoneIfEncrypted(phoneToDecrypt));
+          // Parse phoneToDecrypt and set states together
+          const { cc: parsedCC, local: parsedLocal } = parsePhoneAndCountry(phoneToDecrypt, countryCode);
+          setSellerCountryCode(parsedCC);
+          setSellerPhone(decryptPhoneIfEncrypted(parsedLocal));
           
           setSellerIdLast6(pick(registeredPhone, ['owner_id_last6', 'maskedIdLast6']));
           setPhoneType(pick(registeredPhone, ['phone_type', 'phoneType']));
