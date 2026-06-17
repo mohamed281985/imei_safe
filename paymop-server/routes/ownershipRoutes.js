@@ -477,6 +477,32 @@ export function registerOwnershipRoutes({
       const previousOwnerName = decryptField(registeredPhone.owner_name) || registeredPhone.owner_name || '';
       const previousOwnerPhone = decryptField(registeredPhone.phone_number) || registeredPhone.phone_number || '';
 
+      // Build merged seller phone: combine stored country code with phone number
+      const previousOwnerCountryRaw = decryptField(registeredPhone.country_key) || registeredPhone.country_key || registeredPhone.country_code || registeredPhone.countryKey || '';
+      let sellerMergedPhone = null;
+      try {
+        const rawCode = previousOwnerCountryRaw ? String(previousOwnerCountryRaw).trim() : '';
+        const normalizedCode = rawCode ? (rawCode.startsWith('+') ? rawCode : `+${rawCode.replace(/^\+/, '')}`) : '';
+        let phonePart = previousOwnerPhone ? String(previousOwnerPhone).trim() : '';
+
+        if (!phonePart && normalizedCode) {
+          sellerMergedPhone = normalizedCode;
+        } else if (phonePart.startsWith('+')) {
+          sellerMergedPhone = phonePart;
+        } else {
+          const numericCode = normalizedCode.replace(/^\+/, '');
+          if (numericCode && phonePart.startsWith(numericCode)) {
+            sellerMergedPhone = `+${phonePart}`;
+          } else if (normalizedCode) {
+            sellerMergedPhone = `${normalizedCode}${phonePart}`;
+          } else {
+            sellerMergedPhone = phonePart;
+          }
+        }
+      } catch (e) {
+        sellerMergedPhone = (previousOwnerCountryRaw || '') + (previousOwnerPhone || '');
+      }
+
       const updateData = {};
       if (typeof newOwner.owner_name !== 'undefined') {
         if (newOwner.owner_name === null || newOwner.owner_name === '') {
@@ -693,7 +719,7 @@ export function registerOwnershipRoutes({
         imei: encryptToJson(imei),
         phone_type: newOwner.phone_type || registeredPhone.phone_type || null,
         seller_name: encryptToJson(previousOwnerName),
-        seller_phone: encryptToJson(previousOwnerPhone),
+        seller_phone: encryptToJson(sellerMergedPhone),
         seller_id_last6: encryptToJson(previousOwnerIdLast6),
         buyer_name: encryptToJson(newOwner.owner_name || ''),
         buyer_phone: encryptToJson(buyerMergedPhone || (newOwner.phone_number || '')),
