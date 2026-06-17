@@ -239,6 +239,34 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
         console.error(error);
         return res.status(500).json({ error: 'Database error' });
       }
+      const { data: user } = await supabase
+  .from('users')
+  .select('fcm_token')
+  .eq('id', data.user_id)
+  .single();
+
+if (user?.fcm_token) {
+  await sendFCMNotificationV1({
+    token: user.fcm_token,
+    title: 'تحديث البلاغ',
+    body: `تم تغيير حالة البلاغ إلى ${status}`,
+    data: {
+      type: 'report_update',
+      reportId: String(data.id),
+      status
+    }
+  });
+}
+await supabase
+  .from('notifications')
+  .insert({
+    user_id: data.user_id,
+    title: 'تحديث البلاغ',
+    message: `تم تغيير حالة البلاغ إلى ${status}`,
+    type: 'report_update',
+    is_read: false,
+    created_at: new Date().toISOString()
+  });
 
       return res.json({
         success: true,
