@@ -18,7 +18,8 @@ export function registerOwnershipRoutes({
   logAudit,
   checkAuthBlocked,
   recordAuthFailure,
-  clearAuthFailures
+  clearAuthFailures,
+  sendFCMNotificationV1
 }) {
   app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
     try {
@@ -404,11 +405,13 @@ export function registerOwnershipRoutes({
 
             const buffer = Buffer.from(base64Data, 'base64');
 
-            const fileName = `receipt_${Date.now()}.jpg`;
-            const filePath = `receipts/${fileName}`;
+            const fileId = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}_${Math.floor(Math.random() * 1e9)}`;
+            const fileName = `${fileId}_phone_${Date.now()}.jpg`;
+            const filePath = `${fileName}`; // store at bucket root to match phone image naming
 
+            // Upload receipts using the same bucket as phone images so filenames/locations match
             const { error: uploadError } = await supabase.storage
-  .from('transfer-assets')
+              .from('registerphone')
               .upload(filePath, buffer, {
                 contentType: mimeType,
                 upsert: true
@@ -575,6 +578,77 @@ export function registerOwnershipRoutes({
         console.error('transfer-ownership: update registered_phones error:', updateErr);
         throw updateErr;
       }
+      try {
+  // إشعار البائع
+  const { data: sellerRow } = await supabase
+    .from('users')
+    .select('fcm_token, language')
+    .eq('id', userId)
+    .single();
+
+  if (sellerRow?.fcm_token) {
+    const sellerTitle =
+      sellerRow.language === 'en'
+        ? 'Ownership Transferred'
+        : 'تم نقل ملكية الهاتف';
+
+    const sellerBody =
+      sellerRow.language === 'en'
+        ? 'Your phone ownership has been successfully transferred.'
+        : 'تم نقل ملكية هاتفك بنجاح إلى المالك الجديد.';
+
+    await sendFCMNotificationV1({
+      token: sellerRow.fcm_token,
+      title: sellerTitle,
+      body: sellerBody
+    });
+
+    await supabase.from('notifications').insert({
+      user_id: userId,
+      title: sellerTitle,
+      body: sellerBody,
+      type: 'ownership_transfer'
+    });
+  }
+
+  // إشعار المشتري
+  const buyerUserId = updateData.user_id;
+
+  if (buyerUserId) {
+    const { data: buyerRow } = await supabase
+      .from('users')
+      .select('fcm_token, language')
+      .eq('id', buyerUserId)
+      .single();
+
+    if (buyerRow?.fcm_token) {
+      const buyerTitle =
+        buyerRow.language === 'en'
+          ? 'Ownership Received'
+          : 'تم استلام ملكية الهاتف';
+
+      const buyerBody =
+        buyerRow.language === 'en'
+          ? 'You are now the new owner of this phone.'
+          : 'أصبحت المالك الجديد لهذا الهاتف بنجاح.';
+
+      await sendFCMNotificationV1({
+        token: buyerRow.fcm_token,
+        title: buyerTitle,
+        body: buyerBody
+      });
+
+      await supabase.from('notifications').insert({
+        user_id: buyerUserId,
+        title: buyerTitle,
+        body: buyerBody,
+        type: 'ownership_transfer'
+      });
+    }
+  }
+} catch (err) {
+  console.error('Ownership FCM Error:', err);
+}
       console.log('[transfer-ownership] registered_phones updated result:', updated);
 
       const encryptToJson = (value) => {
@@ -1154,14 +1228,14 @@ export function registerOwnershipRoutes({
       const base64Data = matches[2];
       const buffer = Buffer.from(base64Data, 'base64');
 
-      // Generate unique filename
+      // Generate unique filename matching phone image naming: <uuid>_phone_<timestamp>.jpg
       const fileId = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}_${Math.floor(Math.random() * 1e9)}`;
-      const fileName = `receipt_${fileId}_${Date.now()}.jpg`;
-      const filePath = `receipts/${fileName}`;
+      const fileName = `${fileId}_phone_${Date.now()}.jpg`;
+      const filePath = `${fileName}`;
 
-      // Upload to transfer-assets bucket with authenticated user context
+      // Upload to registerphone bucket so saved receipts look like phone images
       const { error: uploadError } = await supabase.storage
-        .from('transfer-assets')
+        .from('registerphone')
         .upload(filePath, buffer, {
           contentType: mimeType,
           upsert: true
