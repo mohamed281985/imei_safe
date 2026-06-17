@@ -27,7 +27,6 @@ import { registerProfileRoutes } from './routes/profileRoutes.js';
 import { registerReportRoutes } from './routes/reportRoutes.js';
 import { registerBuyerInfoRoutes } from './routes/buyerInfoRoutes.js';
 import { registerAdminRoutes } from './routes/adminRoutes.js';
-import { sendFCMNotificationV1 } from './firebase.js';
 // =================================================================
 // 1. الإعدادات الأولية وتحميل متغيرات البيئة (يجب أن تكون في البداية)
 // =================================================================
