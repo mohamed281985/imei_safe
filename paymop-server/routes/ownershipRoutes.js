@@ -533,6 +533,11 @@ export function registerOwnershipRoutes({
         updateData.password = await hashPasswordForStorage(newOwner.password);
       }
 
+      // Update receipt image if a new receipt was uploaded
+      if (uploadedReceiptPath) {
+        updateData.receipt_image_url = uploadedReceiptPath;
+      }
+
       let buyerUserId = null;
       if (typeof newOwner.user_id !== 'undefined' && newOwner.user_id !== null) {
         buyerUserId = newOwner.user_id;
