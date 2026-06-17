@@ -222,6 +222,37 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
     }
   });
 
+  // PATCH /admin/reports/:id - update report status
+  app.patch('/admin/reports/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+
+      const { data, error } = await supabase
+        .from('phone_reports')
+        .update({ status })
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) {
+        console.error(error);
+        return res.status(500).json({ error: 'Database error' });
+      }
+
+      return res.json({
+        success: true,
+        data
+      });
+
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({
+        error: 'Server error'
+      });
+    }
+  });
+
   // GET /admin/ads - list phone ads (decrypted)
   app.get('/admin/ads', async (req, res) => {
     try {
