@@ -1129,4 +1129,49 @@ export function registerOwnershipRoutes({
       return res.status(500).json({ error: 'Server error' });
     }
   });
+
+  // Upload receipt image to transfer-assets bucket (server-side with proper auth)
+  app.post('/api/upload-receipt', verifyJwtToken, async (req, res) => {
+    try {
+      const { receiptImage } = req.body;
+      const userId = req.user?.id;
+
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      if (!receiptImage) return res.status(400).json({ error: 'receiptImage is required' });
+
+      // Parse base64 data URI
+      const matches = receiptImage.match(/^data:(.+);base64,(.+)$/);
+      if (!matches) {
+        return res.status(400).json({ error: 'Invalid base64 data URI format' });
+      }
+
+      const mimeType = matches[1];
+      const base64Data = matches[2];
+      const buffer = Buffer.from(base64Data, 'base64');
+
+      // Generate unique filename
+      const fileId = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}_${Math.floor(Math.random() * 1e9)}`;
+      const fileName = `receipt_${fileId}_${Date.now()}.jpg`;
+      const filePath = `receipts/${fileName}`;
+
+      // Upload to transfer-assets bucket with authenticated user context
+      const { error: uploadError } = await supabase.storage
+        .from('transfer-assets')
+        .upload(filePath, buffer, {
+          contentType: mimeType,
+          upsert: true
+        });
+
+      if (uploadError) {
+        console.error('[upload-receipt] Supabase storage error:', uploadError);
+        return res.status(500).json({ error: 'Failed to upload receipt to storage', details: uploadError.message });
+      }
+
+      // Return the path only (client will request signed URL when needed)
+      return res.json({ success: true, path: filePath });
+    } catch (err) {
+      console.error('[upload-receipt] error:', err);
+      return res.status(500).json({ error: 'Server error', details: err?.message || '' });
+    }
+  });
 }
