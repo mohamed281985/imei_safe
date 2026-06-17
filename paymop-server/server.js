@@ -3794,6 +3794,7 @@ app.get('/api/get-contact-info', verifyJwtToken, async (req, res) => {
 
     const { data: allReports, error: reportError } = await supabase
       .from('phone_reports')
+      .neq('status', 'rejected')
       .select('id, imei, email, owner_name, finder_phone, user_id, finder_user_id')
       .order('id', { ascending: true });
 
@@ -3932,6 +3933,7 @@ app.post('/api/whatsapp-redirect', verifyJwtToken, whatsappRedirectLimiter, asyn
     // البحث عن البلاغ المطابق للـ IMEI
     const { data: allReports, error: reportError } = await supabase
       .from('phone_reports')
+      .neq('status', 'rejected')
       .select('id, imei, user_id, phone_number, whatsapp, finder_user_id')
       .order('id', { ascending: true });
 
@@ -4045,6 +4047,7 @@ app.post('/api/get-owner-email-by-imei', verifyJwtToken, async (req, res) => {
 
     const { data: allReports, error: reportError } = await supabase
       .from('phone_reports')
+      .neq('status', 'rejected')
       .select('id, imei, email, owner_name, user_id, finder_user_id')
       .order('id', { ascending: true });
 
@@ -4113,6 +4116,7 @@ app.post('/api/get-owner-details-by-imei', verifyJwtToken, async (req, res) => {
     console.log('/api/get-owner-details-by-imei called by', requesterId, 'imei:', imei);
     const { data: allReports, error: reportError } = await supabase
       .from('phone_reports')
+      .neq('status', 'rejected')
       .select('id, imei, user_id, phone_number, email, whatsapp, owner_name, finder_user_id')
       .order('id', { ascending: true });
 

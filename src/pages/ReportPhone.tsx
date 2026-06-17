@@ -852,6 +852,35 @@ if (result.autoFillData) {
 
         // حالة بلاغ فعال فقط (غير مسجل)
         if (result.found && !result.isRegistered) {
+          // If reports are present, treat reports with status 'rejected' as non-blocking
+          let hasBlockingReport = true;
+          try {
+            if (Array.isArray(result.phoneReports) && result.phoneReports.length > 0) {
+              hasBlockingReport = result.phoneReports.some((r: any) => {
+                if (!r) return false;
+                const s = String(r.status || r.report_status || r.state || '').toLowerCase();
+                return s !== 'rejected';
+              });
+            } else if (typeof result.report_status === 'string') {
+              hasBlockingReport = String(result.report_status).toLowerCase() !== 'rejected';
+            } else if (typeof result.status === 'string') {
+              hasBlockingReport = String(result.status).toLowerCase() !== 'rejected';
+            } else if (typeof result.hasActiveReport === 'boolean') {
+              hasBlockingReport = !!result.hasActiveReport;
+            }
+          } catch (err) {
+            hasBlockingReport = true;
+          }
+
+          if (!hasBlockingReport) {
+            // All existing reports are 'rejected' (or no blocking report) → allow new report / registration
+            resetFormForNewReport();
+            setIsImeiRegistered(false);
+            setIsImeiValid(true);
+            setActiveReportWarning('phone_not_registered_can_report');
+            return;
+          }
+
           setIsReadOnly(true);
           setFieldReadOnlyState({
             ownerName: true, phoneNumber: true, lossLocation: true, lossTime: true,
