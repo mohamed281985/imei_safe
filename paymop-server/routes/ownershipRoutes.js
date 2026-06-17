@@ -613,26 +613,48 @@ export function registerOwnershipRoutes({
     .single();
 
   if (sellerRow?.fcm_token) {
-    const sellerTitle =
-      sellerRow.language === 'en'
-        ? 'Ownership Transferred'
-        : 'تم نقل ملكية الهاتف';
+    // Simple localized messages; if you want to use the full frontend translation files
+    // we can load them separately. For now use these keys to cover supported langs.
+    const notificationTranslations = {
+      en: {
+        ownership_transferred_title: 'Ownership Transferred',
+        ownership_transferred_body: 'Your phone ownership has been successfully transferred.',
+        ownership_received_title: 'Ownership Received',
+        ownership_received_body: 'You are now the new owner of this phone.'
+      },
+      ar: {
+        ownership_transferred_title: 'تم نقل ملكية الهاتف',
+        ownership_transferred_body: 'تم نقل ملكية هاتفك بنجاح إلى المالك الجديد.',
+        ownership_received_title: 'تم استلام ملكية الهاتف',
+        ownership_received_body: 'أصبحت المالك الجديد لهذا الهاتف بنجاح.'
+      },
+      fr: {
+        ownership_transferred_title: 'Transfert de propriété',
+        ownership_transferred_body: "La propriété de votre téléphone a été transférée avec succès.",
+        ownership_received_title: 'Propriété reçue',
+        ownership_received_body: "Vous êtes désormais le nouveau propriétaire de ce téléphone."
+      },
+      hi: {
+        ownership_transferred_title: 'Ownership Transferred',
+        ownership_transferred_body: 'Your phone ownership has been successfully transferred.',
+        ownership_received_title: 'Ownership Received',
+        ownership_received_body: 'You are now the new owner of this phone.'
+      }
+    };
 
-    const sellerBody =
-      sellerRow.language === 'en'
-        ? 'Your phone ownership has been successfully transferred.'
-        : 'تم نقل ملكية هاتفك بنجاح إلى المالك الجديد.';
+    const userLang = (sellerRow.language || 'en').toString().slice(0,2).toLowerCase();
+    const dict = notificationTranslations[userLang] || notificationTranslations['en'];
 
     await sendFCMNotificationV1({
       token: sellerRow.fcm_token,
-      title: sellerTitle,
-      body: sellerBody
+      title: dict.ownership_transferred_title,
+      body: dict.ownership_transferred_body
     });
 
     await supabase.from('notifications').insert({
       user_id: userId,
-      title: sellerTitle,
-      body: sellerBody,
+      title: dict.ownership_transferred_title,
+      body: dict.ownership_transferred_body,
       type: 'ownership_transfer'
     });
   }
