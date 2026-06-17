@@ -690,7 +690,8 @@ export function registerOwnershipRoutes({
         user_id: buyerUserId,
         title: buyerTitle,
         body: buyerBody,
-        type: 'ownership_transfer'
+        type: 'ownership_transfer',
+        is_read: false
       });
     }
   }
