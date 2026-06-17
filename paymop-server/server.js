@@ -27,6 +27,7 @@ import { registerProfileRoutes } from './routes/profileRoutes.js';
 import { registerReportRoutes } from './routes/reportRoutes.js';
 import { registerBuyerInfoRoutes } from './routes/buyerInfoRoutes.js';
 import { registerAdminRoutes } from './routes/adminRoutes.js';
+import { sendFCMNotificationV1 } from './firebase.js';
 // =================================================================
 // 1. الإعدادات الأولية وتحميل متغيرات البيئة (يجب أن تكون في البداية)
 // =================================================================
@@ -5807,7 +5808,8 @@ registerOwnershipRoutes({
   logAudit,
   checkAuthBlocked,
   recordAuthFailure,
-  clearAuthFailures
+  clearAuthFailures,
+  sendFCMNotificationV1
 });
 
 // مسار للحصول على بيانات المشتري
