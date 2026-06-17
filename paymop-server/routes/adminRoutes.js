@@ -239,34 +239,69 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
         console.error(error);
         return res.status(500).json({ error: 'Database error' });
       }
-      const { data: user } = await supabase
-  .from('users')
-  .select('fcm_token')
-  .eq('id', data.user_id)
-  .single();
 
-if (user?.fcm_token) {
-  await sendFCMNotificationV1({
-    token: user.fcm_token,
-    title: 'تحديث البلاغ',
-    body: `تم تغيير حالة البلاغ إلى ${status}`,
-    data: {
-      type: 'report_update',
-      reportId: String(data.id),
-      status
-    }
-  });
-}
-await supabase
-  .from('notifications')
-  .insert({
-    user_id: data.user_id,
-    title: 'تحديث البلاغ',
-    message: `تم تغيير حالة البلاغ إلى ${status}`,
-    type: 'report_update',
-    is_read: false,
-    created_at: new Date().toISOString()
-  });
+      /* رسائل الإشعارات */
+      const notificationMessages = {
+        active: {
+          title: 'تم اعتماد بلاغ فقدان هاتفك',
+          body: 'تم الانتهاء من مراجعة بلاغ فقدان هاتفك واعتماده بنجاح. سيظل البلاغ نشطًا داخل النظام، وسيتم إشعارك فور حدوث أي تحديث يتعلق به.'
+        },
+
+        rejected: {
+          title: 'تعذر اعتماد البلاغ',
+          body: 'بعد مراجعة البلاغ، تعذر اعتماده في الوقت الحالي لعدم اكتمال البيانات أو الحاجة إلى مستندات إضافية. يرجى مراجعة تفاصيل البلاغ وإعادة إرساله بعد استيفاء المتطلبات.'
+        },
+
+        resolved: {
+          title: 'تم حل البلاغ بنجاح',
+          body: 'يسعدنا إبلاغك بأنه تم إغلاق البلاغ بعد حل المشكلة المتعلقة بالهاتف. نشكرك على ثقتك في IMEI Safe، ونتمنى لك تجربة آمنة دائمًا.'
+        }
+      };
+
+      const notification = notificationMessages[status];
+
+      if (notification) {
+
+        /* إشعار داخلي داخل التطبيق */
+        await supabase
+          .from('notifications')
+          .insert({
+            user_id: data.user_id,
+            title: notification.title,
+            message: notification.body,
+            type: 'report_update',
+            is_read: false,
+            created_at: new Date().toISOString()
+          });
+
+        /* الحصول على FCM Token */
+        const { data: user } = await supabase
+          .from('users')
+          .select('fcm_token')
+          .eq('id', data.user_id)
+          .single();
+
+        /* إرسال إشعار خارجي */
+        if (user?.fcm_token) {
+          try {
+            await sendFCMNotificationV1({
+              token: user.fcm_token,
+              title: notification.title,
+              body: notification.body,
+              data: {
+                type: 'report_update',
+                reportId: String(data.id),
+                status: status
+              }
+            });
+
+            console.log('Report FCM sent successfully');
+          } catch (fcmError) {
+            console.error('Report FCM Error:', fcmError);
+          }
+        }
+      }
+
 
       return res.json({
         success: true,
@@ -808,11 +843,11 @@ await supabase
       if (!updatedPhone) return res.status(404).json({ success: false, error: 'phone_not_found' });
 
       const targetUserId = updatedPhone.user_id || null;
-const { data: userRow } = await supabase
-  .from('users')
-  .select('language')
-  .eq('id', targetUserId)
-  .single();
+      const { data: userRow } = await supabase
+        .from('users')
+        .select('language')
+        .eq('id', targetUserId)
+        .single();
       // Insert a notification for the phone owner using server service-role client
       const notifTitle = getNotificationText(userRow?.language, 'admin.reject_phone_title', 'Phone Registration Rejected', 'تم رفض تسجيل الهاتف');
       const notifBody = getNotificationText(userRow?.language, 'admin.reject_phone_body', `Rejection reason: ${rejectReason}`, `سبب الرفض: ${rejectReason}`);
@@ -898,11 +933,11 @@ const { data: userRow } = await supabase
       if (!updatedPhone) return res.status(404).json({ success: false, error: 'phone_not_found' });
 
       const targetUserId = updatedPhone.user_id || null;
-const { data: userRow } = await supabase
-  .from('users')
-  .select('language')
-  .eq('id', targetUserId)
-  .single();
+      const { data: userRow } = await supabase
+        .from('users')
+        .select('language')
+        .eq('id', targetUserId)
+        .single();
       // Insert a notification for the phone owner using server service-role client
       const notifTitle = getNotificationText(userRow?.language, 'admin.approve_phone_title', 'Phone Registration Approved', 'تمت الموافقة على تسجيل الهاتف');
       const notifBody = getNotificationText(userRow?.language, 'admin.approve_phone_body', 'Your phone registration request has been approved', 'تمت مراجعة طلب تسجيل الهاتف والموافقة عليه');
