@@ -263,16 +263,22 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       if (notification) {
 
         /* إشعار داخلي داخل التطبيق */
-        await supabase
-          .from('notifications')
-          .insert({
-            user_id: data.user_id,
-            title: notification.title,
-            message: notification.body,
-            type: 'report_update',
-            is_read: false,
-            created_at: new Date().toISOString()
-          });
+      const { error: notificationError } = await supabase
+  .from('notifications')
+  .insert({
+    user_id: data.user_id,
+    title: notification.title,
+    message: notification.body,
+    type: 'report_update',
+    is_read: false,
+    created_at: new Date().toISOString()
+  });
+
+if (notificationError) {
+  console.error('Notification Insert Error:', notificationError);
+} else {
+  console.log('Notification inserted successfully');
+}
 
         /* الحصول على FCM Token */
         const { data: user } = await supabase
