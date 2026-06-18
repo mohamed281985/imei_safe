@@ -100,6 +100,207 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
 
   const getAuditIp = (req) => req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null;
 
+  // GET /admin/audit-logs - list audit logs with filters + pagination + insights (admin only)
+  app.get('/admin/audit-logs', verifyJwtToken, async (req, res) => {
+    try {
+      const acting = req.user || null;
+      const roleCheck = (acting && acting.role) ? String(acting.role).toLowerCase() : '';
+
+      if (!roleCheck.includes('admin')) {
+        try {
+          await logAudit({
+            userId: acting?.id || null,
+            action: 'forbidden_access',
+            resourceType: 'audit_logs',
+            resourceId: null,
+            details: { reason: 'forbidden: admin only', route: '/admin/audit-logs' },
+            ip: getAuditIp(req),
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed',
+            errorMessage: 'forbidden: admin only'
+          });
+        } catch (e) {
+          console.warn('/admin/audit-logs forbidden audit failed', e);
+        }
+        return res.status(403).json({ success: false, error: 'forbidden: admin only' });
+      }
+
+      const {
+        user_id,
+        ip_address,
+        action,
+        resource_type,
+        status,
+        from_date,
+        to_date,
+        sort_by,
+        sort_order,
+        page,
+        limit
+      } = req.query || {};
+
+      const parsedPage = Math.max(Number(page || 1), 1);
+      const parsedLimit = Math.min(Math.max(Number(limit || 50), 1), 200);
+      const offset = (parsedPage - 1) * parsedLimit;
+
+      const allowedSortColumns = new Set([
+        'created_at',
+        'action',
+        'status',
+        'resource_type',
+        'resource_id',
+        'user_id',
+        'ip_address'
+      ]);
+      const sortBy = allowedSortColumns.has(String(sort_by || 'created_at')) ? String(sort_by || 'created_at') : 'created_at';
+      const sortOrder = String(sort_order || 'desc').toLowerCase() === 'asc' ? 'asc' : 'desc';
+
+      const fromIso = from_date ? new Date(String(from_date)) : null;
+      const toIso = to_date ? new Date(String(to_date)) : null;
+
+      if (from_date && Number.isNaN(fromIso?.getTime())) {
+        return res.status(400).json({ success: false, error: 'Invalid from_date' });
+      }
+      if (to_date && Number.isNaN(toIso?.getTime())) {
+        return res.status(400).json({ success: false, error: 'Invalid to_date' });
+      }
+
+      const applyFilters = (q, options = {}) => {
+        const { includeAction = true, overrideAction = null } = options;
+
+        let query = q;
+
+        if (user_id) query = query.eq('user_id', String(user_id));
+        if (ip_address) query = query.ilike('ip_address', `%${String(ip_address)}%`);
+        if (resource_type) query = query.eq('resource_type', String(resource_type));
+        if (status) query = query.eq('status', String(status));
+
+        if (includeAction && action) query = query.eq('action', String(action));
+        if (overrideAction) query = query.eq('action', String(overrideAction));
+
+        if (fromIso) query = query.gte('created_at', fromIso.toISOString());
+        if (toIso) query = query.lte('created_at', toIso.toISOString());
+
+        return query;
+      };
+
+      const countQuery = applyFilters(
+        supabase.from('audit_logs').select('id', { count: 'exact', head: true })
+      );
+
+      const dataQuery = applyFilters(
+        supabase
+          .from('audit_logs')
+          .select('id, user_id, action, resource_type, resource_id, old_values, new_values, ip_address, user_agent, status, created_at')
+          .order(sortBy, { ascending: sortOrder === 'asc' })
+          .range(offset, offset + parsedLimit - 1)
+      );
+
+      const failedCountQuery = applyFilters(
+        supabase.from('audit_logs').select('id', { count: 'exact', head: true }).eq('status', 'failed')
+      );
+
+      const successCountQuery = applyFilters(
+        supabase.from('audit_logs').select('id', { count: 'exact', head: true }).eq('status', 'success')
+      );
+
+      const unauthorizedCountQuery = applyFilters(
+        supabase.from('audit_logs').select('id', { count: 'exact', head: true }),
+        { includeAction: false, overrideAction: 'unauthorized_access' }
+      );
+
+      const forbiddenCountQuery = applyFilters(
+        supabase.from('audit_logs').select('id', { count: 'exact', head: true }),
+        { includeAction: false, overrideAction: 'forbidden_access' }
+      );
+
+      const [
+        { count: totalCount, error: totalErr },
+        { data, error: dataErr },
+        { count: failedCount, error: failedErr },
+        { count: successCount, error: successErr },
+        { count: unauthorizedCount, error: unauthorizedErr },
+        { count: forbiddenCount, error: forbiddenErr }
+      ] = await Promise.all([
+        countQuery,
+        dataQuery,
+        failedCountQuery,
+        successCountQuery,
+        unauthorizedCountQuery,
+        forbiddenCountQuery
+      ]);
+
+      if (totalErr || dataErr || failedErr || successErr || unauthorizedErr || forbiddenErr) {
+        console.error('/admin/audit-logs query error', totalErr || dataErr || failedErr || successErr || unauthorizedErr || forbiddenErr);
+        return res.status(500).json({ success: false, error: 'Failed to fetch audit logs' });
+      }
+
+      const total = Number(totalCount || 0);
+      const totalPages = Math.max(Math.ceil(total / parsedLimit), 1);
+      const safeData = Array.isArray(data) ? data : [];
+
+      const pageUniqueIps = new Set(safeData.map(r => r?.ip_address).filter(Boolean));
+      const pageActionsCount = safeData.reduce((acc, row) => {
+        const key = row?.action || 'unknown';
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {});
+      const topRiskActions = Object.entries(pageActionsCount)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([act, count]) => ({ action: act, count }));
+
+      const failed = Number(failedCount || 0);
+      const success = Number(successCount || 0);
+      const unauthorized = Number(unauthorizedCount || 0);
+      const forbidden = Number(forbiddenCount || 0);
+
+      return res.json({
+        success: true,
+        data: safeData,
+        pagination: {
+          page: parsedPage,
+          limit: parsedLimit,
+          total,
+          totalPages,
+          hasNextPage: parsedPage < totalPages,
+          hasPrevPage: parsedPage > 1
+        },
+        summary: {
+          totalRecords: total,
+          pageRecords: safeData.length,
+          statusCounts: {
+            success,
+            failed,
+            other: Math.max(total - success - failed, 0)
+          },
+          filtersApplied: {
+            user_id: user_id || null,
+            ip_address: ip_address || null,
+            action: action || null,
+            resource_type: resource_type || null,
+            status: status || null,
+            from_date: fromIso ? fromIso.toISOString() : null,
+            to_date: toIso ? toIso.toISOString() : null,
+            sort_by: sortBy,
+            sort_order: sortOrder
+          }
+        },
+        securityInsights: {
+          failedRate: total > 0 ? Number(((failed / total) * 100).toFixed(2)) : 0,
+          unauthorizedAttempts: unauthorized,
+          forbiddenAttempts: forbidden,
+          suspiciousAttempts: unauthorized + forbidden,
+          uniqueIpCountInPage: pageUniqueIps.size,
+          topRiskActions
+        }
+      });
+    } catch (err) {
+      console.error('/admin/audit-logs error', err);
+      return res.status(500).json({ success: false, error: 'Server error' });
+    }
+  });
+
   // GET /admin/dashboard - summary + recent samples
   app.get('/admin/dashboard', async (req, res) => {
     try {
