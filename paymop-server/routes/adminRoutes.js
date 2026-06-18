@@ -100,6 +100,268 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
 
   const getAuditIp = (req) => req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null;
 
+  const toBoolean = (value) => {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value === 1;
+    if (typeof value === 'string') {
+      const v = value.trim().toLowerCase();
+      return v === 'true' || v === '1' || v === 'yes' || v === 'y';
+    }
+    return false;
+  };
+
+  async function canSendNotifications(userId) {
+    try {
+      if (!userId) return false;
+      const { data, error } = await supabase
+        .from('admin_permissions')
+        .select('can_send_notifications')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (error) {
+        console.warn('canSendNotifications: permissions lookup failed', error);
+        return false;
+      }
+
+      return toBoolean(data?.can_send_notifications);
+    } catch (e) {
+      console.warn('canSendNotifications: unexpected error', e);
+      return false;
+    }
+  }
+
+  async function canApproveNotifications(userId) {
+    try {
+      if (!userId) return false;
+      const { data, error } = await supabase
+        .from('admin_permissions')
+        .select('can_approve_notifications')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (error) {
+        console.warn('canApproveNotifications: permissions lookup failed', error);
+        return false;
+      }
+
+      return toBoolean(data?.can_approve_notifications);
+    } catch (e) {
+      console.warn('canApproveNotifications: unexpected error', e);
+      return false;
+    }
+  }
+
+  // POST /admin/notification-campaigns - create notification campaign as draft (no FCM send)
+  app.post('/admin/notification-campaigns', verifyJwtToken, async (req, res) => {
+    try {
+      const acting = req.user || null;
+      if (!acting?.id) {
+        return res.status(401).json({ success: false, error: 'Unauthorized' });
+      }
+
+      const allowed = await canSendNotifications(acting.id);
+      if (!allowed) {
+        try {
+          await logAudit({
+            userId: acting.id,
+            action: 'forbidden_access',
+            resourceType: 'notification_campaign',
+            resourceId: null,
+            details: { reason: 'missing can_send_notifications permission', route: '/admin/notification-campaigns' },
+            ip: getAuditIp(req),
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed'
+          });
+        } catch (e) {
+          console.warn('/admin/notification-campaigns POST forbidden audit failed', e);
+        }
+        return res.status(403).json({ success: false, error: 'forbidden: missing can_send_notifications permission' });
+      }
+
+      const { title, message, audience = null, metadata = null, scheduled_at = null } = req.body || {};
+      const normalizedTitle = typeof title === 'string' ? title.trim() : '';
+      const normalizedMessage = typeof message === 'string' ? message.trim() : '';
+
+      if (!normalizedTitle || !normalizedMessage) {
+        return res.status(400).json({ success: false, error: 'title and message are required' });
+      }
+
+      const now = new Date().toISOString();
+      const insertPayload = {
+        title: normalizedTitle,
+        message: normalizedMessage,
+        audience,
+        metadata,
+        scheduled_at,
+        status: 'draft',
+        created_by: acting.id,
+        created_at: now,
+        updated_at: now
+      };
+
+      const { data, error } = await supabase
+        .from('notification_campaigns')
+        .insert(insertPayload)
+        .select('*')
+        .maybeSingle();
+
+      if (error) {
+        console.error('/admin/notification-campaigns POST error', error);
+        return res.status(500).json({ success: false, error: error.message || 'Failed to create campaign' });
+      }
+
+      try {
+        await logAudit({
+          userId: acting.id,
+          action: 'admin_create_notification_campaign',
+          resourceType: 'notification_campaign',
+          resourceId: data?.id || null,
+          newValues: { title: normalizedTitle, status: 'draft' },
+          details: { created_by: acting.id },
+          ip: getAuditIp(req),
+          userAgent: req.headers['user-agent'] || null,
+          status: 'success'
+        });
+      } catch (e) {
+        console.warn('/admin/notification-campaigns POST audit failed', e);
+      }
+
+      return res.status(201).json({ success: true, data: data || null });
+    } catch (err) {
+      console.error('/admin/notification-campaigns POST unexpected error', err);
+      return res.status(500).json({ success: false, error: 'Server error' });
+    }
+  });
+
+  // GET /admin/notification-campaigns - list notification campaigns
+  app.get('/admin/notification-campaigns', verifyJwtToken, async (req, res) => {
+    try {
+      const acting = req.user || null;
+      if (!acting?.id) {
+        return res.status(401).json({ success: false, error: 'Unauthorized' });
+      }
+
+      const allowed = await canSendNotifications(acting.id);
+      if (!allowed) {
+        try {
+          await logAudit({
+            userId: acting.id,
+            action: 'forbidden_access',
+            resourceType: 'notification_campaign',
+            resourceId: null,
+            details: { reason: 'missing can_send_notifications permission', route: '/admin/notification-campaigns' },
+            ip: getAuditIp(req),
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed'
+          });
+        } catch (e) {
+          console.warn('/admin/notification-campaigns GET forbidden audit failed', e);
+        }
+        return res.status(403).json({ success: false, error: 'forbidden: missing can_send_notifications permission' });
+      }
+
+      const parsedPage = Math.max(Number(req.query.page || 1), 1);
+      const parsedLimit = Math.min(Math.max(Number(req.query.limit || 20), 1), 200);
+      const offset = (parsedPage - 1) * parsedLimit;
+
+      const sortOrder = String(req.query.sort_order || 'desc').toLowerCase() === 'asc' ? 'asc' : 'desc';
+      const status = req.query.status ? String(req.query.status) : null;
+
+      let countQuery = supabase.from('notification_campaigns').select('id', { count: 'exact', head: true });
+      let dataQuery = supabase
+        .from('notification_campaigns')
+        .select('*')
+        .order('created_at', { ascending: sortOrder === 'asc' })
+        .range(offset, offset + parsedLimit - 1);
+
+      if (status) {
+        countQuery = countQuery.eq('status', status);
+        dataQuery = dataQuery.eq('status', status);
+      }
+
+      const [{ count, error: countErr }, { data, error: dataErr }] = await Promise.all([countQuery, dataQuery]);
+
+      if (countErr || dataErr) {
+        console.error('/admin/notification-campaigns GET error', countErr || dataErr);
+        return res.status(500).json({ success: false, error: 'Failed to fetch campaigns' });
+      }
+
+      const total = Number(count || 0);
+      const totalPages = Math.max(Math.ceil(total / parsedLimit), 1);
+
+      return res.json({
+        success: true,
+        data: Array.isArray(data) ? data : [],
+        pagination: {
+          page: parsedPage,
+          limit: parsedLimit,
+          total,
+          totalPages,
+          hasNextPage: parsedPage < totalPages,
+          hasPrevPage: parsedPage > 1
+        }
+      });
+    } catch (err) {
+      console.error('/admin/notification-campaigns GET unexpected error', err);
+      return res.status(500).json({ success: false, error: 'Server error' });
+    }
+  });
+
+  // GET /admin/notification-campaigns/:id - get one notification campaign
+  app.get('/admin/notification-campaigns/:id', verifyJwtToken, async (req, res) => {
+    try {
+      const acting = req.user || null;
+      if (!acting?.id) {
+        return res.status(401).json({ success: false, error: 'Unauthorized' });
+      }
+
+      const allowed = await canSendNotifications(acting.id);
+      if (!allowed) {
+        try {
+          await logAudit({
+            userId: acting.id,
+            action: 'forbidden_access',
+            resourceType: 'notification_campaign',
+            resourceId: req.params?.id || null,
+            details: { reason: 'missing can_send_notifications permission', route: '/admin/notification-campaigns/:id' },
+            ip: getAuditIp(req),
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed'
+          });
+        } catch (e) {
+          console.warn('/admin/notification-campaigns/:id GET forbidden audit failed', e);
+        }
+        return res.status(403).json({ success: false, error: 'forbidden: missing can_send_notifications permission' });
+      }
+
+      const id = req.params.id;
+      if (!id) {
+        return res.status(400).json({ success: false, error: 'Missing campaign id' });
+      }
+
+      const { data, error } = await supabase
+        .from('notification_campaigns')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+
+      if (error) {
+        console.error('/admin/notification-campaigns/:id GET error', error);
+        return res.status(500).json({ success: false, error: error.message || 'Failed to fetch campaign' });
+      }
+
+      if (!data) {
+        return res.status(404).json({ success: false, error: 'Campaign not found' });
+      }
+
+      return res.json({ success: true, data });
+    } catch (err) {
+      console.error('/admin/notification-campaigns/:id GET unexpected error', err);
+      return res.status(500).json({ success: false, error: 'Server error' });
+    }
+  });
+
   // GET /admin/audit-logs - list audit logs with filters + pagination + insights (admin only)
   app.get('/admin/audit-logs', verifyJwtToken, async (req, res) => {
     try {
