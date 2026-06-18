@@ -4710,6 +4710,12 @@ app.post('/api/change-phone', verifyJwtToken, async (req, res) => {
     }
 
     // تشفير رقم الهاتف الجديد
+    const currentPhone = decryptField(userRow.phone);
+    if (currentPhone && String(currentPhone).trim() === String(newPhone).trim()) {
+      return res.json({ success: true, message: 'No changes detected' });
+    }
+
+    // تشفير رقم الهاتف الجديد
     const encPhone = encryptObject(newPhone);
     const encPhoneJson = encPhone ? JSON.stringify(encPhone) : null;
 
@@ -4750,7 +4756,7 @@ app.post('/api/change-phone', verifyJwtToken, async (req, res) => {
       action: 'update_phone',
       resourceType: 'registered_phone',
       resourceId: userId,
-      oldValues: { phone: decryptField(userRow.phone) },
+      oldValues: { phone: currentPhone },
       newValues: { phone: newPhone },
       details: { route: '/api/change-phone' },
       ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,

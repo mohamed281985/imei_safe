@@ -115,23 +115,6 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       const recentUsers = (await supabase.from('users').select('*').order('id', { ascending: false }).limit(10)).data || [];
       const recentTransfers = (await supabase.from('transfer_records').select('*').order('id', { ascending: false }).limit(10)).data || [];
 
-      try {
-        await logAudit({
-          userId: req.user?.id || null,
-          action: 'admin_view_decrypted_data',
-          resourceType: 'admin_dashboard',
-          resourceId: null,
-          oldValues: null,
-          newValues: null,
-          details: { route: '/admin/dashboard' },
-          ip: getAuditIp(req),
-          userAgent: req.headers['user-agent'] || null,
-          status: 'success'
-        });
-      } catch (e) {
-        console.warn('/admin/dashboard audit failed', e);
-      }
-
       return res.json({
         stats: {
           users: Array.isArray(usersCount) ? usersCount.length : (usersCount ?? 0),
@@ -236,23 +219,6 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
 
       const out = rows.map(r => ({ id: r.id, ...decryptDeep(r) }));
 
-      try {
-        await logAudit({
-          userId: req.user?.id || null,
-          action: 'admin_view_decrypted_data',
-          resourceType: 'phone_reports',
-          resourceId: null,
-          oldValues: null,
-          newValues: null,
-          details: { route: '/admin/reports', count: out.length },
-          ip: getAuditIp(req),
-          userAgent: req.headers['user-agent'] || null,
-          status: 'success'
-        });
-      } catch (e) {
-        console.warn('/admin/reports view audit failed', e);
-      }
-
       return res.json({ ok: true, reports: out });
     } catch (err) {
       console.error('/admin/reports error', err);
@@ -266,9 +232,38 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       const { id } = req.params;
       const { status } = req.body;
 
+      const normalizedStatus = typeof status === 'string' ? status.trim() : status;
+      if (!normalizedStatus) {
+        return res.status(400).json({ error: 'status is required' });
+      }
+
+      const { data: existing, error: existingError } = await supabase
+        .from('phone_reports')
+        .select('id, status, user_id')
+        .eq('id', id)
+        .maybeSingle();
+
+      if (existingError) {
+        console.error(existingError);
+        return res.status(500).json({ error: 'Database error' });
+      }
+
+      if (!existing) {
+        return res.status(404).json({ error: 'Report not found' });
+      }
+
+      const oldStatus = typeof existing.status === 'string' ? existing.status.trim() : existing.status;
+      if (oldStatus === normalizedStatus) {
+        return res.json({
+          success: true,
+          message: 'No changes detected',
+          data: existing
+        });
+      }
+
       const { data, error } = await supabase
         .from('phone_reports')
-        .update({ status })
+        .update({ status: normalizedStatus })
         .eq('id', id)
         .select()
         .single();
@@ -284,8 +279,8 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
           action: 'update_report_status',
           resourceType: 'phone_reports',
           resourceId: data?.id || null,
-          oldValues: null,
-          newValues: { status: data?.status || status },
+          oldValues: { status: oldStatus || null },
+          newValues: { status: data?.status || normalizedStatus },
           details: { route: '/admin/reports/:id' },
           ip: getAuditIp(req),
           userAgent: req.headers['user-agent'] || null,
@@ -313,7 +308,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
         }
       };
 
-      const notification = notificationMessages[status];
+      const notification = notificationMessages[normalizedStatus];
 
       if (notification) {
 
@@ -458,23 +453,6 @@ if (notificationError) {
       if (error) throw error;
       const out = (data || []).map(u => ({ id: u.id, ...decryptDeep(u) }));
 
-      try {
-        await logAudit({
-          userId: req.user?.id || null,
-          action: 'admin_view_decrypted_data',
-          resourceType: 'users',
-          resourceId: null,
-          oldValues: null,
-          newValues: null,
-          details: { route: '/admin/users', count: out.length },
-          ip: getAuditIp(req),
-          userAgent: req.headers['user-agent'] || null,
-          status: 'success'
-        });
-      } catch (e) {
-        console.warn('/admin/users view audit failed', e);
-      }
-
       return res.json({ ok: true, users: out });
     } catch (err) {
       console.error('/admin/users error', err);
@@ -528,6 +506,26 @@ if (notificationError) {
 
       if (Object.keys(payload).length === 0) return res.status(400).json({ error: 'nothing to update' });
 
+      const { data: existingUser, error: existingUserErr } = await supabase
+        .from('users')
+        .select('id, role, status')
+        .eq('id', id)
+        .maybeSingle();
+      if (existingUserErr) return res.status(500).json({ error: existingUserErr.message || 'failed to fetch current user' });
+      if (!existingUser) return res.status(404).json({ error: 'user not found' });
+
+      const oldValues = {
+        role: existingUser.role ?? null,
+        status: existingUser.status ?? null
+      };
+      const mergedNewValues = {
+        role: typeof payload.role !== 'undefined' ? payload.role : oldValues.role,
+        status: typeof payload.status !== 'undefined' ? payload.status : oldValues.status
+      };
+      if (oldValues.role === mergedNewValues.role && oldValues.status === mergedNewValues.status) {
+        return res.json({ ok: true, message: 'No changes detected', user: existingUser });
+      }
+
       const { data, error } = await supabase.from('users').update(payload).eq('id', id).select().maybeSingle();
       if (error) return res.status(500).json({ error: error.message || 'update failed' });
       if (!data) return res.status(404).json({ error: 'user not found' });
@@ -539,6 +537,8 @@ if (notificationError) {
             action: 'admin_update_user',
             resourceType: 'user',
             resourceId: id,
+            oldValues,
+            newValues: mergedNewValues,
             details: { changes: payload },
             ip: req.ip,
             userAgent: req.headers['user-agent']
@@ -565,6 +565,26 @@ if (notificationError) {
       if (req.body.status !== undefined) updates.status = req.body.status;
       if (req.body.updated_at !== undefined) updates.updated_at = req.body.updated_at;
       else updates.updated_at = new Date().toISOString();
+
+      const { data: existingAccessory, error: existingAccessoryErr } = await supabase
+        .from('accessories')
+        .select('id, status')
+        .eq('id', id)
+        .maybeSingle();
+      if (existingAccessoryErr) {
+        console.error('PATCH /admin/accessories/:id fetch existing error', existingAccessoryErr);
+        return res.status(500).json({ ok: false, error: existingAccessoryErr.message || existingAccessoryErr });
+      }
+      if (!existingAccessory) {
+        return res.status(404).json({ ok: false, error: 'Accessory not found' });
+      }
+
+      const statusProvided = typeof req.body.status !== 'undefined';
+      const oldStatus = existingAccessory.status ?? null;
+      const newStatus = statusProvided ? (updates.status ?? null) : oldStatus;
+      if (statusProvided && oldStatus === newStatus) {
+        return res.json({ ok: true, message: 'No changes detected', accessory: existingAccessory });
+      }
 
       const { data, error } = await supabase
         .from('accessories')
@@ -647,23 +667,6 @@ if (notificationError) {
         };
       });
 
-      try {
-        await logAudit({
-          userId: req.user?.id || null,
-          action: 'admin_view_decrypted_data',
-          resourceType: 'phones',
-          resourceId: null,
-          oldValues: null,
-          newValues: null,
-          details: { route: '/admin/phones', count: out.length },
-          ip: getAuditIp(req),
-          userAgent: req.headers['user-agent'] || null,
-          status: 'success'
-        });
-      } catch (e) {
-        console.warn('/admin/phones view audit failed', e);
-      }
-
       return res.json({ ok: true, phones: out });
     } catch (err) {
       console.error('/admin/phones error', err);
@@ -732,23 +735,6 @@ if (notificationError) {
           images: images
         };
       });
-
-      try {
-        await logAudit({
-          userId: req.user?.id || null,
-          action: 'admin_view_decrypted_data',
-          resourceType: 'accessories',
-          resourceId: null,
-          oldValues: null,
-          newValues: null,
-          details: { route: '/admin/accessories', count: out.length },
-          ip: getAuditIp(req),
-          userAgent: req.headers['user-agent'] || null,
-          status: 'success'
-        });
-      } catch (e) {
-        console.warn('/admin/accessories view audit failed', e);
-      }
 
       return res.json({ ok: true, accessories: out });
     } catch (err) {
@@ -874,23 +860,6 @@ if (notificationError) {
       if (error) throw error;
       const out = (data || []).map(r => ({ id: r.id, ...decryptDeep(r) }));
 
-      try {
-        await logAudit({
-          userId: req.user?.id || null,
-          action: 'admin_view_decrypted_data',
-          resourceType: 'registered_phones',
-          resourceId: null,
-          oldValues: null,
-          newValues: null,
-          details: { route: '/admin/ownerships', count: out.length },
-          ip: getAuditIp(req),
-          userAgent: req.headers['user-agent'] || null,
-          status: 'success'
-        });
-      } catch (e) {
-        console.warn('/admin/ownerships view audit failed', e);
-      }
-
       return res.json({ ok: true, ownerships: out });
     } catch (err) {
       console.error('/admin/ownerships error', err);
@@ -939,23 +908,6 @@ if (notificationError) {
       const { data, error } = await q;
       if (error) throw error;
       const out = (data || []).map(r => ({ id: r.id, ...decryptDeep(r) }));
-
-      try {
-        await logAudit({
-          userId: req.user?.id || null,
-          action: 'admin_view_decrypted_data',
-          resourceType: 'registered_phones',
-          resourceId: null,
-          oldValues: null,
-          newValues: null,
-          details: { route: '/admin/registered_phones', count: out.length },
-          ip: getAuditIp(req),
-          userAgent: req.headers['user-agent'] || null,
-          status: 'success'
-        });
-      } catch (e) {
-        console.warn('/admin/registered_phones view audit failed', e);
-      }
 
       return res.json({ ok: true, registered_phones: out });
     } catch (err) {
@@ -1604,23 +1556,6 @@ if (notificationError) {
       if (error) throw error;
 
       const out = (data || []).map(r => ({ id: r.id, ...decryptDeep(r) }));
-
-      try {
-        await logAudit({
-          userId: req.user?.id || null,
-          action: 'admin_view_decrypted_data',
-          resourceType: 'transfer_records',
-          resourceId: null,
-          oldValues: null,
-          newValues: null,
-          details: { route: '/admin/transfers', count: out.length },
-          ip: getAuditIp(req),
-          userAgent: req.headers['user-agent'] || null,
-          status: 'success'
-        });
-      } catch (e) {
-        console.warn('/admin/transfers view audit failed', e);
-      }
 
       return res.status(200).json(out);
     } catch (err) {

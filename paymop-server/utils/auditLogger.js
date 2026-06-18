@@ -38,6 +38,21 @@ export async function logAudit(supabaseOrConfig, configOrUndefined) {
       details = null
     } = config;
     const resolvedIpAddress = ipAddress || ip || null;
+    if (!action) return;
+
+    // Ignore non-security ad/payment audits by policy
+    const flatText = `${String(action || '')} ${String(resourceType || '')} ${JSON.stringify(details || {})}`.toLowerCase();
+    if (/(\bpaymob\b|\bpayment\b|\bads\b|\bad\b|\bads_payment\b|\bads_offar\b|\bpublish_ad\b|\boffer\b)/.test(flatText)) {
+      return;
+    }
+    if (action === 'update_subscription') {
+      return;
+    }
+
+    // Ignore noisy successful seller-password checks; keep failures only
+    if (action === 'verify_seller_password' && status === 'success') {
+      return;
+    }
 
     // Sanitize sensitive values
     const sanitizeValues = (obj) => {
@@ -59,9 +74,80 @@ export async function logAudit(supabaseOrConfig, configOrUndefined) {
       return copy;
     };
 
+    const sanitizeForCompare = (obj) => {
+      if (obj === null || typeof obj === 'undefined') return null;
+      const sanitized = sanitizeValues(obj);
+      if (sanitized === null || typeof sanitized === 'undefined') return null;
+      try {
+        const sortKeys = (value) => {
+          if (Array.isArray(value)) return value.map(sortKeys);
+          if (value && typeof value === 'object') {
+            return Object.keys(value).sort().reduce((acc, key) => {
+              acc[key] = sortKeys(value[key]);
+              return acc;
+            }, {});
+          }
+          return value;
+        };
+        return sortKeys(sanitized);
+      } catch {
+        return sanitized;
+      }
+    };
+
+    const areDeepEqual = (a, b) => {
+      try {
+        return JSON.stringify(a) === JSON.stringify(b);
+      } catch {
+        return false;
+      }
+    };
+
     // Skip if no supabase (for endpoints that don't use audit logging)
     if (!supabase || !supabase.from) {
       return;
+    }
+
+    // Ignore no-op update logs (old/new are effectively identical)
+    const normalizedOld = sanitizeForCompare(oldValues);
+    const normalizedNew = sanitizeForCompare(newValues);
+    if (normalizedOld !== null && normalizedNew !== null && areDeepEqual(normalizedOld, normalizedNew)) {
+      return;
+    }
+
+    // Deduplicate equivalent logs within the last 30 seconds
+    try {
+      const dedupeSince = new Date(Date.now() - 30 * 1000).toISOString();
+      let q = supabase
+        .from('audit_logs')
+        .select('id, user_id, resource_type, resource_id, status, new_values, created_at')
+        .eq('action', action)
+        .gte('created_at', dedupeSince)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (resourceType) q = q.eq('resource_type', resourceType);
+      if (status) q = q.eq('status', status);
+
+      const { data: recentRows, error: dedupeErr } = await q;
+      if (!dedupeErr && Array.isArray(recentRows) && recentRows.length > 0) {
+        const targetUserId = userId ?? null;
+        const targetResourceId = resourceId ?? null;
+        const targetNewValues = sanitizeForCompare(newValues);
+
+        const duplicate = recentRows.some((row) => {
+          const sameUser = (row?.user_id ?? null) === targetUserId;
+          const sameResourceId = (row?.resource_id ?? null) === targetResourceId;
+          const sameNewValues = areDeepEqual(sanitizeForCompare(row?.new_values ?? null), targetNewValues);
+          return sameUser && sameResourceId && sameNewValues;
+        });
+
+        if (duplicate) {
+          return;
+        }
+      }
+    } catch {
+      // Do not block main flow if dedupe check fails
     }
 
     const { error } = await supabase
@@ -71,8 +157,8 @@ export async function logAudit(supabaseOrConfig, configOrUndefined) {
         action,
         resource_type: resourceType,
         resource_id: resourceId,
-        old_values: sanitizeValues(oldValues),
-        new_values: sanitizeValues(newValues),
+        old_values: normalizedOld,
+        new_values: normalizedNew,
         ip_address: resolvedIpAddress,
         user_agent: userAgent,
         status: status,
