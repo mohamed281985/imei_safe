@@ -287,12 +287,15 @@ export function registerReportRoutes({
         action: 'report_lost_phone',
         resourceType: 'phone_report',
         resourceId: inserted?.[0]?.id,
+        oldValues: null,
+        newValues: { status: 'active' },
         details: {
           imei_last_4: reportedImei.slice(-4),
           status: 'active'
         },
-        ip: req.ip,
-        userAgent: req.headers['user-agent']
+        ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+        userAgent: req.headers['user-agent'] || null,
+        status: 'success'
       });
 
       res.json({ success: true, data: inserted });
@@ -858,8 +861,9 @@ export function registerReportRoutes({
         oldValues: { finder_phone: foundReport.finder_phone || null },
         newValues: { finder_phone: 'redacted', finder_user_id: requesterId },
         details: { imei_last_4: imei.slice(-4) },
-        ip: req.ip,
-        userAgent: req.headers['user-agent']
+        ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+        userAgent: req.headers['user-agent'] || null,
+        status: 'success'
       });
 
       res.json({ success: true, message: 'Notifications sent.' });

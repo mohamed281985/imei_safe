@@ -97,6 +97,8 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
     }
   };
 
+  const getAuditIp = (req) => req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null;
+
   // GET /admin/dashboard - summary + recent samples
   app.get('/admin/dashboard', async (req, res) => {
     try {
@@ -111,6 +113,23 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       const recentAds = (await supabase.from('phones').select('*').order('id', { ascending: false }).limit(10)).data || [];
       const recentUsers = (await supabase.from('users').select('*').order('id', { ascending: false }).limit(10)).data || [];
       const recentTransfers = (await supabase.from('transfer_records').select('*').order('id', { ascending: false }).limit(10)).data || [];
+
+      try {
+        await logAudit({
+          userId: req.user?.id || null,
+          action: 'admin_view_decrypted_data',
+          resourceType: 'admin_dashboard',
+          resourceId: null,
+          oldValues: null,
+          newValues: null,
+          details: { route: '/admin/dashboard' },
+          ip: getAuditIp(req),
+          userAgent: req.headers['user-agent'] || null,
+          status: 'success'
+        });
+      } catch (e) {
+        console.warn('/admin/dashboard audit failed', e);
+      }
 
       return res.json({
         stats: {
@@ -215,6 +234,24 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       }
 
       const out = rows.map(r => ({ id: r.id, ...decryptDeep(r) }));
+
+      try {
+        await logAudit({
+          userId: req.user?.id || null,
+          action: 'admin_view_decrypted_data',
+          resourceType: 'phone_reports',
+          resourceId: null,
+          oldValues: null,
+          newValues: null,
+          details: { route: '/admin/reports', count: out.length },
+          ip: getAuditIp(req),
+          userAgent: req.headers['user-agent'] || null,
+          status: 'success'
+        });
+      } catch (e) {
+        console.warn('/admin/reports view audit failed', e);
+      }
+
       return res.json({ ok: true, reports: out });
     } catch (err) {
       console.error('/admin/reports error', err);
@@ -238,6 +275,23 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       if (error) {
         console.error(error);
         return res.status(500).json({ error: 'Database error' });
+      }
+
+      try {
+        await logAudit({
+          userId: req.user?.id || null,
+          action: 'update_report_status',
+          resourceType: 'phone_reports',
+          resourceId: data?.id || null,
+          oldValues: null,
+          newValues: { status: data?.status || status },
+          details: { route: '/admin/reports/:id' },
+          ip: getAuditIp(req),
+          userAgent: req.headers['user-agent'] || null,
+          status: 'success'
+        });
+      } catch (e) {
+        console.warn('/admin/reports/:id audit failed', e);
       }
 
       /* رسائل الإشعارات */
@@ -402,6 +456,24 @@ if (notificationError) {
       const { data, error } = await supabase.from('users').select('*').order('id', { ascending: false }).limit(limit);
       if (error) throw error;
       const out = (data || []).map(u => ({ id: u.id, ...decryptDeep(u) }));
+
+      try {
+        await logAudit({
+          userId: req.user?.id || null,
+          action: 'admin_view_decrypted_data',
+          resourceType: 'users',
+          resourceId: null,
+          oldValues: null,
+          newValues: null,
+          details: { route: '/admin/users', count: out.length },
+          ip: getAuditIp(req),
+          userAgent: req.headers['user-agent'] || null,
+          status: 'success'
+        });
+      } catch (e) {
+        console.warn('/admin/users view audit failed', e);
+      }
+
       return res.json({ ok: true, users: out });
     } catch (err) {
       console.error('/admin/users error', err);
@@ -416,7 +488,24 @@ if (notificationError) {
       const roleCheck = (acting && acting.role) ? String(acting.role).toLowerCase() : '';
       console.log('REQ USER =', req.user);
       console.log('ACTING =', acting);
-      if (!roleCheck.includes('admin')) return res.status(403).json({ error: 'forbidden: admin only' });
+      if (!roleCheck.includes('admin')) {
+        try {
+          await logAudit({
+            userId: req.user?.id || null,
+            action: 'forbidden_access',
+            resourceType: 'users',
+            resourceId: req.params?.id || null,
+            details: { reason: 'forbidden: admin only' },
+            ip: getAuditIp(req),
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed',
+            errorMessage: 'forbidden: admin only'
+          });
+        } catch (e) {
+          console.warn('/admin/users/:id forbidden audit failed', e);
+        }
+        return res.status(403).json({ error: 'forbidden: admin only' });
+      }
 
       const id = req.params.id;
       if (!id) return res.status(400).json({ error: 'missing id' });
@@ -557,6 +646,23 @@ if (notificationError) {
         };
       });
 
+      try {
+        await logAudit({
+          userId: req.user?.id || null,
+          action: 'admin_view_decrypted_data',
+          resourceType: 'phones',
+          resourceId: null,
+          oldValues: null,
+          newValues: null,
+          details: { route: '/admin/phones', count: out.length },
+          ip: getAuditIp(req),
+          userAgent: req.headers['user-agent'] || null,
+          status: 'success'
+        });
+      } catch (e) {
+        console.warn('/admin/phones view audit failed', e);
+      }
+
       return res.json({ ok: true, phones: out });
     } catch (err) {
       console.error('/admin/phones error', err);
@@ -625,6 +731,23 @@ if (notificationError) {
           images: images
         };
       });
+
+      try {
+        await logAudit({
+          userId: req.user?.id || null,
+          action: 'admin_view_decrypted_data',
+          resourceType: 'accessories',
+          resourceId: null,
+          oldValues: null,
+          newValues: null,
+          details: { route: '/admin/accessories', count: out.length },
+          ip: getAuditIp(req),
+          userAgent: req.headers['user-agent'] || null,
+          status: 'success'
+        });
+      } catch (e) {
+        console.warn('/admin/accessories view audit failed', e);
+      }
 
       return res.json({ ok: true, accessories: out });
     } catch (err) {
@@ -749,6 +872,24 @@ if (notificationError) {
       const { data, error } = await supabase.from('registered_phones').select('*').order('id', { ascending: false }).limit(limit);
       if (error) throw error;
       const out = (data || []).map(r => ({ id: r.id, ...decryptDeep(r) }));
+
+      try {
+        await logAudit({
+          userId: req.user?.id || null,
+          action: 'admin_view_decrypted_data',
+          resourceType: 'registered_phones',
+          resourceId: null,
+          oldValues: null,
+          newValues: null,
+          details: { route: '/admin/ownerships', count: out.length },
+          ip: getAuditIp(req),
+          userAgent: req.headers['user-agent'] || null,
+          status: 'success'
+        });
+      } catch (e) {
+        console.warn('/admin/ownerships view audit failed', e);
+      }
+
       return res.json({ ok: true, ownerships: out });
     } catch (err) {
       console.error('/admin/ownerships error', err);
@@ -797,6 +938,24 @@ if (notificationError) {
       const { data, error } = await q;
       if (error) throw error;
       const out = (data || []).map(r => ({ id: r.id, ...decryptDeep(r) }));
+
+      try {
+        await logAudit({
+          userId: req.user?.id || null,
+          action: 'admin_view_decrypted_data',
+          resourceType: 'registered_phones',
+          resourceId: null,
+          oldValues: null,
+          newValues: null,
+          details: { route: '/admin/registered_phones', count: out.length },
+          ip: getAuditIp(req),
+          userAgent: req.headers['user-agent'] || null,
+          status: 'success'
+        });
+      } catch (e) {
+        console.warn('/admin/registered_phones view audit failed', e);
+      }
+
       return res.json({ ok: true, registered_phones: out });
     } catch (err) {
       console.error('/admin/registered_phones error', err);
@@ -1008,12 +1167,46 @@ if (notificationError) {
   app.post('/admin/notifications', async (req, res) => {
     try {
       const authHeader = req.headers['authorization'];
-      if (!authHeader) return res.status(401).json({ error: 'Unauthorized: missing token' });
+      if (!authHeader) {
+        try {
+          await logAudit({
+            userId: null,
+            action: 'unauthorized_access',
+            resourceType: 'notification',
+            resourceId: null,
+            details: { reason: 'Unauthorized: missing token' },
+            ip: getAuditIp(req),
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed',
+            errorMessage: 'Unauthorized: missing token'
+          });
+        } catch (e) {
+          console.warn('/admin/notifications missing-token audit failed', e);
+        }
+        return res.status(401).json({ error: 'Unauthorized: missing token' });
+      }
       const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
 
       // validate auth token with Supabase
       const { data: authData, error: authErr } = await supabase.auth.getUser(token);
-      if (authErr || !authData || !authData.user) return res.status(401).json({ error: 'Unauthorized: invalid token' });
+      if (authErr || !authData || !authData.user) {
+        try {
+          await logAudit({
+            userId: null,
+            action: 'unauthorized_access',
+            resourceType: 'notification',
+            resourceId: null,
+            details: { reason: 'Unauthorized: invalid token' },
+            ip: getAuditIp(req),
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed',
+            errorMessage: authErr?.message || 'Unauthorized: invalid token'
+          });
+        } catch (e) {
+          console.warn('/admin/notifications invalid-token audit failed', e);
+        }
+        return res.status(401).json({ error: 'Unauthorized: invalid token' });
+      }
 
       const user = authData.user;
 
@@ -1021,7 +1214,24 @@ if (notificationError) {
       const { data: appUser, error: roleErr } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle();
       if (roleErr) console.warn('/admin/notifications role fetch error', roleErr);
       const role = appUser && appUser.role ? String(appUser.role).toLowerCase() : 'free_user';
-      if (!role.includes('admin')) return res.status(403).json({ error: 'Forbidden: admin only' });
+      if (!role.includes('admin')) {
+        try {
+          await logAudit({
+            userId: user.id || null,
+            action: 'forbidden_access',
+            resourceType: 'notification',
+            resourceId: null,
+            details: { reason: 'Forbidden: admin only' },
+            ip: getAuditIp(req),
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed',
+            errorMessage: 'Forbidden: admin only'
+          });
+        } catch (e) {
+          console.warn('/admin/notifications forbidden audit failed', e);
+        }
+        return res.status(403).json({ error: 'Forbidden: admin only' });
+      }
 
       const { user_id = null, title, message, metadata = null } = req.body || {};
       if (!title || !message) return res.status(400).json({ error: 'title and message required' });
@@ -1367,6 +1577,21 @@ if (notificationError) {
       // تحقق مبدئي من وجود توكن (يمكن استبداله بميدل وير JWT الحقيقي)
       const authHeader = req.headers.authorization;
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        try {
+          await logAudit({
+            userId: req.user?.id || null,
+            action: 'unauthorized_access',
+            resourceType: 'transfer_records',
+            resourceId: null,
+            details: { reason: 'غير مصرح: مفقود رمز المصادقة' },
+            ip: getAuditIp(req),
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed',
+            errorMessage: 'Unauthorized'
+          });
+        } catch (e) {
+          console.warn('/admin/transfers unauthorized audit failed', e);
+        }
         return res.status(401).json({ error: 'غير مصرح: مفقود رمز المصادقة' });
       }
 
@@ -1378,6 +1603,24 @@ if (notificationError) {
       if (error) throw error;
 
       const out = (data || []).map(r => ({ id: r.id, ...decryptDeep(r) }));
+
+      try {
+        await logAudit({
+          userId: req.user?.id || null,
+          action: 'admin_view_decrypted_data',
+          resourceType: 'transfer_records',
+          resourceId: null,
+          oldValues: null,
+          newValues: null,
+          details: { route: '/admin/transfers', count: out.length },
+          ip: getAuditIp(req),
+          userAgent: req.headers['user-agent'] || null,
+          status: 'success'
+        });
+      } catch (e) {
+        console.warn('/admin/transfers view audit failed', e);
+      }
+
       return res.status(200).json(out);
     } catch (err) {
       console.error('Error fetching transfers:', err);
@@ -1421,6 +1664,23 @@ if (notificationError) {
 
       // فك تشفير البيانات قبل إرجاعها
       const decryptedData = decryptDeep(data[0]);
+
+      try {
+        await logAudit({
+          userId: req.user?.id || null,
+          action: 'admin_view_decrypted_data',
+          resourceType: 'businesses',
+          resourceId: userId,
+          oldValues: null,
+          newValues: null,
+          details: { route: '/admin/businesses/:userId' },
+          ip: getAuditIp(req),
+          userAgent: req.headers['user-agent'] || null,
+          status: 'success'
+        });
+      } catch (e) {
+        console.warn('/admin/businesses/:userId view audit failed', e);
+      }
 
       // إرجاع البيانات
       return res.status(200).json(decryptedData);
