@@ -8,8 +8,9 @@ export function registerNotificationRoutes({
   searchImeiLimiter,
   decryptField,
   normalizeDigitsOnly,
-  logAudit
+  logAudit: rawLogAudit
 }) {
+const logAudit = (config) => rawLogAudit({ supabase, ...config });
 app.post('/api/send-fcm-v1', verifyJwtToken, async (req, res) => {
   try {
     if (!req.user?.id) {

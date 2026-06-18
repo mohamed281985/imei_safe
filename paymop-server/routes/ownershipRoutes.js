@@ -15,12 +15,13 @@ export function registerOwnershipRoutes({
   maskIdLast6,
   encryptAES,
   hashPasswordForStorage,
-  logAudit,
+  logAudit: rawLogAudit,
   checkAuthBlocked,
   recordAuthFailure,
   clearAuthFailures,
   sendFCMNotificationV1
 }) {
+  const logAudit = (config) => rawLogAudit({ supabase, ...config });
   app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
     try {
       const { imei } = req.body;

@@ -2,7 +2,8 @@ import { sendFCMNotificationV1 } from '../server.js';
 import fs from 'fs';
 import path from 'path';
 import vm from 'vm';
-export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToken, logAudit }) {
+export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToken, logAudit: rawLogAudit }) {
+  const logAudit = (config) => rawLogAudit({ supabase, ...config });
   // Deep decrypt helper: recursively decrypt strings or encrypted objects.
   const decryptDeep = (value) => {
     try {
