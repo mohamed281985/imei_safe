@@ -23,6 +23,7 @@ import { useAds } from '@/contexts/AdContext';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import axiosInstance from '@/services/axiosInterceptor';
+import { useDevRequestDeduper } from '@/hooks/useDevRequestDeduper';
 
 const OwnershipConfirmationModal = React.lazy(() => import('../components/OwnershipConfirmationModal'));
 const AdPopupModal = React.lazy(() => import('../components/AdPopupModal'));
@@ -183,6 +184,7 @@ const Dashboard: React.FC = () => {
 
   const [isNavbarVisible, setIsNavbarVisible] = useState(true);
   const [showLocationRequest, setShowLocationRequest] = useState(false);
+  const shouldRunRequest = useDevRequestDeduper();
 
   const { coords } = useGeolocated({
     positionOptions: { enableHighAccuracy: true, maximumAge: 60000, timeout: 10000 },
@@ -308,10 +310,14 @@ const Dashboard: React.FC = () => {
 
   // تشغيل التحقق بعد فترة قصيرة من تحميل الصفحة لضمان استقرار الواجهة
   useEffect(() => {
+    if (!shouldRunRequest(`Dashboard:checkPhoneOwnership:${user?.id || 'guest'}`)) {
+      return;
+    }
+
     const timer = setTimeout(checkPhoneOwnership, 5000);
 
     return () => clearTimeout(timer);
-  }, [user]);
+  }, [user, shouldRunRequest]);
 
   // التحقق من الهواتف غير المطالب بها عن طريق البريد الإلكتروني
   const checkUnclaimedPhones = async () => {
@@ -344,12 +350,16 @@ const Dashboard: React.FC = () => {
 
   // تأخير بسيط لضمان تحميل المستخدم
   useEffect(() => {
+    if (!shouldRunRequest(`Dashboard:checkUnclaimedPhones:${user?.id || 'guest'}`)) {
+      return;
+    }
+
     const timer = setTimeout(() => {
       checkUnclaimedPhones();
     }, 2000);
 
     return () => clearTimeout(timer);
-  }, [user]);
+  }, [user, shouldRunRequest]);
 
   const handleClaimPhone = async (imei: string) => {
     try {
@@ -399,6 +409,11 @@ const Dashboard: React.FC = () => {
 
   // جلب بيانات الهواتف من Supabase
   useEffect(() => {
+    const coordsKey = coords ? `${Math.round((coords.latitude || 0) * 1000)}:${Math.round((coords.longitude || 0) * 1000)}` : 'no-coords';
+    if (!shouldRunRequest(`Dashboard:fetchData:${user?.id || 'guest'}:${language}:${coordsKey}`, 800)) {
+      return;
+    }
+
     const fetchData = async () => {
       // تحديد العملة الافتراضية بناءً على اللغة قبل البدء بالجلب من قاعدة البيانات
       const defaultCurrency = t('currency_short') || 'EGP';
@@ -649,7 +664,7 @@ const Dashboard: React.FC = () => {
       }
     };
     fetchData();
-  }, [coords, user?.id, language]); // إعادة الجلب عند تغير إحداثيات المستخدم أو معرف المستخدم أو اللغة
+  }, [coords, user?.id, language, shouldRunRequest]); // إعادة الجلب عند تغير إحداثيات المستخدم أو معرف المستخدم أو اللغة
 
   // تأثير لتحديث الموقع بشكل دوري
   useEffect(() => {

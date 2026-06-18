@@ -479,6 +479,24 @@ export function registerReportRoutes({
         return res.status(404).json({ error: 'لم يتم العثور على الهاتف في البلاغات', imei });
       }
 
+      const currentFinderPhoneRaw = (() => {
+        try {
+          return decryptField(foundReport.finder_phone) || foundReport.finder_phone || null;
+        } catch (_) {
+          return foundReport.finder_phone || null;
+        }
+      })();
+      const normalizedCurrentFinderPhone = String(currentFinderPhoneRaw || '').replace(/\D/g, '');
+      const normalizedIncomingFinderPhone = String(finderPhone || '').replace(/\D/g, '');
+      if (
+        normalizedIncomingFinderPhone &&
+        normalizedCurrentFinderPhone &&
+        normalizedIncomingFinderPhone === normalizedCurrentFinderPhone &&
+        foundReport.finder_user_id === requesterId
+      ) {
+        return res.json({ success: true, message: 'No changes detected' });
+      }
+
       // تفويض: أي مستخدم موثق يمكنه إبلاغ المالك بالعثور على هاتفه.
       // أكثر من شخص قد يجد الهاتف، لذلك لا نقيّد الإبلاغ بواجد واحد فقط.
       // ملاحظة: finder_user_id سيُحدّث لآخر مُبلّغ، لكن الإشعار سيُرسل للمالك بغض النظر.

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
 import { useScrollToTop } from '@/hooks/useScrollToTop';
 import { supabase } from '@/lib/supabase';
+import { useDevRequestDeduper } from '@/hooks/useDevRequestDeduper';
 
 // واجهة البيانات
 interface AdDisplay {
@@ -34,6 +35,7 @@ const MyAds: React.FC = () => {
   
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [confirmAdId, setConfirmAdId] = useState<number | null>(null);
+  const shouldRunRequest = useDevRequestDeduper();
 
   const handleDelete = async (idToDelete: number) => {
     if (!user) return;
@@ -80,6 +82,10 @@ const MyAds: React.FC = () => {
   };
 
   useEffect(() => {
+    if (!shouldRunRequest(`MyAds:loadUserAds:${user?.id || 'guest'}`)) {
+      return;
+    }
+
     const loadUserAds = async () => {
       setLoadingAds(true);
       try {
@@ -118,7 +124,7 @@ const MyAds: React.FC = () => {
     };
 
     loadUserAds();
-  }, [user, t, toast]);
+  }, [user, t, toast, shouldRunRequest]);
 
   const isExpired = (expiresAt: string | null | undefined): boolean => {
     if (!expiresAt) return false;

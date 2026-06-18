@@ -147,6 +147,20 @@ export function registerProfileRoutes({
           }
 
           // تحديث حقل fcm_token في جدول users
+          const { data: currentUser, error: currentUserErr } = await supabase
+            .from('users')
+            .select('id, fcm_token')
+            .eq('id', userId)
+            .maybeSingle();
+          if (currentUserErr) {
+            console.error('/api/register-fcm-token current user fetch error:', currentUserErr);
+            return sendError(res, 500, 'Failed to fetch current user token', currentUserErr);
+          }
+          const currentToken = currentUser?.fcm_token || null;
+          if (currentToken && String(currentToken) === String(fcmToken)) {
+            return res.json({ success: true, message: 'No changes detected', data: currentUser || null });
+          }
+
           const { data, error } = await supabase.from('users').update({ fcm_token: fcmToken }).eq('id', userId).select().maybeSingle();
           if (error) {
             console.error('/api/register-fcm-token update error:', error);
@@ -159,8 +173,8 @@ export function registerProfileRoutes({
               action: 'update_fcm_token',
               resourceType: 'user',
               resourceId: userId || null,
-              oldValues: null,
-              newValues: { fcm_token_updated: true },
+              oldValues: { fcm_token: currentToken ? 'masked' : null },
+              newValues: { fcm_token: 'masked' },
               details: { source: 'register-fcm-token' },
               ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
               userAgent: req.headers['user-agent'] || null,

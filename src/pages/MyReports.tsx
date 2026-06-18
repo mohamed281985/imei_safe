@@ -10,6 +10,7 @@ import { CheckCircle2, AlertCircle, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '../contexts/AuthContext';
+import { useDevRequestDeduper } from '@/hooks/useDevRequestDeduper';
 
 const MyReports: React.FC = () => {
   const { t, i18n } = useTranslation();
@@ -22,8 +23,13 @@ const MyReports: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { user } = useAuth(); // جلب المستخدم الحالي
   const userId = user?.id;
+  const shouldRunRequest = useDevRequestDeduper();
 
   useEffect(() => {
+    if (!shouldRunRequest(`MyReports:fetchReports:${userId || 'guest'}`)) {
+      return;
+    }
+
     const fetchReports = async () => {
       setIsLoading(true);
       
@@ -54,7 +60,7 @@ const MyReports: React.FC = () => {
     return () => {
       window.removeEventListener('focus', handleFocus);
     };
-  }, [t, toast, userId]);
+  }, [t, toast, userId, shouldRunRequest]);
 
   const handleDeleteReport = async (reportId: string) => {
     setIsLoading(true);

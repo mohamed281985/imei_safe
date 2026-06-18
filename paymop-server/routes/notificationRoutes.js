@@ -52,6 +52,20 @@ app.post('/api/update-fcm-token', verifyJwtToken, async (req, res) => {
       return res.status(400).json({ success: false, error: 'fcmToken is required' });
     }
 
+    const { data: currentUser, error: currentUserErr } = await supabase
+      .from('users')
+      .select('id, fcm_token')
+      .eq('id', userId)
+      .maybeSingle();
+    if (currentUserErr) {
+      console.error('Failed to fetch current user FCM token:', currentUserErr);
+      return res.status(500).json({ success: false, error: 'Failed to fetch current user token' });
+    }
+    const currentToken = currentUser?.fcm_token || null;
+    if (currentToken && String(currentToken) === String(fcmToken)) {
+      return res.json({ success: true, message: 'No changes detected' });
+    }
+
     const updates = {
       fcm_token: fcmToken,
       updated_at: new Date().toISOString()
@@ -83,8 +97,8 @@ app.post('/api/update-fcm-token', verifyJwtToken, async (req, res) => {
         action: 'update_fcm_token',
         resourceType: 'user',
         resourceId: userId,
-        oldValues: null,
-        newValues: { fcm_token_updated: true },
+        oldValues: { fcm_token: currentToken ? 'masked' : null },
+        newValues: { fcm_token: 'masked' },
         details: { updatedReports: !reportError },
         ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
         userAgent: req.headers['user-agent'] || null,
