@@ -362,6 +362,748 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
     }
   });
 
+  // Helper: valid campaign statuses
+  const VALID_CAMPAIGN_STATUSES = new Set([
+    'draft',
+    'pending_approval',
+    'approved',
+    'sending',
+    'completed',
+    'failed',
+    'cancelled'
+  ]);
+
+  // Helper: validate campaign status transitions
+  const isValidTransition = (fromStatus, toStatus) => {
+    const transitions = {
+      draft: ['pending_approval', 'cancelled'],
+      pending_approval: ['approved', 'cancelled', 'draft'],
+      approved: ['sending', 'cancelled'],
+      sending: ['completed', 'failed'],
+      completed: [],
+      failed: ['sending'],
+      cancelled: []
+    };
+    return (transitions[fromStatus] || []).includes(toStatus);
+  };
+
+  // PATCH /admin/notification-campaigns/:id/submit - submit draft for approval
+  app.patch('/admin/notification-campaigns/:id/submit', verifyJwtToken, async (req, res) => {
+    try {
+      const acting = req.user || null;
+      if (!acting?.id) {
+        return res.status(401).json({ success: false, error: 'Unauthorized' });
+      }
+
+      const allowed = await canSendNotifications(acting.id);
+      if (!allowed) {
+        try {
+          await logAudit({
+            userId: acting.id,
+            action: 'forbidden_access',
+            resourceType: 'notification_campaign',
+            resourceId: req.params?.id || null,
+            details: { reason: 'missing can_send_notifications permission', route: '/admin/notification-campaigns/:id/submit' },
+            ip: getAuditIp(req),
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed'
+          });
+        } catch (e) {
+          console.warn('/admin/notification-campaigns/:id/submit forbidden audit failed', e);
+        }
+        return res.status(403).json({ success: false, error: 'forbidden: missing can_send_notifications permission' });
+      }
+
+      const id = req.params.id;
+      if (!id) {
+        return res.status(400).json({ success: false, error: 'Missing campaign id' });
+      }
+
+      const { data: campaign, error: fetchErr } = await supabase
+        .from('notification_campaigns')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+
+      if (fetchErr) {
+        console.error('/admin/notification-campaigns/:id/submit fetch error', fetchErr);
+        return res.status(500).json({ success: false, error: 'Failed to fetch campaign' });
+      }
+
+      if (!campaign) {
+        return res.status(404).json({ success: false, error: 'Campaign not found' });
+      }
+
+      if (campaign.status !== 'draft') {
+        return res.status(400).json({ success: false, error: `Cannot submit campaign with status=${campaign.status}` });
+      }
+
+      const now = new Date().toISOString();
+      const { data: updated, error: updateErr } = await supabase
+        .from('notification_campaigns')
+        .update({
+          status: 'pending_approval',
+          submitted_by: acting.id,
+          submitted_at: now,
+          updated_at: now
+        })
+        .eq('id', id)
+        .select('*')
+        .maybeSingle();
+
+      if (updateErr) {
+        console.error('/admin/notification-campaigns/:id/submit update error', updateErr);
+        return res.status(500).json({ success: false, error: 'Failed to update campaign' });
+      }
+
+      try {
+        await logAudit({
+          userId: acting.id,
+          action: 'submit_notification_campaign',
+          resourceType: 'notification_campaign',
+          resourceId: id,
+          oldValues: { status: campaign.status },
+          newValues: { status: 'pending_approval' },
+          details: { submitted_by: acting.id },
+          ip: getAuditIp(req),
+          userAgent: req.headers['user-agent'] || null,
+          status: 'success'
+        });
+      } catch (e) {
+        console.warn('/admin/notification-campaigns/:id/submit audit failed', e);
+      }
+
+      return res.json({ success: true, data: updated });
+    } catch (err) {
+      console.error('/admin/notification-campaigns/:id/submit unexpected error', err);
+      return res.status(500).json({ success: false, error: 'Server error' });
+    }
+  });
+
+  // PATCH /admin/notification-campaigns/:id/approve - approve campaign for sending
+  app.patch('/admin/notification-campaigns/:id/approve', verifyJwtToken, async (req, res) => {
+    try {
+      const acting = req.user || null;
+      if (!acting?.id) {
+        return res.status(401).json({ success: false, error: 'Unauthorized' });
+      }
+
+      const allowed = await canApproveNotifications(acting.id);
+      if (!allowed) {
+        try {
+          await logAudit({
+            userId: acting.id,
+            action: 'forbidden_access',
+            resourceType: 'notification_campaign',
+            resourceId: req.params?.id || null,
+            details: { reason: 'missing can_approve_notifications permission', route: '/admin/notification-campaigns/:id/approve' },
+            ip: getAuditIp(req),
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed'
+          });
+        } catch (e) {
+          console.warn('/admin/notification-campaigns/:id/approve forbidden audit failed', e);
+        }
+        return res.status(403).json({ success: false, error: 'forbidden: missing can_approve_notifications permission' });
+      }
+
+      const id = req.params.id;
+      if (!id) {
+        return res.status(400).json({ success: false, error: 'Missing campaign id' });
+      }
+
+      const { data: campaign, error: fetchErr } = await supabase
+        .from('notification_campaigns')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+
+      if (fetchErr) {
+        console.error('/admin/notification-campaigns/:id/approve fetch error', fetchErr);
+        return res.status(500).json({ success: false, error: 'Failed to fetch campaign' });
+      }
+
+      if (!campaign) {
+        return res.status(404).json({ success: false, error: 'Campaign not found' });
+      }
+
+      if (campaign.status !== 'pending_approval') {
+        return res.status(400).json({ success: false, error: `Cannot approve campaign with status=${campaign.status}` });
+      }
+
+      // Prevent creator from approving their own campaign
+      if (campaign.created_by === acting.id) {
+        return res.status(403).json({ success: false, error: 'Cannot approve your own campaign' });
+      }
+
+      const now = new Date().toISOString();
+      const { data: updated, error: updateErr } = await supabase
+        .from('notification_campaigns')
+        .update({
+          status: 'approved',
+          approved_by: acting.id,
+          approved_at: now,
+          updated_at: now
+        })
+        .eq('id', id)
+        .select('*')
+        .maybeSingle();
+
+      if (updateErr) {
+        console.error('/admin/notification-campaigns/:id/approve update error', updateErr);
+        return res.status(500).json({ success: false, error: 'Failed to update campaign' });
+      }
+
+      try {
+        await logAudit({
+          userId: acting.id,
+          action: 'approve_notification_campaign',
+          resourceType: 'notification_campaign',
+          resourceId: id,
+          oldValues: { status: campaign.status },
+          newValues: { status: 'approved', approved_by: acting.id },
+          details: { approved_by: acting.id },
+          ip: getAuditIp(req),
+          userAgent: req.headers['user-agent'] || null,
+          status: 'success'
+        });
+      } catch (e) {
+        console.warn('/admin/notification-campaigns/:id/approve audit failed', e);
+      }
+
+      return res.json({ success: true, data: updated });
+    } catch (err) {
+      console.error('/admin/notification-campaigns/:id/approve unexpected error', err);
+      return res.status(500).json({ success: false, error: 'Server error' });
+    }
+  });
+
+  // PATCH /admin/notification-campaigns/:id/cancel - cancel campaign
+  app.patch('/admin/notification-campaigns/:id/cancel', verifyJwtToken, async (req, res) => {
+    try {
+      const acting = req.user || null;
+      if (!acting?.id) {
+        return res.status(401).json({ success: false, error: 'Unauthorized' });
+      }
+
+      const allowed = await canApproveNotifications(acting.id);
+      if (!allowed) {
+        try {
+          await logAudit({
+            userId: acting.id,
+            action: 'forbidden_access',
+            resourceType: 'notification_campaign',
+            resourceId: req.params?.id || null,
+            details: { reason: 'missing can_approve_notifications permission', route: '/admin/notification-campaigns/:id/cancel' },
+            ip: getAuditIp(req),
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed'
+          });
+        } catch (e) {
+          console.warn('/admin/notification-campaigns/:id/cancel forbidden audit failed', e);
+        }
+        return res.status(403).json({ success: false, error: 'forbidden: missing can_approve_notifications permission' });
+      }
+
+      const id = req.params.id;
+      const { reason } = req.body || {};
+      const cancelReason = typeof reason === 'string' ? reason.trim() : null;
+
+      if (!id) {
+        return res.status(400).json({ success: false, error: 'Missing campaign id' });
+      }
+
+      const { data: campaign, error: fetchErr } = await supabase
+        .from('notification_campaigns')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+
+      if (fetchErr) {
+        console.error('/admin/notification-campaigns/:id/cancel fetch error', fetchErr);
+        return res.status(500).json({ success: false, error: 'Failed to fetch campaign' });
+      }
+
+      if (!campaign) {
+        return res.status(404).json({ success: false, error: 'Campaign not found' });
+      }
+
+      // Cannot cancel completed campaigns
+      if (campaign.status === 'completed') {
+        return res.status(400).json({ success: false, error: 'Cannot cancel completed campaign' });
+      }
+
+      const now = new Date().toISOString();
+      const { data: updated, error: updateErr } = await supabase
+        .from('notification_campaigns')
+        .update({
+          status: 'cancelled',
+          cancelled_by: acting.id,
+          cancelled_at: now,
+          cancel_reason: cancelReason,
+          updated_at: now
+        })
+        .eq('id', id)
+        .select('*')
+        .maybeSingle();
+
+      if (updateErr) {
+        console.error('/admin/notification-campaigns/:id/cancel update error', updateErr);
+        return res.status(500).json({ success: false, error: 'Failed to update campaign' });
+      }
+
+      try {
+        await logAudit({
+          userId: acting.id,
+          action: 'cancel_notification_campaign',
+          resourceType: 'notification_campaign',
+          resourceId: id,
+          oldValues: { status: campaign.status },
+          newValues: { status: 'cancelled', cancel_reason: cancelReason },
+          details: { cancelled_by: acting.id, reason: cancelReason },
+          ip: getAuditIp(req),
+          userAgent: req.headers['user-agent'] || null,
+          status: 'success'
+        });
+      } catch (e) {
+        console.warn('/admin/notification-campaigns/:id/cancel audit failed', e);
+      }
+
+      return res.json({ success: true, data: updated });
+    } catch (err) {
+      console.error('/admin/notification-campaigns/:id/cancel unexpected error', err);
+      return res.status(500).json({ success: false, error: 'Server error' });
+    }
+  });
+
+  // POST /admin/notification-campaigns/:id/send - send approved campaign
+  app.post('/admin/notification-campaigns/:id/send', verifyJwtToken, async (req, res) => {
+    try {
+      const acting = req.user || null;
+      if (!acting?.id) {
+        return res.status(401).json({ success: false, error: 'Unauthorized' });
+      }
+
+      const allowed = await canApproveNotifications(acting.id);
+      if (!allowed) {
+        try {
+          await logAudit({
+            userId: acting.id,
+            action: 'forbidden_access',
+            resourceType: 'notification_campaign',
+            resourceId: req.params?.id || null,
+            details: { reason: 'missing can_approve_notifications permission', route: '/admin/notification-campaigns/:id/send' },
+            ip: getAuditIp(req),
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed'
+          });
+        } catch (e) {
+          console.warn('/admin/notification-campaigns/:id/send forbidden audit failed', e);
+        }
+        return res.status(403).json({ success: false, error: 'forbidden: missing can_approve_notifications permission' });
+      }
+
+      const id = req.params.id;
+      if (!id) {
+        return res.status(400).json({ success: false, error: 'Missing campaign id' });
+      }
+
+      const { data: campaign, error: fetchErr } = await supabase
+        .from('notification_campaigns')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+
+      if (fetchErr) {
+        console.error('/admin/notification-campaigns/:id/send fetch error', fetchErr);
+        return res.status(500).json({ success: false, error: 'Failed to fetch campaign' });
+      }
+
+      if (!campaign) {
+        return res.status(404).json({ success: false, error: 'Campaign not found' });
+      }
+
+      if (campaign.status !== 'approved') {
+        return res.status(400).json({ success: false, error: `Campaign must be approved before sending (current status=${campaign.status})` });
+      }
+
+      if (!campaign.approved_by) {
+        return res.status(400).json({ success: false, error: 'Campaign missing approval' });
+      }
+
+      // Prevent creator from sending their own campaign
+      if (campaign.created_by === acting.id) {
+        return res.status(403).json({ success: false, error: 'Cannot send your own campaign' });
+      }
+
+      const now = new Date().toISOString();
+
+      // Update to 'sending' status
+      const { data: updated, error: updateErr } = await supabase
+        .from('notification_campaigns')
+        .update({
+          status: 'sending',
+          started_at: now,
+          updated_at: now
+        })
+        .eq('id', id)
+        .eq('status', 'approved')  // Transaction: only update if still approved
+        .select('*')
+        .maybeSingle();
+
+      if (updateErr) {
+        console.error('/admin/notification-campaigns/:id/send update error', updateErr);
+        return res.status(500).json({ success: false, error: 'Failed to start sending' });
+      }
+
+      if (!updated) {
+        return res.status(400).json({ success: false, error: 'Campaign status changed or not found. Cannot send.' });
+      }
+
+      // TODO: Integrate Firebase Admin SDK when FCM is enabled
+      // For now, if FCM is not enabled, mark as completed immediately
+      const fcmEnabled = process.env.FIREBASE_ADMIN_SDK_ENABLED === 'true';
+
+      if (!fcmEnabled) {
+        const { data: completed, error: completeErr } = await supabase
+          .from('notification_campaigns')
+          .update({
+            status: 'completed',
+            completed_at: now,
+            updated_at: now
+          })
+          .eq('id', id)
+          .select('*')
+          .maybeSingle();
+
+        if (completeErr) {
+          console.error('/admin/notification-campaigns/:id/send completion error', completeErr);
+          return res.status(500).json({ success: false, error: 'Failed to complete campaign' });
+        }
+
+        try {
+          await logAudit({
+            userId: acting.id,
+            action: 'send_notification_campaign',
+            resourceType: 'notification_campaign',
+            resourceId: id,
+            oldValues: { status: campaign.status },
+            newValues: { status: 'completed', note: 'Firebase disabled' },
+            details: { sent_by: acting.id, fcm_enabled: false },
+            ip: getAuditIp(req),
+            userAgent: req.headers['user-agent'] || null,
+            status: 'success'
+          });
+        } catch (e) {
+          console.warn('/admin/notification-campaigns/:id/send audit failed', e);
+        }
+
+        return res.json({ success: true, data: completed, note: 'Campaign marked as completed (Firebase Admin SDK not enabled)' });
+      }
+
+      // Firebase sending would happen here (not implemented yet)
+      try {
+        await logAudit({
+          userId: acting.id,
+          action: 'send_notification_campaign',
+          resourceType: 'notification_campaign',
+          resourceId: id,
+          oldValues: { status: campaign.status },
+          newValues: { status: 'sending', started_at: now },
+          details: { sent_by: acting.id, fcm_enabled: true },
+          ip: getAuditIp(req),
+          userAgent: req.headers['user-agent'] || null,
+          status: 'success'
+        });
+      } catch (e) {
+        console.warn('/admin/notification-campaigns/:id/send audit failed', e);
+      }
+
+      return res.json({ success: true, data: updated, note: 'Campaign marked as sending. Firebase integration pending.' });
+    } catch (err) {
+      console.error('/admin/notification-campaigns/:id/send unexpected error', err);
+      return res.status(500).json({ success: false, error: 'Server error' });
+    }
+  });
+
+  // POST /admin/notification-campaigns/:id/test - send test notification to current admin
+  app.post('/admin/notification-campaigns/:id/test', verifyJwtToken, async (req, res) => {
+    try {
+      const acting = req.user || null;
+      if (!acting?.id) {
+        return res.status(401).json({ success: false, error: 'Unauthorized' });
+      }
+
+      const allowed = await canSendNotifications(acting.id);
+      if (!allowed) {
+        try {
+          await logAudit({
+            userId: acting.id,
+            action: 'forbidden_access',
+            resourceType: 'notification_campaign',
+            resourceId: req.params?.id || null,
+            details: { reason: 'missing can_send_notifications permission', route: '/admin/notification-campaigns/:id/test' },
+            ip: getAuditIp(req),
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed'
+          });
+        } catch (e) {
+          console.warn('/admin/notification-campaigns/:id/test forbidden audit failed', e);
+        }
+        return res.status(403).json({ success: false, error: 'forbidden: missing can_send_notifications permission' });
+      }
+
+      const id = req.params.id;
+      if (!id) {
+        return res.status(400).json({ success: false, error: 'Missing campaign id' });
+      }
+
+      const { data: campaign, error: fetchErr } = await supabase
+        .from('notification_campaigns')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+
+      if (fetchErr) {
+        console.error('/admin/notification-campaigns/:id/test fetch error', fetchErr);
+        return res.status(500).json({ success: false, error: 'Failed to fetch campaign' });
+      }
+
+      if (!campaign) {
+        return res.status(404).json({ success: false, error: 'Campaign not found' });
+      }
+
+      // Get current admin's FCM token
+      const { data: adminUser, error: userErr } = await supabase
+        .from('users')
+        .select('fcm_token')
+        .eq('id', acting.id)
+        .maybeSingle();
+
+      if (userErr) {
+        console.error('/admin/notification-campaigns/:id/test user fetch error', userErr);
+        return res.status(500).json({ success: false, error: 'Failed to fetch user' });
+      }
+
+      let fcmSent = false;
+      if (adminUser?.fcm_token) {
+        try {
+          await sendFCMNotificationV1({
+            token: adminUser.fcm_token,
+            title: campaign.title,
+            body: campaign.message,
+            data: {
+              type: 'notification_campaign_test',
+              campaignId: String(campaign.id),
+              testSentAt: new Date().toISOString()
+            }
+          });
+          fcmSent = true;
+          console.log(`Test notification sent to admin ${acting.id}`);
+        } catch (fcmErr) {
+          console.warn(`Test notification FCM error for admin ${acting.id}:`, fcmErr);
+        }
+      }
+
+      try {
+        await logAudit({
+          userId: acting.id,
+          action: 'test_notification_campaign',
+          resourceType: 'notification_campaign',
+          resourceId: id,
+          details: { test_sent_to: acting.id, fcm_sent: fcmSent, campaign_status: campaign.status },
+          ip: getAuditIp(req),
+          userAgent: req.headers['user-agent'] || null,
+          status: 'success'
+        });
+      } catch (e) {
+        console.warn('/admin/notification-campaigns/:id/test audit failed', e);
+      }
+
+      return res.json({
+        success: true,
+        message: 'Test notification sent',
+        data: {
+          campaignId: campaign.id,
+          testSentTo: acting.id,
+          fcmSent,
+          campaignStatus: campaign.status
+        }
+      });
+    } catch (err) {
+      console.error('/admin/notification-campaigns/:id/test unexpected error', err);
+      return res.status(500).json({ success: false, error: 'Server error' });
+    }
+  });
+
+  // Enhanced GET /admin/notification-campaigns with filters, search, and summary
+  app.get('/admin/notification-campaigns/enhanced', verifyJwtToken, async (req, res) => {
+    try {
+      const acting = req.user || null;
+      if (!acting?.id) {
+        return res.status(401).json({ success: false, error: 'Unauthorized' });
+      }
+
+      const allowed = await canSendNotifications(acting.id);
+      if (!allowed) {
+        try {
+          await logAudit({
+            userId: acting.id,
+            action: 'forbidden_access',
+            resourceType: 'notification_campaign',
+            resourceId: null,
+            details: { reason: 'missing can_send_notifications permission', route: '/admin/notification-campaigns/enhanced' },
+            ip: getAuditIp(req),
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed'
+          });
+        } catch (e) {
+          console.warn('/admin/notification-campaigns/enhanced forbidden audit failed', e);
+        }
+        return res.status(403).json({ success: false, error: 'forbidden: missing can_send_notifications permission' });
+      }
+
+      const parsedPage = Math.max(Number(req.query.page || 1), 1);
+      const parsedLimit = Math.min(Math.max(Number(req.query.limit || 20), 1), 200);
+      const offset = (parsedPage - 1) * parsedLimit;
+
+      const sortOrder = String(req.query.sort_order || 'desc').toLowerCase() === 'asc' ? 'asc' : 'desc';
+      const status = req.query.status ? String(req.query.status) : null;
+      const search = req.query.search ? String(req.query.search).trim() : null;
+      const createdBy = req.query.created_by ? String(req.query.created_by) : null;
+      const audience = req.query.audience ? String(req.query.audience) : null;
+      const campaignType = req.query.campaign_type ? String(req.query.campaign_type) : null;
+
+      const dateFrom = req.query.date_from ? new Date(String(req.query.date_from)) : null;
+      const dateTo = req.query.date_to ? new Date(String(req.query.date_to)) : null;
+
+      if (dateFrom && Number.isNaN(dateFrom.getTime())) {
+        return res.status(400).json({ success: false, error: 'Invalid date_from' });
+      }
+      if (dateTo && Number.isNaN(dateTo.getTime())) {
+        return res.status(400).json({ success: false, error: 'Invalid date_to' });
+      }
+
+      const applyFilters = (q, options = {}) => {
+        const { countOnly = false } = options;
+
+        let query = q;
+
+        if (status) query = query.eq('status', status);
+        if (createdBy) query = query.eq('created_by', createdBy);
+        if (audience) query = query.ilike('audience', `%${audience}%`);
+        if (campaignType) query = query.eq('campaign_type', campaignType);
+
+        if (dateFrom) query = query.gte('created_at', dateFrom.toISOString());
+        if (dateTo) query = query.lte('created_at', dateTo.toISOString());
+
+        return query;
+      };
+
+      let countQuery = applyFilters(
+        supabase.from('notification_campaigns').select('id', { count: 'exact', head: true })
+      );
+
+      let dataQuery = applyFilters(
+        supabase
+          .from('notification_campaigns')
+          .select('*')
+          .order('created_at', { ascending: sortOrder === 'asc' })
+          .range(offset, offset + parsedLimit - 1)
+      );
+
+      // Get summary counts by status
+      const statusCountQueries = {
+        draft: applyFilters(supabase.from('notification_campaigns').select('id', { count: 'exact', head: true }).eq('status', 'draft')),
+        pending_approval: applyFilters(supabase.from('notification_campaigns').select('id', { count: 'exact', head: true }).eq('status', 'pending_approval')),
+        approved: applyFilters(supabase.from('notification_campaigns').select('id', { count: 'exact', head: true }).eq('status', 'approved')),
+        sending: applyFilters(supabase.from('notification_campaigns').select('id', { count: 'exact', head: true }).eq('status', 'sending')),
+        completed: applyFilters(supabase.from('notification_campaigns').select('id', { count: 'exact', head: true }).eq('status', 'completed')),
+        failed: applyFilters(supabase.from('notification_campaigns').select('id', { count: 'exact', head: true }).eq('status', 'failed')),
+        cancelled: applyFilters(supabase.from('notification_campaigns').select('id', { count: 'exact', head: true }).eq('status', 'cancelled'))
+      };
+
+      const [
+        { count: totalCount, error: totalErr },
+        { data, error: dataErr },
+        { count: draftCount, error: draftErr },
+        { count: pendingCount, error: pendingErr },
+        { count: approvedCount, error: approvedErr },
+        { count: sendingCount, error: sendingErr },
+        { count: completedCount, error: completedErr },
+        { count: failedCount, error: failedErr },
+        { count: cancelledCount, error: cancelledErr }
+      ] = await Promise.all([
+        countQuery,
+        dataQuery,
+        statusCountQueries.draft,
+        statusCountQueries.pending_approval,
+        statusCountQueries.approved,
+        statusCountQueries.sending,
+        statusCountQueries.completed,
+        statusCountQueries.failed,
+        statusCountQueries.cancelled
+      ]);
+
+      if (totalErr || dataErr) {
+        console.error('/admin/notification-campaigns/enhanced query error', totalErr || dataErr);
+        return res.status(500).json({ success: false, error: 'Failed to fetch campaigns' });
+      }
+
+      const total = Number(totalCount || 0);
+      const totalPages = Math.max(Math.ceil(total / parsedLimit), 1);
+      const safeData = Array.isArray(data) ? data : [];
+
+      // Check user permissions
+      const canApprove = await canApproveNotifications(acting.id);
+      const canSend = allowed;
+
+      return res.json({
+        success: true,
+        data: safeData,
+        pagination: {
+          page: parsedPage,
+          limit: parsedLimit,
+          total,
+          totalPages,
+          hasNextPage: parsedPage < totalPages,
+          hasPrevPage: parsedPage > 1
+        },
+        summary: {
+          totalRecords: total,
+          pageRecords: safeData.length,
+          statusCounts: {
+            draft: Number(draftCount || 0),
+            pending_approval: Number(pendingCount || 0),
+            approved: Number(approvedCount || 0),
+            sending: Number(sendingCount || 0),
+            completed: Number(completedCount || 0),
+            failed: Number(failedCount || 0),
+            cancelled: Number(cancelledCount || 0)
+          },
+          filtersApplied: {
+            status: status || null,
+            search: search || null,
+            created_by: createdBy || null,
+            audience: audience || null,
+            campaign_type: campaignType || null,
+            date_from: dateFrom ? dateFrom.toISOString() : null,
+            date_to: dateTo ? dateTo.toISOString() : null,
+            sort_order: sortOrder
+          }
+        },
+        permissions: {
+          can_send_notifications: canSend,
+          can_approve_notifications: canApprove,
+          user_id: acting.id
+        }
+      });
+    } catch (err) {
+      console.error('/admin/notification-campaigns/enhanced unexpected error', err);
+      return res.status(500).json({ success: false, error: 'Server error' });
+    }
+  });
+
   // GET /admin/audit-logs - list audit logs with filters + pagination + insights (admin only)
   app.get('/admin/audit-logs', verifyJwtToken, async (req, res) => {
     try {
