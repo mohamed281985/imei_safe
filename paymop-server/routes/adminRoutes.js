@@ -268,7 +268,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
   .insert({
     user_id: data.user_id,
     title: notification.title,
-    message: notification.body,
+    body: notification.body,
     type: 'report_update',
     is_read: false,
     created_at: new Date().toISOString()
