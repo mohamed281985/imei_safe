@@ -3,7 +3,8 @@ export async function logAudit(supabaseOrConfig, configOrUndefined) {
   try {
     // Support two calling styles:
     // 1. logAudit(supabase, { userId, action, ... }) - explicit supabase
-    // 2. logAudit({ userId, action, ... }) - implicit supabase from import
+    // 2. logAudit({ supabase, userId, action, ... }) - supabase carried in config
+    // 3. logAudit({ userId, action, ... }) - legacy implicit style
     
     let supabase;
     let config;
@@ -13,14 +14,14 @@ export async function logAudit(supabaseOrConfig, configOrUndefined) {
       supabase = supabaseOrConfig;
       config = configOrUndefined;
     } else {
-      // Only one argument: assume config object, skip audit if supabase not available
-      if (!supabaseOrConfig || typeof supabaseOrConfig !== 'object' || !supabaseOrConfig.from) {
-        config = supabaseOrConfig;
+      // Only one argument: assume config object and accept an embedded supabase client.
+      config = supabaseOrConfig;
+      supabase = config && typeof config === 'object' ? (config.supabase || null) : null;
+
+      if (!supabase || !supabase.from) {
         console.warn('[logAudit] Supabase not provided, skipping audit log');
         return;
       }
-      supabase = supabaseOrConfig;
-      config = {};
     }
 
     const {
@@ -31,10 +32,12 @@ export async function logAudit(supabaseOrConfig, configOrUndefined) {
       oldValues = null,
       newValues = null,
       ipAddress = null,
+      ip = null,
       userAgent = null,
       status = 'success',
       details = null
     } = config;
+    const resolvedIpAddress = ipAddress || ip || null;
 
     // Sanitize sensitive values
     const sanitizeValues = (obj) => {
@@ -70,7 +73,7 @@ export async function logAudit(supabaseOrConfig, configOrUndefined) {
         resource_id: resourceId,
         old_values: sanitizeValues(oldValues),
         new_values: sanitizeValues(newValues),
-        ip_address: ipAddress,
+        ip_address: resolvedIpAddress,
         user_agent: userAgent,
         status: status,
         created_at: new Date().toISOString()

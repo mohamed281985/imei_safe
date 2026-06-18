@@ -18,7 +18,7 @@ import sharp from 'sharp';
 import cookieParser from 'cookie-parser';
 import session from 'express-session';
 import { csrfProtection, csrfErrorHandler, getCsrfToken } from './middleware/csrf.js';
-import { logAudit } from './utils/auditLogger.js';
+import { logAudit as rawLogAudit } from './utils/auditLogger.js';
 import { SECURITY_CONFIG } from './config/security.js';
 import { registerAdRoutes } from './routes/adRoutes.js';
 import { registerNotificationRoutes } from './routes/notificationRoutes.js';
@@ -1200,6 +1200,7 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 // Prefer the explicit service-role key if provided; fall back to legacy name
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+const logAudit = (config) => rawLogAudit({ supabase, ...config });
 // Debug/logging helpers for Supabase usage
 try {
   console.log('[supabase] SUPABASE_URL:', SUPABASE_URL ? SUPABASE_URL : 'MISSING');

@@ -6,11 +6,12 @@ export function registerReportRoutes({
   encryptAES,
   hashPasswordForStorage,
   sendError,
-  logAudit,
+  logAudit: rawLogAudit,
   sendFCMNotificationV1,
   resend,
   crypto
 }, getTranslations) {
+  const logAudit = (config) => rawLogAudit({ supabase, ...config });
   app.get('/api/lost-phones', verifyJwtToken, async (req, res) => {
     try {
       if (!req.user?.id) {

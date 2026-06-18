@@ -5,8 +5,9 @@ export function registerProfileRoutes({
   decryptField,
   isDevelopment,
   devBypassToken,
-  logAudit,
+  logAudit: rawLogAudit,
 }) {
+  const logAudit = (config) => rawLogAudit({ supabase, ...config });
   app.get('/api/decrypted-user', async (req, res) => {
     try {
       let userId = null;
