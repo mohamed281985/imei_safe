@@ -1,0 +1,549 @@
+openapi: 3.0.0
+info:
+  title: Notification Campaigns Management API
+  description: نظام إدارة حملات الإشعارات المتكامل مع نموذج موافقة متعدد المستويات
+  version: 1.0.0
+  contact:
+    name: Technical Support
+    email: support@example.com
+
+servers:
+  - url: http://localhost:3000
+    description: Local development
+  - url: https://api.production.com
+    description: Production
+
+tags:
+  - name: Notification Campaigns
+    description: إدارة حملات الإشعارات
+  - name: Campaign Workflow
+    description: تدفق العمل (submit → approve → send)
+
+paths:
+  /admin/notification-campaigns:
+    post:
+      tags:
+        - Notification Campaigns
+      summary: إنشاء حملة جديدة
+      description: إنشاء حملة إشعارات جديدة بحالة draft
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+                - message
+              properties:
+                title:
+                  type: string
+                  example: عرض الصيف الكبير
+                message:
+                  type: string
+                  example: احصل على خصم 50%
+                audience:
+                  type: string
+                  example: all
+                  description: "الجمهور المستهدف: all, segment, niche"
+                metadata:
+                  type: object
+                  example: { campaign_type: seasonal }
+                scheduled_at:
+                  type: string
+                  format: date-time
+                  example: "2026-06-20T10:00:00Z"
+      responses:
+        '201':
+          description: تم إنشاء الحملة بنجاح
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignResponse'
+        '400':
+          description: بيانات غير صحيحة
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: غير مصرح (Unauthorized)
+        '403':
+          description: ممنوع - صلاحيات غير كافية
+
+    get:
+      tags:
+        - Notification Campaigns
+      summary: الحصول على قائمة الحملات
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+          description: رقم الصفحة
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 200
+          description: عدد النتائج لكل صفحة
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum:
+              - draft
+              - pending_approval
+              - approved
+              - sending
+              - completed
+              - failed
+              - cancelled
+          description: حالة الحملة
+        - name: sort_order
+          in: query
+          schema:
+            type: string
+            enum:
+              - asc
+              - desc
+            default: desc
+          description: ترتيب النتائج
+      responses:
+        '200':
+          description: قائمة الحملات
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Campaign'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+  /admin/notification-campaigns/enhanced:
+    get:
+      tags:
+        - Notification Campaigns
+      summary: الحصول على الحملات مع فلاتر متقدمة
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 200
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: البحث في العنوان والرسالة
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: created_by
+          in: query
+          schema:
+            type: string
+          description: معرف منشئ الحملة
+        - name: audience
+          in: query
+          schema:
+            type: string
+        - name: campaign_type
+          in: query
+          schema:
+            type: string
+        - name: date_from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: date_to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: sort_order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+      responses:
+        '200':
+          description: الحملات مع ملخص وإحصائيات
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Campaign'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+                  summary:
+                    $ref: '#/components/schemas/CampaignSummary'
+                  permissions:
+                    $ref: '#/components/schemas/UserPermissions'
+
+  /admin/notification-campaigns/{id}:
+    get:
+      tags:
+        - Notification Campaigns
+      summary: الحصول على حملة واحدة
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: بيانات الحملة
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignResponse'
+        '404':
+          description: الحملة غير موجودة
+
+  /admin/notification-campaigns/{id}/submit:
+    patch:
+      tags:
+        - Campaign Workflow
+      summary: إرسال الحملة للموافقة
+      description: تغيير الحالة من draft إلى pending_approval
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: تم الإرسال للموافقة بنجاح
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignResponse'
+        '400':
+          description: الحملة يجب أن تكون بحالة draft
+        '403':
+          description: صلاحيات غير كافية
+
+  /admin/notification-campaigns/{id}/approve:
+    patch:
+      tags:
+        - Campaign Workflow
+      summary: الموافقة على الحملة
+      description: تغيير الحالة من pending_approval إلى approved
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: تم الموافقة بنجاح
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignResponse'
+        '400':
+          description: الحملة يجب أن تكون بحالة pending_approval
+        '403':
+          description: "لا يمكنك الموافقة على حملتك الخاصة أو صلاحيات غير كافية"
+
+  /admin/notification-campaigns/{id}/cancel:
+    patch:
+      tags:
+        - Campaign Workflow
+      summary: إلغاء الحملة
+      description: تغيير الحالة إلى cancelled
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  example: لم نُرسل البيانات الصحيحة
+      responses:
+        '200':
+          description: تم الإلغاء بنجاح
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignResponse'
+        '400':
+          description: لا يمكن إلغاء حملة مكتملة
+        '403':
+          description: صلاحيات غير كافية
+
+  /admin/notification-campaigns/{id}/send:
+    post:
+      tags:
+        - Campaign Workflow
+      summary: إرسال الحملة الموافق عليها
+      description: تغيير الحالة من approved إلى sending ثم completed
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: تم الإرسال بنجاح
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Campaign'
+                  note:
+                    type: string
+                    example: "Campaign marked as completed (Firebase Admin SDK not enabled)"
+        '400':
+          description: الحملة يجب أن تكون بحالة approved
+        '403':
+          description: "لا يمكنك إرسال حملتك الخاصة أو صلاحيات غير كافية"
+
+  /admin/notification-campaigns/{id}/test:
+    post:
+      tags:
+        - Notification Campaigns
+      summary: إرسال اختبار الحملة
+      description: إرسال رسالة اختبار إلى الأدمن الحالي فقط (لا يؤثر على الحالة)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: تم الإرسال للاختبار بنجاح
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                    example: Test notification sent
+                  data:
+                    type: object
+                    properties:
+                      campaignId:
+                        type: string
+                        format: uuid
+                      testSentTo:
+                        type: string
+                        format: uuid
+                      fcmSent:
+                        type: boolean
+                      campaignStatus:
+                        type: string
+        '404':
+          description: الحملة غير موجودة
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: JWT Token
+
+  schemas:
+    Campaign:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        message:
+          type: string
+        status:
+          type: string
+          enum:
+            - draft
+            - pending_approval
+            - approved
+            - sending
+            - completed
+            - failed
+            - cancelled
+        audience:
+          type: string
+        metadata:
+          type: object
+        created_by:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        submitted_by:
+          type: string
+          format: uuid
+        submitted_at:
+          type: string
+          format: date-time
+        approved_by:
+          type: string
+          format: uuid
+        approved_at:
+          type: string
+          format: date-time
+        cancelled_by:
+          type: string
+          format: uuid
+        cancelled_at:
+          type: string
+          format: date-time
+        cancel_reason:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CampaignResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          $ref: '#/components/schemas/Campaign'
+
+    CampaignSummary:
+      type: object
+      properties:
+        totalRecords:
+          type: integer
+        pageRecords:
+          type: integer
+        statusCounts:
+          type: object
+          properties:
+            draft:
+              type: integer
+            pending_approval:
+              type: integer
+            approved:
+              type: integer
+            sending:
+              type: integer
+            completed:
+              type: integer
+            failed:
+              type: integer
+            cancelled:
+              type: integer
+        filtersApplied:
+          type: object
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+        totalPages:
+          type: integer
+        hasNextPage:
+          type: boolean
+        hasPrevPage:
+          type: boolean
+
+    UserPermissions:
+      type: object
+      properties:
+        can_send_notifications:
+          type: boolean
+        can_approve_notifications:
+          type: boolean
+        user_id:
+          type: string
+          format: uuid
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          example: "title and message are required"
+
+security:
+  - BearerAuth: []
