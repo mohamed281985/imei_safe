@@ -227,8 +227,46 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
   });
 
   // PATCH /admin/reports/:id - update report status
-  app.patch('/admin/reports/:id', async (req, res) => {
+  app.patch('/admin/reports/:id', verifyJwtToken, async (req, res) => {
     try {
+      const user = req.user;
+      if (!user) {
+        try {
+          await logAudit({
+            userId: null,
+            action: 'unauthorized_access',
+            resourceType: 'phone_reports',
+            resourceId: req.params.id || null,
+            details: { reason: 'Missing authentication', endpoint: '/admin/reports/:id' },
+            ip: getAuditIp(req),
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed'
+          });
+        } catch (e) {
+          console.warn('/admin/reports/:id auth audit failed', e);
+        }
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const userRole = (user.role || '').toString().toLowerCase();
+      if (!userRole.includes('admin')) {
+        try {
+          await logAudit({
+            userId: user.id,
+            action: 'forbidden_access',
+            resourceType: 'phone_reports',
+            resourceId: req.params.id || null,
+            details: { reason: 'Non-admin attempting to update report', user_role: userRole },
+            ip: getAuditIp(req),
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed'
+          });
+        } catch (e) {
+          console.warn('/admin/reports/:id forbidden audit failed', e);
+        }
+        return res.status(403).json({ error: 'Forbidden: admin only' });
+      }
+
       const { id } = req.params;
       const { status } = req.body;
 
@@ -275,13 +313,13 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
 
       try {
         await logAudit({
-          userId: req.user?.id || null,
+          userId: user.id,
           action: 'update_report_status',
           resourceType: 'phone_reports',
           resourceId: data?.id || null,
           oldValues: { status: oldStatus || null },
           newValues: { status: data?.status || normalizedStatus },
-          details: { route: '/admin/reports/:id' },
+          details: { admin_id: user.id, report_owner: existing.user_id },
           ip: getAuditIp(req),
           userAgent: req.headers['user-agent'] || null,
           status: 'success'
@@ -556,8 +594,46 @@ if (notificationError) {
   });
 
   // PATCH /admin/accessories/:id - update accessory (admin light endpoint)
-  app.patch('/admin/accessories/:id', async (req, res) => {
+  app.patch('/admin/accessories/:id', verifyJwtToken, async (req, res) => {
     try {
+      const user = req.user;
+      if (!user) {
+        try {
+          await logAudit({
+            userId: null,
+            action: 'unauthorized_access',
+            resourceType: 'accessories',
+            resourceId: req.params.id || null,
+            details: { reason: 'Missing authentication', endpoint: '/admin/accessories/:id' },
+            ip: getAuditIp(req),
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed'
+          });
+        } catch (e) {
+          console.warn('/admin/accessories/:id auth audit failed', e);
+        }
+        return res.status(401).json({ ok: false, error: 'Unauthorized' });
+      }
+
+      const userRole = (user.role || '').toString().toLowerCase();
+      if (!userRole.includes('admin')) {
+        try {
+          await logAudit({
+            userId: user.id,
+            action: 'forbidden_access',
+            resourceType: 'accessories',
+            resourceId: req.params.id || null,
+            details: { reason: 'Non-admin attempting to update accessory', user_role: userRole },
+            ip: getAuditIp(req),
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed'
+          });
+        } catch (e) {
+          console.warn('/admin/accessories/:id forbidden audit failed', e);
+        }
+        return res.status(403).json({ ok: false, error: 'Forbidden: admin only' });
+      }
+
       const id = Number(req.params.id);
       if (!id) return res.status(400).json({ ok: false, error: 'Missing id' });
 
@@ -596,6 +672,25 @@ if (notificationError) {
       if (error) {
         console.error('PATCH /admin/accessories/:id error', error);
         return res.status(500).json({ ok: false, error: error.message || error });
+      }
+
+      try {
+        if (typeof logAudit === 'function') {
+          await logAudit({
+            userId: user.id,
+            action: 'admin_update_accessory',
+            resourceType: 'accessories',
+            resourceId: id.toString(),
+            oldValues: { status: existingAccessory.status },
+            newValues: updates,
+            details: { admin_id: user.id },
+            ip: getAuditIp(req),
+            userAgent: req.headers['user-agent'] || null,
+            status: 'success'
+          });
+        }
+      } catch (e) {
+        console.warn('PATCH /admin/accessories/:id audit failed', e);
       }
 
       return res.json({ ok: true, accessory: data });
@@ -939,13 +1034,45 @@ if (notificationError) {
 
   // POST /admin/notifications - create a notification (admin only)
   // POST /admin/reject-phone - reject a registered phone and notify its owner
-  app.post('/admin/reject-phone', async (req, res) => {
+  app.post('/admin/reject-phone', verifyJwtToken, async (req, res) => {
     try {
-      // const user = req.user;
-      // if (!user) return res.status(401).json({ success: false, error: 'Unauthorized' });
+      const user = req.user;
+      if (!user) {
+        try {
+          await logAudit({
+            userId: null,
+            action: 'unauthorized_access',
+            resourceType: 'registered_phone',
+            resourceId: null,
+            details: { reason: 'Missing authentication', endpoint: '/admin/reject-phone' },
+            ip: getAuditIp(req),
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed'
+          });
+        } catch (e) {
+          console.warn('/admin/reject-phone auth audit failed', e);
+        }
+        return res.status(401).json({ success: false, error: 'Unauthorized' });
+      }
 
-      // const userRole = (user.role || '').toString().toLowerCase();
-      // if (!userRole.includes('admin')) return res.status(403).json({ success: false, error: 'Forbidden: admin only' });
+      const userRole = (user.role || '').toString().toLowerCase();
+      if (!userRole.includes('admin')) {
+        try {
+          await logAudit({
+            userId: user.id,
+            action: 'forbidden_access',
+            resourceType: 'registered_phone',
+            resourceId: null,
+            details: { reason: 'Non-admin attempting to reject phone', user_role: userRole },
+            ip: getAuditIp(req),
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed'
+          });
+        } catch (e) {
+          console.warn('/admin/reject-phone forbidden audit failed', e);
+        }
+        return res.status(403).json({ success: false, error: 'Forbidden: admin only' });
+      }
 
       const { phoneId, rejectReason } = req.body || {};
       if (!phoneId || !rejectReason) return res.status(400).json({ success: false, error: 'phoneId and rejectReason required' });
@@ -1006,13 +1133,15 @@ if (notificationError) {
       try {
         if (typeof logAudit === 'function') {
           await logAudit({
-            userId: null,
+            userId: user.id,
             action: 'admin_reject_phone',
             resourceType: 'registered_phone',
             resourceId: phoneId,
-            details: { rejectReason },
-            ip: req.ip,
-            userAgent: req.headers['user-agent']
+            newValues: { status: 'rejected', review_status: 'بيانات خاطئة' },
+            details: { admin_id: user.id, target_user: targetUserId, rejectReason },
+            ip: getAuditIp(req),
+            userAgent: req.headers['user-agent'] || null,
+            status: 'success'
           });
         }
       } catch (e) {
@@ -1027,13 +1156,45 @@ if (notificationError) {
   });
 
   // POST /admin/approve-phone - approve a registered phone and notify its owner
-  app.post('/admin/approve-phone', async (req, res) => {
+  app.post('/admin/approve-phone', verifyJwtToken, async (req, res) => {
     try {
-      //const user = req.user;
-      //  if (!user) return res.status(401).json({ success: false, error: 'Unauthorized' });
+      const user = req.user;
+      if (!user) {
+        try {
+          await logAudit({
+            userId: null,
+            action: 'unauthorized_access',
+            resourceType: 'registered_phone',
+            resourceId: null,
+            details: { reason: 'Missing authentication', endpoint: '/admin/approve-phone' },
+            ip: getAuditIp(req),
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed'
+          });
+        } catch (e) {
+          console.warn('/admin/approve-phone auth audit failed', e);
+        }
+        return res.status(401).json({ success: false, error: 'Unauthorized' });
+      }
 
-      // const userRole = (user.role || '').toString().toLowerCase();
-      // if (!userRole.includes('admin')) return res.status(403).json({ success: false, error: 'Forbidden: admin only' });
+      const userRole = (user.role || '').toString().toLowerCase();
+      if (!userRole.includes('admin')) {
+        try {
+          await logAudit({
+            userId: user.id,
+            action: 'forbidden_access',
+            resourceType: 'registered_phone',
+            resourceId: null,
+            details: { reason: 'Non-admin attempting to approve phone', user_role: userRole },
+            ip: getAuditIp(req),
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed'
+          });
+        } catch (e) {
+          console.warn('/admin/approve-phone forbidden audit failed', e);
+        }
+        return res.status(403).json({ success: false, error: 'Forbidden: admin only' });
+      }
 
       const { phoneId } = req.body || {};
       if (!phoneId) return res.status(400).json({ success: false, error: 'phoneId required' });
@@ -1097,13 +1258,15 @@ if (notificationError) {
       try {
         if (typeof logAudit === 'function') {
           await logAudit({
-            userId: null,
+            userId: user.id,
             action: 'admin_approve_phone',
             resourceType: 'registered_phone',
             resourceId: phoneId,
-            details: {},
-            ip: req.ip,
-            userAgent: req.headers['user-agent']
+            newValues: { status: 'approved', review_status: 'تمت المراجعة' },
+            details: { admin_id: user.id, target_user: targetUserId },
+            ip: getAuditIp(req),
+            userAgent: req.headers['user-agent'] || null,
+            status: 'success'
           });
         }
       } catch (e) {
@@ -1196,13 +1359,15 @@ if (notificationError) {
       try {
         if (typeof logAudit === 'function') {
           await logAudit({
-            userId: user.id || null,
+            userId: user.id,
             action: 'admin_post_notification',
             resourceType: 'notification',
             resourceId: inserted && inserted.id ? inserted.id : null,
-            details: { user_id, title },
-            ip: req.ip,
-            userAgent: req.headers['user-agent']
+            newValues: { user_id, title, message: message.substring(0, 100) },
+            details: { admin_id: user.id, target_user: user_id },
+            ip: getAuditIp(req),
+            userAgent: req.headers['user-agent'] || null,
+            status: 'success'
           });
         }
       } catch (e) {
