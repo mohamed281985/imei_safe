@@ -380,8 +380,7 @@ app.use((err, req, res, next) => {
 });
 
 // If behind a proxy (Render, Heroku, etc.) trust proxy headers so req.secure and x-forwarded-proto work
-// Use 1 instead of true for single proxy (Render/Heroku) to avoid rate-limit bypass warnings
-app.set('trust proxy', TRUST_PROXY);
+app.set('trust proxy', true);
 console.log('Configured TRUST_PROXY (env):', process.env.TRUST_PROXY, '=> numeric TRUST_PROXY:', TRUST_PROXY);
 console.log("Express app.get('trust proxy') =>", app.get('trust proxy'));
 
@@ -1630,7 +1629,8 @@ registerNotificationRoutes({
   searchImeiLimiter,
   // helpers used by notification routes
   decryptField,
-  normalizeDigitsOnly
+  normalizeDigitsOnly,
+  logAudit
 });
 
 // --- دوال Paymob ---
@@ -2999,6 +2999,23 @@ app.get('/paymob/redirect-success', async (req, res) => {
                     .eq('id', existingAd.user_id);
                   console.log(`[Redirect] Updated user ${existingAd.user_id} role to ${existingAd.type}`);
 
+                  try {
+                    await logAudit({
+                      userId: existingAd.user_id || null,
+                      action: 'update_subscription',
+                      resourceType: 'users',
+                      resourceId: existingAd.user_id || null,
+                      oldValues: null,
+                      newValues: { role: existingAd.type, expires_at: expiresAt.toISOString() },
+                      details: { source: 'redirect-success-fallback' },
+                      ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+                      userAgent: req.headers['user-agent'] || null,
+                      status: 'success'
+                    });
+                  } catch (auditErr) {
+                    console.warn('[Redirect] update_subscription users audit failed:', auditErr?.message || auditErr);
+                  }
+
                   // ⭐ تحديث أو إنشاء سجل في users_plans وتصفير العدادات (Fallback)
                   await supabase
                     .from('users_plans')
@@ -3017,6 +3034,23 @@ app.get('/paymob/redirect-success', async (req, res) => {
                       silver_ad: 0,
                       gold_ad: 0
                     }, { onConflict: 'id' });
+
+                  try {
+                    await logAudit({
+                      userId: existingAd.user_id || null,
+                      action: 'update_subscription',
+                      resourceType: 'users_plans',
+                      resourceId: existingAd.user_id || null,
+                      oldValues: null,
+                      newValues: { role: existingAd.type },
+                      details: { source: 'redirect-success-fallback' },
+                      ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+                      userAgent: req.headers['user-agent'] || null,
+                      status: 'success'
+                    });
+                  } catch (auditErr) {
+                    console.warn('[Redirect] update_subscription users_plans audit failed:', auditErr?.message || auditErr);
+                  }
                 }
               }
             } else {
@@ -3334,6 +3368,23 @@ app.post("/paymob/webhook", async (req, res) => {
                   .eq('id', user_id);
                 console.log(`[Webhook] Updated user ${user_id} role to ${existingAd.type}`);
 
+                try {
+                  await logAudit({
+                    userId: user_id || null,
+                    action: 'update_subscription',
+                    resourceType: 'users',
+                    resourceId: user_id || null,
+                    oldValues: null,
+                    newValues: { role: existingAd.type, expires_at: expiresAt.toISOString() },
+                    details: { source: 'payment-webhook' },
+                    ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+                    userAgent: req.headers['user-agent'] || null,
+                    status: 'success'
+                  });
+                } catch (auditErr) {
+                  console.warn('[Webhook] update_subscription users audit failed:', auditErr?.message || auditErr);
+                }
+
                 // ⭐ تحديث أو إنشاء سجل في users_plans وتصفير العدادات
                 const { error: upsertErr } = await supabase
                   .from('users_plans')
@@ -3355,6 +3406,25 @@ app.post("/paymob/webhook", async (req, res) => {
 
                 if (upsertErr) console.error('[Webhook] Failed to upsert users_plans:', upsertErr);
                 else console.log(`[Webhook] users_plans updated/created for user ${user_id}`);
+
+                if (!upsertErr) {
+                  try {
+                    await logAudit({
+                      userId: user_id || null,
+                      action: 'update_subscription',
+                      resourceType: 'users_plans',
+                      resourceId: user_id || null,
+                      oldValues: null,
+                      newValues: { role: existingAd.type },
+                      details: { source: 'payment-webhook' },
+                      ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+                      userAgent: req.headers['user-agent'] || null,
+                      status: 'success'
+                    });
+                  } catch (auditErr) {
+                    console.warn('[Webhook] update_subscription users_plans audit failed:', auditErr?.message || auditErr);
+                  }
+                }
               }
             }
           }
@@ -3677,6 +3747,21 @@ async function verifyJwtToken(req, res, next) {
   try {
     const authHeader = req.headers['authorization'];
     if (!authHeader) {
+      try {
+        await logAudit({
+          userId: req.user?.id || null,
+          action: 'unauthorized_access',
+          resourceType: 'auth',
+          resourceId: null,
+          details: { reason: 'Unauthorized: No token provided' },
+          ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+          userAgent: req.headers['user-agent'] || null,
+          status: 'failed',
+          errorMessage: 'Unauthorized: No token provided'
+        });
+      } catch (e) {
+        console.warn('[verifyJwtToken] missing-token audit failed:', e?.message || e);
+      }
       return res.status(401).json({ error: 'Unauthorized: No token provided' });
     }
 
@@ -3692,6 +3777,21 @@ async function verifyJwtToken(req, res, next) {
     const { data: { user }, error } = await supabase.auth.getUser(token);
 
     if (error || !user) {
+      try {
+        await logAudit({
+          userId: req.user?.id || null,
+          action: 'unauthorized_access',
+          resourceType: 'auth',
+          resourceId: null,
+          details: { reason: 'Unauthorized: Invalid token' },
+          ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+          userAgent: req.headers['user-agent'] || null,
+          status: 'failed',
+          errorMessage: error?.message || 'Unauthorized: Invalid token'
+        });
+      } catch (e) {
+        console.warn('[verifyJwtToken] invalid-token audit failed:', e?.message || e);
+      }
       return res.status(401).json({ error: 'Unauthorized: Invalid token' });
     }
     // 2. جلب الدور (role) من جدول users في قاعدة البيانات
@@ -3715,8 +3815,26 @@ async function verifyJwtToken(req, res, next) {
         userRole = isBusiness ? 'free_business' : 'free_user';
 
         // تحديث قاعدة البيانات لإلغاء الصلاحية المنتهية وإعادة الدور للافتراضي
+        const oldRole = appUserData?.role || null;
         await supabase.from('users').update({ role: userRole, expires_at: null }).eq('id', user.id);
         console.log(`[Auth] User ${user.id} subscription expired. Reverted to ${userRole}`);
+
+        try {
+          await logAudit({
+            userId: user.id || null,
+            action: 'update_subscription',
+            resourceType: 'users',
+            resourceId: user.id || null,
+            oldValues: { role: oldRole, expires_at: appUserData?.expires_at || null },
+            newValues: { role: userRole, expires_at: null },
+            details: { source: 'verifyJwtToken_lazy_downgrade' },
+            ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+            userAgent: req.headers['user-agent'] || null,
+            status: 'success'
+          });
+        } catch (e) {
+          console.warn('[verifyJwtToken] users subscription audit failed:', e?.message || e);
+        }
 
         // ⭐ تحديث جدول users_plans: تغيير role إلى المجاني وتصفير كل عدادات الاستخدام
         try {
@@ -3740,6 +3858,22 @@ async function verifyJwtToken(req, res, next) {
             console.error('[Auth] Failed to reset users_plans on expiry:', planUpdateErr);
           } else {
             console.log(`[Auth] users_plans reset to ${userRole} for user ${user.id}`);
+            try {
+              await logAudit({
+                userId: user.id || null,
+                action: 'update_subscription',
+                resourceType: 'users_plans',
+                resourceId: user.id || null,
+                oldValues: null,
+                newValues: { role: userRole },
+                details: { source: 'verifyJwtToken_users_plans_reset' },
+                ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+                userAgent: req.headers['user-agent'] || null,
+                status: 'success'
+              });
+            } catch (e) {
+              console.warn('[verifyJwtToken] users_plans audit failed:', e?.message || e);
+            }
           }
         } catch (planErr) {
           console.error('[Auth] Exception resetting users_plans on expiry:', planErr);
@@ -3766,6 +3900,21 @@ async function verifyJwtToken(req, res, next) {
     } catch (logErr) {
       // swallow logging errors
     }
+    try {
+      await logAudit({
+        userId: req.user?.id || null,
+        action: 'unauthorized_access',
+        resourceType: 'auth',
+        resourceId: null,
+        details: { reason: error?.message || 'Unauthorized: Invalid token' },
+        ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+        userAgent: req.headers['user-agent'] || null,
+        status: 'failed',
+        errorMessage: error?.message || null
+      });
+    } catch (e) {
+      console.warn('[verifyJwtToken] catch audit failed:', e?.message || e);
+    }
     return res.status(401).json({ error: 'Unauthorized: Invalid token' });
   }
 }
@@ -3778,6 +3927,7 @@ registerProfileRoutes({
   decryptField,
   isDevelopment: IS_DEVELOPMENT,
   devBypassToken: DEV_BYPASS_TOKEN,
+  logAudit,
 });
 
 app.get('/api/get-contact-info', verifyJwtToken, async (req, res) => {
@@ -4376,7 +4526,24 @@ app.post('/api/verify-and-resolve-report', verifyJwtToken, async (req, res) => {
     const report = reports && reports[0];
     console.log('Fetched report:', !!report, report ? { id: report.id, user_id: report.user_id, status: report.status, passwordExists: !!report.password } : null);
     if (!report) return res.status(404).json({ success: false, error: 'Report not found' });
-    if (report.user_id !== userId) return res.status(403).json({ success: false, error: 'Not authorized' });
+    if (report.user_id !== userId) {
+      try {
+        await logAudit({
+          userId: req.user?.id || null,
+          action: 'forbidden_access',
+          resourceType: 'phone_report',
+          resourceId: report?.id || null,
+          details: { reason: 'Not authorized' },
+          ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+          userAgent: req.headers['user-agent'] || null,
+          status: 'failed',
+          errorMessage: 'Not authorized'
+        });
+      } catch (e) {
+        console.warn('/api/verify-and-resolve-report forbidden audit failed:', e?.message || e);
+      }
+      return res.status(403).json({ success: false, error: 'Not authorized' });
+    }
     if (report.status !== 'active') return res.status(400).json({ success: false, error: 'Report not active' });
 
     const passwordMatched = report.password
@@ -4384,6 +4551,21 @@ app.post('/api/verify-and-resolve-report', verifyJwtToken, async (req, res) => {
       : false;
     if (!passwordMatched) {
       console.warn('Password mismatch for report:', reportId);
+      try {
+        await logAudit({
+          userId: req.user?.id || null,
+          action: 'update_report_status',
+          resourceType: 'phone_report',
+          resourceId: report?.id || null,
+          details: { reason: 'Wrong Password' },
+          ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+          userAgent: req.headers['user-agent'] || null,
+          status: 'failed',
+          errorMessage: 'Wrong Password'
+        });
+      } catch (e) {
+        console.warn('/api/verify-and-resolve-report wrong-password audit failed:', e?.message || e);
+      }
       return res.status(401).json({ success: false, error: 'Invalid password' });
     }
 
@@ -4407,8 +4589,9 @@ app.post('/api/verify-and-resolve-report', verifyJwtToken, async (req, res) => {
       resourceId: reportId,
       oldValues: { status: 'active' },
       newValues: { status: 'resolved' },
-      ip: req.ip,
-      userAgent: req.headers['user-agent']
+      ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+      userAgent: req.headers['user-agent'] || null,
+      status: 'success'
     });
 
     res.json({ success: true, message: 'Report verified and resolved' });
@@ -4507,6 +4690,21 @@ app.post('/api/change-phone', verifyJwtToken, async (req, res) => {
 
       // Use the upstream status when it's a 4xx to reflect client error
       const statusToReturn = verifyResp.status && verifyResp.status >= 400 && verifyResp.status < 500 ? verifyResp.status : 401;
+      try {
+        await logAudit({
+          userId: req.user?.id || null,
+          action: 'update_phone',
+          resourceType: 'registered_phone',
+          resourceId: null,
+          details: { reason: clientMsg || 'Wrong Password' },
+          ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+          userAgent: req.headers['user-agent'] || null,
+          status: 'failed',
+          errorMessage: clientMsg || 'Wrong Password'
+        });
+      } catch (e) {
+        console.warn('/api/change-phone wrong-password audit failed:', e?.message || e);
+      }
       return res.status(statusToReturn).json({ success: false, error: clientMsg });
     }
 
@@ -4548,13 +4746,15 @@ app.post('/api/change-phone', verifyJwtToken, async (req, res) => {
     // سجل عملية التدقيق
     await logAudit({
       userId,
-      action: 'change_phone',
-      resourceType: 'user_profile',
+      action: 'update_phone',
+      resourceType: 'registered_phone',
       resourceId: userId,
       oldValues: { phone: decryptField(userRow.phone) },
       newValues: { phone: newPhone },
-      ip: req.ip,
-      userAgent: req.headers['user-agent']
+      details: { route: '/api/change-phone' },
+      ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+      userAgent: req.headers['user-agent'] || null,
+      status: 'success'
     });
 
     return res.json({ success: true, message: 'Phone updated' });
@@ -4584,6 +4784,21 @@ app.post('/api/reset-phone-password', verifyJwtToken, async (req, res) => {
     const blocked = checkAuthBlocked(userKey);
     if (blocked.blocked) {
       const retryAfter = Math.ceil((blocked.retryAfterMs || 0) / 1000);
+      try {
+        await logAudit({
+          userId: req.user?.id || null,
+          action: 'rate_limit_exceeded',
+          resourceType: 'registered_phone',
+          resourceId: null,
+          details: { reason: 'Rate limit exceeded', retryAfter },
+          ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+          userAgent: req.headers['user-agent'] || null,
+          status: 'failed',
+          errorMessage: 'Rate limit exceeded'
+        });
+      } catch (e) {
+        console.warn('/api/reset-phone-password rate-limit audit failed:', e?.message || e);
+      }
       return res.status(429).json({ error: 'Rate limit exceeded', retryAfter });
     }
 
@@ -4611,6 +4826,21 @@ app.post('/api/reset-phone-password', verifyJwtToken, async (req, res) => {
     // 3. تحقق ملكية إضافي: user_id + email (إن وجد) + كلمة المرور الحالية
     if (targetPhone.user_id !== userId) {
       recordAuthFailure(userKey);
+      try {
+        await logAudit({
+          userId: req.user?.id || null,
+          action: 'forbidden_access',
+          resourceType: 'registered_phone',
+          resourceId: targetPhone?.id || null,
+          details: { reason: 'Not authorized for this phone' },
+          ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+          userAgent: req.headers['user-agent'] || null,
+          status: 'failed',
+          errorMessage: 'Not authorized for this phone'
+        });
+      } catch (e) {
+        console.warn('/api/reset-phone-password forbidden audit failed:', e?.message || e);
+      }
       return res.status(403).json({ error: 'Not authorized for this phone' });
     }
 
@@ -4628,6 +4858,21 @@ app.post('/api/reset-phone-password', verifyJwtToken, async (req, res) => {
       : false;
     if (!currentPasswordMatched) {
       recordAuthFailure(userKey);
+      try {
+        await logAudit({
+          userId: req.user?.id || null,
+          action: 'reset_registered_phone_password',
+          resourceType: 'registered_phone',
+          resourceId: targetPhone?.id || null,
+          details: { reason: 'Wrong Password', imei_last_4: String(imei || '').slice(-4) },
+          ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+          userAgent: req.headers['user-agent'] || null,
+          status: 'failed',
+          errorMessage: 'Wrong Password'
+        });
+      } catch (e) {
+        console.warn('/api/reset-phone-password wrong-password audit failed:', e?.message || e);
+      }
       return res.status(401).json({ error: 'Current password is incorrect' });
     }
 
@@ -4659,8 +4904,9 @@ app.post('/api/reset-phone-password', verifyJwtToken, async (req, res) => {
       resourceType: 'registered_phone',
       resourceId: targetPhone.id,
       details: { imei_last_4: imei.slice(-4) },
-      ip: req.ip,
-      userAgent: req.headers['user-agent']
+      ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+      userAgent: req.headers['user-agent'] || null,
+      status: 'success'
     });
 
     res.json({ success: true, message: 'Password updated successfully' });
@@ -5193,6 +5439,21 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
 
   // ✅ Ownership verification: فقط المستخدم نفسه يمكنه تسجيل هاتفه الخاص
   if (!userId) {
+    try {
+      await logAudit({
+        userId: req.user?.id || null,
+        action: 'unauthorized_access',
+        resourceType: 'registered_phone',
+        resourceId: null,
+        details: { reason: 'Unauthorized: Invalid user' },
+        ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+        userAgent: req.headers['user-agent'] || null,
+        status: 'failed',
+        errorMessage: 'Unauthorized: Invalid user'
+      });
+    } catch (e) {
+      console.warn('/api/register-phone unauthorized audit failed:', e?.message || e);
+    }
     return res.status(401).json({ error: 'Unauthorized: Invalid user' });
   }
 
@@ -5207,6 +5468,21 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
   if (recentAttempts.length >= MAX_ATTEMPTS_PER_HOUR) {
     const oldestAttempt = recentAttempts[0];
     const timeUntilReset = Math.ceil((oldestAttempt.timestamp + ATTEMPT_COOLDOWN - now) / 60000); // بالدقائق
+    try {
+      await logAudit({
+        userId: req.user?.id || null,
+        action: 'rate_limit_exceeded',
+        resourceType: 'registered_phone',
+        resourceId: null,
+        details: { reason: 'Registration attempts exceeded', retryAfter: timeUntilReset },
+        ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+        userAgent: req.headers['user-agent'] || null,
+        status: 'failed',
+        errorMessage: 'Rate limit exceeded'
+      });
+    } catch (e) {
+      console.warn('/api/register-phone rate-limit audit failed:', e?.message || e);
+    }
     return res.status(429).json({
       error: `تم تجاوز الحد الأقصى للمحاولات. يرجى المحاولة مرة أخرى بعد ${timeUntilReset} دقيقة`,
       retryAfter: timeUntilReset,
@@ -5394,13 +5670,16 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
         action: 'register_phone',
         resourceType: 'registered_phone',
         resourceId: registeredId,
+        oldValues: null,
+        newValues: { status: 'pending' },
         details: {
           imei_last_4: rawImei.slice(-4),
           phone_type: phoneData.phone_type,
           status: 'pending'
         },
-        ip: req.ip,
-        userAgent: req.headers['user-agent']
+        ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+        userAgent: req.headers['user-agent'] || null,
+        status: 'success'
       });
     } catch (auditError) {
       console.error('خطأ غير حرج في تسجيل Audit:', auditError);

@@ -7,7 +7,8 @@ export function registerNotificationRoutes({
   getFCMTokenByImei,
   searchImeiLimiter,
   decryptField,
-  normalizeDigitsOnly
+  normalizeDigitsOnly,
+  logAudit
 }) {
 app.post('/api/send-fcm-v1', verifyJwtToken, async (req, res) => {
   try {
@@ -27,6 +28,21 @@ app.post('/api/update-fcm-token', verifyJwtToken, async (req, res) => {
   try {
     const userId = req.user?.id;
     if (!userId) {
+      try {
+        await logAudit({
+          userId: req.user?.id || null,
+          action: 'unauthorized_access',
+          resourceType: 'user',
+          resourceId: null,
+          details: { reason: 'Unauthorized' },
+          ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+          userAgent: req.headers['user-agent'] || null,
+          status: 'failed',
+          errorMessage: 'Unauthorized'
+        });
+      } catch (e) {
+        console.warn('/api/update-fcm-token unauthorized audit failed:', e?.message || e);
+      }
       return res.status(401).json({ success: false, error: 'Unauthorized' });
     }
 
@@ -58,6 +74,23 @@ app.post('/api/update-fcm-token', verifyJwtToken, async (req, res) => {
     if (reportError) {
       console.error('Failed to update fcm_token on phone_reports for user:', reportError);
       // لا نوقف العملية، لأن التحديث في users يكفي في أغلب الحالات
+    }
+
+    try {
+      await logAudit({
+        userId: req.user?.id || null,
+        action: 'update_fcm_token',
+        resourceType: 'user',
+        resourceId: userId,
+        oldValues: null,
+        newValues: { fcm_token_updated: true },
+        details: { updatedReports: !reportError },
+        ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+        userAgent: req.headers['user-agent'] || null,
+        status: 'success'
+      });
+    } catch (e) {
+      console.warn('/api/update-fcm-token audit failed:', e?.message || e);
     }
 
     res.json({ success: true, message: 'FCM token updated successfully' });

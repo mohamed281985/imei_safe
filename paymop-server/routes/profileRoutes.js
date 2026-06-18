@@ -5,6 +5,7 @@ export function registerProfileRoutes({
   decryptField,
   isDevelopment,
   devBypassToken,
+  logAudit,
 }) {
   app.get('/api/decrypted-user', async (req, res) => {
     try {
@@ -103,6 +104,21 @@ export function registerProfileRoutes({
             const { data: authData, error: authErr } = await supabase.auth.getUser(token);
             if (authErr) {
               console.error('/api/register-fcm-token auth error:', authErr?.message || authErr);
+              try {
+                await logAudit({
+                  userId: null,
+                  action: 'unauthorized_access',
+                  resourceType: 'user',
+                  resourceId: null,
+                  details: { reason: authErr?.message || 'Failed to verify token' },
+                  ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+                  userAgent: req.headers['user-agent'] || null,
+                  status: 'failed',
+                  errorMessage: authErr?.message || 'Failed to verify token'
+                });
+              } catch (e) {
+                console.warn('/api/register-fcm-token unauthorized audit failed:', e?.message || e);
+              }
               return res.status(401).json({ error: 'Failed to verify token' });
             }
             if (!authData || !authData.user) return res.status(401).json({ error: 'Unauthorized - no user data' });
@@ -111,6 +127,21 @@ export function registerProfileRoutes({
             userId = req.body.user_id || req.query.user_id;
             if (!userId) return res.status(400).json({ error: 'missing user_id (dev bypass)' });
           } else {
+            try {
+              await logAudit({
+                userId: null,
+                action: 'unauthorized_access',
+                resourceType: 'user',
+                resourceId: null,
+                details: { reason: 'Unauthorized - missing auth' },
+                ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+                userAgent: req.headers['user-agent'] || null,
+                status: 'failed',
+                errorMessage: 'Unauthorized - missing auth'
+              });
+            } catch (e) {
+              console.warn('/api/register-fcm-token missing-auth audit failed:', e?.message || e);
+            }
             return res.status(401).json({ error: 'Unauthorized - missing auth' });
           }
 
@@ -119,6 +150,23 @@ export function registerProfileRoutes({
           if (error) {
             console.error('/api/register-fcm-token update error:', error);
             return sendError(res, 500, 'Failed to update fcm_token', error);
+          }
+
+          try {
+            await logAudit({
+              userId: userId || null,
+              action: 'update_fcm_token',
+              resourceType: 'user',
+              resourceId: userId || null,
+              oldValues: null,
+              newValues: { fcm_token_updated: true },
+              details: { source: 'register-fcm-token' },
+              ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+              userAgent: req.headers['user-agent'] || null,
+              status: 'success'
+            });
+          } catch (e) {
+            console.warn('/api/register-fcm-token audit failed:', e?.message || e);
           }
 
           return res.json({ success: true, data });

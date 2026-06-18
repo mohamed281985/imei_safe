@@ -294,6 +294,21 @@ export function registerOwnershipRoutes({
       if (!decryptedRequestCounts[userId]) decryptedRequestCounts[userId] = [];
       decryptedRequestCounts[userId] = decryptedRequestCounts[userId].filter((ts) => now - ts < windowMs);
       if (decryptedRequestCounts[userId].length >= limit) {
+        try {
+          await logAudit({
+            userId: req.user?.id || null,
+            action: 'rate_limit_exceeded',
+            resourceType: 'phone_report',
+            resourceId: null,
+            details: { reason: 'Rate limit exceeded in report-details-decrypted' },
+            ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed',
+            errorMessage: 'Rate limit exceeded'
+          });
+        } catch (e) {
+          console.warn('/api/report-details-decrypted rate-limit audit failed:', e?.message || e);
+        }
         return res.status(429).json({ error: 'Rate limit exceeded' });
       }
       decryptedRequestCounts[userId].push(now);
@@ -314,6 +329,21 @@ export function registerOwnershipRoutes({
       }
       if (!report) return res.status(404).json({ error: 'Report not found' });
       if (req.user.id !== report.user_id) {
+        try {
+          await logAudit({
+            userId: req.user?.id || null,
+            action: 'forbidden_access',
+            resourceType: 'phone_report',
+            resourceId: report?.id || null,
+            details: { reason: 'Forbidden: only owner can view decrypted details' },
+            ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed',
+            errorMessage: 'Forbidden: only owner can view decrypted details'
+          });
+        } catch (e) {
+          console.warn('/api/report-details-decrypted forbidden audit failed:', e?.message || e);
+        }
         return res.status(403).json({ error: 'Forbidden: only owner can view decrypted details' });
       }
 
@@ -334,6 +364,23 @@ export function registerOwnershipRoutes({
         finder_phone: decryptField(report.finder_phone) || report.finder_phone || null
       };
 
+      try {
+        await logAudit({
+          userId: req.user?.id || null,
+          action: 'decrypt_report_details',
+          resourceType: 'phone_report',
+          resourceId: report?.id || null,
+          oldValues: null,
+          newValues: null,
+          details: { endpoint: '/api/report-details-decrypted' },
+          ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+          userAgent: req.headers['user-agent'] || null,
+          status: 'success'
+        });
+      } catch (e) {
+        console.warn('/api/report-details-decrypted audit failed:', e?.message || e);
+      }
+
       return res.json({ success: true, ...decrypted, data: decrypted });
     } catch (err) {
       console.error('Error in /api/report-details-decrypted:', err);
@@ -348,13 +395,45 @@ export function registerOwnershipRoutes({
 
       console.log('[verify-seller-password] userId:', userId, 'imei:', imei, 'password:', !!password);
 
-      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      if (!userId) {
+        try {
+          await logAudit({
+            userId: req.user?.id || null,
+            action: 'unauthorized_access',
+            resourceType: 'registered_phone',
+            resourceId: null,
+            details: { reason: 'Unauthorized' },
+            ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed',
+            errorMessage: 'Unauthorized'
+          });
+        } catch (e) {
+          console.warn('/api/verify-seller-password unauthorized audit failed:', e?.message || e);
+        }
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
       if (!imei || !password) return res.status(400).json({ error: 'imei and password required' });
 
       const userKey = req.user && req.user.id ? `uid:${req.user.id}` : `ip:${req.ip}`;
       const blocked = checkAuthBlocked(userKey);
       if (blocked.blocked) {
         const retryAfter = Math.ceil((blocked.retryAfterMs || 0) / 1000);
+        try {
+          await logAudit({
+            userId: req.user?.id || null,
+            action: 'rate_limit_exceeded',
+            resourceType: 'registered_phone',
+            resourceId: null,
+            details: { reason: 'Rate limit exceeded', retryAfter },
+            ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed',
+            errorMessage: 'Rate limit exceeded'
+          });
+        } catch (e) {
+          console.warn('/api/verify-seller-password rate-limit audit failed:', e?.message || e);
+        }
         return res.status(429).json({ ok: false, error: 'Rate limit exceeded', retryAfter });
       }
 
@@ -366,16 +445,65 @@ export function registerOwnershipRoutes({
 
       const found = phones ? phones.find((p) => decryptField(p.imei) === imei) : null;
       if (!found) return res.status(404).json({ ok: false, error: 'Phone not found' });
-      if (found.user_id !== req.user.id) return res.status(403).json({ ok: false, error: 'Not owner' });
+      if (found.user_id !== req.user.id) {
+        try {
+          await logAudit({
+            userId: req.user?.id || null,
+            action: 'forbidden_access',
+            resourceType: 'registered_phone',
+            resourceId: found?.id || null,
+            details: { reason: 'Not owner' },
+            ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed',
+            errorMessage: 'Not owner'
+          });
+        } catch (e) {
+          console.warn('/api/verify-seller-password forbidden audit failed:', e?.message || e);
+        }
+        return res.status(403).json({ ok: false, error: 'Not owner' });
+      }
 
       const passwordMatched = found.password
         ? await bcrypt.compare(String(password), String(found.password))
         : false;
       if (!passwordMatched) {
         recordAuthFailure(userKey);
+        try {
+          await logAudit({
+            userId: req.user?.id || null,
+            action: 'verify_seller_password',
+            resourceType: 'registered_phone',
+            resourceId: found?.id || null,
+            details: { reason: 'Wrong Password', imei_last_4: String(imei || '').slice(-4) },
+            ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed',
+            errorMessage: 'Wrong Password'
+          });
+        } catch (e) {
+          console.warn('/api/verify-seller-password wrong-password audit failed:', e?.message || e);
+        }
         return res.json({ ok: false });
       }
       clearAuthFailures(userKey);
+
+      try {
+        await logAudit({
+          userId: req.user?.id || null,
+          action: 'verify_seller_password',
+          resourceType: 'registered_phone',
+          resourceId: found?.id || null,
+          oldValues: null,
+          newValues: null,
+          details: { imei_last_4: String(imei || '').slice(-4) },
+          ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+          userAgent: req.headers['user-agent'] || null,
+          status: 'success'
+        });
+      } catch (e) {
+        console.warn('/api/verify-seller-password success audit failed:', e?.message || e);
+      }
 
       return res.json({ ok: true });
     } catch (err) {
@@ -429,7 +557,24 @@ export function registerOwnershipRoutes({
       }
       const userId = req.user?.id;
 
-      if (!userId) return res.status(401).json({ error: 'Unauthorized: No user ID' });
+      if (!userId) {
+        try {
+          await logAudit({
+            userId: req.user?.id || null,
+            action: 'unauthorized_access',
+            resourceType: 'registered_phone',
+            resourceId: null,
+            details: { reason: 'Unauthorized: No user ID' },
+            ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed',
+            errorMessage: 'Unauthorized: No user ID'
+          });
+        } catch (e) {
+          console.warn('/api/transfer-ownership unauthorized audit failed:', e?.message || e);
+        }
+        return res.status(401).json({ error: 'Unauthorized: No user ID' });
+      }
       if (!imei || !sellerPassword || !newOwner) {
         return res.status(400).json({ error: 'imei, sellerPassword and newOwner required' });
       }
@@ -454,6 +599,21 @@ export function registerOwnershipRoutes({
       });
 
       if (registeredPhone.user_id !== userId) {
+        try {
+          await logAudit({
+            userId: req.user?.id || null,
+            action: 'forbidden_access',
+            resourceType: 'registered_phone',
+            resourceId: registeredPhone?.id || null,
+            details: { reason: 'Forbidden: only current owner can transfer' },
+            ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed',
+            errorMessage: 'Forbidden: only current owner can transfer'
+          });
+        } catch (e) {
+          console.warn('/api/transfer-ownership forbidden audit failed:', e?.message || e);
+        }
         return res.status(403).json({ error: 'Forbidden: only current owner can transfer' });
       }
 
@@ -461,6 +621,21 @@ export function registerOwnershipRoutes({
       const blocked = checkAuthBlocked(userKey);
       if (blocked.blocked) {
         const retryAfter = Math.ceil((blocked.retryAfterMs || 0) / 1000);
+        try {
+          await logAudit({
+            userId: req.user?.id || null,
+            action: 'rate_limit_exceeded',
+            resourceType: 'registered_phone',
+            resourceId: registeredPhone?.id || null,
+            details: { reason: 'Rate limit exceeded', retryAfter },
+            ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed',
+            errorMessage: 'Rate limit exceeded'
+          });
+        } catch (e) {
+          console.warn('/api/transfer-ownership rate-limit audit failed:', e?.message || e);
+        }
         return res.status(429).json({ error: 'Rate limit exceeded', retryAfter });
       }
 
@@ -469,6 +644,21 @@ export function registerOwnershipRoutes({
         : false;
       if (!sellerPasswordMatched) {
         recordAuthFailure(userKey);
+        try {
+          await logAudit({
+            userId: req.user?.id || null,
+            action: 'verify_seller_password',
+            resourceType: 'registered_phone',
+            resourceId: registeredPhone?.id || null,
+            details: { reason: 'Wrong Password', imei_last_4: String(imei || '').slice(-4) },
+            ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed',
+            errorMessage: 'Wrong Password'
+          });
+        } catch (e) {
+          console.warn('/api/transfer-ownership wrong-password audit failed:', e?.message || e);
+        }
         return res.status(401).json({ error: 'Incorrect seller password' });
       }
       clearAuthFailures(userKey);
@@ -772,8 +962,9 @@ export function registerOwnershipRoutes({
         oldValues: { owner: previousOwnerName || 'Unknown', user_id: userId },
         newValues: { owner: newOwner.owner_name || 'Unknown', user_id: newOwner.email },
         details: { imei_last_4: imei.slice(-4), transferId: transferInserted?.[0]?.id },
-        ip: req.ip,
-        userAgent: req.headers['user-agent']
+        ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+        userAgent: req.headers['user-agent'] || null,
+        status: 'success'
       });
 
       return res.json({
@@ -1162,6 +1353,21 @@ export function registerOwnershipRoutes({
       const blocked = checkAuthBlocked(userKey);
       if (blocked.blocked) {
         const retryAfter = Math.ceil((blocked.retryAfterMs || 0) / 1000);
+        try {
+          await logAudit({
+            userId: req.user?.id || null,
+            action: 'rate_limit_exceeded',
+            resourceType: 'registered_phone',
+            resourceId: found?.id || null,
+            details: { reason: 'Rate limit exceeded', retryAfter },
+            ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed',
+            errorMessage: 'Rate limit exceeded'
+          });
+        } catch (e) {
+          console.warn('/api/reset-registered-phone-password rate-limit audit failed:', e?.message || e);
+        }
         return res.status(429).json({ error: 'Rate limit exceeded', retryAfter });
       }
 
@@ -1169,6 +1375,21 @@ export function registerOwnershipRoutes({
       const storedEmail = (typeof found.email === 'string') ? (decryptField(found.email) || found.email) : (decryptField(found.email) || null);
       if ((storedEmail && storedEmail !== req.user.email) && found.user_id !== req.user.id) {
         recordAuthFailure(userKey);
+        try {
+          await logAudit({
+            userId: req.user?.id || null,
+            action: 'forbidden_access',
+            resourceType: 'registered_phone',
+            resourceId: found?.id || null,
+            details: { reason: 'Not authorized to reset password for this phone' },
+            ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed',
+            errorMessage: 'Not authorized to reset password for this phone'
+          });
+        } catch (e) {
+          console.warn('/api/reset-registered-phone-password forbidden audit failed:', e?.message || e);
+        }
         return res.status(403).json({ error: 'Not authorized to reset password for this phone' });
       }
 
@@ -1187,9 +1408,12 @@ export function registerOwnershipRoutes({
         action: 'reset_registered_phone_password',
         resourceType: 'registered_phone',
         resourceId: found.id,
+        oldValues: null,
+        newValues: null,
         details: { imei_last_4: decryptField(found.imei).slice(-4) },
-        ip: req.ip,
-        userAgent: req.headers['user-agent']
+        ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+        userAgent: req.headers['user-agent'] || null,
+        status: 'success'
       });
 
       return res.json({ success: true, data: updated });
