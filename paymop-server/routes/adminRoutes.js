@@ -1,5 +1,5 @@
 import { sendFCMNotificationV1 } from '../server.js';
-import admin from '../firebaseAdmin.js';
+import { getMessaging } from '../firebaseAdmin.js';
 import fs from 'fs';
 import path from 'path';
 import vm from 'vm';
@@ -794,7 +794,8 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
 
           if (!tokens.length) continue;
 
-          const response = await admin.messaging().sendEachForMulticast({
+          const messaging = getMessaging();
+          const response = await messaging.sendEachForMulticast({
             tokens,
             notification: {
               title: campaign.title,
