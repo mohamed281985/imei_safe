@@ -1,4 +1,5 @@
 import { sendFCMNotificationV1 } from '../server.js';
+import admin from '../firebaseAdmin.js';
 import fs from 'fs';
 import path from 'path';
 import vm from 'vm';
@@ -760,25 +761,93 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
         return res.status(400).json({ success: false, error: 'Campaign status changed or not found. Cannot send.' });
       }
 
-      // TODO: Integrate Firebase Admin SDK when FCM is enabled
-      // For now, if FCM is not enabled, mark as completed immediately
-      const fcmEnabled = process.env.FIREBASE_ADMIN_SDK_ENABLED === 'true';
+      // Fetch users with non-null FCM tokens
+      const { data: users, error: usersErr } = await supabase
+        .from('users')
+        .select('id, fcm_token')
+        .not('fcm_token', 'is', null);
 
-      if (!fcmEnabled) {
+      if (usersErr) {
+        console.error('/admin/notification-campaigns/:id/send users fetch error', usersErr);
+        await supabase
+          .from('notification_campaigns')
+          .update({ status: 'failed', updated_at: new Date().toISOString() })
+          .eq('id', id);
+        return res.status(500).json({ success: false, error: 'Failed to fetch FCM tokens' });
+      }
+
+      const tokenRows = (Array.isArray(users) ? users : [])
+        .map((u) => ({ userId: u.id, token: typeof u.fcm_token === 'string' ? u.fcm_token.trim() : '' }))
+        .filter((row) => row.token.length > 0);
+
+      const completedAt = new Date().toISOString();
+
+      try {
+        let successCount = 0;
+        let failureCount = 0;
+        const invalidTokenUserIds = [];
+
+        // Firebase multicast supports up to 500 tokens per request
+        for (let i = 0; i < tokenRows.length; i += 500) {
+          const chunk = tokenRows.slice(i, i + 500);
+          const tokens = chunk.map((r) => r.token);
+
+          if (!tokens.length) continue;
+
+          const response = await admin.messaging().sendEachForMulticast({
+            tokens,
+            notification: {
+              title: campaign.title,
+              body: campaign.message
+            },
+            data: {
+              campaign_id: String(campaign.id),
+              type: 'admin_campaign'
+            }
+          });
+
+          successCount += Number(response.successCount || 0);
+          failureCount += Number(response.failureCount || 0);
+
+          response.responses.forEach((result, index) => {
+            if (!result.success && result.error?.code === 'messaging/registration-token-not-registered') {
+              const hit = chunk[index];
+              if (hit?.userId) invalidTokenUserIds.push(hit.userId);
+            }
+          });
+        }
+
+        if (invalidTokenUserIds.length > 0) {
+          const uniqueUserIds = [...new Set(invalidTokenUserIds)];
+          const { error: clearTokenErr } = await supabase
+            .from('users')
+            .update({ fcm_token: null })
+            .in('id', uniqueUserIds);
+          if (clearTokenErr) {
+            console.error('/admin/notification-campaigns/:id/send invalid token cleanup error', clearTokenErr);
+          }
+        }
+
         const { data: completed, error: completeErr } = await supabase
           .from('notification_campaigns')
           .update({
             status: 'completed',
-            completed_at: now,
-            updated_at: now
+            completed_at: completedAt,
+            sent_count: successCount,
+            failed_count: failureCount,
+            updated_at: completedAt
           })
           .eq('id', id)
           .select('*')
           .maybeSingle();
 
         if (completeErr) {
-          console.error('/admin/notification-campaigns/:id/send completion error', completeErr);
-          return res.status(500).json({ success: false, error: 'Failed to complete campaign' });
+          console.error('/admin/notification-campaigns/:id/send completion update error', completeErr);
+          await supabase
+            .from('notification_campaigns')
+            .update({ status: 'failed', updated_at: new Date().toISOString() })
+            .eq('id', id);
+          return res.status(500).json({ success: false, error: 'Failed to complete campaign after send' });
         }
 
         try {
@@ -788,8 +857,13 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
             resourceType: 'notification_campaign',
             resourceId: id,
             oldValues: { status: campaign.status },
-            newValues: { status: 'completed', note: 'Firebase disabled' },
-            details: { sent_by: acting.id, fcm_enabled: false },
+            newValues: {
+              status: 'completed',
+              sent_count: successCount,
+              failed_count: failureCount,
+              completed_at: completedAt
+            },
+            details: { sent_by: acting.id, invalid_tokens_cleared: invalidTokenUserIds.length },
             ip: getAuditIp(req),
             userAgent: req.headers['user-agent'] || null,
             status: 'success'
@@ -798,28 +872,29 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
           console.warn('/admin/notification-campaigns/:id/send audit failed', e);
         }
 
-        return res.json({ success: true, data: completed, note: 'Campaign marked as completed (Firebase Admin SDK not enabled)' });
-      }
-
-      // Firebase sending would happen here (not implemented yet)
-      try {
-        await logAudit({
-          userId: acting.id,
-          action: 'send_notification_campaign',
-          resourceType: 'notification_campaign',
-          resourceId: id,
-          oldValues: { status: campaign.status },
-          newValues: { status: 'sending', started_at: now },
-          details: { sent_by: acting.id, fcm_enabled: true },
-          ip: getAuditIp(req),
-          userAgent: req.headers['user-agent'] || null,
-          status: 'success'
+        return res.json({
+          success: true,
+          data: completed,
+          summary: {
+            totalTokens: tokenRows.length,
+            sent_count: successCount,
+            failed_count: failureCount,
+            invalid_tokens_cleared: invalidTokenUserIds.length
+          }
         });
-      } catch (e) {
-        console.warn('/admin/notification-campaigns/:id/send audit failed', e);
-      }
+      } catch (sendErr) {
+        console.error('/admin/notification-campaigns/:id/send firebase send error', sendErr);
 
-      return res.json({ success: true, data: updated, note: 'Campaign marked as sending. Firebase integration pending.' });
+        await supabase
+          .from('notification_campaigns')
+          .update({
+            status: 'failed',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', id);
+
+        return res.status(500).json({ success: false, error: 'Campaign send failed' });
+      }
     } catch (err) {
       console.error('/admin/notification-campaigns/:id/send unexpected error', err);
       return res.status(500).json({ success: false, error: 'Server error' });
