@@ -6666,6 +6666,68 @@ if (ENABLE_POLLING) {
   console.log('[poller] ENABLE_POLLING not enabled. To enable set ENABLE_POLLING=true in .env');
 }
 
+const EXPIRE_TRIAL_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+async function expireTrialPlans() {
+  if (!SUPABASE_URL || !SUPABASE_KEY) {
+    console.warn('[expireTrialPlans] SUPABASE_URL or SUPABASE_SERVICE_KEY missing, skipping trial expiry check');
+    return;
+  }
+
+  try {
+    const nowIso = new Date().toISOString();
+    const { data: expiredUsers, error: selectErr } = await supabase
+      .from('users')
+      .select('id, role, expires_at')
+      .in('role', ['gold_user', 'gold_business'])
+      .eq('trial_used', true)
+      .lt('expires_at', nowIso);
+
+    if (selectErr) {
+      console.error('[expireTrialPlans] select error:', selectErr);
+      return;
+    }
+
+    if (!expiredUsers || expiredUsers.length === 0) {
+      return;
+    }
+
+    for (const user of expiredUsers) {
+      try {
+        const newRole = user.role === 'gold_business' ? 'free_business' : 'free_user';
+        const { error: updateErr } = await supabase
+          .from('users')
+          .update({ role: newRole, expires_at: null })
+          .eq('id', user.id);
+
+        if (updateErr) {
+          console.error('[expireTrialPlans] update error for user', user.id, updateErr);
+          continue;
+        }
+
+        await logAudit({
+          userId: user.id,
+          action: 'gold_trial_expired',
+          resourceType: 'users',
+          resourceId: user.id,
+          oldValues: { role: user.role, expires_at: user.expires_at || null },
+          newValues: { role: newRole, expires_at: null },
+          details: { reason: 'trial expired' },
+          ip: null,
+          userAgent: null
+        });
+      } catch (userErr) {
+        console.error('[expireTrialPlans] error processing expired user', user && user.id, userErr);
+      }
+    }
+  } catch (err) {
+    console.error('[expireTrialPlans] unexpected error:', err);
+  }
+}
+
+expireTrialPlans().catch((e) => console.error('[expireTrialPlans] initial run failed', e));
+setInterval(() => expireTrialPlans().catch((e) => console.error('[expireTrialPlans] run failed', e)), EXPIRE_TRIAL_INTERVAL_MS);
+
 const PORT = process.env.PORT || 3000;
 
 // Start server and attach robust error handlers to avoid unhandled 'error' events
