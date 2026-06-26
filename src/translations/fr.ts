@@ -670,6 +670,8 @@ export default {
   // Welcome Page
   "welcome_title": "IMEI – La sécurité commence ici",
   "welcome_description": "L'application IMEI est une plateforme intelligente complète conçue pour protéger les utilisateurs de téléphones contre le vol et la fraude, offrant des outils simples et avancés pour vérifier, enregistrer ou signaler des téléphones.",
+  "welcome_trial_notification_title": "🎉 Bienvenue sur IMEI Safe",
+  "welcome_trial_notification_body": "Vous avez reçu un forfait Gold gratuit pendant 30 jours. Profitez de toutes les fonctionnalités dès maintenant.",
   "welcome_what_is_imei": "Que vous offre IMEI ?",
   "welcome_feature_1": "Vérification instantanée de tout téléphone via le numéro IMEI pour vérifier son statut (perdu – volé – sécurisé)",
   "welcome_feature_2": "Soumettre un rapport pour un téléphone perdu ou volé avec téléchargement de l'image du rapport",

@@ -679,6 +679,8 @@ export default {
   // Welcome Page
   "welcome_title": "IMEI – الأمان يبدأ من هنا",
   "welcome_description": "تطبيق IMEI هو منصة ذكية شاملة تم تصميمها لحماية مستخدمي الهواتف من السرقة والاحتيال، مع تقديم أدوات سهلة ومتطورة لفحص، تسجيل، أو الإبلاغ عن الهواتف.",
+  "welcome_trial_notification_title": "🎉 مرحباً بك في IMEI Safe",
+  "welcome_trial_notification_body": "لقد حصلت على باقة Gold مجاناً لمدة 30 يوماً. استمتع بجميع المميزات الآن.",
   "welcome_what_is_imei": "ماذا يقدم لك IMEI؟",
   "welcome_feature_1": "فحص فوري لأي هاتف عبر رقم IMEI للتأكد من حالته (مفقود – مسروق – آمن)",
   "welcome_feature_2": "تقديم بلاغ عن هاتف مفقود أو مسروق مع رفع صورة للمحضر",

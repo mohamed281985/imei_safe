@@ -19,6 +19,7 @@ import cookieParser from 'cookie-parser';
 import session from 'express-session';
 import { csrfProtection, csrfErrorHandler, getCsrfToken } from './middleware/csrf.js';
 import { logAudit as rawLogAudit } from './utils/auditLogger.js';
+import { getMessaging } from './firebaseAdmin.js';
 import { SECURITY_CONFIG } from './config/security.js';
 import { registerAdRoutes } from './routes/adRoutes.js';
 import { registerNotificationRoutes } from './routes/notificationRoutes.js';
@@ -1148,9 +1149,11 @@ app.post('/api/register', async (req, res) => {
     };
 
     // إدراج البيانات في جدول users
-    const { error: userError } = await supabase
+    const { data: insertedUser, error: userError } = await supabase
       .from('users')
-      .insert(userPayload);
+      .insert(userPayload)
+      .select('fcm_token')
+      .single();
 
     if (userError) {
       console.error('USER ERROR:', userError);
@@ -1179,6 +1182,38 @@ app.post('/api/register', async (req, res) => {
         console.error('BUSINESS ERROR:', businessError);
         // ملاحظة: قد ترغب في حذف سجل المستخدم هنا إذا فشل إنشاء سجل الأعمال للحفاظ على الاتساق
         return res.status(400).json(businessError);
+      }
+    }
+
+    if (insertedUser && insertedUser.fcm_token) {
+      try {
+        const messaging = getMessaging();
+        await messaging.send({
+          token: insertedUser.fcm_token,
+          notification: {
+            title: '🎉 مرحباً بك في IMEI Safe',
+            body: 'لقد حصلت على باقة Gold مجاناً لمدة 30 يوماً. استمتع بجميع المميزات الآن.',
+          },
+          data: {
+            type: 'welcome_trial',
+            plan: 'gold',
+          },
+        });
+
+        await logAudit({
+          userId: id,
+          action: 'welcome_gold_notification_sent',
+          resourceType: 'users',
+          resourceId: id,
+          details: {
+            type: 'welcome_trial',
+            plan: 'gold'
+          },
+          ip: req.ip,
+          userAgent: req.headers['user-agent'] || null
+        });
+      } catch (notificationError) {
+        console.warn('welcome_gold_notification_failed:', notificationError);
       }
     }
 
@@ -6552,7 +6587,10 @@ async function pollConfirmedUsersOnce() {
           trial_used: true
         };
 
-        const { error: userInsertError } = await supabase.from('users').insert(userRow);
+        const { data: insertedUser, error: userInsertError } = await supabase.from('users')
+          .insert(userRow)
+          .select('fcm_token')
+          .single();
         if (userInsertError) {
           console.error('[poller] users insert error:', userInsertError);
           continue;
@@ -6574,6 +6612,37 @@ async function pollConfirmedUsersOnce() {
           console.error('[poller] businesses insert error:', businessInsertError);
           // don't rollback user insert; log and continue
         } else {
+          if (insertedUser && insertedUser.fcm_token) {
+            try {
+              const messaging = getMessaging();
+              await messaging.send({
+                token: insertedUser.fcm_token,
+                notification: {
+                  title: '🎉 مرحباً بك في IMEI Safe',
+                  body: 'لقد حصلت على باقة Gold مجاناً لمدة 30 يوماً. استمتع بجميع المميزات الآن.',
+                },
+                data: {
+                  type: 'welcome_trial',
+                  plan: 'gold',
+                },
+              });
+
+              await logAudit({
+                userId: user.id,
+                action: 'welcome_gold_notification_sent',
+                resourceType: 'users',
+                resourceId: user.id,
+                details: {
+                  type: 'welcome_trial',
+                  plan: 'gold'
+                },
+                ip: null,
+                userAgent: null
+              });
+            } catch (notificationError) {
+              console.error('[poller] welcome_gold_notification_failed:', notificationError);
+            }
+          }
           console.log('[poller] processed confirmed user', user.id, email);
         }
 
