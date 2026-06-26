@@ -668,6 +668,8 @@ export default {
   // Welcome Page
   "welcome_title": "IMEI – Security Starts Here",
   "welcome_description": "IMEI is a comprehensive smart platform designed to protect phone users from theft and fraud, providing easy and advanced tools to check, register, or report phones.",
+  "welcome_trial_notification_title": "🎉 Welcome to IMEI Safe",
+  "welcome_trial_notification_body": "You've received a free Gold package for 30 days. Enjoy all features now.",
   "welcome_what_is_imei": "What does IMEI offer you?",
   "welcome_feature_1": "Instant check of any phone via IMEI number to verify its status (lost - stolen - safe)",
   "welcome_feature_2": "File a report for a lost or stolen phone with an image of the police report",
