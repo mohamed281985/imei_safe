@@ -1131,6 +1131,9 @@ app.post('/api/register', async (req, res) => {
     const trialExpiresAt = new Date();
     trialExpiresAt.setDate(trialExpiresAt.getDate() + 30);
 
+    const normalizedRole = String(role || '').toLowerCase();
+    const initialRole = normalizedRole === 'free_business' || normalizedRole === 'business' ? 'gold_business' : 'gold_user';
+
     // إعداد البيانات لإدراجها في جدول users
     const userPayload = {
       id,
@@ -1139,7 +1142,7 @@ app.post('/api/register', async (req, res) => {
       phone: encPhone ? JSON.stringify(encPhone) : null, // حفظ الرقم المشفر
       country_code: country_code, // حفظ رمز الدولة كنص عادي (غير مشفر عادة)
       id_last6: encIdLast6 ? JSON.stringify(encIdLast6) : null,
-      role: role || null,
+      role: initialRole,
       expires_at: trialExpiresAt.toISOString(),
       trial_used: true
     };
@@ -6536,13 +6539,15 @@ async function pollConfirmedUsersOnce() {
         const trialExpiresAt = new Date();
         trialExpiresAt.setDate(trialExpiresAt.getDate() + 30);
 
+        const initialRole = (store_name || business_type) ? 'gold_business' : 'gold_user';
+
         const userRow = {
           id: user.id,
           email,
           full_name: encFullName,
           phone: encPhone,
           id_last6: encIdLast6,
-          role: 'free_business',
+          role: initialRole,
           expires_at: trialExpiresAt.toISOString(),
           trial_used: true
         };
