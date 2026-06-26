@@ -1140,7 +1140,6 @@ app.post('/api/register', async (req, res) => {
       country_code: country_code, // حفظ رمز الدولة كنص عادي (غير مشفر عادة)
       id_last6: encIdLast6 ? JSON.stringify(encIdLast6) : null,
       role: role || null,
-      plan: 'gold',
       expires_at: trialExpiresAt.toISOString(),
       trial_used: true
     };
@@ -6544,7 +6543,6 @@ async function pollConfirmedUsersOnce() {
           phone: encPhone,
           id_last6: encIdLast6,
           role: 'free_business',
-          plan: 'gold',
           expires_at: trialExpiresAt.toISOString(),
           trial_used: true
         };
