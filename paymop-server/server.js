@@ -1128,6 +1128,9 @@ app.post('/api/register', async (req, res) => {
     const encIdLast6 = encryptObject(id_last6);
     const encAddress = encryptObject(address);
 
+    const trialExpiresAt = new Date();
+    trialExpiresAt.setDate(trialExpiresAt.getDate() + 30);
+
     // إعداد البيانات لإدراجها في جدول users
     const userPayload = {
       id,
@@ -1136,7 +1139,10 @@ app.post('/api/register', async (req, res) => {
       phone: encPhone ? JSON.stringify(encPhone) : null, // حفظ الرقم المشفر
       country_code: country_code, // حفظ رمز الدولة كنص عادي (غير مشفر عادة)
       id_last6: encIdLast6 ? JSON.stringify(encIdLast6) : null,
-      role: role || null
+      role: role || null,
+      plan: 'gold',
+      expires_at: trialExpiresAt.toISOString(),
+      trial_used: true
     };
 
     // إدراج البيانات في جدول users
@@ -6528,13 +6534,19 @@ async function pollConfirmedUsersOnce() {
         const encOwnerName = encryptObject(owner_name);
         const encAddress = encryptObject(address);
 
+        const trialExpiresAt = new Date();
+        trialExpiresAt.setDate(trialExpiresAt.getDate() + 30);
+
         const userRow = {
           id: user.id,
           email,
           full_name: encFullName,
           phone: encPhone,
           id_last6: encIdLast6,
-          role: 'free_business'
+          role: 'free_business',
+          plan: 'gold',
+          expires_at: trialExpiresAt.toISOString(),
+          trial_used: true
         };
 
         const { error: userInsertError } = await supabase.from('users').insert(userRow);
