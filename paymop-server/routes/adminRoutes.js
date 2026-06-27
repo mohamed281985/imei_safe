@@ -239,18 +239,18 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
   app.post('/admin/create-special-ad', async (req, res) => {
     try {
       const providedSecret = req.header('X-Admin-Secret');
-      const adminSecret = process.env.ADMIN_SECRET;
+      const configuredSecret = process.env.ADMIN_SECRET || process.env.ADMIN_API_SECRET || process.env.ADMIN_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-      if (!adminSecret) {
-        console.error('/admin/create-special-ad missing ADMIN_SECRET env var');
-        return res.status(500).json({ success: false, error: 'Server misconfiguration' });
+      if (!configuredSecret) {
+        console.error('/admin/create-special-ad: no admin secret configured');
+        return res.status(500).json({ success: false, error: 'Admin secret not configured' });
       }
 
       if (!providedSecret) {
         return res.status(401).json({ success: false, error: 'Missing X-Admin-Secret header' });
       }
 
-      if (providedSecret !== adminSecret) {
+      if (providedSecret !== configuredSecret) {
         try {
           await logAudit({
             userId: null,
