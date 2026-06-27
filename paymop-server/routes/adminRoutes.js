@@ -235,6 +235,86 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
     }
   });
 
+  // POST /admin/create-special-ad - create special ad via admin secret and service role
+  app.post('/admin/create-special-ad', async (req, res) => {
+    try {
+      const providedSecret = req.header('X-Admin-Secret');
+      const adminSecret = process.env.ADMIN_SECRET;
+
+      if (!adminSecret) {
+        console.error('/admin/create-special-ad missing ADMIN_SECRET env var');
+        return res.status(500).json({ success: false, error: 'Server misconfiguration' });
+      }
+
+      if (!providedSecret) {
+        return res.status(401).json({ success: false, error: 'Missing X-Admin-Secret header' });
+      }
+
+      if (providedSecret !== adminSecret) {
+        try {
+          await logAudit({
+            userId: null,
+            action: 'admin_create_special_ad_forbidden',
+            resourceType: 'ads_payment',
+            resourceId: null,
+            details: { reason: 'Invalid admin secret', route: '/admin/create-special-ad' },
+            ip: getAuditIp(req),
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed'
+          });
+        } catch (e) {
+          console.warn('/admin/create-special-ad forbidden audit failed', e);
+        }
+        return res.status(401).json({ success: false, error: 'Invalid admin secret' });
+      }
+
+      const body = req.body;
+      if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        return res.status(400).json({ success: false, error: 'Request body must be an object' });
+      }
+
+      const insertPayload = {
+        ...body,
+        transaction: 'admin_special',
+        payment_status: 'paid',
+        is_active: true,
+        type: 'special'
+      };
+
+      const { data, error } = await supabase
+        .from('ads_payment')
+        .insert(insertPayload)
+        .select('id')
+        .maybeSingle();
+
+      if (error) {
+        console.error('/admin/create-special-ad insert error', error);
+        return res.status(500).json({ success: false, error: error.message || 'Failed to create special ad' });
+      }
+
+      try {
+        await logAudit({
+          userId: null,
+          action: 'admin_create_special_ad',
+          resourceType: 'ads_payment',
+          resourceId: data?.id || null,
+          newValues: insertPayload,
+          details: { route: '/admin/create-special-ad' },
+          ip: getAuditIp(req),
+          userAgent: req.headers['user-agent'] || null,
+          status: 'success'
+        });
+      } catch (e) {
+        console.warn('/admin/create-special-ad audit failed', e);
+      }
+
+      return res.status(201).json({ success: true, id: data?.id || null });
+    } catch (err) {
+      console.error('/admin/create-special-ad unexpected error', err);
+      return res.status(500).json({ success: false, error: 'Server error' });
+    }
+  });
+
   // GET /admin/notification-campaigns - list notification campaigns
   app.get('/admin/notification-campaigns', verifyJwtToken, async (req, res) => {
     try {
