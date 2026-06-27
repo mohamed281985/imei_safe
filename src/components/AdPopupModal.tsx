@@ -1,10 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import Modal from 'react-modal';
-import { Swiper, SwiperSlide } from 'swiper/react';
-import 'swiper/css';
 import { MapPin, MessageCircle } from 'lucide-react';
 import './AdPopupModal.css';
-import { supabase } from '../lib/supabase';
 
 interface AdPopupModalProps {
   isOpen: boolean;
@@ -16,25 +13,30 @@ interface AdPopupModalProps {
 Modal.setAppElement('#root');
 
 export default function AdPopupModal({ isOpen, onClose, userLocation, ads }: AdPopupModalProps) {
-  const swiperRef = useRef<any>(null);
-  // تشغيل تلقائي مخصص: استخدام مؤقت بدلاً من وحدة Autoplay لتجنب مشاكل الاستيراد
-  useEffect(() => {
-    if (!isOpen || !ads || ads.length <= 1) return;
-
-    const interval = setInterval(() => {
-      try {
-        if (swiperRef.current && typeof swiperRef.current.slideNext === 'function') {
-          swiperRef.current.slideNext();
-        }
-      } catch (err) {
-        // تجاهل الأخطاء البسيطة أثناء التنقل
-        console.warn('autoplay slideNext error', err);
-      }
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, [isOpen, ads]);
   const [currentSlide, setCurrentSlide] = useState(0);
+
+  useEffect(() => {
+    if (!isOpen || !ads || ads.length <= 1) {
+      console.log('❌ AdPopupModal: لا يمكن بدء التبديل التلقائي - isOpen:', isOpen, 'ads.length:', ads?.length);
+      setCurrentSlide(0);
+      return;
+    }
+
+    console.log('✅ AdPopupModal: بدء التبديل التلقائي - عدد الإعلانات:', ads.length);
+
+    const interval = window.setInterval(() => {
+      setCurrentSlide((prev) => {
+        const next = (prev + 1) % ads.length;
+        console.log(`🔄 AdPopupModal: تبديل من الإعلان ${prev} إلى ${next}`);
+        return next;
+      });
+    }, 2000);
+
+    return () => {
+      console.log('⏹️ AdPopupModal: إيقاف التبديل التلقائي');
+      window.clearInterval(interval);
+    };
+  }, [isOpen, ads]);
 
   // دالة لتحميل الصور مسبقاً
   const preloadImages = (imageUrls: string[]) => {
@@ -73,16 +75,6 @@ export default function AdPopupModal({ isOpen, onClose, userLocation, ads }: AdP
     }
   };
 
-  const getLastShownAdId = () => {
-    return localStorage.getItem('lastShownAdId');
-  };
-
-  const updateLastShownAd = (adId) => {
-    localStorage.setItem('lastShownAdId', adId);
-  };
-
-  // نستخدم Swiper بدلاً من react-slick، لذلك لم يعد هناك حاجة لإعدادات القديمة
-
   const openLocation = (latitude, longitude, adId) => {
     console.log(`Attempting to open location for ad ${adId}:`, latitude, longitude);
     if (latitude && longitude) {
@@ -117,13 +109,11 @@ export default function AdPopupModal({ isOpen, onClose, userLocation, ads }: AdP
     }
   };
 
-  // ⭐ تبسيط: إذا لم تكن النافذة مفتوحة أو لا توجد إعلانات، لا تعرض أي شيء.
-  // القرار الآن يعتمد فقط على isOpen ووجود الإعلانات.
   if (!isOpen || !ads || ads.length === 0) {
-    // لا نطبع أي شيء هنا لتجنب الرسائل المربكة في السجل
     return null;
   }
-  console.log(`AdPopupModal: Rendering with ${ads.length} ads because isOpen is true.`);
+
+  const currentAd = ads[currentSlide];
 
   return (
     <Modal
@@ -135,7 +125,7 @@ export default function AdPopupModal({ isOpen, onClose, userLocation, ads }: AdP
           height: '100vh',
           padding: 0,
           borderRadius: 0,
-          background: 'rgba(80,80,80,0.32)', // <-- رمادي أغمق وشفاف
+          background: 'rgba(80,80,80,0.32)',
           overflow: 'hidden',
           position: 'fixed',
           top: 0,
@@ -148,18 +138,17 @@ export default function AdPopupModal({ isOpen, onClose, userLocation, ads }: AdP
           justifyContent: 'center',
         },
         overlay: {
-          backgroundColor: 'rgba(60,60,60,0.70)', // <-- رمادي أغمق وشفاف
+          backgroundColor: 'rgba(60,60,60,0.70)',
           zIndex: 10000,
         }
       }}
     >
-      {/* صورة الإعلان الحالية فقط في نافذة منبثقة خاصة */}
       <div
         style={{
-          width: '95vw',        // العرض: 95% من عرض الشاشة (viewport)
-          maxWidth: 400,        // أقصى عرض: 400 بكسل
-          height: '80vh',       // الارتفاع: 80% من ارتفاع الشاشة (viewport)
-          maxHeight: 650,       // أقصى ارتفاع: 650 بكسل
+          width: '95vw',
+          maxWidth: 400,
+          height: '80vh',
+          maxHeight: 650,
           background: '#fff',
           borderRadius: 28,
           boxShadow: '0 8px 32px rgba(0,0,0,0.25)',
@@ -170,31 +159,16 @@ export default function AdPopupModal({ isOpen, onClose, userLocation, ads }: AdP
           overflow: 'hidden',
         }}
       >
-        <Swiper
-          onSwiper={(swiper) => { swiperRef.current = swiper; }}
-          onSlideChange={(swiper) => {
-            const idx = swiper.realIndex ?? swiper.activeIndex ?? 0;
-            setCurrentSlide(idx);
-            if (idx === ads.length - 1 && ads[idx]) updateLastShownAd(ads[idx].id);
-          }}
-          slidesPerView={1}
-          loop={ads.length > 1}
-          
-          style={{ width: '100%', height: '100%', borderRadius: 28 }}
-        >
-          {ads.map((ad, index) => (
-            <SwiperSlide key={ad.id || index}>
-              <img
-                src={ad.image_url}
-                alt={`إعلان ${index + 1}`}
-                style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 28, background: '#fff', display: 'block' }}
-              />
-            </SwiperSlide>
-          ))}
-        </Swiper>
-        {/* حاوية للجزء العلوي الأيسر (زر الإغلاق وشارة المسافة) */}
+        {currentAd && (
+          <img
+            key={`${currentAd.id || 'ad'}-${currentSlide}`}
+            src={currentAd.image_url}
+            alt={`إعلان ${currentSlide + 1}`}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 28, background: '#fff', display: 'block' }}
+          />
+        )}
+
         <div style={{ position: 'absolute', top: 18, left: 18, zIndex: 1003, display: 'flex', alignItems: 'center', gap: '150px', width: 'calc(100% - 50px)' }}>
-          {/* زر الإغلاق إلى أقصى اليسار - مخفي على الشريحة الأولى */}
           {currentSlide !== 0 && (
             <button
               onClick={onClose}
@@ -218,8 +192,7 @@ export default function AdPopupModal({ isOpen, onClose, userLocation, ads }: AdP
             >×</button>
           )}
 
-          {/* شارة المسافة */}
-          {typeof ads[currentSlide]?.distance === 'number' && !isNaN(ads[currentSlide]?.distance) && (
+          {typeof currentAd?.distance === 'number' && !isNaN(currentAd?.distance) && (
             <div style={{
               background: 'rgba(255, 215, 0, 0.93)',
               color: '#000',
@@ -229,15 +202,15 @@ export default function AdPopupModal({ isOpen, onClose, userLocation, ads }: AdP
               fontWeight: 'bold',
               boxShadow: '0 2px 4px rgba(51, 50, 50, 0.2)'
             }}>
-              {`المسافة: ${ads[currentSlide].distance.toFixed(1)} كم`}
+              {`المسافة: ${currentAd.distance.toFixed(1)} كم`}
             </div>
           )}
         </div>
-        {/* أزرار التنقل بين الصور إذا كان هناك أكثر من إعلان */}
+
         {ads.length > 1 && (
           <>
             <button
-              onClick={() => { if (swiperRef.current) swiperRef.current.slidePrev(); }}
+              onClick={() => setCurrentSlide((prev) => (prev === 0 ? ads.length - 1 : prev - 1))}
               style={{
                 position: 'absolute',
                 left: 10,
@@ -259,7 +232,7 @@ export default function AdPopupModal({ isOpen, onClose, userLocation, ads }: AdP
               aria-label="السابق"
             >&#8592;</button>
             <button
-              onClick={() => { if (swiperRef.current) swiperRef.current.slideNext(); }}
+              onClick={() => setCurrentSlide((prev) => (prev + 1) % ads.length)}
               style={{
                 position: 'absolute',
                 right: 10,
@@ -281,6 +254,23 @@ export default function AdPopupModal({ isOpen, onClose, userLocation, ads }: AdP
               aria-label="التالي"
             >&#8594;</button>
           </>
+        )}
+
+        {ads.length > 1 && (
+          <div style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 8, zIndex: 1004 }}>
+            {ads.map((_, index) => (
+              <span
+                key={index}
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  background: index === currentSlide ? '#fff' : 'rgba(255,255,255,0.45)',
+                  boxShadow: '0 0 0 1px rgba(0,0,0,0.18)',
+                }}
+              />
+            ))}
+          </div>
         )}
       </div>
     </Modal>

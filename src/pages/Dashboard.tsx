@@ -167,7 +167,7 @@ const Dashboard: React.FC = () => {
         }
         return prev + 1;
       });
-    }, 3000); // كل 3 ثواني
+    }, 2000); // كل 3 ثواني
     return () => clearInterval(interval);
   }, [loadingPhones, displayedPhones.length]);
   const [popupAds, setPopupAds] = useState<ads_payment[]>([]);
@@ -699,80 +699,30 @@ const Dashboard: React.FC = () => {
       try {
         console.log('محاولة جلب الإعلانات...');
 
-        // ⭐ تعديل: جلب الإعلانات المميزة فقط من جدول ads_payment
-        const { data: specialAds, error: specialError } = await supabase
-          .from('ads_payment') // الإعلانات المميزة
-          .select('id, image_url, latitude, longitude, is_paid, expires_at, phone, type')
+        // ⭐ جلب الإعلانات المميزة من Special_Ad فقط
+        const { data: specialRows, error: specialError } = await supabase
+          .from('Special_Ad')
+          .select('id, image_url, is_active, upload_date, duration_days, expires_at, type')
           .eq('is_active', true)
-          .eq('is_paid', true)
-          .eq('type', 'special') // التأكد من أن النوع هو special
           .gt('expires_at', new Date().toISOString());
 
-        if (specialError || !specialAds || specialAds.length === 0) {
-          console.log('لا توجد إعلانات مميزة متاحة');
+        const allAds = specialRows?.filter((ad: any) => ad?.image_url) || [];
+
+        console.log('🔍 عدد الإعلانات المجلوبة من Special_Ad:', allAds.length);
+        console.log('📋 الإعلانات المجلوبة:', allAds);
+
+        if (specialError || allAds.length === 0) {
+          console.log('❌ لا توجد إعلانات مميزة متاحة');
           return;
         }
 
-        const allAds = specialAds || [];
-        console.log(`تم جلب ${allAds.length} إعلان`);
+        console.log(`تم جلب ${allAds.length} إعلان من مصدر الإعلانات المميزة`);
 
-        // التحقق من وجود إحداثيات للمستخدم
-        if (!coords || !coords.latitude || !coords.longitude) {
-          console.log('لم يتم تحديد موقع المستخدم، سيتم عرض إعلانات عشوائية');
-          const randomAds = [...allAds]
-            .sort(() => Math.random() - 0.5)
-            .slice(0, Math.min(2, allAds.length));
-
-          setPopupAds(randomAds);
-          // ⭐ فتح النافذة فقط إذا كان أول تسجيل دخول
-          if (isFirstLogin && randomAds.length > 0) {
-            setIsAdModalOpen(randomAds.length > 0);
-            clearFirstLogin(); // ⭐ إعادة تعيين الحالة بعد الاستخدام
-          }
-          return;
-        }
-
-        console.log(`إحداثيات المستخدم: ${coords.latitude}, ${coords.longitude}`);
-        console.log('بدء فلترة الإعلانات...');
-        let filteredAds = [];
-
-        // حساب المسافة لكل إعلان وتصفية الإعلانات التي في نطاق 3 كم
-        filteredAds = allAds
-          .map(ad => {
-            if (typeof ad.latitude === 'number' && typeof ad.longitude === 'number') {
-              const dist = getDistanceFromLatLonInKm(coords.latitude, coords.longitude, ad.latitude, ad.longitude);
-              console.log(`إعلان ${ad.id}: المسافة ${dist.toFixed(2)} كم`);
-              return { ...ad, distance: dist };
-            }
-            console.log(`إعلان ${ad.id}: لا يحتوي على إحداثيات`);
-            return null;
-          })
-          .filter(ad => ad !== null && typeof ad.distance === 'number' && ad.distance <= 3);
-
-        console.log(`تم العثور على ${filteredAds.length} إعلان في نطاق 3 كم من موقع المستخدم`);
-
-        // إذا لم يتم العثور على إعلانات قريبة، عرض إعلانات عشوائية من القائمة الكاملة
-        if (filteredAds.length === 0) {
-          console.log('لم يتم العثور على إعلانات في نطاق 3 كم، سيتم عرض إعلانات عشوائية');
-          const randomAds = [...allAds]
-            .sort(() => Math.random() - 0.5)
-            .slice(0, Math.min(2, allAds.length));
-
-          setPopupAds(randomAds);
-          // ⭐ فتح النافذة فقط إذا كان أول تسجيل دخول
-          if (isFirstLogin && randomAds.length > 0) {
-            setIsAdModalOpen(randomAds.length > 0);
-            clearFirstLogin(); // ⭐ إعادة تعيين الحالة بعد الاستخدام
-          }
-          return;
-        }
+        console.log('بدء اختيار الإعلانات من جدول Special_Ad...');
 
         const lastAdIndices = JSON.parse(localStorage.getItem('lastAdIndices') || '[]');
         const lastShownTime = parseInt(localStorage.getItem('lastAdShownTime') || '0');
         const now = new Date().getTime();
-
-        console.log(`آخر عرض لإعلانات: ${lastShownTime}`);
-        console.log(`الوقت الحالي: ${now}`);
 
         // إعادة تعيين قائمة الإعلانات المعروضة إذا مر وقت طويل
         if (!lastShownTime || (now - lastShownTime) > 60 * 60 * 1000) {
@@ -781,7 +731,7 @@ const Dashboard: React.FC = () => {
         }
 
         let adsToShow = [];
-        let availableIndices = filteredAds.map((_, index) => index);
+        let availableIndices = allAds.map((_, index) => index);
 
         console.log(`عدد الإعلانات المتاحة للاختيار: ${availableIndices.length}`);
         console.log(`فهرس الإعلانات المعروضة سابقًا: ${lastAdIndices}`);
@@ -793,22 +743,42 @@ const Dashboard: React.FC = () => {
 
         if (availableIndices.length === 0) {
           console.log('استخدام جميع الإعلانات مرة أخرى بعد استهلاكها كلها');
-          availableIndices = filteredAds.map((_, index) => index);
+          availableIndices = allAds.map((_, index) => index);
         }
 
-        console.log(`اختيار ${Math.min(2, availableIndices.length)} إعلانات عشوائية من ${availableIndices.length} متاحة`);
+        const adsToSelectCount = Math.min(2, availableIndices.length);
+        console.log(`اختيار ${adsToSelectCount} إعلانات عشوائية من ${availableIndices.length} متاحة`);
 
-        for (let i = 0; i < Math.min(2, availableIndices.length); i++) {
+        for (let i = 0; i < adsToSelectCount; i++) {
+          console.log(`🔄 بدء تكرار رقم ${i + 1}/${adsToSelectCount}`);
+          console.log(`📍 availableIndices قبل الاختيار:`, availableIndices);
+          
+          if (availableIndices.length === 0) {
+            console.warn(`⚠️ لا توجد إعلانات متاحة في التكرار ${i + 1}`);
+            break;
+          }
+          
           const randomIndex = Math.floor(Math.random() * availableIndices.length);
+          console.log(`🎲 randomIndex: ${randomIndex}, availableIndices.length: ${availableIndices.length}`);
+          
           const adIndex = availableIndices[randomIndex];
-          adsToShow.push(filteredAds[adIndex]);
-          console.log(`تم اختيار إعلان ID: ${filteredAds[adIndex].id} (المسافة: ${filteredAds[adIndex].distance.toFixed(2)} كم)`);
+          console.log(`📌 adIndex من availableIndices: ${adIndex}, ad.id: ${allAds[adIndex].id}`);
+          
+          adsToShow.push(allAds[adIndex]);
+          console.log(`✅ تم اختيار إعلان ID: ${allAds[adIndex].id}`);
+          console.log(`adsToShow الآن يحتوي على ${adsToShow.length} إعلانات`);
+          
           availableIndices.splice(randomIndex, 1);
+          console.log(`📍 availableIndices بعد الحذف:`, availableIndices);
         }
+        console.log(`✅ انتهى اختيار الإعلانات، مجموع الإعلانات المختارة: ${adsToShow.length}`);
+
+        console.log('📊 عدد الإعلانات المختارة النهائي:', adsToShow.length);
+        console.log('📦 الإعلانات المختارة للعرض:', adsToShow);
 
         const newLastAdIndices = [...lastAdIndices];
         adsToShow.forEach(ad => {
-          const adIndex = filteredAds.findIndex(a => a.id === ad.id);
+          const adIndex = allAds.findIndex(a => a.id === ad.id);
           if (adIndex !== -1) {
             newLastAdIndices.push(adIndex);
           }
@@ -820,17 +790,19 @@ const Dashboard: React.FC = () => {
         localStorage.setItem('lastAdShownTime', String(now));
 
         if (adsToShow.length > 0) {
-          console.log('الإعلانات المرسلة للنافذة المنبثقة:', adsToShow);
-          console.log(`سيتم عرض ${adsToShow.length} إعلان في النافذة المنبثقة`);
+          console.log('✨ الإعلانات المرسلة للنافذة المنبثقة:', adsToShow);
+          console.log(`🎯 سيتم عرض ${adsToShow.length} إعلان في النافذة المنبثقة`);
           setPopupAds(adsToShow);
+          console.log('📲 تم استدعاء setPopupAds مع عدد:', adsToShow.length);
           // ⭐ فتح النافذة فقط إذا كان أول تسجيل دخول
           if (isFirstLogin) {
+            console.log('🔓 فتح نافذة الإعلانات (أول تسجيل دخول)');
             setIsAdModalOpen(true);
             clearFirstLogin(); // ⭐ إعادة تعيين الحالة بعد الاستخدام
           }
-          console.log(`تم تحديث popupAds بـ ${adsToShow.length} إعلان`);
+          console.log(`✔️ تم تحديث popupAds بـ ${adsToShow.length} إعلان`);
         } else {
-          console.log('لا توجد إعلانات لعرضها');
+          console.log('⚠️ لا توجد إعلانات لعرضها');
           setPopupAds([]);
           console.log('تم تعيين popupAds إلى مصفوفة فارغة');
           setIsAdModalOpen(false);
