@@ -111,17 +111,6 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
     return false;
   };
 
-  const getServiceRoleKey = () => {
-    return process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SERVICE_ROLE_KEY || null;
-  };
-
-  const isAuthorizedByServiceRole = (req) => {
-    const serviceRoleKey = getServiceRoleKey();
-    if (!serviceRoleKey) return false;
-    const authHeader = req.header('Authorization') || '';
-    return authHeader.startsWith('Bearer ') && authHeader.replace('Bearer ', '').trim() === serviceRoleKey;
-  };
-
   async function canSendNotifications(userId) {
     try {
       if (!userId) return false;
@@ -323,128 +312,6 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       return res.status(201).json({ success: true, id: data?.id || null });
     } catch (err) {
       console.error('/admin/create-special-ad unexpected error', err);
-      return res.status(500).json({ success: false, error: 'Server error' });
-    }
-  });
-
-  // PATCH /admin/special_ads/:id - update is_active on Special_Ad using service role
-  app.patch('/admin/special_ads/:id', async (req, res) => {
-    try {
-      const serviceRoleKey = getServiceRoleKey();
-      if (!serviceRoleKey) {
-        console.error('/admin/special_ads/:id PATCH: service role key not configured');
-        return res.status(500).json({ success: false, error: 'Service role key not configured' });
-      }
-
-      if (!isAuthorizedByServiceRole(req)) {
-        console.warn('/admin/special_ads/:id PATCH: unauthorized service role request');
-        return res.status(401).json({ success: false, error: 'Unauthorized' });
-      }
-
-      const id = req.params.id;
-      if (!id) {
-        return res.status(400).json({ success: false, error: 'Missing id' });
-      }
-
-      const { is_active } = req.body || {};
-      if (typeof is_active === 'undefined') {
-        return res.status(400).json({ success: false, error: 'Missing is_active field' });
-      }
-
-      const updatedIsActive = toBoolean(is_active);
-
-      const { data: updated, error } = await supabase
-        .from('Special_Ad')
-        .update({ is_active: updatedIsActive })
-        .eq('id', id)
-        .select('*')
-        .maybeSingle();
-
-      if (error) {
-        console.error('/admin/special_ads/:id PATCH error', error);
-        return res.status(500).json({ success: false, error: 'Failed to update special ad' });
-      }
-
-      if (!updated) {
-        return res.status(404).json({ success: false, error: 'Special ad not found' });
-      }
-
-      try {
-        await logAudit({
-          userId: null,
-          action: 'admin_update_special_ad_is_active',
-          resourceType: 'Special_Ad',
-          resourceId: id,
-          newValues: { is_active: updatedIsActive },
-          details: { route: '/admin/special_ads/:id' },
-          ip: getAuditIp(req),
-          userAgent: req.headers['user-agent'] || null,
-          status: 'success'
-        });
-      } catch (e) {
-        console.warn('/admin/special_ads/:id PATCH audit failed', e);
-      }
-
-      return res.json({ success: true });
-    } catch (err) {
-      console.error('/admin/special_ads/:id PATCH unexpected error', err);
-      return res.status(500).json({ success: false, error: 'Server error' });
-    }
-  });
-
-  // DELETE /admin/special_ads/:id - delete special ad using service role
-  app.delete('/admin/special_ads/:id', async (req, res) => {
-    try {
-      const serviceRoleKey = getServiceRoleKey();
-      if (!serviceRoleKey) {
-        console.error('/admin/special_ads/:id DELETE: service role key not configured');
-        return res.status(500).json({ success: false, error: 'Service role key not configured' });
-      }
-
-      if (!isAuthorizedByServiceRole(req)) {
-        console.warn('/admin/special_ads/:id DELETE: unauthorized service role request');
-        return res.status(401).json({ success: false, error: 'Unauthorized' });
-      }
-
-      const id = req.params.id;
-      if (!id) {
-        return res.status(400).json({ success: false, error: 'Missing id' });
-      }
-
-      const { data: deleted, error } = await supabase
-        .from('Special_Ad')
-        .delete()
-        .eq('id', id)
-        .select('*')
-        .maybeSingle();
-
-      if (error) {
-        console.error('/admin/special_ads/:id DELETE error', error);
-        return res.status(500).json({ success: false, error: 'Failed to delete special ad' });
-      }
-
-      if (!deleted) {
-        return res.status(404).json({ success: false, error: 'Special ad not found' });
-      }
-
-      try {
-        await logAudit({
-          userId: null,
-          action: 'admin_delete_special_ad',
-          resourceType: 'Special_Ad',
-          resourceId: id,
-          details: { route: '/admin/special_ads/:id' },
-          ip: getAuditIp(req),
-          userAgent: req.headers['user-agent'] || null,
-          status: 'success'
-        });
-      } catch (e) {
-        console.warn('/admin/special_ads/:id DELETE audit failed', e);
-      }
-
-      return res.json({ success: true });
-    } catch (err) {
-      console.error('/admin/special_ads/:id DELETE unexpected error', err);
       return res.status(500).json({ success: false, error: 'Server error' });
     }
   });
@@ -1975,6 +1842,107 @@ if (notificationError) {
     } catch (err) {
       console.error('/admin/ads_payment error', err);
       return res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // ------------------------------------------------------------------
+  // Admin: Manage Special_Ad table (service-role client expected)
+  // PATCH /admin/special_ads/:id - update is_active
+  app.patch('/admin/special_ads/:id', verifyJwtToken, async (req, res) => {
+    try {
+      const acting = req.user || null;
+      if (!acting?.id) return res.status(401).json({ success: false, error: 'Unauthorized' });
+
+      // ensure admin role
+      const roleCheck = (acting.role || '').toString().toLowerCase();
+      if (!roleCheck.includes('admin')) return res.status(403).json({ success: false, error: 'forbidden: admin only' });
+
+      const id = req.params.id;
+      if (!id) return res.status(400).json({ success: false, error: 'missing id' });
+
+      const { is_active } = req.body || {};
+      if (typeof is_active === 'undefined') return res.status(400).json({ success: false, error: 'is_active is required' });
+
+      const now = new Date().toISOString();
+      const { data, error } = await supabase
+        .from('Special_Ad')
+        .update({ is_active: !!is_active, updated_at: now })
+        .eq('id', id)
+        .select()
+        .maybeSingle();
+
+      if (error) {
+        console.error('/admin/special_ads/:id PATCH error', error);
+        return res.status(500).json({ success: false, error: 'Database error' });
+      }
+
+      try {
+        await logAudit({
+          userId: acting.id,
+          action: 'admin_update_special_ad',
+          resourceType: 'Special_Ad',
+          resourceId: id,
+          oldValues: null,
+          newValues: { is_active: !!is_active },
+          ip: req.ip,
+          userAgent: req.headers['user-agent'] || null,
+          status: 'success'
+        });
+      } catch (e) {
+        console.warn('/admin/special_ads/:id PATCH audit failed', e);
+      }
+
+      return res.json({ success: true });
+    } catch (err) {
+      console.error('/admin/special_ads/:id PATCH unexpected error', err);
+      return res.status(500).json({ success: false, error: 'Server error' });
+    }
+  });
+
+  // DELETE /admin/special_ads/:id - delete special ad (service-role)
+  app.delete('/admin/special_ads/:id', verifyJwtToken, async (req, res) => {
+    try {
+      const acting = req.user || null;
+      if (!acting?.id) return res.status(401).json({ success: false, error: 'Unauthorized' });
+
+      const roleCheck = (acting.role || '').toString().toLowerCase();
+      if (!roleCheck.includes('admin')) return res.status(403).json({ success: false, error: 'forbidden: admin only' });
+
+      const id = req.params.id;
+      if (!id) return res.status(400).json({ success: false, error: 'missing id' });
+
+      // Attempt to delete the row
+      const { data, error } = await supabase
+        .from('Special_Ad')
+        .delete()
+        .eq('id', id)
+        .select()
+        .maybeSingle();
+
+      if (error) {
+        console.error('/admin/special_ads/:id DELETE error', error);
+        return res.status(500).json({ success: false, error: 'Database error' });
+      }
+
+      try {
+        await logAudit({
+          userId: acting.id,
+          action: 'admin_delete_special_ad',
+          resourceType: 'Special_Ad',
+          resourceId: id,
+          details: { deleted: true },
+          ip: req.ip,
+          userAgent: req.headers['user-agent'] || null,
+          status: 'success'
+        });
+      } catch (e) {
+        console.warn('/admin/special_ads/:id DELETE audit failed', e);
+      }
+
+      return res.json({ success: true });
+    } catch (err) {
+      console.error('/admin/special_ads/:id DELETE unexpected error', err);
+      return res.status(500).json({ success: false, error: 'Server error' });
     }
   });
 
