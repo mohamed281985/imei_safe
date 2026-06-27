@@ -1808,7 +1808,7 @@ if (notificationError) {
   });
 
   // Backwards-compatible alias: GET /admin/ads_payment
-  app.get('/admin/ads_payment', async (req, res) => {
+  app.get('/admin/ads_payment',  verifyJwtToken, async (req, res) => {
     try {
       const limit = Math.min(Number(req.query.limit || 200), 1000);
       const filter = (req.query.filter || '').toString();
@@ -1844,7 +1844,27 @@ if (notificationError) {
       return res.status(500).json({ error: 'Server error' });
     }
   });
+app.get('/admin/special_ads',  verifyJwtToken, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('Special_Ad')
+      .select('*')
+      .order('id', { ascending: false });
 
+    if (error) throw error;
+
+    return res.json({
+      ok: true,
+      special_ads: data
+    });
+  } catch (err) {
+    console.error('/admin/special_ads error:', err);
+    return res.status(500).json({
+      ok: false,
+      error: 'Server error'
+    });
+  }
+});
   // ------------------------------------------------------------------
   // Admin: Manage Special_Ad table (service-role client expected)
   // PATCH /admin/special_ads/:id - update is_active
