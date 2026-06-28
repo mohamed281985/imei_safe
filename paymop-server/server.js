@@ -335,8 +335,8 @@ origin: (origin, callback) => {
   } else {
     callback(new Error("CORS not allowed"));
   }
-}
-    }
+
+    
   },
   credentials: true,
   optionsSuccessStatus: 200
