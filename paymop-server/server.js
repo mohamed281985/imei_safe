@@ -1294,6 +1294,7 @@ const allowedOrigins = [
   'http://localhost:8081',       // السماح للمنفذ 8081
   'https://imei-safe.me',
       'https://imei-admin-control.onrender.com',
+      'https://admin.imei-safe.me',
   'capacitor://localhost',       // Default Capacitor origin for iOS/Android
   'https://localhost'            // Capacitor Android origin (as seen in your error log)
 ];
