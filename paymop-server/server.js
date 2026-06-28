@@ -327,11 +327,15 @@ app.use(session(SECURITY_CONFIG.SESSION));
 // ✅ SECURITY: Enable CORS with whitelisted origins
 const CLIENT_ORIGINS = SECURITY_CONFIG.ALLOWED_ORIGINS;
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || CLIENT_ORIGINS.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('CORS not allowed'));
+origin: (origin, callback) => {
+  console.log("Origin =", origin);
+
+  if (!origin || CLIENT_ORIGINS.includes(origin)) {
+    callback(null, true);
+  } else {
+    callback(new Error("CORS not allowed"));
+  }
+}
     }
   },
   credentials: true,
