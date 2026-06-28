@@ -6189,9 +6189,13 @@ app.post('/api/check-limit', verifyJwtToken, async (req, res) => {
       // No payment found -> infer from users.role: consider business if role contains 'business', otherwise user is free_user
       try {
         const { data: userRec, error: userErr } = await supabase.from('users').select('role').eq('id', userId).maybeSingle();
-        if (!userErr && userRec && typeof userRec.role === 'string' && userRec.role.toLowerCase().includes('business')) {
-          userType = 'free_business';
-        }
+       if (
+  !userErr &&
+  userRec &&
+  typeof userRec.role === 'string'
+) {
+  userType = userRec.role;
+}
       } catch (e) {
         console.warn('check-limit: failed to read user role, defaulting to free_user', e);
       }
