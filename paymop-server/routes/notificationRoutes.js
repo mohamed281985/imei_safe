@@ -1,3 +1,5 @@
+import crypto from 'crypto';
+
 export function registerNotificationRoutes({
   app,
   supabase,
@@ -8,9 +10,22 @@ export function registerNotificationRoutes({
   searchImeiLimiter,
   decryptField,
   normalizeDigitsOnly,
-  logAudit: rawLogAudit
+  logAudit: rawLogAudit,
+  checkUserLimit
 }) {
 const logAudit = (config) => rawLogAudit({ supabase, ...config });
+
+const getImeiHash = (imei) => {
+  try {
+    const normalized = normalizeDigitsOnly(imei);
+    if (!normalized) return null;
+    return crypto.createHash('sha256').update(String(normalized)).digest('hex');
+  } catch (e) {
+    console.error('notificationRoutes.getImeiHash error:', e);
+    return null;
+  }
+};
+
 app.post('/api/send-fcm-v1', verifyJwtToken, async (req, res) => {
   try {
     if (!req.user?.id) {
@@ -215,7 +230,16 @@ app.post('/api/search-imei', searchImeiLimiter, async (req, res) => {
 
     // استخدام userId من التوكن بدلاً من الطلب
     const authenticatedUserId = user.id;
+// التحقق من حد البحث من داخل السيرفر نفسه
+const limitResult = await checkUserLimit(
+  authenticatedUserId,
+  user.email,
+  'search_imei'
+);
 
+if (!limitResult.allowed) {
+  return res.status(403).json(limitResult);
+}
     // 1. البحث في الهواتف المسجلة
     // ملاحظة: لا يمكن البحث المباشر بالقيمة المشفرة لأن التشفير يستخدم IV عشوائي (قيم مختلفة لنفس الـ IMEI)
     // لذلك نجلب البيانات ونفك تشفيرها للمقارنة
@@ -233,19 +257,33 @@ app.post('/api/search-imei', searchImeiLimiter, async (req, res) => {
     const regPhone = allPhones ? allPhones.find(p => normalizeDigitsOnly(decryptField(p.imei)) === normalizedIncoming) : null;
 
     // 2. البحث في البلاغات
-    const { data: allReports, error: reportError } = await supabase
-      .from('phone_reports')
-      .select('imei, status, report_date, updated_at, loss_location, loss_time, user_id')
-      .in('status', ['active', 'resolved']);
+    const imeiHash = getImeiHash(imei);
+    let allReports = [];
+    let reportError = null;
+
+    if (imeiHash) {
+      const result = await supabase
+        .from('phone_reports')
+        .select('imei_hash, imei, status, report_date, updated_at, loss_location, loss_time, user_id, anther_number, whatsapp')
+        .eq('imei_hash', imeiHash)
+        .in('status', ['active', 'resolved']);
+      allReports = result.data || [];
+      reportError = result.error;
+    }
+
+    if ((!allReports || !allReports.length) && reportError === null) {
+      const legacy = await supabase
+        .from('phone_reports')
+        .select('imei_hash, imei, status, report_date, updated_at, loss_location, loss_time, user_id, anther_number, whatsapp')
+        .in('status', ['active', 'resolved']);
+      allReports = legacy.data || [];
+      reportError = legacy.error;
+    }
 
     if (reportError) {
       console.error('Error searching for reported phone:', reportError);
       throw reportError;
     }
-
-    // فك تشفير IMEI المخزن في البلاغات ومقارنته
-    // Debug: طباعة كل البلاغات بعد فك التشفير
-    // Keep logs free of decrypted sensitive payloads.
 
     // ابحث عن أي بلاغ موجود: سنُظهر البلاغ فقط إذا كان "active" صريحاً
     // تحقق هل المستخدم هو المالك (بمقارنة userId فقط)
@@ -254,10 +292,29 @@ app.post('/api/search-imei', searchImeiLimiter, async (req, res) => {
       isOwner = true;
     }
     // ابحث عن بلاغ active يطابق الـ IMEI
-    const activeReportAny = allReports ? allReports.find(r => normalizeDigitsOnly(decryptField(r.imei)) === normalizedIncoming && r.status === 'active') : null;
+    const activeReportAny = allReports ? allReports.find(r => {
+      if (r.imei_hash && imeiHash) {
+        return r.imei_hash === imeiHash && r.status === 'active';
+      }
+      try {
+        return normalizeDigitsOnly(decryptField(r.imei)) === normalizedIncoming && r.status === 'active';
+      } catch (e) {
+        return false;
+      }
+    }) : null;
 
     if (activeReportAny) {
       // يوجد بلاغ فعال — نُظهره بغض النظر عن هوية المبلغ
+      // فك تشفير رقم الواتساب إن وجد
+      let whatsappNumber = null;
+      if (activeReportAny.anther_number) {
+        try {
+          whatsappNumber = decryptField(activeReportAny.anther_number);
+        } catch (e) {
+          console.warn('Error decrypting whatsapp number:', e);
+        }
+      }
+      
       res.json({
         found: true,
         masked: true,
@@ -267,6 +324,8 @@ app.post('/api/search-imei', searchImeiLimiter, async (req, res) => {
         resolved_date: activeReportAny.resolved_date || activeReportAny.updated_at,
         loss_location: activeReportAny.loss_location,
         loss_time: activeReportAny.loss_time,
+        whatsapp_number: whatsappNumber,
+        whatsapp: activeReportAny.whatsapp || false,
         registered: !!regPhone,
         isRegistered: !!regPhone,
         registeredPhone: regPhone ? { registration_date: regPhone.registration_date, status: regPhone.status, user_id: regPhone.user_id } : null
@@ -309,6 +368,8 @@ app.post('/api/search-imei', searchImeiLimiter, async (req, res) => {
         found: !!activeReportAny || !!regPhone,
         created_at: new Date().toISOString()
       });
+      // زيادة عدد مرات الاستخدام بعد نجاح البحث
+await updateSearchUsage(authenticatedUserId);
     } catch (logError) {
       // لا نوقف العملية إذا فشل تسجيل البحث
       console.error('Error logging search history:', logError);
@@ -316,6 +377,87 @@ app.post('/api/search-imei', searchImeiLimiter, async (req, res) => {
   } catch (error) {
     console.error('Error searching IMEI:', error);
     res.status(500).json({ error: 'Error searching IMEI' });
+  }
+});
+
+// نقطة نهاية لجلب تفاصيل المالك باستخدام IMEI (بما في ذلك حالة الواتساب ورقم الواتساب مفكوكاً)
+app.post('/api/get-owner-details-by-imei', verifyJwtToken, async (req, res) => {
+  try {
+    const { imei } = req.body || {};
+    if (!imei) return res.status(400).json({ error: 'IMEI is required' });
+
+    // جلب كل البلاغات الممكنة ثم المقارنة عبر imei_hash أو بفك التشفير كنسخة احتياطية
+    const imeiHash = getImeiHash(imei);
+    let reports = [];
+    let reportsErr = null;
+
+    if (imeiHash) {
+      const result = await supabase
+        .from('phone_reports')
+        .select('id, imei_hash, imei, user_id, whatsapp, anther_number, status')
+        .eq('imei_hash', imeiHash)
+        .in('status', ['active', 'resolved']);
+      reports = result.data || [];
+      reportsErr = result.error;
+    }
+
+    if ((!reports || !reports.length) && reportsErr === null) {
+      const result = await supabase
+        .from('phone_reports')
+        .select('id, imei_hash, imei, user_id, whatsapp, anther_number, status')
+        .in('status', ['active', 'resolved']);
+      reports = result.data || [];
+      reportsErr = result.error;
+    }
+
+    if (reportsErr) {
+      console.error('/api/get-owner-details-by-imei: failed to fetch reports', reportsErr);
+      return res.status(500).json({ error: 'Failed to fetch reports' });
+    }
+
+    const normalizedIncoming = normalizeDigitsOnly(String(imei));
+    const match = (reports || []).find(r => {
+      if (r.imei_hash && imeiHash) {
+        return r.imei_hash === imeiHash;
+      }
+      try {
+        const dec = decryptField(r.imei);
+        return normalizeDigitsOnly(String(dec || '')) === normalizedIncoming;
+      } catch (e) {
+        return false;
+      }
+    });
+
+    if (!match) return res.status(404).json({ error: 'Owner not found' });
+
+    // فك تشفير رقم الواتساب المخزن في anther_number إن وُجد
+    let whatsappNumber = null;
+    if (match.anther_number) {
+      try {
+        whatsappNumber = decryptField(match.anther_number);
+      } catch (e) {
+        console.warn('/api/get-owner-details-by-imei: failed to decrypt anther_number', e);
+      }
+    }
+
+    // جلب دور المستخدم من جدول users
+    let role = null;
+    try {
+      const { data: userRow, error: userErr } = await supabase.from('users').select('role').eq('id', match.user_id).maybeSingle();
+      if (!userErr && userRow) role = userRow.role || null;
+    } catch (e) {
+      console.warn('/api/get-owner-details-by-imei: failed to fetch user role', e);
+    }
+
+    return res.json({
+      user_id: match.user_id,
+      role,
+      whatsapp_enabled: !!match.whatsapp,
+      whatsapp_number: whatsappNumber
+    });
+  } catch (e) {
+    console.error('/api/get-owner-details-by-imei error:', e);
+    return res.status(500).json({ error: 'Server error' });
   }
 });
 

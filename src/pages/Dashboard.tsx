@@ -176,6 +176,7 @@ const Dashboard: React.FC = () => {
 
   // حالات جديدة لنافذة تأكيد الملكية
   const [showOwnershipConfirmation, setShowOwnershipConfirmation] = useState(false);
+  const [showOwnershipConfirmationAfterAd, setShowOwnershipConfirmationAfterAd] = useState(false);
   const [phonesForConfirmation, setPhonesForConfirmation] = useState<any[]>([]);
 
   // حالات للهواتف غير المطالب بها (التي تم العثور عليها بالبريد الإلكتروني)
@@ -185,6 +186,13 @@ const Dashboard: React.FC = () => {
   const [isNavbarVisible, setIsNavbarVisible] = useState(true);
   const [showLocationRequest, setShowLocationRequest] = useState(false);
   const shouldRunRequest = useDevRequestDeduper();
+
+  useEffect(() => {
+    if (isAdModalOpen && showOwnershipConfirmation) {
+      console.debug('Hiding ownership confirmation while ad popup is open');
+      setShowOwnershipConfirmation(false);
+    }
+  }, [isAdModalOpen, showOwnershipConfirmation]);
 
   const { coords } = useGeolocated({
     positionOptions: { enableHighAccuracy: true, maximumAge: 60000, timeout: 10000 },
@@ -274,19 +282,26 @@ const Dashboard: React.FC = () => {
         data = response.data;
       }
 
-      // تصفية الهواتف المعتمدة فقط
-      const approvedPhones = data.filter((p: any) => p.status === 'approved');
+      // تصفية الهواتف المملوكة للمستخدم والتي لم يتم نقلها أو بيعها
+      const ownedPhones = data.filter((p: any) => {
+        const status = String(p.status || '').toLowerCase();
+        return status !== 'transferred' && status !== 'sold';
+      });
 
-      const phonesToConfirm = approvedPhones.filter((phone: any) => {
-        // تحديد التاريخ الأساسي للتحقق:
-        // إذا كان هناك تاريخ تأكيد سابق، نستخدمه. وإلا، نستخدم تاريخ التسجيل.
-        const baseDate = phone.last_confirmed_at ? new Date(phone.last_confirmed_at) : new Date(phone.registration_date);
-
-        // حساب المدة الزمنية التي يجب أن تمر (24 ساعة)
+      const phonesToConfirm = ownedPhones.filter((phone: any) => {
+        const hasConfirmedAt = phone.last_confirmed_at || phone.registration_date;
         const oneDayInMilliseconds = 24 * 60 * 60 * 1000;
 
-        // التحقق مما إذا مر أكثر من يوم على التاريخ الأساسي
-        return (new Date().getTime() - baseDate.getTime()) > oneDayInMilliseconds;
+        if (!hasConfirmedAt) {
+          return true;
+        }
+
+        const baseDate = phone.last_confirmed_at ? new Date(phone.last_confirmed_at) : new Date(phone.registration_date);
+        if (Number.isNaN(baseDate.getTime())) {
+          return true;
+        }
+
+        return (Date.now() - baseDate.getTime()) > oneDayInMilliseconds;
       });
 
       // الهواتف المنقولة (transferred) تم التخلي عنها ولا يجب عرضها مرة أخرى
@@ -294,11 +309,17 @@ const Dashboard: React.FC = () => {
 
       // 2. تحديث الحالة وعرض النافذة
       console.log("Phones to confirm count:", phonesToConfirm.length);
-      console.log("Approved phones to confirm:", phonesToConfirm.length);
+      console.log("Owned phones to confirm:", phonesToConfirm.length);
 
       if (phonesToConfirm.length > 0) {
         setPhonesForConfirmation(phonesToConfirm);
-        setShowOwnershipConfirmation(true);
+        if (isAdModalOpen) {
+          console.debug('OwnershipConfirmation delayed until ad is closed');
+          setShowOwnershipConfirmationAfterAd(true);
+          setShowOwnershipConfirmation(false);
+        } else {
+          setShowOwnershipConfirmation(true);
+        }
       } else {
         setShowOwnershipConfirmation(false);
       }
@@ -981,6 +1002,16 @@ const Dashboard: React.FC = () => {
               </div>
 
             </div>
+            {/* Quick Lost Report button (إخطار فقد سريع) placed below the four icons */}
+            <div className="flex justify-center mt-3">
+              <button
+                type="button"
+                onClick={() => navigate('/report', { state: { quick: true } })}
+                className="px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white font-bold rounded-full shadow-lg hover:shadow-xl transition-colors"
+              >
+                إخطار فقد سريع
+              </button>
+            </div>
           </div>
 
 
@@ -1347,7 +1378,14 @@ const Dashboard: React.FC = () => {
       <Suspense fallback={<div>Loading...</div>}>
         <AdPopupModal
           isOpen={isAdModalOpen}
-          onClose={() => setIsAdModalOpen(false)}
+          onClose={() => {
+            setIsAdModalOpen(false);
+            if (showOwnershipConfirmationAfterAd) {
+              console.debug('Ad closed, opening ownership confirmation modal');
+              setShowOwnershipConfirmationAfterAd(false);
+              setShowOwnershipConfirmation(true);
+            }
+          }}
           ads={popupAds}
           userLocation={coords ? { latitude: coords.latitude, longitude: coords.longitude } : null}
         />
@@ -1355,7 +1393,7 @@ const Dashboard: React.FC = () => {
 
       <Suspense fallback={<div>Loading...</div>}>
         <OwnershipConfirmationModal
-          isOpen={showOwnershipConfirmation}
+          isOpen={showOwnershipConfirmation && !isAdModalOpen}
           onClose={() => setShowOwnershipConfirmation(false)}
           phones={phonesForConfirmation}
           onConfirm={handleConfirmOwnership}

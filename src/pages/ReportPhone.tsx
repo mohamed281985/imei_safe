@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useLanguage } from '../contexts/LanguageContext';
 import imageCompression from 'browser-image-compression';
 import PageContainer from '../components/PageContainer';
@@ -203,6 +203,8 @@ const ReportPhone: React.FC = () => {
   const [modalConfirmPassword, setModalConfirmPassword] = useState('');
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [isImeiValid, setIsImeiValid] = useState(false);
+  const location = useLocation();
+  const [isQuickMode, setIsQuickMode] = useState<boolean>(false);
 
   const [isImageViewerOpen, setImageViewerOpen] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -216,6 +218,8 @@ const ReportPhone: React.FC = () => {
   const receiptImageInputRef = React.useRef<HTMLInputElement>(null);
 
   const [shareWhatsApp, setShareWhatsApp] = useState(false);
+  const [whatsappNumber, setWhatsappNumber] = useState('');
+  const [whatsappCountryCode, setWhatsappCountryCode] = useState('+20'); // Default to Egypt
   const [showUpgradeDialog, setShowUpgradeDialog] = useState(false);
   
   const [userRole, setUserRole] = useState<string | null>(null);
@@ -304,9 +308,15 @@ const ReportPhone: React.FC = () => {
     }
   };
 
-  const validateForm = (data: FormData, isImeiRegisteredStatus: boolean, actualDbPassword: string | null, currentFieldReadOnlyState: typeof fieldReadOnlyState): boolean => {
+  const validateForm = (data: FormData, isImeiRegisteredStatus: boolean, actualDbPassword: string | null, currentFieldReadOnlyState: typeof fieldReadOnlyState, quickMode: boolean): boolean => {
     if (!data.ownerName || !data.phoneNumber || !data.imei || !data.phone_type || !data.lossLocation || !data.lossTime || !data.idLast6) {
-      toast({ title: t('error'), description: t('please_fill_all_fields'), variant: 'destructive' });
+      toast({ title: t('error'), description: t('continue_in_data_mode'), variant: 'destructive' });
+      return false;
+    }
+    
+    // التحقق من حقل الواتساب إذا كان مفعلاً
+    if (shareWhatsApp && !whatsappNumber) {
+      toast({ title: t('error'), description: t('whatsapp_number_required'), variant: 'destructive' });
       return false;
     }
     
@@ -325,6 +335,11 @@ const ReportPhone: React.FC = () => {
         toast({ title: t('error'), description: t('please_enter_password_to_confirm'), variant: 'destructive' });
         return false;
       }
+    }
+
+    if (quickMode) {
+      // In quick mode, skip receipt/report image requirements entirely.
+      return true;
     }
     
     if (!currentFieldReadOnlyState.receiptImage) {
@@ -590,6 +605,8 @@ const ReportPhone: React.FC = () => {
       setActiveReportWarning(null);
       setIsImeiValid(false);
       setShareWhatsApp(false);
+      setWhatsappNumber('');
+      setWhatsappCountryCode('+20');
       // إعادة تعيين رمز الدولة عند إعادة تعيين النموذج
       setCountryCode('+20');
     };
@@ -903,6 +920,15 @@ if (result.autoFillData) {
     fetchMaskedImeiInfo();
   }, [formData.imei, t, toast, user]);
 
+  useEffect(() => {
+    try {
+      const st: any = (location && (location as any).state) || {};
+      if (st && st.quick) setIsQuickMode(true);
+    } catch (e) {
+      // ignore
+    }
+  }, [location]);
+
   const handlePrevStep = () => {
     setCurrentStep((prev) => Math.max(prev - 1, 1));
   };
@@ -915,7 +941,16 @@ if (result.autoFillData) {
       return;
     }
 
-    if (!validateForm(formData, isImeiRegistered, dbPassword, fieldReadOnlyState)) {
+    if (!validateForm(formData, isImeiRegistered, dbPassword, fieldReadOnlyState, isQuickMode)) {
+      return;
+    }
+
+    if (isImeiRegistered) {
+      toast({
+        title: t('access_denied'),
+        description: t('this_phone_registered_to_another_account'),
+        variant: 'destructive',
+      });
       return;
     }
 
@@ -1044,7 +1079,8 @@ if (result.autoFillData) {
         return;
       }
       
-      if (!reportImageToSend) {
+      // In quick mode we allow submitting without images
+      if (!reportImageToSend && !isQuickMode) {
         toast({ title: t('error'), description: t('report_image_required'), variant: 'destructive' });
         setIsSubmitting(false);
         return;
@@ -1146,7 +1182,7 @@ if (result.autoFillData) {
       }
 
       // ⭐ التعديل الجديد: إرسال البيانات منفصلة
-      const payload = {
+      const payload: any = {
         ownerName: effectiveOwnerName,
         phoneNumber: effectivePhoneNumber.replace(/\D/g, ''), // إرسال الرقم فقط
         country_code: effectiveCountryCode, // إرسال رمز الدولة منفصلاً
@@ -1162,7 +1198,15 @@ if (result.autoFillData) {
         email: user?.email || '',
         fcm_token: fcmToken,
         whatsapp: shareWhatsApp,
+        whatsapp_number: shareWhatsApp ? `${whatsappCountryCode}${whatsappNumber}` : null,
+        whatsapp_country_code: shareWhatsApp ? whatsappCountryCode : null,
       };
+
+      // Quick-mode flags: set report_mode and expiry (48 hours)
+      if (isQuickMode) {
+        payload.report_mode = 'quick';
+        payload.expiry = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+      }
 
       let jwtToken = '';
       try {
@@ -1530,6 +1574,13 @@ if (result.autoFillData) {
                       {t('step_attachments_title')}
                     </h3>
                   </div>
+                  {isQuickMode && (
+                    <div className="mb-4 p-4 rounded-xl bg-green-50 border border-green-200">
+                      <p className="text-sm text-green-800 font-medium">
+                        {t('quick_report_no_attachment_note')}
+                      </p>
+                    </div>
+                  )}
                   {isImeiRegistered && (
                     <div className="space-y-3">
                       <label htmlFor="password" className="flex items-center gap-2 text-slate-800 font-medium">
@@ -1581,29 +1632,56 @@ if (result.autoFillData) {
                     )}
                   </div>
 
-                  <div className="space-y-4">
-                    <h3 className="text-slate-800 text-lg font-semibold">{t('upload_images')}</h3>
-                    {renderImageUpload(
-                      t('receipt_image'),
-                      'receiptImage',
-                      receiptImagePreview,
-                      setReceiptImagePreview,
-                      CreditCard,
-                      Upload,
-                      { showCaptureButton: true, showUploadButton: true },
-                      receiptImageInputRef
-                    )}
-                    {renderImageUpload(
-                      t('report_and_box_image'),
-                      'reportImage',
-                      reportImagePreview,
-                      setReportImagePreview,
-                      FileText,
-                      Upload,
-                      { showCaptureButton: !fieldReadOnlyState.reportImage && !isReadOnly, showUploadButton: !fieldReadOnlyState.reportImage && !isReadOnly },
-                      reportImageInputRef
-                    )}
-                  </div>
+                  {/* حقل إدخال رقم الواتساب */}
+                  {shareWhatsApp && (
+                    <div className="mb-4 p-4 bg-green-50 rounded-lg border border-green-200">
+                      <label className="block text-sm font-medium text-gray-700 mb-3">{t('enter_whatsapp_number_for_contact')}</label>
+                      <div className="flex gap-2 items-center">
+                        <CountryCodeSelector
+                          value={whatsappCountryCode}
+                          onChange={setWhatsappCountryCode}
+                          disabled={isReadOnly || isSubmitting}
+                        />
+                        <input
+                          type="tel"
+                          value={whatsappNumber}
+                          onChange={(e) => setWhatsappNumber(e.target.value.replace(/\D/g, ''))}
+                          placeholder={t('phone_placeholder')}
+                          className="flex-1 min-w-0 px-4 py-2 border border-gray-300 rounded-lg focus:border-green-500 focus:ring-green-500 text-black"
+                          maxLength={15}
+                          disabled={isReadOnly || isSubmitting}
+                          required={shareWhatsApp}
+                        />
+                      </div>
+                      <p className="text-xs text-gray-500 mt-2">{t('whatsapp_number_help_text')}</p>
+                    </div>
+                  )}
+
+                  {!isQuickMode && (
+                    <div className="space-y-4">
+                      <h3 className="text-slate-800 text-lg font-semibold">{t('upload_images')}</h3>
+                      {renderImageUpload(
+                        t('receipt_image'),
+                        'receiptImage',
+                        receiptImagePreview,
+                        setReceiptImagePreview,
+                        CreditCard,
+                        Upload,
+                        { showCaptureButton: true, showUploadButton: true },
+                        receiptImageInputRef
+                      )}
+                      {renderImageUpload(
+                        t('report_and_box_image'),
+                        'reportImage',
+                        reportImagePreview,
+                        setReportImagePreview,
+                        FileText,
+                        Upload,
+                        { showCaptureButton: !fieldReadOnlyState.reportImage && !isReadOnly, showUploadButton: !fieldReadOnlyState.reportImage && !isReadOnly },
+                        reportImageInputRef
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

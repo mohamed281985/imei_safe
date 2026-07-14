@@ -28,6 +28,8 @@ import { registerProfileRoutes } from './routes/profileRoutes.js';
 import { registerReportRoutes } from './routes/reportRoutes.js';
 import { registerBuyerInfoRoutes } from './routes/buyerInfoRoutes.js';
 import { registerAdminRoutes } from './routes/adminRoutes.js';
+import { registerQrRoutes } from './routes/qrRoutes.js';
+import { createOrRefreshRecoveryCard } from './utils/qrCardUtils.js';
 // =================================================================
 // 1. الإعدادات الأولية وتحميل متغيرات البيئة (يجب أن تكون في البداية)
 // =================================================================
@@ -38,8 +40,11 @@ const __dirname = path.dirname(__filename);
 const envPath = path.resolve(__dirname, '.env');
 dotenv.config({ path: envPath });
 
-// Allow configuring trust proxy via environment for safer local vs prod behavior
-const TRUST_PROXY = Number(process.env.TRUST_PROXY || 0);
+// Allow configuring trust proxy via environment for safer local vs prod behavior.
+// Default is 1 hop (matches a single reverse proxy in front of the app, e.g. Render),
+// which correctly resolves the real client IP while still rejecting any additional
+// spoofed X-Forwarded-For hops an attacker might prepend.
+const TRUST_PROXY = Number(process.env.TRUST_PROXY || 1);
 
 // Development bypass token (only used when explicitly set in .env)
 const DEV_BYPASS_TOKEN = process.env.DEV_BYPASS_TOKEN || null;
@@ -327,16 +332,16 @@ app.use(session(SECURITY_CONFIG.SESSION));
 // ✅ SECURITY: Enable CORS with whitelisted origins
 const CLIENT_ORIGINS = SECURITY_CONFIG.ALLOWED_ORIGINS;
 app.use(cors({
-origin: (origin, callback) => {
-  console.log("Origin =", origin);
+  origin: (origin, callback) => {
+    console.log("Origin =", origin);
 
-  if (!origin || CLIENT_ORIGINS.includes(origin)) {
-    callback(null, true);
-  } else {
-    callback(new Error("CORS not allowed"));
-  }
+    if (!origin || CLIENT_ORIGINS.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("CORS not allowed"));
+    }
 
-    
+
   },
   credentials: true,
   optionsSuccessStatus: 200
@@ -384,8 +389,11 @@ app.use((err, req, res, next) => {
   return next(err);
 });
 
-// If behind a proxy (Render, Heroku, etc.) trust proxy headers so req.secure and x-forwarded-proto work
-app.set('trust proxy', true);
+// If behind a proxy (Render, Heroku, etc.) trust proxy headers so req.secure and x-forwarded-proto work.
+// ✅ SECURITY: Previously set to `true`, which trusts an unlimited number of
+// X-Forwarded-For hops and lets a client spoof its own IP (bypassing IP-based
+// rate limiting and polluting audit logs). Now trusts only TRUST_PROXY hop(s).
+app.set('trust proxy', TRUST_PROXY);
 console.log('Configured TRUST_PROXY (env):', process.env.TRUST_PROXY, '=> numeric TRUST_PROXY:', TRUST_PROXY);
 console.log("Express app.get('trust proxy') =>", app.get('trust proxy'));
 
@@ -890,20 +898,38 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
   try {
     const { imei } = req.body;
     const userId = req.user?.id; // جلب معرف المستخدم من التوكن
-    
+
     if (!imei) return res.status(400).json({ error: 'IMEI is required' });
     const normalizedImei = String(imei).replace(/\D/g, '');
 
     // 1. التحقق من جدول البلاغات (active reports)
-    const { data: reports } = await supabase.from('phone_reports').select('imei').eq('status', 'active');
+    const imeiHash = getImeiHash(imei);
+    let reports = [];
+    if (imeiHash) {
+      const { data, error } = await supabase.from('phone_reports').select('imei, imei_hash').eq('status', 'active').eq('imei_hash', imeiHash);
+      if (!error) {
+        reports = data || [];
+      }
+    }
+
+    if (!reports.length) {
+      const { data, error } = await supabase.from('phone_reports').select('imei, imei_hash').eq('status', 'active');
+      if (!error) {
+        reports = data || [];
+      }
+    }
+
     const isStolen = (reports || []).some(r => {
+      if (imeiHash && r.imei_hash) {
+        return r.imei_hash === imeiHash;
+      }
       const dec = decryptField(r.imei);
       return dec && String(dec).replace(/\D/g, '') === normalizedImei;
     });
     if (isStolen) return res.json({ found: true, hasActiveReport: true });
 
     // 2. ⭐ التحقق من جدول phones (وجود إعلان سابق)
-    const { data: ads } = await supabase.from('phones').select('id, imei, phone_type').neq('status', 'deleted');
+    const { data: ads } = await supabase.from('phones').select('id, imei, phone_type').not('status', 'eq', 'deleted');
     const existingAd = (ads || []).find(a => {
       const dec = decryptField(a.imei);
       return dec && String(dec).replace(/\D/g, '') === normalizedImei;
@@ -935,68 +961,68 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
     }
 
     // 4. ⭐ التعديل الجديد: إذا لم يتم العثور على IMEI، جلب بيانات المستخدم الحالي للملء التلقائي (مقنعة)
-if (!reg && userId) {
-  try {
-    // جلب بيانات المستخدم الحالي من جدول users
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('full_name, phone, id_last6, country_code')
-      .eq('id', userId)
-      .maybeSingle();
+    if (!reg && userId) {
+      try {
+        // جلب بيانات المستخدم الحالي من جدول users
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('full_name, phone, id_last6, country_code')
+          .eq('id', userId)
+          .maybeSingle();
 
-    if (!userError && userData) {
-      // فك تشفير بيانات المستخدم
-      const decryptedFullName = decryptField(userData.full_name) || '';
-      const decryptedPhone = decryptField(userData.phone) || '';
-      const decryptedIdLast6 = decryptField(userData.id_last6) || '';
-      
-      // ⭐ استخراج كود الدولة
-      let countryCode = userData.country_code || '';
-      
-      // إذا لم يكن كود الدولة موجوداً، حاول استخراجه من رقم الهاتف
-      if (!countryCode && decryptedPhone) {
-        const cleanPhone = decryptedPhone.replace(/\D/g, '');
-        const knownCountryCodes = ['966', '20', '971', '965', '974', '973', '968', '970'];
-        
-        for (const code of knownCountryCodes) {
-          if (cleanPhone.startsWith(code)) {
-            countryCode = `+${code}`;
-            break;
+        if (!userError && userData) {
+          // فك تشفير بيانات المستخدم
+          const decryptedFullName = decryptField(userData.full_name) || '';
+          const decryptedPhone = decryptField(userData.phone) || '';
+          const decryptedIdLast6 = decryptField(userData.id_last6) || '';
+
+          // ⭐ استخراج كود الدولة
+          let countryCode = userData.country_code || '';
+
+          // إذا لم يكن كود الدولة موجوداً، حاول استخراجه من رقم الهاتف
+          if (!countryCode && decryptedPhone) {
+            const cleanPhone = decryptedPhone.replace(/\D/g, '');
+            const knownCountryCodes = ['966', '20', '971', '965', '974', '973', '968', '970'];
+
+            for (const code of knownCountryCodes) {
+              if (cleanPhone.startsWith(code)) {
+                countryCode = `+${code}`;
+                break;
+              }
+            }
           }
-        }
-      }
-      
-      // إذا لم يتم العثور على كود الدولة، استخدم كود افتراضي (مثلاً السعودية)
-      if (!countryCode) {
-        countryCode = '+966';
-      }
 
-      // ⭐ إخفاء البيانات (Masking)
-      const maskedFullName = maskName(decryptedFullName);
-      const maskedPhone = maskPhoneNumber(decryptedPhone);
-      const maskedIdLast6 = maskIdLast6(decryptedIdLast6);
+          // إذا لم يتم العثور على كود الدولة، استخدم كود افتراضي (مثلاً السعودية)
+          if (!countryCode) {
+            countryCode = '+966';
+          }
 
-      // إرجاع البيانات المقنعة للملء التلقائي مع القيم الفعلية المشفرة داخل حقول _raw
-      return res.json({
-        found: false,
-        autoFillData: {
-          ownerName: maskedFullName, // الاسم مقنع
-          phoneNumber: maskedPhone, // رقم الهاتف مقنع
-          idLast6: maskedIdLast6, // آخر 6 أرقام مقنعة
-          // حقول فعلية (غير مقنعة) متاحة للعميل الموثوق إذا احتاج إلى الإرسال
-          ownerNameRaw: decryptedFullName,
-          phoneNumberRaw: decryptedPhone,
-          idLast6Raw: decryptedIdLast6,
-          // ⭐ إضافة كود الدولة إلى الاستجابة
-          country_code: countryCode,
-          isReadOnly: true // البيانات للقراءة فقط
+          // ⭐ إخفاء البيانات (Masking)
+          const maskedFullName = maskName(decryptedFullName);
+          const maskedPhone = maskPhoneNumber(decryptedPhone);
+          const maskedIdLast6 = maskIdLast6(decryptedIdLast6);
+
+          // إرجاع البيانات المقنعة للملء التلقائي مع القيم الفعلية المشفرة داخل حقول _raw
+          return res.json({
+            found: false,
+            autoFillData: {
+              ownerName: maskedFullName, // الاسم مقنع
+              phoneNumber: maskedPhone, // رقم الهاتف مقنع
+              idLast6: maskedIdLast6, // آخر 6 أرقام مقنعة
+              // حقول فعلية (غير مقنعة) متاحة للعميل الموثوق إذا احتاج إلى الإرسال
+              ownerNameRaw: decryptedFullName,
+              phoneNumberRaw: decryptedPhone,
+              idLast6Raw: decryptedIdLast6,
+              // ⭐ إضافة كود الدولة إلى الاستجابة
+              country_code: countryCode,
+              isReadOnly: true // البيانات للقراءة فقط
+            }
+          });
         }
-      });
+      } catch (e) {
+        console.error('[imei-masked-info] Error fetching user data for auto-fill:', e);
+      }
     }
-  } catch (e) {
-    console.error('[imei-masked-info] Error fetching user data for auto-fill:', e);
-  }
-}
 
 
     // إذا لم يتم العثور على أي شيء
@@ -1177,7 +1203,7 @@ app.post('/api/register', async (req, res) => {
         id_last6: encIdLast6 ? JSON.stringify(encIdLast6) : null,
         business_type: business_type || ''
       };
-      
+
       const { error: businessError } = await supabase
         .from('businesses')
         .insert(businessPayload);
@@ -1294,8 +1320,9 @@ const allowedOrigins = [
   'http://localhost:8081',       // السماح للمنفذ 8081
   'https://imei-safe.me',
   'https://admin.imei-safe.me',
-      'https://imei-admin-control.onrender.com',
-      
+  "https://app.imei-safe.me",
+  'https://imei-admin-control.onrender.com',
+
   'capacitor://localhost',       // Default Capacitor origin for iOS/Android
   'https://localhost'            // Capacitor Android origin (as seen in your error log)
 ];
@@ -1635,6 +1662,17 @@ const normalizeDigitsOnly = (s) => {
   }
 };
 
+const getImeiHash = (imei) => {
+  try {
+    const normalized = normalizeDigitsOnly(imei);
+    if (!normalized) return null;
+    return crypto.createHash('sha256').update(String(normalized)).digest('hex');
+  } catch (e) {
+    console.error('getImeiHash error:', e);
+    return null;
+  }
+};
+
 const normalizeTextForCompare = (s) => {
   if (s === null || s === undefined) return '';
   try {
@@ -1656,19 +1694,49 @@ const normalizeTextForCompare = (s) => {
 
 // دالة مساعدة للبحث عن FCM token باستخدام IMEI
 async function getFCMTokenByImei(imei) {
-  const { data, error } = await supabase
-    .from('phone_reports')
-    .select('fcm_token')
-    .eq('imei', imei)
-    .maybeSingle();
+  const imeiHash = getImeiHash(imei);
+  if (imeiHash) {
+    const { data, error } = await supabase
+      .from('phone_reports')
+      .select('fcm_token')
+      .eq('imei_hash', imeiHash)
+      .maybeSingle();
 
-  if (error || !data) {
+    if (!error && data) {
+      return data.fcm_token;
+    }
+  }
+
+  // fallback for legacy rows without imei_hash
+  const { data: reports, error } = await supabase
+    .from('phone_reports')
+    .select('imei, fcm_token');
+
+  if (error || !reports) {
     console.error('Error fetching FCM token by IMEI:', error);
     return null;
   }
 
-  return data.fcm_token;
+  const normalizedIncoming = normalizeDigitsOnly(imei);
+  for (const r of reports) {
+    let decrypted = null;
+    try {
+      decrypted = decryptField(r.imei);
+    } catch (e) {
+      // ignore
+    }
+    if (decrypted && normalizeDigitsOnly(decrypted) === normalizedIncoming) {
+      return r.fcm_token;
+    }
+  }
+
+  return null;
 }
+
+// Simple rate/limit check helper used by notification routes.
+// Currently permissive (allows requests). Can be extended to enforce
+// per-user limits using `users_plans`, `plans`, or RPCs like
+// `increment_search_imei_usage` when needed.
 
 registerNotificationRoutes({
   app,
@@ -1678,10 +1746,10 @@ registerNotificationRoutes({
   sendFCMNotificationV1,
   getFCMTokenByImei,
   searchImeiLimiter,
-  // helpers used by notification routes
   decryptField,
   normalizeDigitsOnly,
-  logAudit
+  logAudit,
+  checkUserLimit
 });
 
 // --- دوال Paymob ---
@@ -1838,7 +1906,7 @@ function safeParseTsDefaultExport(content) {
 }
 
 function getTranslations(lang) {
-  const code = String((lang || 'ar')).toLowerCase().slice(0,2);
+  const code = String((lang || 'ar')).toLowerCase().slice(0, 2);
   const key = code;
   if (TRANSLATIONS_CACHE.has(key)) return TRANSLATIONS_CACHE.get(key);
   try {
@@ -1893,6 +1961,24 @@ if (!PAYMOB_API_KEY || !INTEGRATION_ID || !IFRAME_ID || !HMAC_SECRET) {
   console.error("❌ خطأ: متغيرات البيئة الخاصة بـ Paymob غير مكتملة. يرجى التحقق من ملف .env");
   process.exit(1); // إيقاف السيرفر إذا كانت المتغيرات ناقصة
 }
+
+// ✅ SECURITY: مقارنة آمنة زمنياً (constant-time) لقيم HMAC القادمة من Paymob
+// بدلاً من مقارنة النصوص العادية (===) التي قد تسرب معلومات توقيت عن مدى
+// تطابق البادئة، مما قد يسهل هجمات timing attack على توقيع الطلبات.
+const timingSafeHexCompare = (a, b) => {
+  try {
+    const strA = String(a || '');
+    const strB = String(b || '');
+    if (!strA || !strB) return false;
+    if (!/^[0-9a-fA-F]+$/.test(strA) || !/^[0-9a-fA-F]+$/.test(strB)) return false;
+    const bufA = Buffer.from(strA, 'hex');
+    const bufB = Buffer.from(strB, 'hex');
+    if (bufA.length !== bufB.length) return false;
+    return crypto.timingSafeEqual(bufA, bufB);
+  } catch {
+    return false;
+  }
+};
 
 // 🏠 الصفحة الرئيسية
 app.get("/", (req, res) => {
@@ -2500,6 +2586,9 @@ app.post('/api/ads/package-publish', verifyJwtToken, paymentLimiter, rateLimitMi
 
     // Encrypt sensitive fields before storing
     const adDataToStore = { ...adData };
+    if (Object.prototype.hasOwnProperty.call(adDataToStore, 'Actual_payment_date')) {
+      delete adDataToStore.Actual_payment_date;
+    }
     if (Object.prototype.hasOwnProperty.call(adDataToStore, 'phone')) {
       adDataToStore.phone = encryptFieldForStorage(adDataToStore.phone);
     }
@@ -2831,6 +2920,7 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
       expires_at: null,
       paymob_order_id: orderData.id,
       is_paid: false,
+      is_active: false,
       payment_date: null,
       amount: numericAmount,
       type: offerData.type,
@@ -2991,7 +3081,8 @@ app.get('/paymob/redirect-success', async (req, res) => {
             .createHmac('sha512', HMAC_SECRET)
             .update(concatenatedString)
             .digest('hex');
-          hmacValid = calculatedHmac === receivedHmac;
+          // ✅ SECURITY: مقارنة آمنة زمنياً بدلاً من === لمنع timing attacks
+          hmacValid = timingSafeHexCompare(calculatedHmac, receivedHmac);
         }
 
         if (hmacValid) {
@@ -3269,11 +3360,13 @@ app.post("/paymob/webhook", async (req, res) => {
   console.log("Calculated HMAC:", calculatedHmac);
 
   // تحقق من تطابق HMACs
-  if (calculatedHmac !== receivedHmac) {
+  // ✅ SECURITY: مقارنة آمنة زمنياً (constant-time) بدلاً من !== لمنع timing attacks،
+  // كما تمت إزالة تسجيل أي جزء من HMAC_SECRET نفسه في السجلات (كان يُسرّب أول 10 أحرف من السر).
+  if (!timingSafeHexCompare(calculatedHmac, receivedHmac)) {
     console.error("HMAC validation failed. Request might be tampered.");
-    console.error("Concatenated string:", concatenatedString);
-    console.error("HMAC Secret length:", HMAC_SECRET.length);
-    console.error("HMAC Secret (first 10 chars):", HMAC_SECRET.substring(0, 10));
+    if (process.env.NODE_ENV === 'development') {
+      console.error("Concatenated string:", concatenatedString);
+    }
 
     // في بيئة التطوير، قد يكون من المفيد تجاهل التحقق من HMAC
     // لكن في بيئة الإنتاج، يجب إبقاء هذا التحقق
@@ -3676,7 +3769,10 @@ app.get('/api/store-phone/:productId', verifyJwtToken, async (req, res) => {
         if (!userError && userData && userData.phone) {
           // فك تشفير رقم الهاتف
           phoneNumber = decryptField(userData.phone);
-          console.log('[store-phone] Found phone in users table:', phoneNumber);
+          // ✅ SECURITY: لا نطبع رقم الهاتف الفعلي إلا في وضع التطوير
+          if (process.env.NODE_ENV !== 'production') {
+            console.log('[store-phone] Found phone in users table:', phoneNumber);
+          }
         }
       }
 
@@ -3687,9 +3783,14 @@ app.get('/api/store-phone/:productId', verifyJwtToken, async (req, res) => {
     }
 
     // فك تشفير رقم الهاتف إذا لم يتم فك تشفيره بالفعل
-    console.log('[store-phone] Phone number before final decryption:', typeof phoneNumber, phoneNumber);
+    // ✅ SECURITY: القيم الفعلية لرقم الهاتف (قبل/بعد فك التشفير) لا تُطبع إلا في وضع التطوير
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[store-phone] Phone number before final decryption:', typeof phoneNumber, phoneNumber);
+    }
     const decryptedPhone = typeof phoneNumber === 'string' ? phoneNumber : decryptField(phoneNumber);
-    console.log('[store-phone] Phone number after decryption:', decryptedPhone);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[store-phone] Phone number after decryption:', decryptedPhone);
+    }
     if (!decryptedPhone) {
       console.error('[store-phone] Failed to decrypt phone number');
       return res.status(500).json({ error: 'Failed to decrypt phone number' });
@@ -3995,7 +4096,7 @@ app.get('/api/get-contact-info', verifyJwtToken, async (req, res) => {
 
     const { data: allReports, error: reportError } = await supabase
       .from('phone_reports')
-      .neq('status', 'rejected')
+      .not('status', 'eq', 'rejected')
       .select('id, imei, email, owner_name, finder_phone, user_id, finder_user_id')
       .order('id', { ascending: true });
 
@@ -4131,14 +4232,32 @@ app.post('/api/whatsapp-redirect', verifyJwtToken, whatsappRedirectLimiter, asyn
     const { imei } = req.body || {};
     if (!imei) return res.status(400).json({ error: 'IMEI is required' });
 
-    // البحث عن البلاغ المطابق للـ IMEI
-    const { data: allReports, error: reportError } = await supabase
-      .from('phone_reports')
-      .neq('status', 'rejected')
-      .select('id, imei, user_id, phone_number, whatsapp, finder_user_id')
-      .order('id', { ascending: true });
+    const imeiHash = getImeiHash(imei);
+    let allReports = [];
+    let reportError = null;
 
-    if (reportError || !allReports || allReports.length === 0) {
+    if (imeiHash) {
+      const result = await supabase
+        .from('phone_reports')
+        .not('status', 'eq', 'rejected')
+        .select('id, imei, user_id, phone_number, whatsapp, finder_user_id')
+        .eq('imei_hash', imeiHash)
+        .order('id', { ascending: true });
+      allReports = result.data || [];
+      reportError = result.error;
+    }
+
+    if ((!allReports || !allReports.length) && reportError === null) {
+      const legacy = await supabase
+        .from('phone_reports')
+        .not('status', 'eq', 'rejected')
+        .select('id, imei, user_id, phone_number, whatsapp, finder_user_id')
+        .order('id', { ascending: true });
+      allReports = legacy.data || [];
+      reportError = legacy.error;
+    }
+
+    if (reportError || !allReports || !allReports.length) {
       return res.status(404).json({ error: 'لم يتم العثور على الهاتف في البلاغات' });
     }
 
@@ -4246,13 +4365,30 @@ app.post('/api/get-owner-email-by-imei', verifyJwtToken, async (req, res) => {
       return res.status(400).json({ error: 'IMEI is required' });
     }
 
-    const { data: allReports, error: reportError } = await supabase
-      .from('phone_reports')
-      .neq('status', 'rejected')
-      .select('id, imei, email, owner_name, user_id, finder_user_id')
-      .order('id', { ascending: true });
+    const imeiHash = getImeiHash(imei);
+    let allReports = [];
+    let reportError = null;
 
-    if (reportError || !allReports || allReports.length === 0) {
+    if (imeiHash) {
+      const result = await supabase
+        .from('phone_reports')
+        .select('id, imei, email, owner_name, user_id, finder_user_id')
+        .eq('imei_hash', imeiHash)
+        .order('id', { ascending: true });
+      allReports = result.data || [];
+      reportError = result.error;
+    }
+
+    if ((!allReports || !allReports.length) && reportError === null) {
+      const legacy = await supabase
+        .from('phone_reports')
+        .select('id, imei, email, owner_name, user_id, finder_user_id')
+        .order('id', { ascending: true });
+      allReports = legacy.data || [];
+      reportError = legacy.error;
+    }
+
+    if (reportError || !allReports || !allReports.length) {
       console.error('No phone_reports found. Error:', reportError);
       return res.status(404).json({ error: 'لم يتم العثور على الهاتف في البلاغات', imei });
     }
@@ -4315,13 +4451,32 @@ app.post('/api/get-owner-details-by-imei', verifyJwtToken, async (req, res) => {
     if (!imei) return res.status(400).json({ error: 'IMEI is required' });
 
     console.log('/api/get-owner-details-by-imei called by', requesterId, 'imei:', imei);
-    const { data: allReports, error: reportError } = await supabase
-      .from('phone_reports')
-      .neq('status', 'rejected')
-      .select('id, imei, user_id, phone_number, email, whatsapp, owner_name, finder_user_id')
-      .order('id', { ascending: true });
+    const imeiHash = getImeiHash(imei);
+    let allReports = [];
+    let reportError = null;
 
-    if (reportError || !allReports || allReports.length === 0) {
+    if (imeiHash) {
+      const result = await supabase
+        .from('phone_reports')
+        .not('status', 'eq', 'rejected')
+        .select('id, imei, user_id, phone_number, email, whatsapp, owner_name, finder_user_id')
+        .eq('imei_hash', imeiHash)
+        .order('id', { ascending: true });
+      allReports = result.data || [];
+      reportError = result.error;
+    }
+
+    if ((!allReports || !allReports.length) && reportError === null) {
+      const legacy = await supabase
+        .from('phone_reports')
+        .not('status', 'eq', 'rejected')
+        .select('id, imei, user_id, phone_number, email, whatsapp, owner_name, finder_user_id')
+        .order('id', { ascending: true });
+      allReports = legacy.data || [];
+      reportError = legacy.error;
+    }
+
+    if (reportError || !allReports || !allReports.length) {
       return res.status(404).json({ error: 'لم يتم العثور على الهاتف في البلاغات', imei });
     }
 
@@ -4341,7 +4496,12 @@ app.post('/api/get-owner-details-by-imei', verifyJwtToken, async (req, res) => {
 
     if (!foundReport) return res.status(404).json({ error: 'لم يتم العثور على البلاغ لهذا الـ IMEI' });
 
-    console.log('Matched report:', { id: foundReport.id, user_id: foundReport.user_id, email: foundReport.email });
+    // ✅ SECURITY: طباعة الحقول الكاملة (بما فيها email) تقتصر على وضع التطوير فقط
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('Matched report:', { id: foundReport.id, user_id: foundReport.user_id, email: foundReport.email });
+    } else {
+      console.log('Matched report id:', foundReport.id);
+    }
 
     const ownerId = foundReport.user_id;
 
@@ -4496,8 +4656,7 @@ app.get('/api/user-phones', verifyJwtToken, async (req, res) => {
       .from('registered_phones')
       .select('id, imei, phone_type, registration_date, last_confirmed_at, status, user_id')
       .eq('user_id', userId)
-      .neq('status', 'transferred')
-      .neq('status', 'sold');
+  
 
     if (error) throw error;
 
@@ -5178,7 +5337,21 @@ const updateRegisterUsage = async (userId) => {
     throw error;
   }
 };
+const updateSearchUsage = async (userId) => {
+  try {
+    const { error } = await supabase.rpc('increment_search_imei_usage', {
+      p_user_id: userId
+    });
 
+    if (error) {
+      console.error('خطأ في تحديث استخدام البحث:', error);
+      throw error;
+    }
+  } catch (error) {
+    console.error('خطأ في تحديث عداد البحث:', error);
+    throw error;
+  }
+};
 // نقطة نهاية للتحقق من وجود IMEI
 app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
   const { imei } = req.body;
@@ -5192,30 +5365,44 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
   try {
     // أولاً: التحقق من جدول البلاغات (phone_reports) قبل أي شيء
     // جلب جميع السجلات للتحقق منها
-    const { data: allReports, error: reportsFetchError } = await supabase
-      .from('phone_reports')
-      .select('id, user_id, imei')
-      .eq('status', 'active');
+    const imeiHash = getImeiHash(imei);
+    if (imeiHash) {
+      const { data: matchingReports, error: matchErr } = await supabase
+        .from('phone_reports')
+        .select('id, user_id')
+        .eq('status', 'active')
+        .eq('imei_hash', imeiHash);
 
-    if (reportsFetchError) {
-      console.error('Error fetching phone_reports:', reportsFetchError);
-    } else if (allReports && allReports.length > 0) {
-      // فك تشفير جميع أرقام IMEI والمقارنة
-      const matchingReport = allReports.find(report => {
-        const decryptedImei = decryptField(report.imei);
-        if (process.env.NODE_ENV !== 'production') console.log('[check-imei] report decrypted IMEI:', decryptedImei, 'normalized:', normalizeDigitsOnly(decryptedImei));
-        return normalizeDigitsOnly(decryptedImei) === normalizeDigitsOnly(imei);
-      });
-
-      if (matchingReport) {
-        // يوجد بلاغ فعال لهذا الـ IMEI، لا يسمح بالتسجيل في أي حال
-        // التحقق مما إذا كان البلاغ يخص المستخدم الحالي
+      if (matchErr) {
+        console.error('Error fetching phone_reports by imei_hash:', matchErr);
+      } else if (matchingReports && matchingReports.length > 0) {
+        const matchingReport = matchingReports[0];
         if (requesterId && matchingReport.user_id === requesterId) {
-          // المستخدم الحالي هو صاحب البلاغ، لكن لا نسمح له بالتسجيل
           return res.json({ exists: true, phoneDetails: null, isOtherUser: false, hasActiveReport: true, isOwnReport: true, isStolen: true });
         }
-        // يوجد بلاغ فعال لمستخدم آخر، نعتبره موجوداً ومملوكاً لآخر لمنع التسجيل وإظهار التحذير
         return res.json({ exists: true, phoneDetails: null, isOtherUser: true, hasActiveReport: true, isStolen: true });
+      }
+    } else {
+      const { data: allReports, error: reportsFetchError } = await supabase
+        .from('phone_reports')
+        .select('id, user_id, imei')
+        .eq('status', 'active');
+
+      if (reportsFetchError) {
+        console.error('Error fetching phone_reports:', reportsFetchError);
+      } else if (allReports && allReports.length > 0) {
+        const matchingReport = allReports.find(report => {
+          const decryptedImei = decryptField(report.imei);
+          if (process.env.NODE_ENV !== 'production') console.log('[check-imei] report decrypted IMEI:', decryptedImei, 'normalized:', normalizeDigitsOnly(decryptedImei));
+          return normalizeDigitsOnly(decryptedImei) === normalizeDigitsOnly(imei);
+        });
+
+        if (matchingReport) {
+          if (requesterId && matchingReport.user_id === requesterId) {
+            return res.json({ exists: true, phoneDetails: null, isOtherUser: false, hasActiveReport: true, isOwnReport: true, isStolen: true });
+          }
+          return res.json({ exists: true, phoneDetails: null, isOtherUser: true, hasActiveReport: true, isStolen: true });
+        }
       }
     }
 
@@ -5300,8 +5487,8 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
           imei: decryptField(matchingPhone.imei),
           phone_number: decryptedPhoneNumber || '',
           id_last6: decryptedIdLast6 || '',
-            owner_name: decryptedOwnerName,
-            country_key: decryptField(matchingPhone.country_key) || matchingPhone.country_key || matchingPhone.country_code || ''
+          owner_name: decryptedOwnerName,
+          country_key: decryptField(matchingPhone.country_key) || matchingPhone.country_key || matchingPhone.country_code || ''
         };
         if (process.env.NODE_ENV !== 'production') {
           console.log('[check-imei] Returning decrypted phoneDetails for current user:', {
@@ -5337,7 +5524,7 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
           try {
             ownerIdLast6 = decryptField(matchingPhone.id_last6) || null;
           } catch (e) { ownerIdLast6 = null; }
-          try { ownerCountryKey = decryptField(matchingPhone.country_key) || matchingPhone.country_key || matchingPhone.country_code || null; } catch(e) { ownerCountryKey = null; }
+          try { ownerCountryKey = decryptField(matchingPhone.country_key) || matchingPhone.country_key || matchingPhone.country_code || null; } catch (e) { ownerCountryKey = null; }
 
           return res.json({
             exists: true,
@@ -5361,49 +5548,49 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
             phone_image_url: matchingPhone.phone_image_url || null,
             receipt_image_url: matchingPhone.receipt_image_url || null,
             // include masked country key hint
-            maskedCountryKey: ownerCountryKey ? (String(ownerCountryKey).slice(0,1) + '*'.repeat(Math.max(0, String(ownerCountryKey).length - 1))) : null
+            maskedCountryKey: ownerCountryKey ? (String(ownerCountryKey).slice(0, 1) + '*'.repeat(Math.max(0, String(ownerCountryKey).length - 1))) : null
           });
         }
       }
     }
 
     /// ⭐ التعديل الرئيسي: إذا لم يتم العثور على الهاتف، جلب بيانات المستخدم الحالي للملء التلقائي
-if (!matchingPhone) {
-  try {
-    // جلب بيانات المستخدم الحالي
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('full_name, phone, id_last6')
-      .eq('id', requesterId)
-      .maybeSingle();
+    if (!matchingPhone) {
+      try {
+        // جلب بيانات المستخدم الحالي
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('full_name, phone, id_last6')
+          .eq('id', requesterId)
+          .maybeSingle();
 
-    if (!userError && userData) {
-      // فك تشفير بيانات المستخدم
-      const decryptedFullName = decryptField(userData.full_name) || '';
-      const decryptedPhone = decryptField(userData.phone) || '';
-      const decryptedIdLast6 = decryptField(userData.id_last6) || '';
+        if (!userError && userData) {
+          // فك تشفير بيانات المستخدم
+          const decryptedFullName = decryptField(userData.full_name) || '';
+          const decryptedPhone = decryptField(userData.phone) || '';
+          const decryptedIdLast6 = decryptField(userData.id_last6) || '';
 
-      // ✅ إخفاء البيانات (Masking) قبل الإرجاع
-      const maskedFullName = maskName(decryptedFullName);
-      const maskedPhone = maskPhoneNumber(decryptedPhone);
-      const maskedIdLast6 = maskIdLast6(decryptedIdLast6);
+          // ✅ إخفاء البيانات (Masking) قبل الإرجاع
+          const maskedFullName = maskName(decryptedFullName);
+          const maskedPhone = maskPhoneNumber(decryptedPhone);
+          const maskedIdLast6 = maskIdLast6(decryptedIdLast6);
 
-      // إرجاع البيانات المقنعة للملء التلقائي
-      return res.json({
-        exists: false,
-        phoneDetails: null,
-        autoFillData: {
-          ownerName: maskedFullName,  // ✅ صحيح: مقنعة
-          phoneNumber: maskedPhone,    // ✅ صحيح: مقنعة
-          idLast6: maskedIdLast6,      // ✅ صحيح: مقنعة
-          isReadOnly: true
+          // إرجاع البيانات المقنعة للملء التلقائي
+          return res.json({
+            exists: false,
+            phoneDetails: null,
+            autoFillData: {
+              ownerName: maskedFullName,  // ✅ صحيح: مقنعة
+              phoneNumber: maskedPhone,    // ✅ صحيح: مقنعة
+              idLast6: maskedIdLast6,      // ✅ صحيح: مقنعة
+              isReadOnly: true
+            }
+          });
         }
-      });
+      } catch (e) {
+        console.error('[check-imei] Error fetching user data for auto-fill:', e);
+      }
     }
-  } catch (e) {
-    console.error('[check-imei] Error fetching user data for auto-fill:', e);
-  }
-}
 
 
     res.json({ exists: false, phoneDetails: null });
@@ -5478,6 +5665,11 @@ const checkAuthBlocked = (key) => {
 app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
   const phoneData = req.body;
   const userId = req.user.id;
+ const limitCheck = await checkRegisterLimit(req.user.id);
+
+if (!limitCheck.canRegister) {
+    return res.status(403).json(limitCheck);
+}
   const rawImei = typeof phoneData.imei === 'string' ? phoneData.imei : '';
   // If an IMEI is provided, compute a stable SHA-256 hash of the normalized digits
   // and store it in `imei_hash` for indexing/searching (non-reversible).
@@ -5702,8 +5894,19 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
       .select();
 
     if (error) throw error;
+    await updateRegisterUsage(userId); // تحديث العداد بعد التسجيل
 
-    const registeredId = Array.isArray(data) ? data[0]?.id : data?.id;
+    const insertedPhone = Array.isArray(data) ? data[0] : data;
+    let recoveryCard = null;
+    try {
+      if (insertedPhone && insertedPhone.id) {
+        recoveryCard = await createOrRefreshRecoveryCard(supabase, insertedPhone, { forceRefresh: false });
+      }
+    } catch (qrError) {
+      console.error('QR recovery card generation failed after registration:', qrError);
+    }
+
+    const registeredId = insertedPhone?.id;
 
     if (useBonusOnLimit && limitCheck.currentUsage >= limitCheck.limit) {
       const bonusResult = await checkRegisterLimit(req.user.id, true);
@@ -5757,7 +5960,47 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
       // لا نوقف الاستجابة الناجحة بسبب خطأ في تحديث الاستخدام
     }
 
-    res.json({ success: true, data });
+    // ==== إرسال إشعار للمستخدم وحفظه في جدول notifications ====
+    try {
+      const { data: userRow } = await supabase
+        .from('users')
+        .select('fcm_token, language')
+        .eq('id', userId)
+        .single();
+
+      const language = (userRow?.language || 'ar').toString().slice(0, 2).toLowerCase();
+      const translations = (typeof getTranslations === 'function') ? getTranslations(language) : {};
+
+      const title = translations.notification_phone_registered_title || translations.register_new_phone_title || (language === 'en' ? 'New Phone Registered' : 'تسجيل هاتف جديد');
+      const body = translations.notification_phone_registered_body || translations.phone_registered_success_description || (language === 'en' ? 'A new phone has been registered and is now under review.' : 'تم تسجيل هاتف جديد وهو الان تحت المراجعه');
+
+      // حفظ داخل جدول الإشعارات
+      try {
+        await supabase.from('notifications').insert({
+          user_id: userId,
+          title,
+          body,
+          type: 'phone_registration',
+          is_read: false,
+          created_at: new Date().toISOString()
+        });
+      } catch (notifInsertErr) {
+        console.error('/api/register-phone notification insert error:', notifInsertErr);
+      }
+
+      // إشعار خارجي عبر FCM
+      if (userRow?.fcm_token) {
+        try {
+          await sendFCMNotificationV1({ token: userRow.fcm_token, title, body });
+        } catch (fcmErr) {
+          console.error('/api/register-phone FCM send error:', fcmErr);
+        }
+      }
+    } catch (notifErr) {
+      console.error('Register-phone notification error:', notifErr);
+    }
+
+    res.json({ success: true, data, recoveryCard });
   } catch (error) {
     console.error('Error registering phone:', error);
     return sendError(res, 500, 'حدث خطأ في الخادم', error);
@@ -5844,21 +6087,36 @@ app.post('/api/create-phone', verifyJwtToken, async (req, res) => {
 
     // Prevent registration if active report exists for this IMEI
     if (rawImei) {
-      const { data: allReports, error: reportsFetchError } = await supabase
-        .from('phone_reports')
-        .select('id, imei')
-        .eq('status', 'active');
+      const imeiHash = getImeiHash(rawImei);
+      if (imeiHash) {
+        const { data: matchingReports, error: reportsFetchError } = await supabase
+          .from('phone_reports')
+          .select('id')
+          .eq('status', 'active')
+          .eq('imei_hash', imeiHash);
 
-      if (reportsFetchError) {
-        console.error('Error checking phone_reports:', reportsFetchError);
-      } else if (allReports && allReports.length > 0) {
-        const matchingReport = allReports.find(report => {
-          const decryptedImei = decryptField(report.imei);
-          return normalizeDigitsOnly(decryptedImei) === normalizeDigitsOnly(rawImei);
-        });
-
-        if (matchingReport) {
+        if (reportsFetchError) {
+          console.error('Error checking phone_reports by imei_hash:', reportsFetchError);
+        } else if (matchingReports && matchingReports.length > 0) {
           return res.status(400).json({ success: false, error: 'Cannot register: active report exists for this IMEI', hasActiveReport: true });
+        }
+      } else {
+        const { data: allReports, error: reportsFetchError } = await supabase
+          .from('phone_reports')
+          .select('id, imei')
+          .eq('status', 'active');
+
+        if (reportsFetchError) {
+          console.error('Error checking phone_reports:', reportsFetchError);
+        } else if (allReports && allReports.length > 0) {
+          const matchingReport = allReports.find(report => {
+            const decryptedImei = decryptField(report.imei);
+            return normalizeDigitsOnly(decryptedImei) === normalizeDigitsOnly(rawImei);
+          });
+
+          if (matchingReport) {
+            return res.status(400).json({ success: false, error: 'Cannot register: active report exists for this IMEI', hasActiveReport: true });
+          }
         }
       }
     }
@@ -6151,6 +6409,17 @@ registerOwnershipRoutes({
   sendFCMNotificationV1
 });
 
+registerQrRoutes({
+  app,
+  supabase,
+  verifyJwtToken,
+  sendError,
+  decryptField,
+  normalizeDigitsOnly,
+  logAudit,
+  sendFCMNotificationV1
+});
+
 // مسار للحصول على بيانات المشتري
 registerBuyerInfoRoutes({
   app,
@@ -6160,16 +6429,7 @@ registerBuyerInfoRoutes({
   decryptField
 });
 
-// نقطة نهاية للتحقق من حدود الاستخدام
-app.post('/api/check-limit', verifyJwtToken, async (req, res) => {
-  const { type, consumeBonusOnLimit = false } = req.body; // 'search_imei', 'register_phone', 'search_history', 'print_history', 'game'
-  const userId = req.user.id;
-  const userEmail = req.user.email;
-
-  if (!type) {
-    return res.status(400).json({ error: 'Limit type is required' });
-  }
-
+async function checkUserLimit(userId, userEmail, type, consumeBonusOnLimit = false) {
   try {
     // 1. جلب أحدث دفع من جدول ads_payment
     const { data: latestPayment, error: paymentError } = await supabase
@@ -6196,13 +6456,13 @@ app.post('/api/check-limit', verifyJwtToken, async (req, res) => {
       // No payment found -> infer from users.role: consider business if role contains 'business', otherwise user is free_user
       try {
         const { data: userRec, error: userErr } = await supabase.from('users').select('role').eq('id', userId).maybeSingle();
-       if (
-  !userErr &&
-  userRec &&
-  typeof userRec.role === 'string'
-) {
-  userType = userRec.role;
-}
+        if (
+          !userErr &&
+          userRec &&
+          typeof userRec.role === 'string'
+        ) {
+          userType = userRec.role;
+        }
       } catch (e) {
         console.warn('check-limit: failed to read user role, defaulting to free_user', e);
       }
@@ -6216,8 +6476,8 @@ app.post('/api/check-limit', verifyJwtToken, async (req, res) => {
       .single();
 
     if (planError || !planData) {
-      console.error('Plan query error:', planError);
-      return res.status(500).json({ error: 'Plan details not found' });
+      console.error('Plan query error:', planError, planData);
+      throw new Error('Plan details not found');
     }
 
     // 3. جلب الاستخدام الحالي
@@ -6338,7 +6598,7 @@ app.post('/api/check-limit', verifyJwtToken, async (req, res) => {
         }
       }
 
-      return res.json({
+      return {
         allowed: false,
         limit,
         currentUsage,
@@ -6347,10 +6607,10 @@ app.post('/api/check-limit', verifyJwtToken, async (req, res) => {
         bonusAvailable,
         offerCost,
         remainingBonus
-      });
+      };
     }
 
-    return res.json({
+    return ({
       allowed: true,
       limit,
       currentUsage,
@@ -6359,7 +6619,32 @@ app.post('/api/check-limit', verifyJwtToken, async (req, res) => {
 
   } catch (error) {
     console.error('Error checking limit:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    throw error;
+  }
+}
+// نقطة نهاية للتحقق من حدود الاستخدام
+app.post('/api/check-limit', verifyJwtToken, async (req, res) => {
+  const { type, consumeBonusOnLimit = false } = req.body;
+
+  const userId = req.user.id;
+  const userEmail = req.user.email;
+
+  try {
+    const result = await checkUserLimit(
+      userId,
+      userEmail,
+      type,
+      consumeBonusOnLimit
+    );
+
+    return res.json(result);
+
+  } catch (error) {
+    console.error('Error checking limit:', error);
+
+    return res.status(500).json({
+      error: error.message || 'Internal server error'
+    });
   }
 });
 
@@ -6654,7 +6939,12 @@ async function pollConfirmedUsersOnce() {
               console.error('[poller] welcome_gold_notification_failed:', notificationError);
             }
           }
-          console.log('[poller] processed confirmed user', user.id, email);
+          // ✅ SECURITY: طباعة البريد الإلكتروني تقتصر على وضع التطوير فقط
+          if (process.env.NODE_ENV !== 'production') {
+            console.log('[poller] processed confirmed user', user.id, email);
+          } else {
+            console.log('[poller] processed confirmed user id:', user.id);
+          }
         }
 
       } catch (inner) {

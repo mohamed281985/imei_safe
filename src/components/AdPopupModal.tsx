@@ -14,6 +14,7 @@ Modal.setAppElement('#root');
 
 export default function AdPopupModal({ isOpen, onClose, userLocation, ads }: AdPopupModalProps) {
   const [currentSlide, setCurrentSlide] = useState(0);
+  const [showClose, setShowClose] = useState(false);
 
   useEffect(() => {
     if (!isOpen || !ads || ads.length <= 1) {
@@ -30,12 +31,25 @@ export default function AdPopupModal({ isOpen, onClose, userLocation, ads }: AdP
         console.log(`🔄 AdPopupModal: تبديل من الإعلان ${prev} إلى ${next}`);
         return next;
       });
-    }, 2000);
+    }, 3000);
 
     return () => {
       console.log('⏹️ AdPopupModal: إيقاف التبديل التلقائي');
       window.clearInterval(interval);
     };
+  }, [isOpen, ads]);
+
+  // عندما يكون هناك إعلان واحد فقط، أظهر زر الإغلاق بعد 4 ثوانٍ
+  useEffect(() => {
+    if (!isOpen) return;
+    if (!ads || ads.length !== 1) {
+      setShowClose(false);
+      return;
+    }
+
+    setShowClose(false);
+    const timer = window.setTimeout(() => setShowClose(true), 6000);
+    return () => window.clearTimeout(timer);
   }, [isOpen, ads]);
 
   // دالة لتحميل الصور مسبقاً
@@ -164,12 +178,15 @@ export default function AdPopupModal({ isOpen, onClose, userLocation, ads }: AdP
             key={`${currentAd.id || 'ad'}-${currentSlide}`}
             src={currentAd.image_url}
             alt={`إعلان ${currentSlide + 1}`}
-            style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 28, background: '#fff', display: 'block' }}
-          />
+            style={{
+              width: '100%',
+              height: '100%',
+              display: 'block'
+            }} />
         )}
 
         <div style={{ position: 'absolute', top: 18, left: 18, zIndex: 1003, display: 'flex', alignItems: 'center', gap: '150px', width: 'calc(100% - 50px)' }}>
-          {currentSlide !== 0 && (
+          {(ads && ads.length === 1 ? showClose : currentSlide !== 0) && (
             <button
               onClick={onClose}
               style={{

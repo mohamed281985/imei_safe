@@ -51,20 +51,20 @@ const OffersGallery = () => {
                     // التحقق من أن الصورة لا تزال صالحة (موجودة وقابلة للاستخدام)
                     const img = new Image();
                     img.src = cachedImageUrl;
-                    
+
                     img.onload = () => {
                         setImageUrl(cachedImageUrl);
                         setLoading(false);
                     };
-                    
+
                     img.onerror = () => {
                         console.log(t('cached_image_corrupted'));
                         fetchFromDatabase(currentAdId, cacheKey);
                     };
-                    
+
                     return; // الخروج إذا تم العثور على الصورة الصالحة
                 }
-                
+
                 // 2. إذا لم تكن مخزنة أو كانت معطوبة، يتم جلبها من قاعدة البيانات
                 fetchFromDatabase(currentAdId, cacheKey);
             } else {
@@ -72,7 +72,7 @@ const OffersGallery = () => {
                 setLoading(false);
             }
         };
-        
+
         const fetchFromDatabase = async (adId: string, cacheKey: string) => {
             const idNum = validateId(adId);
             if (idNum === null) {
@@ -87,12 +87,12 @@ const OffersGallery = () => {
                     .select('mainimage_url')
                     .eq('id', idNum)
                     .maybeSingle();
-                    
+
                 if (!error && data && data.mainimage_url) {
                     setImageUrl(data.mainimage_url);
                     // 3. تخزين الصورة الجديدة في ذاكرة التخزين المؤقت (مشفّرة في sessionStorage)
                     await setSecureItem(cacheKey, data.mainimage_url);
-                    
+
                     // تحميل الصورة مسبقًا لضمان استعدادها للاستخدام المستقبلي
                     preloadImage(data.mainimage_url);
                 } else {
@@ -105,12 +105,12 @@ const OffersGallery = () => {
                 setLoading(false);
             }
         };
-        
+
         const preloadImage = (url: string) => {
             const img = new Image();
             img.src = url;
         };
-        
+
         fetchImage();
     }, [location.search, t]);
 
@@ -209,7 +209,7 @@ const OffersGallery = () => {
                 .eq('user_id', user.id)
                 .maybeSingle();
 
-            if (businessError) { 
+            if (businessError) {
                 throw new Error(t('error_fetching_business_data') + ': ' + businessError.message);
             }
 
@@ -325,7 +325,7 @@ const OffersGallery = () => {
             );
 
             const paymentData = paymentResponse.data;
-            
+
             // تحديث الحقول الجديدة مباشرة في قاعدة البيانات (تم إزالة Actual_bonus)
             if (paymentData.payment_id) {
                 try {
@@ -335,7 +335,7 @@ const OffersGallery = () => {
                             Actual_payment_date: new Date().toISOString()
                         })
                         .eq('id', paymentData.payment_id);
-                        
+
                     if (updateError) {
                         console.error(t('error_updating_fields'), updateError);
                     } else {
@@ -368,7 +368,7 @@ const OffersGallery = () => {
                     // تحديث دور المستخدم وتاريخ انتهاء الصلاحية
                     const { error: updateError } = await supabase
                         .from('users')
-                        .update({ 
+                        .update({
                             role: paymentData.type,
                             expires_at: expiryDate.toISOString()
                         })
@@ -480,7 +480,7 @@ const OffersGallery = () => {
                                     setPayError(null);
                                 }
                             } else {
-                                console.warn('Payment link fetch returned non-ok:', resp.status, await resp.text().catch(() => '')); 
+                                console.warn('Payment link fetch returned non-ok:', resp.status, await resp.text().catch(() => ''));
                             }
                         } catch (e) {
                             // تجاهل أخطاء الطلب الثانوي
@@ -499,28 +499,30 @@ const OffersGallery = () => {
     };
 
     return (
-        <div className="fixed inset-0 w-full h-full bg-black flex flex-col items-center justify-center z-50" style={{ padding: 0, margin: 0 }}>
+        <div className="fixed inset-0  flex flex-col items-center justify-center z-50" style={{ padding: 0, margin: 0 }}>
             <div className="absolute bottom-10 left-0 w-full flex flex-col items-center z-10 px-4">
-    <button className="bg-red-500 text-white font-bold py-3 px-6 rounded-lg shadow-lg" onClick={handleOfferPayment} disabled={isPaying}>اشترك في العرض</button>
-    {payError && <div className="text-red-500 mt-4 text-xl text-center max-w-[80%]">{payError}</div>}
-</div>
-
-            <img
-                src={imageUrl}
-                alt={t('offer_image')}
-                className="w-full h-full object-cover"
-                style={{ 
-                    position: 'fixed',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: '100%',
-                    objectFit: 'cover',
-                    zIndex: 0,
-                    overflow: 'hidden'
-                }}
-            />
-
+                <button className="bg-red-500 text-white font-bold py-3 px-6 rounded-lg shadow-lg" onClick={handleOfferPayment} disabled={isPaying}>اشترك في العرض</button>
+                {payError && <div className="text-red-500 mt-4 text-xl text-center max-w-[80%]">{payError}</div>}
+            </div>
+            <div
+                style={{ width: '100%', height: '100%', position: 'relative' }}
+            >
+                <img
+                    src={imageUrl}
+                    alt={t('offer_image')}
+                    onLoad={(e) => {
+                        console.log(
+                            e.currentTarget.naturalWidth,
+                            e.currentTarget.naturalHeight
+                        );
+                    }}
+                    style={{
+                        width: '100%',
+                        height: '100%',
+                        display: 'block'
+                    }}
+                />
+            </div>
         </div>
     );
 };

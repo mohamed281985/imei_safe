@@ -1,4 +1,8 @@
 import bcrypt from 'bcrypt';
+import { validateImageFile } from '../utils/imageValidator.js';
+import { SECURITY_CONFIG } from '../config/security.js';
+import crypto from 'crypto';
+import { createOrRefreshRecoveryCard, normalizeStoragePath } from '../utils/qrCardUtils.js';
 
 const decryptedRequestCounts = {};
 
@@ -40,14 +44,19 @@ export function registerOwnershipRoutes({
         ? reports.find((r) => normalizeDigitsOnly(decryptField(r.imei)) === normalizedIncoming)
         : null;
 
-      const { data: phones, error: phoneError } = await supabase
+      // ✅ PERFORMANCE: Fetch only the lightweight columns needed to locate the
+      // matching row (instead of pulling every column, including large image/JSON
+      // fields, for every registered phone just to compare IMEIs). The full row is
+      // fetched separately below, only once a match is found. This does not change
+      // the matching logic or the response shape in any way.
+      const { data: phoneImeiRows, error: phoneImeiError } = await supabase
         .from('registered_phones')
-        .select('*, receipt_image_url');
-      if (phoneError) throw phoneError;
+        .select('id, imei, user_id');
+      if (phoneImeiError) throw phoneImeiError;
 
       if (process.env.NODE_ENV === 'development') {
         try {
-          const decryptedList = (phones || []).map((p) => ({
+          const decryptedList = (phoneImeiRows || []).map((p) => ({
             id: p.id,
             user_id: p.user_id,
             imei_decrypted: decryptField(p.imei)
@@ -59,20 +68,33 @@ export function registerOwnershipRoutes({
         }
       }
 
-      const registeredPhone = phones
-        ? phones.find((p) => normalizeDigitsOnly(decryptField(p.imei)) === normalizedIncoming)
+      const matchedPhoneRow = phoneImeiRows
+        ? phoneImeiRows.find((p) => normalizeDigitsOnly(decryptField(p.imei)) === normalizedIncoming)
         : null;
+
+      let registeredPhone = null;
+      if (matchedPhoneRow) {
+        const { data: fullPhone, error: fullPhoneError } = await supabase
+          .from('registered_phones')
+          .select('*, receipt_image_url')
+          .eq('id', matchedPhoneRow.id)
+          .maybeSingle();
+        if (fullPhoneError) throw fullPhoneError;
+        registeredPhone = fullPhone || null;
+      }
 
       if (activeReport) {
         if (registeredPhone) {
           const isOwner = userId && registeredPhone.user_id === userId;
-          console.log('[IMEI-MASKED-INFO][REPORT+REG]', {
-            imei,
-            userId,
-            registeredPhoneUserId: registeredPhone.user_id,
-            isOwner,
-            status: registeredPhone.status
-          });
+          if (process.env.NODE_ENV === 'development') {
+            console.log('[IMEI-MASKED-INFO][REPORT+REG]', {
+              imei,
+              userId,
+              registeredPhoneUserId: registeredPhone.user_id,
+              isOwner,
+              status: registeredPhone.status
+            });
+          }
 
           if (registeredPhone.status === 'transferred') {
             if (userId && registeredPhone.user_id === userId) {
@@ -154,7 +176,9 @@ export function registerOwnershipRoutes({
             phone_type: phoneType,
             phone_image_url: phoneImageUrl
           };
-          console.log('[IMEI-MASKED-INFO] Response:', response);
+          if (process.env.NODE_ENV === 'development') {
+            console.log('[IMEI-MASKED-INFO] Response:', response);
+          }
           return res.json(response);
         }
 
@@ -172,13 +196,15 @@ export function registerOwnershipRoutes({
 
       if (registeredPhone) {
         const isOwner = userId && registeredPhone.user_id === userId;
-        console.log('[IMEI-MASKED-INFO][REG ONLY]', {
-          imei,
-          userId,
-          registeredPhoneUserId: registeredPhone.user_id,
-          isOwner,
-          status: registeredPhone.status
-        });
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[IMEI-MASKED-INFO][REG ONLY]', {
+            imei,
+            userId,
+            registeredPhoneUserId: registeredPhone.user_id,
+            isOwner,
+            status: registeredPhone.status
+          });
+        }
 
         if (registeredPhone.status === 'transferred') {
           if (userId && registeredPhone.user_id === userId) {
@@ -266,7 +292,9 @@ export function registerOwnershipRoutes({
           phone_type: phoneType,
           phone_image_url: phoneImageUrl
         };
-        console.log('[IMEI-MASKED-INFO] Response:', response);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[IMEI-MASKED-INFO] Response:', response);
+        }
         return res.json(response);
       }
 
@@ -394,7 +422,10 @@ export function registerOwnershipRoutes({
       const { imei, password } = req.body;
       const userId = req.user?.id;
 
-      console.log('[verify-seller-password] userId:', userId, 'imei:', imei, 'password:', !!password);
+      // ✅ SECURITY: لا نطبع IMEI الفعلي إلا في وضع التطوير
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[verify-seller-password] userId:', userId, 'imei:', imei, 'password:', !!password);
+      }
 
       if (!userId) {
         try {
@@ -795,6 +826,16 @@ export function registerOwnershipRoutes({
         console.error('transfer-ownership: update registered_phones error:', updateErr);
         throw updateErr;
       }
+
+      const updatedPhoneRow = Array.isArray(updated) ? updated[0] : updated;
+      if (updatedPhoneRow) {
+        try {
+          await createOrRefreshRecoveryCard(supabase, updatedPhoneRow, { forceRefresh: true });
+        } catch (cardErr) {
+          console.error('transfer-ownership: failed to refresh QR recovery card:', cardErr);
+        }
+      }
+
       try {
   // إشعار البائع
   const { data: sellerRow } = await supabase
@@ -1065,12 +1106,17 @@ export function registerOwnershipRoutes({
 
   app.post('/api/transfer-records/verify-owner', verifyOwnerLimiter, async (req, res) => {
     try {
-      const { imei, ownerPassword } = req.body || {};
-      if (!imei || !ownerPassword) return res.status(400).json({ error: 'imei and ownerPassword are required' });
+      const { imei, ownerPassword, cardLast6 } = req.body || {};
+      if (!imei || !ownerPassword || !cardLast6) return res.status(400).json({ error: 'imei, ownerPassword, and cardLast6 are required' });
+      
+      // التحقق من صيغة آخر 6 أرقام من البطاقة
+      if (cardLast6.length !== 6 || !/^\d+$/.test(cardLast6)) {
+        return res.status(400).json({ error: 'cardLast6 must be exactly 6 digits' });
+      }
 
       const { data: phones, error: phonesErr } = await supabase
         .from('registered_phones')
-        .select('id, user_id, imei, password')
+        .select('id, user_id, imei, password, id_last6')
         .limit(1000);
       if (phonesErr) throw phonesErr;
 
@@ -1083,8 +1129,15 @@ export function registerOwnershipRoutes({
       const storedHash = matching.password;
       if (!storedHash) return res.status(400).json({ error: 'No registration password set for this IMEI' });
 
+      // التحقق من كلمة المرور
       const passwordMatches = await bcrypt.compare(String(ownerPassword), String(storedHash));
       if (!passwordMatches) return res.status(401).json({ error: 'Invalid owner credentials' });
+      
+      // التحقق من آخر 6 أرقام من البطاقة
+      const storedCardLast6 = matching.id_last6 ? decryptField(matching.id_last6) : null;
+      if (!storedCardLast6 || storedCardLast6.slice(-6) !== cardLast6) {
+        return res.status(401).json({ error: 'Invalid card details' });
+      }
 
       const { data: records, error } = await supabase
         .from('transfer_records')
@@ -1203,19 +1256,23 @@ export function registerOwnershipRoutes({
       if (fetchErr) throw fetchErr;
 
       // Diagnostic: show decrypted incoming and a small sample of decrypted report IMEIs
+      // ✅ SECURITY: بناء العينة المفكوكة التشفير وطباعتها يقتصران على وضع التطوير فقط
+      // لتفادي تسريب IMEI ومعرفات المستخدمين في سجلات الإنتاج، ولتجنب فك تشفير غير ضروري.
       let sampleDecrypted = [];
-      try {
-        for (let i = 0; i < Math.min(10, reports.length); i++) {
-          const r = reports[i];
-          try {
-            const dec = decryptField(r.imei) || r.imei;
-            sampleDecrypted.push({ id: r.id, user_id: r.user_id, status: r.status, imei_dec: dec });
-          } catch (e) {
-            sampleDecrypted.push({ id: r.id, user_id: r.user_id, status: r.status, imei_dec: '<decrypt-failed>' });
+      if (process.env.NODE_ENV !== 'production') {
+        try {
+          for (let i = 0; i < Math.min(10, reports.length); i++) {
+            const r = reports[i];
+            try {
+              const dec = decryptField(r.imei) || r.imei;
+              sampleDecrypted.push({ id: r.id, user_id: r.user_id, status: r.status, imei_dec: dec });
+            } catch (e) {
+              sampleDecrypted.push({ id: r.id, user_id: r.user_id, status: r.status, imei_dec: '<decrypt-failed>' });
+            }
           }
+        } catch (e) {
+          console.warn('[resolve-report] failed to build sampleDecrypted:', e);
         }
-      } catch (e) {
-        console.warn('[resolve-report] failed to build sampleDecrypted:', e);
       }
 
       const matching = (reports || []).filter((r) => {
@@ -1228,7 +1285,11 @@ export function registerOwnershipRoutes({
         }
       });
 
-      console.log('[resolve-report] normalizedIncoming:', normalizedIncoming, 'matchingCount:', matching.length, 'sampleDecrypted:', sampleDecrypted.slice(0, 5));
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[resolve-report] normalizedIncoming:', normalizedIncoming, 'matchingCount:', matching.length, 'sampleDecrypted:', sampleDecrypted.slice(0, 5));
+      } else {
+        console.log('[resolve-report] matchingCount:', matching.length);
+      }
 
       if (!matching || matching.length === 0) {
         // If no active reports, check if there are reports for this IMEI in other states (e.g., already resolved)
@@ -1498,9 +1559,17 @@ export function registerOwnershipRoutes({
         return res.status(400).json({ error: 'Invalid base64 data URI format' });
       }
 
-      const mimeType = matches[1];
       const base64Data = matches[2];
       const buffer = Buffer.from(base64Data, 'base64');
+
+      // ✅ SECURITY: This endpoint previously had NO file size limit at all and
+      // trusted the client-supplied MIME type blindly. Now the real file content
+      // is verified via magic numbers and the configured max size is enforced.
+      const validation = validateImageFile(buffer, buffer.length, SECURITY_CONFIG.FILE_UPLOAD.MAX_SIZE_BYTES);
+      if (!validation.isValid) {
+        return res.status(400).json({ error: validation.error || 'Invalid image file' });
+      }
+      const safeContentType = validation.mimeType;
 
       // Generate unique filename matching phone image naming: <uuid>_phone_<timestamp>.jpg
       const fileId = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}_${Math.floor(Math.random() * 1e9)}`;
@@ -1511,7 +1580,7 @@ export function registerOwnershipRoutes({
       const { error: uploadError } = await supabase.storage
         .from('registerphone')
         .upload(filePath, buffer, {
-          contentType: mimeType,
+          contentType: safeContentType,
           upsert: true
         });
 
@@ -1524,6 +1593,113 @@ export function registerOwnershipRoutes({
       return res.json({ success: true, path: filePath });
     } catch (err) {
       console.error('[upload-receipt] error:', err);
+      return res.status(500).json({ error: 'Server error', details: err?.message || '' });
+    }
+  });
+
+  // POST /api/ownership-verification-request - Submit ownership verification with box image
+  app.post('/api/ownership-verification-request', verifyJwtToken, async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const { phone_id, imei_encrypted, box_image_path } = req.body || {};
+
+      console.log('[ownership-verification-request] Received:', { phone_id, imei_encrypted: !!imei_encrypted, box_image_path });
+
+      if (!phone_id || !imei_encrypted || !box_image_path) {
+        return res.status(400).json({ error: 'Missing required fields: phone_id, imei_encrypted, box_image_path' });
+      }
+
+      // Parse encrypted IMEI object
+      let imeiEncObj;
+      try {
+        imeiEncObj = typeof imei_encrypted === 'string' ? JSON.parse(imei_encrypted) : imei_encrypted;
+        if (!imeiEncObj || !imeiEncObj.encryptedData || !imeiEncObj.iv) {
+          throw new Error('Invalid encrypted IMEI structure');
+        }
+      } catch (parseErr) {
+        console.error('Failed to parse imei_encrypted:', parseErr);
+        return res.status(400).json({ error: 'Invalid imei_encrypted format' });
+      }
+
+      // Decrypt IMEI for hashing
+      let decryptedImei = '';
+      try {
+        decryptedImei = decryptField(imeiEncObj);
+      } catch (decErr) {
+        console.error('Failed to decrypt IMEI:', decErr);
+        return res.status(500).json({ error: 'Failed to decrypt IMEI' });
+      }
+
+      // Create IMEI hash for the record
+      const normalizeDigitsOnly = (s) => {
+        if (!s) return '';
+        return String(s).replace(/\D/g, '');
+      };
+
+      const getImeiHash = (imei) => {
+        const normalized = normalizeDigitsOnly(imei);
+        if (!normalized) return null;
+        return crypto.createHash('sha256').update(normalized).digest('hex');
+      };
+
+      const imeiHash = getImeiHash(decryptedImei);
+      if (!imeiHash) {
+        return res.status(400).json({ error: 'Invalid IMEI' });
+      }
+
+      // Encrypt IMEI for storage (using server-side encryption)
+      let encryptedImeiForStorage;
+      try {
+        encryptedImeiForStorage = encryptAES(decryptedImei);
+      } catch (encErr) {
+        console.error('Failed to encrypt IMEI for storage:', encErr);
+        return res.status(500).json({ error: 'Failed to encrypt data' });
+      }
+
+      // Insert into ownership_verification_requests table
+      const insertData = {
+        user_id: userId,
+        imei: encryptedImeiForStorage,
+        imei_hash: imeiHash,
+        phone_image: box_image_path,
+        status: 'pending',
+        created_at: new Date().toISOString()
+      };
+
+      console.log('[ownership-verification-request] Inserting data:', { user_id: userId, imei_hash: imeiHash, phone_image: box_image_path });
+
+      const { data: inserted, error: insertErr } = await supabase
+        .from('ownership_verification_requests')
+        .insert([insertData])
+        .select('id')
+        .single();
+
+      if (insertErr) {
+        console.error('Failed to insert ownership verification request:', insertErr);
+        return res.status(500).json({ error: 'Failed to create verification request', details: insertErr.message });
+      }
+
+      // Log audit
+      try {
+        await logAudit({
+          userId,
+          action: 'submit_ownership_verification',
+          resource: 'ownership_verification_requests',
+          resourceId: inserted.id,
+          status: 'success',
+          details: { imei_hash: imeiHash, phone_id }
+        });
+      } catch (auditErr) {
+        console.warn('Audit logging failed for ownership verification:', auditErr?.message || auditErr);
+      }
+
+      return res.json({ success: true, id: inserted.id });
+    } catch (err) {
+      console.error('Error in /api/ownership-verification-request:', err);
       return res.status(500).json({ error: 'Server error', details: err?.message || '' });
     }
   });

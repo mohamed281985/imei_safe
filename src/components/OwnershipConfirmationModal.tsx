@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Smartphone, ShieldCheck, ShieldAlert, HelpCircle } from 'lucide-react';
+import { Smartphone, ShieldCheck, ShieldAlert, HelpCircle, Camera, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -15,6 +15,7 @@ interface PhoneForConfirmation {
   imei_masked: string;
   phone_type: string;
   hasActiveReport?: boolean;
+  imei?: string;
 }
 
 interface OwnershipConfirmationModalProps {
@@ -40,11 +41,116 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
   const [showFoundPhoneDialog, setShowFoundPhoneDialog] = React.useState(false);
   const [localPhones, setLocalPhones] = React.useState<PhoneForConfirmation[]>(phones);
   const [removedPhoneIds, setRemovedPhoneIds] = React.useState<string[]>([]);
+  const [expandedPhoneId, setExpandedPhoneId] = React.useState<string | null>(null);
+  const [boxImage, setBoxImage] = React.useState<File | null>(null);
+  const [boxImagePreview, setBoxImagePreview] = React.useState<string>('');
+  const [cameraStream, setCameraStream] = React.useState<MediaStream | null>(null);
+  const videoRef = React.useRef<HTMLVideoElement>(null);
+  const canvasRef = React.useRef<HTMLCanvasElement>(null);
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
 
   React.useEffect(() => {
     const filtered = (phones || []).filter(p => !removedPhoneIds.includes(p.id));
     setLocalPhones(filtered);
   }, [phones, removedPhoneIds]);
+
+  const startCamera = async (phoneId: string) => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      setCameraStream(stream);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+      setExpandedPhoneId(phoneId);
+    } catch (err) {
+      console.error('Failed to start camera:', err);
+      toast({ title: t('error'), description: 'فشل تشغيل الكاميرا', variant: 'destructive' });
+    }
+  };
+
+  const stopCamera = () => {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(track => track.stop());
+      setCameraStream(null);
+    }
+    setExpandedPhoneId(null);
+  };
+
+  const capturePhoto = async () => {
+    if (!canvasRef.current || !videoRef.current) return;
+    const ctx = canvasRef.current.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(videoRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height);
+    canvasRef.current.toBlob((blob) => {
+      if (blob) {
+        const file = new File([blob], 'box-image.jpg', { type: 'image/jpeg' });
+        setBoxImage(file);
+        setBoxImagePreview(canvasRef.current?.toDataURL() || '');
+      }
+    }, 'image/jpeg');
+  };
+
+  const handleBoxImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setBoxImage(file);
+      const reader = new FileReader();
+      reader.onload = (evt) => setBoxImagePreview(evt.target?.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const submitVerification = async (phoneId: string) => {
+    if (!boxImage) {
+      toast({ title: t('alert_title'), description: 'يرجى التقاط صورة العلبة', variant: 'destructive' });
+      return;
+    }
+
+    const phone = localPhones.find(p => p.id === phoneId);
+    if (!phone) return;
+
+    setIsSubmitting(true);
+    try {
+      // Step 1: Upload image to Supabase Storage (registerphone bucket)
+      const imageFileName = `ownership-verification/${user?.id}/${Date.now()}-${Math.random().toString(36).substr(2, 9)}.jpg`;
+      const { data: uploadData, error: uploadErr } = await supabase.storage
+        .from('registerphone')
+        .upload(imageFileName, boxImage, { contentType: 'image/jpeg' });
+
+      if (uploadErr) {
+        throw new Error(`فشل رفع الصورة: ${uploadErr.message}`);
+      }
+
+      console.log('[OwnershipConfirmationModal] Image uploaded successfully:', uploadData);
+
+      // Step 2: Send verification request to server
+      const payload = {
+        phone_id: phoneId,
+        imei_encrypted: phone.imei_encrypted,
+        box_image_path: uploadData.path
+      };
+
+      console.log('[OwnershipConfirmationModal] Sending verification request:', payload);
+
+      const resp = await axiosInstance.post('/api/ownership-verification-request', payload);
+
+      if (resp.data.success) {
+        toast({ title: t('success'), description: 'تم إرسال طلب التحقق بنجاح' });
+        setLocalPhones(prev => prev.filter(p => p.id !== phoneId));
+        setRemovedPhoneIds(prev => Array.from(new Set([...prev, phoneId])));
+        setBoxImage(null);
+        setBoxImagePreview('');
+        stopCamera();
+      } else {
+        throw new Error(resp.data.error || 'فشل إرسال الطلب');
+      }
+    } catch (err: any) {
+      console.error('Verification submission error:', err);
+      toast({ title: t('error'), description: err.message || 'فشل إرسال الطلب', variant: 'destructive' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   // عند فتح المودال، تأكد من حالة البلاغات التي وُسِمت بأنها نشطة
   React.useEffect(() => {
@@ -286,60 +392,122 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
           </div>
           <div className="max-h-60 overflow-y-auto space-y-3 pr-2 border-t pt-3">
             {localPhones.map(phone => (
-              <div
-                key={phone.id}
-                className="flex items-center gap-4 p-3 bg-gray-50 rounded-lg border border-gray-200 cursor-pointer hover:bg-orange-50 transition-colors"
-                role="button"
-                tabIndex={0}
-                onClick={() => handleTogglePhone(phone.id)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    handleTogglePhone(phone.id);
-                  }
-                }}
-              >
-                <Checkbox
-                  id={`phone-${phone.id}`}
-                  checked={selectedPhones.includes(phone.id)}
-                  onCheckedChange={(checked) => {
-                    if (typeof checked === 'boolean') {
-                      if (checked && !selectedPhones.includes(phone.id)) {
-                        setSelectedPhones(prev => [...prev, phone.id]);
-                      } else if (!checked) {
-                        setSelectedPhones(prev => prev.filter(id => id !== phone.id));
-                      }
+              <div key={phone.id}>
+                <div
+                  className="flex items-center gap-4 p-3 bg-gray-50 rounded-lg border border-gray-200 cursor-pointer hover:bg-orange-50 transition-colors"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setExpandedPhoneId(expandedPhoneId === phone.id ? null : phone.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setExpandedPhoneId(expandedPhoneId === phone.id ? null : phone.id);
                     }
                   }}
-                  onClick={(e) => e.stopPropagation()}
-                />
-                <Smartphone className="w-6 h-6 text-gray-500 flex-shrink-0" />
-                <div className="flex-grow">
-                  <p className="font-semibold text-gray-800">{phone.phone_type || t('unspecified_phone')}</p>
-                  <p className="text-sm text-gray-500 font-mono" dir="ltr">{phone.imei_masked}</p>
+                >
+                  <Smartphone className="w-6 h-6 text-gray-500 flex-shrink-0" />
+                  <div className="flex-grow">
+                    <p className="font-semibold text-gray-800">{phone.phone_type || t('unspecified_phone')}</p>
+                    <p className="text-sm text-gray-500 font-mono" dir="ltr">{phone.imei_masked}</p>
+                  </div>
                 </div>
+
+                {expandedPhoneId === phone.id && (
+                  <div className="mt-2 p-4 bg-blue-50 rounded-lg border border-blue-200 space-y-4">
+                    <div className="bg-white p-3 rounded-lg border border-gray-300">
+                      <p className="text-sm font-semibold text-gray-800">ادخل صورة العلبة</p>
+                      <p className="text-sm text-gray-600 mt-1">
+                        التقط صورة العلبة مع ظهور رقم IMEI ورقم IMEI من الهاتف (*#06#) جنبًا إلى جنب.
+                      </p>
+                    </div>
+
+                    <div className="space-y-3">
+                      {!cameraStream ? (
+                        <Button
+                          type="button"
+                          onClick={() => startCamera(phone.id)}
+                          className="w-full bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2"
+                        >
+                          <Camera className="w-4 h-4" />
+                          تشغيل الكاميرا
+                        </Button>
+                      ) : (
+                        <>
+                          <video
+                            ref={videoRef}
+                            autoPlay
+                            playsInline
+                            className="w-full rounded bg-black"
+                            style={{ height: '240px' }}
+                          />
+                          <canvas ref={canvasRef} style={{ display: 'none' }} width={640} height={480} />
+                          <div className="flex gap-2 flex-col sm:flex-row">
+                            <Button
+                              type="button"
+                              onClick={capturePhoto}
+                              className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+                            >
+                              التقاط الصورة
+                            </Button>
+                            <Button
+                              type="button"
+                              onClick={stopCamera}
+                              variant="destructive"
+                              className="flex-1"
+                            >
+                              إغلاق
+                            </Button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    {boxImagePreview && (
+                      <div className="relative rounded-lg overflow-hidden border border-gray-300">
+                        <img src={boxImagePreview} alt="صورة العلبة" className="w-full h-40 object-cover" />
+                        <button
+                          onClick={() => {
+                            setBoxImage(null);
+                            setBoxImagePreview('');
+                          }}
+                          className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full hover:bg-red-600"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700">أو اختر صورة من الجهاز</label>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleBoxImageChange}
+                        className="text-sm w-full"
+                      />
+                    </div>
+
+                    <Button
+                      onClick={() => submitVerification(phone.id)}
+                      disabled={!boxImage || isSubmitting}
+                      className="w-full bg-orange-600 hover:bg-orange-700 text-white"
+                    >
+                      {isSubmitting ? 'جاري الإرسال...' : 'تأكيد الملكية'}
+                    </Button>
+                  </div>
+                )}
               </div>
             ))}
           </div>
         </div>
 
-        <DialogFooter className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <DialogFooter className="grid grid-cols-1 gap-3">
           <Button
-            onClick={handleDeny}
-            variant="destructive"
-            className="flex items-center gap-2"
-            disabled={selectedPhones.length === 0}
+            onClick={onClose}
+            variant="outline"
+            className="w-full"
           >
-            <ShieldAlert className="w-4 h-4" />
-            {t('this_is_not_my_phone')}
-          </Button>
-          <Button
-            onClick={handleConfirm}
-            className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2"
-            disabled={selectedPhones.length === 0}
-          >
-            <ShieldCheck className="w-4 h-4" />
-            {t('confirm_ownership')}
+            {t('cancel') || 'إلغاء'}
           </Button>
         </DialogFooter>
       </DialogContent>

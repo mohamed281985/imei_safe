@@ -31,11 +31,13 @@ const WelcomeSearch: React.FC = () => {
   const [registeredPhoneDetails, setRegisteredPhoneDetails] = useState<any | null>(null);
   const [foundReportStatus, setFoundReportStatus] = useState<string | null>(null);
   const [foundReportDate, setFoundReportDate] = useState<string | null>(null);
+  const [whatsappNumberFromReport, setWhatsappNumberFromReport] = useState<string | null>(null);
   const [lossLocation, setLossLocation] = useState<string | null>(null);
   const [lossTime, setLossTime] = useState<string | null>(null);
   const [hasReachedSearchLimit, setHasReachedSearchLimit] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [userId, setUserId] = useState<string>('');
+  const [whatsappEnabled, setWhatsappEnabled] = useState<boolean>(false);
   
   // متغيرات جديدة للتعامل مع ميزة الواتساب
   const [ownerRole, setOwnerRole] = useState<string | null>(null);
@@ -128,6 +130,8 @@ const WelcomeSearch: React.FC = () => {
     setFoundReportDate(null);
     setLossLocation(null);
     setLossTime(null);
+    setWhatsappNumberFromReport(null);
+    setWhatsappEnabled(false);
     // إعادة تعيين متغيرات الواتساب
     setOwnerRole(null);
     setOwnerWhatsAppEnabled(false);
@@ -378,6 +382,12 @@ const WelcomeSearch: React.FC = () => {
         setFoundReportDate(result.report_date || '');
         setLossLocation(result.loss_location || '');
         setLossTime(result.loss_time || '');
+        // جلب رقم الواتساب المخزن (anther_number) من البلاغ
+        if (result.whatsapp_number) {
+          setWhatsappNumberFromReport(result.whatsapp_number);
+        }
+        // تعيين حالة الواتساب من البلاغ
+        setWhatsappEnabled(result.whatsapp || false);
         if (result.registeredPhone) {
           setRegisteredPhoneDetails({
             imei: result.imei || imei,
@@ -451,19 +461,19 @@ const WelcomeSearch: React.FC = () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
-
-      const response = await axiosInstance.post('/api/whatsapp-redirect',
+      // Use our owner-details endpoint to get decrypted whatsapp number from anther_number
+      const response = await axiosInstance.post(
+        '/api/get-owner-details-by-imei',
         { imei: phoneId },
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        }
+        { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      const result = response.data;
-      if (result.success && result.whatsapp_url) {
-        window.open(result.whatsapp_url, '_blank');
+      const result = response.data || {};
+      const number = result.whatsapp_number || whatsappNumberFromReport || ownerWhatsAppNumber;
+      if (number) {
+        const cleanNumber = String(number).replace(/\D/g, '');
+        const whatsappUrl = `https://wa.me/${cleanNumber}`;
+        window.open(whatsappUrl, '_blank');
       } else {
         toast({ title: t('error'), description: t('whatsapp_number_not_available'), variant: 'destructive' });
       }
@@ -714,6 +724,7 @@ disabled={isSearching || !imei}
                           </div>
                         </div>
                       ) : null}
+
                     </div>
                   </div>
                 </div>
@@ -889,8 +900,10 @@ disabled={isSearching || !imei}
                         </>
                       ) : (
                         <>
-                          <MessageCircle className="w-5 h-5" />
-                          <span>{t('contact_via_whatsapp')}</span>
+                          <div className="w-6 h-6 rounded-full bg-white flex items-center justify-center mr-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" className="lucide lucide-message-circle text-green-600"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"></path></svg>
+                          </div>
+                          <span>تواصل مع صاحب الهاتف</span>
                         </>
                       )}
                     </Button>

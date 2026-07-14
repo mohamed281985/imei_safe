@@ -36,6 +36,7 @@ import { Upload, Store, Link as LinkIcon, CalendarDays, Send, MapPin, X, Phone }
 import PackageBadge from '@/components/PackageBadge';
 import { useScrollToTop } from '@/hooks/useScrollToTop';
 import AdImagePreviewModal from '../components/AdImagePreviewModal';
+import CountryCodeSelector from '../components/CountryCodeSelector';
 
 const PublishAd: React.FC = () => {
   useScrollToTop();
@@ -51,6 +52,7 @@ const PublishAd: React.FC = () => {
   const [adImagePreview, setAdImagePreview] = useState<string | null>(null);
   const [storeName, setStoreName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [countryCode, setCountryCode] = useState('+20'); // Default to Egypt
   const [whatsapp, setWhatsapp] = useState(false);
   const [duration, setDuration] = useState('7'); // Default duration
   const [adPrice, setAdPrice] = useState<number | null>(null);
@@ -424,7 +426,17 @@ const PublishAd: React.FC = () => {
           // Populate form with existing ad data
           setStoreName(pubAd.store_name || '');
           setWhatsapp(!!pubAd.whatsapp);
-          setPhoneNumber(normalizePhoneNumber(pubAd.phone) || '');
+          // Extract country code and phone from stored phone
+          const fullPhone = normalizePhoneNumber(pubAd.phone) || '';
+          if (fullPhone) {
+            const match = fullPhone.match(/^(\+\d{1,3})(.*)$/);
+            if (match) {
+              setCountryCode(match[1]);
+              setPhoneNumber(match[2]);
+            } else {
+              setPhoneNumber(fullPhone);
+            }
+          }
           const durationDays = String(pubAd.duration_days || '7');
           setDuration(durationDays);
           setAdImagePreview(pubAd.image_url);
@@ -480,7 +492,16 @@ const PublishAd: React.FC = () => {
 
           if (business) {
             setStoreName(prev => prev || business.store_name || '');
-            setPhoneNumber(prev => prev || normalizePhoneNumber(business.phone) || '');
+            const fullPhone = normalizePhoneNumber(business.phone) || '';
+            if (fullPhone) {
+              const match = fullPhone.match(/^(\+\d{1,3})(.*)$/);
+              if (match) {
+                setCountryCode(match[1]);
+                setPhoneNumber(prev => prev || match[2] || '');
+              } else {
+                setPhoneNumber(prev => prev || fullPhone || '');
+              }
+            }
             if (business.store_name || business.phone) {
               toast({ title: t('success'), description: t('business_data_auto_filled') });
             }
@@ -708,16 +729,16 @@ const PublishAd: React.FC = () => {
         duration_days: duration ? parseInt(duration, 10) : null,
         latitude: coords?.latitude,
         longitude: coords?.longitude,
-        phone: phoneNumber,
+        phone: `${countryCode}${phoneNumber}`,
+        country_code: countryCode,
         upload_date: new Date().toISOString(),
         expires_at: (() => { const d = new Date(); d.setDate(d.getDate() + parseInt(duration, 10)); return d.toISOString(); })(),
         is_paid: false,
         payment_status: 'pending',
         type: 'publish',
         amount: amount,
-        is_active: true, // تعيين الإعلان كنشط
-        status: 'pending', 
-        Actual_payment_date: new Date().toISOString()
+        is_active: false,
+        status: 'pending'
       };
       const paymentData = {
         amount: amount,
@@ -1073,21 +1094,28 @@ const PublishAd: React.FC = () => {
                 </div>
               </div>
 
-              {/* Phone Number */}
+              {/* Phone Number with Country Code */}
               <div>
                 <Label htmlFor="phoneNumber" className="text-gray-700">{t('phone_label')}</Label>
-                <div className="relative mt-2">
-                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                  <Input
-                    id="phoneNumber"
-                    type="tel"
-                    value={phoneNumber}
-                    onChange={(e) => setPhoneNumber(e.target.value)}
-                    placeholder={t('phone_placeholder')}
-                    required
-                    readOnly
-                    className="pl-10 bg-white text-black border-gray-300 focus:border-imei-cyan focus:ring-imei-cyan"
+                <div className="flex gap-2 items-center mt-2">
+                  <CountryCodeSelector
+                    value={countryCode}
+                    onChange={setCountryCode}
+                    disabled={true}
                   />
+                  <div className="relative flex-1">
+                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                    <Input
+                      id="phoneNumber"
+                      type="tel"
+                      value={phoneNumber}
+                      onChange={(e) => setPhoneNumber(e.target.value)}
+                      placeholder={t('phone_placeholder')}
+                      required
+                      readOnly
+                      className="pl-10 bg-white text-black border-gray-300 focus:border-imei-cyan focus:ring-imei-cyan"
+                    />
+                  </div>
                 </div>
               </div>
 

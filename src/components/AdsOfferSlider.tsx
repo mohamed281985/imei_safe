@@ -3,8 +3,6 @@ import { createPortal } from 'react-dom';
 import { useLanguage } from '../contexts/LanguageContext';
 import { X, Star, Crown, Zap, Shield } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-
-import AdsOfferSliderComponent from '@/components/advertisements/AdsOfferSlider';
 interface AdsOfferSliderProps {
   onClose: () => void;
   userId: string;
@@ -15,6 +13,38 @@ const AdsOfferSlider: React.FC<AdsOfferSliderProps> = ({ onClose, userId, isUpgr
   const { t } = useLanguage();
   const [adsData, setAdsData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [upgradeImageUrl, setUpgradeImageUrl] = useState<string>('/placeholder.jpeg');
+  const [upgradeImageLoading, setUpgradeImageLoading] = useState<boolean>(true);
+  const [upgradeImageError, setUpgradeImageError] = useState<string | null>(null);
+
+  // دالة لجلب صورة الترقية من جدول upgrade-offer
+  const fetchUpgradeImage = async () => {
+    try {
+      setUpgradeImageLoading(true);
+      const { data, error } = await supabase
+        .from('upgrade-offer')
+        .select('image_url')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        throw error;
+      }
+
+      if (data?.image_url) {
+        setUpgradeImageUrl(data.image_url);
+      } else {
+        setUpgradeImageUrl('/placeholder.jpeg');
+      }
+    } catch (err) {
+      console.error('خطأ في جلب صورة الترقية:', err);
+      setUpgradeImageUrl('/placeholder.jpeg');
+      setUpgradeImageError(err instanceof Error ? err.message : 'خطأ غير معروف');
+    } finally {
+      setUpgradeImageLoading(false);
+    }
+  };
 
   // دالة لجلب بيانات العروض من جدول users أو businesses
   const fetchAdsData = async () => {
@@ -97,6 +127,7 @@ const AdsOfferSlider: React.FC<AdsOfferSliderProps> = ({ onClose, userId, isUpgr
 
   useEffect(() => {
     fetchAdsData();
+    fetchUpgradeImage();
   }, [userId]);
 
   const handleSubscribe = async (planId: string) => {
@@ -138,25 +169,42 @@ const AdsOfferSlider: React.FC<AdsOfferSliderProps> = ({ onClose, userId, isUpgr
 
   // استخدام createPortal لعرض النافذة على مستوى أعلى في DOM
   const modalRoot = document.getElementById('modal-root') || document.body;
-  
   const modalContent = (
-    <div className="fixed inset-0 bg-black bg-opacity-0 flex items-center justify-center z-50">
-      <div className="bg-green-100/30 backdrop-blur-2xl rounded-2xl shadow-2xl w-[95%] h-[95vh] max-w-lg mx-auto border border-white/0 relative overflow-hidden pt-[50px] bg-clip-padding">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-2xl shadow-2xl w-[95%] h-[95vh] max-w-lg mx-auto border border-white/20 relative overflow-hidden">
         <button
           onClick={onClose}
           className="absolute top-3 right-3 bg-red-600 text-white rounded-full p-1.5 shadow-lg hover:bg-red-700 transition-colors z-10"
           aria-label="إغلاق"
         >
           <X size={20} />
-        </button>
+        </button>  
 
-        <div className="flex flex-col items-center justify-center h-full pt-35 pb-16">
-          <AdsOfferSliderComponent isUpgradePrompt={isUpgradePrompt} />
+        {/* هنا نضع الصورة الخاصة بك */}
+        <div style={{ width: '100%', height: '100%', position: 'relative' }}
+        
+        >
+          {upgradeImageLoading ? (
+            <div className="flex items-center justify-center">
+              <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+          ) : (
+            <img
+              src={upgradeImageUrl}
+              alt="ترقية الحساب"
+              loading="eager"
+              style={{
+                width: '100%',
+                height: '100%',
+                display: 'block'
+              }}
+            />
+          )}
         </div>
       </div>
-    </div>
+    </div >
   );
-  
+
   return createPortal(modalContent, modalRoot);
 };
 

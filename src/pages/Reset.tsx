@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import { useLocation } from 'react-router-dom';
+import { getSecureItem, setSecureItem, removeSecureItem } from '@/utils/secureStorage';
 
 export default function Reset() {
   const [password, setPassword] = useState('');
@@ -26,7 +27,7 @@ export default function Reset() {
         const code = params.get('code');
         const access = params.get('access_token') || params.get('token');
         if (access) {
-          localStorage.setItem('resetToken', access);
+          await setSecureItem('resetToken', access);
           return;
         }
         if (code) {
@@ -38,8 +39,8 @@ export default function Reset() {
             const token = data?.session?.access_token;
             const refresh = data?.session?.refresh_token;
             if (token) {
-              localStorage.setItem('resetToken', token);
-              if (refresh) localStorage.setItem('resetRefresh', refresh);
+              await setSecureItem('resetToken', token);
+              if (refresh) await setSecureItem('resetRefresh', refresh);
             } else {
               setError('لم يتم العثور على رمز الجلسة بعد التحقق');
             }
@@ -82,7 +83,7 @@ export default function Reset() {
     }
 
     setLoading(true);
-    const token = localStorage.getItem('resetToken');
+    const token = await getSecureItem('resetToken');
     if (!token) {
       setError('رمز غير موجود');
       setLoading(false);
@@ -95,7 +96,7 @@ export default function Reset() {
         setError('❌ فشل: ' + error.message);
       } else {
         setSuccess('✅ تم التغيير بنجاح');
-        localStorage.removeItem('resetToken');
+        removeSecureItem('resetToken');
         setTimeout(() => navigate('/login'), 1200);
       }
     } catch (e) {

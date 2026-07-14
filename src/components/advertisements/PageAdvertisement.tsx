@@ -34,6 +34,8 @@ interface AdDisplay {
   distance?: number;
   whatsapp?: boolean | number | string;
   phone?: string;
+  transaction?: string; // إضافة حقل transaction
+
 }
 
 interface PageAdvertisementProps {
@@ -52,14 +54,14 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
   // دالة لخلق ترتيب عشوائي مع عدم تكرار الصور المتتالية
   const getRandomAdIndex = (currentIndex: number, lastIndex: number | null) => {
     if (ads.length <= 1) return 0;
-    
+
     const availableIndices = ads.map((_, index) => index);
-    
+
     // إذا كان هناك آخر فهرس معروض، نستبعده من الاختيار
     if (lastIndex !== null) {
       availableIndices.splice(lastIndex, 1);
     }
-    
+
     // اختيار فهرس عشوائي من الفهارس المتاحة
     const randomIndex = Math.floor(Math.random() * availableIndices.length);
     return availableIndices[randomIndex];
@@ -97,12 +99,21 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
   // ⭐ الاعتماد على publish_ad فقط - وجود السجل فيه يعني موافقة الأدمن
   const fetchAds = async (coords: { latitude: number; longitude: number } | null, cacheKey: string) => {
     const now = new Date();
-
-    // ===== جلب الإعلانات المعتمدة من publish_ad مع بيانات ads_payment (استعلام واحد بـ Join) =====
-    // وجود السجل في publish_ad يعني أن الأدمن وافق عليه
+    const nowISO = now.toISOString();
+    // ===== جلب الإعلانات المعتمدة من publish_ad مع بيانات ads_payment =====
     const { data: publishedAds, error: pubError } = await supabase
       .from('publish_ad')
-      .select('ad_id, image_url, ads_payment(latitude, longitude, expires_at, whatsapp, phone)')
+      .select(`
+  ad_id,
+  image_url,
+  latitude,
+  longitude,
+  expires_at,
+  whatsapp,
+  phone,
+  transaction
+`).eq('is_active', true)
+      .gt('expires_at', nowISO)
       .order('created_at', { ascending: false });
 
     if (pubError || !publishedAds || publishedAds.length === 0) {
@@ -114,22 +125,18 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
 
     // ===== تحويل البيانات من Join إلى AdDisplay =====
     const mergedAds: AdDisplay[] = publishedAds
-      .map((pubAd: any) => {
-        const payAd = pubAd.ads_payment;
-        const expiresAt = payAd?.expires_at ?? null;
-
-        // فلترة: استبعاد الإعلانات المنتهية
-        if (expiresAt && new Date(expiresAt) <= now) return null;
-        if (!pubAd.image_url) return null;
+      .map((ad: any) => {
+        if (ad.expires_at && new Date(ad.expires_at) <= now) return null;
 
         return {
-          id: pubAd.ad_id,
-          image_url: pubAd.image_url,
-          latitude: payAd?.latitude ?? null,
-          longitude: payAd?.longitude ?? null,
-          expires_at: expiresAt,
-          whatsapp: payAd?.whatsapp,
-          phone: payAd?.phone,
+          id: ad.ad_id,
+          image_url: ad.image_url,
+          latitude: ad.latitude,
+          longitude: ad.longitude,
+          expires_at: ad.expires_at,
+          whatsapp: ad.whatsapp,
+          phone: ad.phone,
+          transaction: ad.transaction,
         };
       })
       .filter(Boolean) as AdDisplay[];
@@ -142,10 +149,12 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
     }
 
     // ===== الفلترة والترتيب حسب الموقع الجغرافي =====
-    let fetchedAds: AdDisplay[] = [];
+    let nearbyAds: AdDisplay[] = [];
+    let adminAds: AdDisplay[] = [];
 
     if (coords) {
-      const nearbyAds = mergedAds
+      // البحث عن الإعلانات القريبة
+      nearbyAds = mergedAds
         .filter(ad => ad.latitude && ad.longitude)
         .map(ad => ({
           ...ad,
@@ -154,15 +163,34 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
         .sort((a, b) => a.distance - b.distance);
 
       // أولاً، حاول العثور على إعلانات في نطاق 3 كم
-      fetchedAds = nearbyAds.filter(ad => ad.distance <= 3);
+      nearbyAds = nearbyAds.filter(ad => ad.distance <= 3);
 
       // إذا لم يتم العثور على إعلانات في نطاق 3 كم، حاول البحث حتى 30 كم
-      if (fetchedAds.length === 0 && nearbyAds.length > 0) {
-        fetchedAds = nearbyAds.filter(ad => ad.distance <= 30);
+      if (nearbyAds.length === 0) {
+        nearbyAds = mergedAds
+          .filter(ad => ad.latitude && ad.longitude)
+          .map(ad => ({
+            ...ad,
+            distance: getDistanceFromLatLonInKm(coords.latitude, coords.longitude, ad.latitude!, ad.longitude!)
+          }))
+          .filter(ad => ad.distance <= 30)
+          .sort((a, b) => a.distance - b.distance);
       }
     }
 
-    if (fetchedAds && fetchedAds.length > 0) {
+    // البحث عن إعلانات المسؤول
+    adminAds = mergedAds.filter(ad => ad.transaction === 'admin_publish');
+
+    // دمج الإعلانات: أولاً الإعلانات القريبة، ثم إعلانات المسؤول
+    let fetchedAds: AdDisplay[] = [];
+    if (nearbyAds.length > 0) {
+      fetchedAds = [...nearbyAds];
+    }
+    if (adminAds.length > 0) {
+      fetchedAds = [...fetchedAds, ...adminAds];
+    }
+
+    if (fetchedAds.length > 0) {
       setAds(fetchedAds);
       setShowLocalAd(false);
       localStorage.setItem(cacheKey, JSON.stringify(fetchedAds));
@@ -290,8 +318,8 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
                   openAdRedirect(ads[currentAdIndex].id);
                 }}
               >
-              <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 fill-white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-              {t('click_to_contact')}
+                <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 fill-white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" /></svg>
+                {t('click_to_contact')}
               </div>
             )}
           </div>
@@ -304,7 +332,7 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
                   e.stopPropagation(); // منع النقر على الصورة
                   const ad = ads[currentAdIndex];
                   const url = `https://www.google.com/maps/search/?api=1&query=${ad.latitude},${ad.longitude}`;
-                  
+
                   if (Capacitor.isNativePlatform()) {
                     window.open(url, '_system');
                   } else {
