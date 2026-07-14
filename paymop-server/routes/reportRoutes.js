@@ -1,3 +1,6 @@
+import { validateImageFile } from '../utils/imageValidator.js';
+import { SECURITY_CONFIG } from '../config/security.js';
+
 export function registerReportRoutes({
   app,
   supabase,
@@ -12,6 +15,27 @@ export function registerReportRoutes({
   crypto
 }, getTranslations) {
   const logAudit = (config) => rawLogAudit({ supabase, ...config });
+
+  const normalizeDigitsOnly = (s) => {
+    if (s === null || s === undefined) return '';
+    try {
+      return String(s).replace(/\D/g, '');
+    } catch (e) {
+      return '';
+    }
+  };
+
+  const getImeiHash = (imei) => {
+    try {
+      const normalized = normalizeDigitsOnly(imei);
+      if (!normalized) return null;
+      return crypto.createHash('sha256').update(String(normalized)).digest('hex');
+    } catch (e) {
+      console.error('reportRoutes.getImeiHash error:', e);
+      return null;
+    }
+  };
+
   app.get('/api/lost-phones', verifyJwtToken, async (req, res) => {
     try {
       if (!req.user?.id) {
@@ -170,11 +194,31 @@ export function registerReportRoutes({
       }
 
       // الآن بعد تعبئة الحقول من registered_phones، نفّذ تحقق روابط الصور النهائي
-      if (!('receipt_image_url' in data) || !data.receipt_image_url || !isValidImageUrl(data.receipt_image_url)) {
-        return res.status(400).json({ success: false, error: 'يجب رفع صورة الفاتورة بشكل صحيح (رابط صالح).' });
-      }
-      if ('report_image_url' in data && data.report_image_url && !isValidImageUrl(data.report_image_url)) {
-        return res.status(400).json({ success: false, error: 'رابط صورة المحضر غير صالح أو لم يتم رفع الصورة بشكل صحيح.' });
+      const isQuickMode = (String(data.report_mode || '').toLowerCase() === 'quick');
+      if (!isQuickMode) {
+        if (!('receipt_image_url' in data) || !data.receipt_image_url || !isValidImageUrl(data.receipt_image_url)) {
+          return res.status(400).json({ success: false, error: 'يجب رفع صورة الفاتورة بشكل صحيح (رابط صالح).' });
+        }
+        if ('report_image_url' in data && data.report_image_url && !isValidImageUrl(data.report_image_url)) {
+          return res.status(400).json({ success: false, error: 'رابط صورة المحضر غير صالح أو لم يتم رفع الصورة بشكل صحيح.' });
+        }
+      } else {
+        // quick mode: allow missing images, but ensure expiry is set (default to 48 hours)
+        try {
+          if (!data.expiry) {
+            data.expiry = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+          }
+        } catch (e) {
+          // ignore
+        }
+
+        // If no images are provided in quick mode, do not include empty image fields in the insert payload.
+        if (!data.receipt_image_url) {
+          delete data.receipt_image_url;
+        }
+        if (!data.report_image_url) {
+          delete data.report_image_url;
+        }
       }
       // تشفير كلمة المرور قبل الحفظ (bcrypt)
       if (data.password) {
@@ -183,9 +227,9 @@ export function registerReportRoutes({
 
       // تشفير الحقول الحساسة
       if (data.imei) {
-        // تسجيل هاش للايمي (SHA-256)
-        const imeiHash = crypto.createHash('sha256').update(String(data.imei)).digest('hex');
-        data.imei_hash = imeiHash;
+        // تسجيل هاش للايمي (SHA-256) باستخدام الأرقام فقط
+        const imeiHash = getImeiHash(data.imei);
+        if (imeiHash) data.imei_hash = imeiHash;
 
         // حفظ نسخة مقنّعة قابلة للعرض (masked_imei)
         try {
@@ -235,6 +279,18 @@ export function registerReportRoutes({
           return res.status(400).json({ success: false, error: 'فشل تشفير البريد الإلكتروني' });
         }
         data.email = JSON.stringify({ encryptedData: encryptedEmail.encryptedData, iv: encryptedEmail.iv, authTag: encryptedEmail.authTag });
+      }
+      // تشفير رقم الواتساب وحفظه في عمود anther_number
+      if (data.whatsapp_number) {
+        const encryptedWhatsapp = encryptAES(data.whatsapp_number);
+        if (!encryptedWhatsapp) {
+          return res.status(400).json({ success: false, error: 'فشل تشفير رقم الواتساب' });
+        }
+        data.anther_number = JSON.stringify({ encryptedData: encryptedWhatsapp.encryptedData, iv: encryptedWhatsapp.iv, authTag: encryptedWhatsapp.authTag });
+        delete data.whatsapp_number;
+      }
+      if (data.whatsapp_country_code) {
+        delete data.whatsapp_country_code; // لا نحتاج لتخزين كود الدولة منفصلاً (هو جزء من الرقم المشفر)
       }
       // حفظ البلاغ في قاعدة البيانات
       const { data: inserted, error } = await supabase
@@ -319,15 +375,20 @@ export function registerReportRoutes({
       // Decode base64 (allow data URL prefix)
       let base64 = String(fileBase64);
       const match = base64.match(/^data:(.+);base64,(.*)$/);
-      let contentType = `image/${fileExt}`;
       if (match) {
-        contentType = match[1] || contentType;
         base64 = match[2];
       }
 
       const buffer = Buffer.from(base64, 'base64');
-      // size limit ~8MB
-      if (buffer.length > 8 * 1024 * 1024) return res.status(400).json({ success: false, error: 'File too large' });
+
+      // ✅ SECURITY: Verify the real file content via magic numbers and enforce
+      // the configured size limit, instead of trusting the client-supplied
+      // extension/MIME type (which can be spoofed to disguise malicious files).
+      const validation = validateImageFile(buffer, buffer.length, SECURITY_CONFIG.FILE_UPLOAD.MAX_SIZE_BYTES);
+      if (!validation.isValid) {
+        return res.status(400).json({ success: false, error: validation.error || 'Invalid image file' });
+      }
+      const contentType = validation.mimeType;
 
       // Generate filename similar to client
       const fileId = `${Date.now()}_${Math.floor(Math.random() * 1e9)}`;
@@ -450,10 +511,28 @@ export function registerReportRoutes({
     try {
       // 1. البحث عن الهاتف للحصول على معلومات المالك (بريد، اسم، وتوكن الإشعارات، ومعرف الواجد)
       console.log(`Searching for phone with IMEI: ${imei}`);
-      const { data: allReports, error: reportError } = await supabase
-        .from('phone_reports')
-        .select('id, imei, email, owner_name, fcm_token, finder_user_id')
-        .order('id', { ascending: true });
+      const imeiHash = getImeiHash(imei);
+      let allReports = [];
+      let reportError = null;
+
+      if (imeiHash) {
+        const result = await supabase
+          .from('phone_reports')
+          .select('id, imei, email, owner_name, fcm_token, finder_user_id')
+          .eq('imei_hash', imeiHash)
+          .order('id', { ascending: true });
+        allReports = result.data || [];
+        reportError = result.error;
+      }
+
+      if ((!allReports || !allReports.length) && reportError === null) {
+        const legacy = await supabase
+          .from('phone_reports')
+          .select('id, imei, email, owner_name, fcm_token, finder_user_id')
+          .order('id', { ascending: true });
+        allReports = legacy.data || [];
+        reportError = legacy.error;
+      }
 
       if (reportError || !allReports || allReports.length === 0) {
         console.error(`No phone_reports found. Error:`, reportError);
@@ -521,7 +600,12 @@ export function registerReportRoutes({
         }
       })();
 
-      console.log(`Phone found for IMEI: ${imei}. Owner: ${decryptedOwnerName || foundReport.owner_name}`);
+      // ✅ SECURITY: لا نطبع اسم المالك المفكوك التشفير في بيئة الإنتاج
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`Phone found for IMEI: ${imei}. Owner: ${decryptedOwnerName || foundReport.owner_name}`);
+      } else {
+        console.log(`Phone found for report id: ${foundReport.id}`);
+      }
 
       // 2. تشفير finder_phone قبل الحفظ
       let encryptedFinderPhone = null;
@@ -606,15 +690,18 @@ export function registerReportRoutes({
       const normalizedLang = String(ownerLanguage || 'ar').toLowerCase();
       const translations = (typeof getTranslations === 'function') ? getTranslations(normalizedLang) : {};
 
+      const ownerNameToUse = ownerName || decryptedOwnerName || foundReport.owner_name || '';
       const title = translations['phone_found_success'] || translations['phone_found'] || (normalizedLang.startsWith('en') ? 'Your phone was found!' : 'تم العثور على هاتفك!');
       const body = (translations['owner_notified_success'] || translations['owner_notified'] || translations['owner_will_be_notified'])
         ? `${translations['owner_notified_success'] || translations['owner_notified'] || translations['owner_will_be_notified']} ${decryptedFinderPhone ? `: ${decryptedFinderPhone}` : ''}`
         : (normalizedLang.startsWith('en') ? `Congratulations! Your phone was found. To contact the finder, please call: ${decryptedFinderPhone}.` : `مبروك! تم العثور على هاتفك. للتواصل مع الشخص الذي وجده، يرجى الاتصال على الرقم: ${decryptedFinderPhone}.`);
 
       const emailSubject = translations['phone_found_success'] || title;
-      const emailHtml = `<p>${(ownerName || decryptedOwnerName || foundReport.owner_name || '')}</p>
+      const emailHtml = `<p>${ownerNameToUse}</p>
         <p>${translations['phone_found_success'] || 'Your phone was found'} (IMEI: ${decryptedImei || foundReport.imei || ''}).</p>
         <p>${body}</p>`;
+
+      const localizedContent = { title, body, emailSubject, emailHtml };
 
       let ownerFcmToken = foundReport.fcm_token;
 
@@ -629,7 +716,10 @@ export function registerReportRoutes({
 
           if (userData && !userError && userData.fcm_token) {
             ownerFcmToken = userData.fcm_token;
-            console.log('Using owner FCM token fallback from users table for owner email:', decryptedOwnerEmail);
+            // ✅ SECURITY: البريد الإلكتروني المفكوك التشفير لا يُطبع إلا في وضع التطوير
+            if (process.env.NODE_ENV !== 'production') {
+              console.log('Using owner FCM token fallback from users table for owner email:', decryptedOwnerEmail);
+            }
           }
         } catch (fcmLookupError) {
           console.error('Error looking up owner FCM token fallback by email:', fcmLookupError);
@@ -725,7 +815,12 @@ export function registerReportRoutes({
       // تنفيذ الإرسال طبقاً لقرارات الخطة
       if (notifyPush && ownerFcmToken) {
         try {
-          console.log(`Plan allows push. Sending push to token: ${ownerFcmToken}`);
+          // ✅ SECURITY: لا نطبع قيمة FCM token الكاملة في السجلات
+          if (process.env.NODE_ENV !== 'production') {
+            console.log(`Plan allows push. Sending push to token: ${ownerFcmToken}`);
+          } else {
+            console.log('Plan allows push. Sending push notification to owner device.');
+          }
           await sendFCMNotificationV1({
             token: ownerFcmToken,
             title: localizedContent.title,
@@ -742,7 +837,12 @@ export function registerReportRoutes({
 
       if (notifyEmail && decryptedOwnerEmail) {
         try {
-          console.log('Plan allows email. Sending email to:', decryptedOwnerEmail);
+          // ✅ SECURITY: لا نطبع البريد الإلكتروني الفعلي في بيئة الإنتاج
+          if (process.env.NODE_ENV !== 'production') {
+            console.log('Plan allows email. Sending email to:', decryptedOwnerEmail);
+          } else {
+            console.log('Plan allows email. Sending notification email to owner.');
+          }
           await resend.emails.send({
             from: 'onboarding@resend.dev',
             to: decryptedOwnerEmail.trim(),
@@ -959,18 +1059,28 @@ export function registerReportRoutes({
               const { error: upErr } = await supabase.from('phone_reports').update({ finder_phone: encryptedVal, finder_user_id: userId }).eq('id', reportId);
               if (!upErr) updated = true;
             } else if (imei) {
-              // بحث عن البلاغات المطابقة للـ IMEI المشفّر
-              const { data: allReports, error: reportErr } = await supabase.from('phone_reports').select('id, imei').limit(1000);
-              if (!reportErr && allReports && allReports.length) {
-                for (const r of allReports) {
-                  try {
-                    const dec = decryptField(r.imei) || r.imei;
-                    if (dec && String(dec).replace(/\D/g, '') === String(imei).replace(/\D/g, '')) {
-                      const { error: upErr2 } = await supabase.from('phone_reports').update({ finder_phone: encryptedVal, finder_user_id: userId }).eq('id', r.id);
-                      if (!upErr2) { updated = true; break; }
+              const imeiHash = getImeiHash(imei);
+              if (imeiHash) {
+                const { data: allReports, error: reportErr } = await supabase.from('phone_reports').select('id').eq('imei_hash', imeiHash).limit(1000);
+                if (!reportErr && allReports && allReports.length) {
+                  for (const r of allReports) {
+                    const { error: upErr2 } = await supabase.from('phone_reports').update({ finder_phone: encryptedVal, finder_user_id: userId }).eq('id', r.id);
+                    if (!upErr2) { updated = true; break; }
+                  }
+                }
+              } else {
+                const { data: allReports, error: reportErr } = await supabase.from('phone_reports').select('id, imei').limit(1000);
+                if (!reportErr && allReports && allReports.length) {
+                  for (const r of allReports) {
+                    try {
+                      const dec = decryptField(r.imei) || r.imei;
+                      if (dec && String(dec).replace(/\D/g, '') === String(imei).replace(/\D/g, '')) {
+                        const { error: upErr2 } = await supabase.from('phone_reports').update({ finder_phone: encryptedVal, finder_user_id: userId }).eq('id', r.id);
+                        if (!upErr2) { updated = true; break; }
+                      }
+                    } catch (e) {
+                      // ignore decryption failures for individual rows
                     }
-                  } catch (e) {
-                    // ignore decryption failures for individual rows
                   }
                 }
               }

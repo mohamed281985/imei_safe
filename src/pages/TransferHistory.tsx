@@ -110,6 +110,7 @@ const TransferHistory: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [showOwnerPasswordModal, setShowOwnerPasswordModal] = useState(false);
   const [ownerPassword, setOwnerPassword] = useState('');
+  const [ownerCardLast6, setOwnerCardLast6] = useState('');
   const [isVerifyingOwnerPassword, setIsVerifyingOwnerPassword] = useState(false);
   const [hasReachedSearchLimit, setHasReachedSearchLimit] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
@@ -139,13 +140,13 @@ const TransferHistory: React.FC = () => {
       console.debug('resolveImageUrl signed-url error', e);
     }
 
-    // fallback to Supabase public URL
-    try {
-      const { data } = supabase.storage.from(bucket || 'registerphone').getPublicUrl(cleanPath);
-      return data?.publicUrl || '';
-    } catch (e) {
-      return '';
-    }
+    // ✅ SECURITY: لا يوجد fallback إلى getPublicUrl هنا عمداً. الـ bucket "registerphone"
+    // (وكذلك "transfer-assets") يحتوي صور هواتف وإيصالات شراء خاصة بالمستخدمين، وقد تكون
+    // غير عامة (private) في إعدادات Supabase Storage. استخدام getPublicUrl كـ fallback كان
+    // يمكن أن يُنشئ رابطًا يُتيح لأي شخص يحصل عليه الوصول لصورة مستخدم آخر بدون أي مصادقة،
+    // متجاوزًا تمامًا حماية /api/signed-url الموثّقة (verifyJwtToken). عند فشل جلب الرابط
+    // الموقّع، نُعيد سلسلة فارغة بدلاً من ذلك؛ الاستدعاء الخارجي يتعامل مع هذه الحالة بالفعل.
+    return '';
   };
 
   // تم إزالة هذا useEffect لأننا نتحقق من الحد مباشرة في الدوال
@@ -299,6 +300,62 @@ const TransferHistory: React.FC = () => {
     return (count ?? 0) > 0;
   };
 
+  const computeImeiHash = async (imei: string) => {
+    const normalized = String(imei || '').replace(/\D/g, '');
+    if (!normalized) return '';
+    const buffer = new TextEncoder().encode(normalized);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+  };
+
+  const checkCurrentUserOwnsImei = async (imei: string): Promise<boolean> => {
+    if (!userId) return false;
+    try {
+      const imeiHash = await computeImeiHash(imei);
+      if (!imeiHash) return false;
+      const { data, error } = await supabase
+        .from('registered_phones')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('imei_hash', imeiHash)
+        .maybeSingle();
+
+      if (error) {
+        console.debug('Error checking ownership for current user:', error);
+        return false;
+      }
+
+      return !!data;
+    } catch (error) {
+      console.debug('Error computing IMEI ownership:', error);
+      return false;
+    }
+  };
+
+  const checkImeiRegisteredInSystem = async (imei: string): Promise<boolean> => {
+    try {
+      const imeiHash = await computeImeiHash(imei);
+      if (!imeiHash) return false;
+      const { data, error } = await supabase
+        .from('registered_phones')
+        .select('id')
+        .eq('imei_hash', imeiHash)
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        console.debug('Error checking IMEI registration:', error);
+        return false;
+      }
+
+      return !!data;
+    } catch (error) {
+      console.debug('Error checking IMEI registration:', error);
+      return false;
+    }
+  };
+
   const fetchPhoneDetails = async (imei: string) => {
     setIsLoading(true);
     if (userId) {
@@ -358,12 +415,27 @@ const TransferHistory: React.FC = () => {
   };
 
   const handleSearchButtonClick = async () => {
-    if (searchTerm.length === 15) {
-      // أظهر مربع إدخال كلمة مرور المالك لطلب التحقق من الخادم
-      setShowOwnerPasswordModal(true);
-    } else {
-      toast({ title: 'خطأ', description: 'يرجى تسجيل الدخول أولاً أو إدخال رقم IMEI صحيح', variant: 'destructive' });
+    if (searchTerm.length !== 15) {
+      toast({ title: 'خطأ', description: 'يرجى إدخال رقم IMEI صحيح', variant: 'destructive' });
+      return;
     }
+
+    if (userId) {
+      const isCurrentOwner = await checkCurrentUserOwnsImei(searchTerm);
+      if (isCurrentOwner) {
+        await fetchPhoneDetails(searchTerm);
+        return;
+      }
+    }
+
+    const isRegistered = await checkImeiRegisteredInSystem(searchTerm);
+    if (!isRegistered) {
+      toast({ title: 'غير مسجل', description: 'هذا الهاتف غير مسجل لدي نظامنا', variant: 'destructive' });
+      return;
+    }
+
+    // المستخدم الحالي ليس مالك الهاتف، لذلك نطلب التحقق بكلمة المرور + البطاقة
+    setShowOwnerPasswordModal(true);
   };
 
   const verifyOwnerPasswordAndFetch = async () => {
@@ -375,13 +447,18 @@ const TransferHistory: React.FC = () => {
       toast({ title: 'خطأ', description: 'يرجى إدخال كلمة المرور', variant: 'destructive' });
       return;
     }
+    if (!ownerCardLast6 || ownerCardLast6.length !== 6 || !/^\d+$/.test(ownerCardLast6)) {
+      toast({ title: 'خطأ', description: 'يرجى إدخال آخر 6 أرقام من البطاقة (أرقام فقط)', variant: 'destructive' });
+      return;
+    }
 
     setIsVerifyingOwnerPassword(true);
     try {
       const cleanedImei = String(searchTerm || '').replace(/\D/g, '').trim();
       const resp = await axiosInstance.post('/api/transfer-records/verify-owner', {
         imei: cleanedImei,
-        ownerPassword
+        ownerPassword,
+        cardLast6: ownerCardLast6
       });
 
       const json = resp.data;
@@ -448,6 +525,7 @@ const TransferHistory: React.FC = () => {
         setPhoneImage(transferRecords.length > 0 ? transferRecords[0].phone_image || null : null);
         setShowOwnerPasswordModal(false);
         setOwnerPassword('');
+        setOwnerCardLast6('');
 
         // عدّل استخدام البحث إذا كان المستخدم مسجلاً وظهرت نتائج فعلية
         if (userId && transferRecords.length > 0) await updateSearchUsage(userId);
@@ -743,31 +821,58 @@ const TransferHistory: React.FC = () => {
           </div>
           {/* Owner password modal (server-side verification) */}
           {showOwnerPasswordModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-              <div className="bg-white rounded-lg p-6 w-full max-w-sm">
-                <h3 className="text-lg font-semibold mb-2">تأكيد صاحب الـ IMEI</h3>
-                <p className="text-sm text-gray-600 mb-4">أدخل كلمة مرور صاحب الرقم لعرض السجلات</p>
-                <input
-                  type="password"
-                  value={ownerPassword}
-                  onChange={(e) => setOwnerPassword(e.target.value)}
-                  className="w-full p-2 border rounded mb-4 text-black placeholder-gray-400"
-                  placeholder="كلمة المرور"
-                />
+            <div className="fixed inset-0 top-80 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+              <div className="bg-white rounded-lg p-4 w-full max-w-xs shadow-2xl border border-orange-200">
+                <h3 className="text-xl font-bold mb-2 text-gray-800">🔐 تأكيد هوية صاحب الهاتف</h3>
+                <p className="text-xs text-gray-600 mb-4">أدخل بيانات المالك الأصلي للتحقق من الهوية وعرض سجلات النقل</p>
+                
+                <div className="mb-3">
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">🔑 كلمة مرور الجهاز وليس التطبيق</label>
+                  <input
+                    type="password"
+                    value={ownerPassword}
+                    onChange={(e) => setOwnerPassword(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-black placeholder-gray-400 focus:border-orange-500 focus:outline-none transition bg-gray-50 text-sm"
+                    placeholder="أدخل كلمة مرورك"
+                    disabled={isVerifyingOwnerPassword}
+                  />
+                </div>
+
+                <div className="mb-4">
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">💳 آخر 6 أرقام من البطاقة</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={ownerCardLast6}
+                    onChange={(e) => setOwnerCardLast6(e.target.value.replace(/\D/g, ''))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-black placeholder-gray-400 focus:border-orange-500 focus:outline-none transition text-sm tracking-widest font-mono bg-gray-50"
+                    placeholder="●●●●●●"
+                    disabled={isVerifyingOwnerPassword}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">أدخل آخر 6 أرقام من بطاقتك الشخصية/جواز سفرك</p>
+                </div>
+
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 mb-4">
+                  <p className="text-xs text-blue-800">
+                    ℹ️ <span className="font-semibold">معلومة أمان:</span> يتم تشفير بيانات التحقق وعدم مشاركتها مع أحد
+                  </p>
+                </div>
+
                 <div className="flex justify-end gap-2">
                   <button
-                    className="px-3 py-2 rounded bg-gray-200"
-                    onClick={() => { setShowOwnerPasswordModal(false); setOwnerPassword(''); }}
+                    className="px-3 py-1.5 rounded-lg bg-gray-200 text-gray-700 font-medium hover:bg-gray-300 transition disabled:opacity-50 text-sm"
+                    onClick={() => { setShowOwnerPasswordModal(false); setOwnerPassword(''); setOwnerCardLast6(''); }}
                     disabled={isVerifyingOwnerPassword}
                   >
                     إلغاء
                   </button>
                   <button
-                    className="px-3 py-2 rounded bg-orange-500 text-white"
+                    className="px-3 py-1.5 rounded-lg bg-orange-500 text-white font-medium hover:bg-orange-600 transition disabled:opacity-50 flex items-center gap-1 text-sm"
                     onClick={verifyOwnerPasswordAndFetch}
                     disabled={isVerifyingOwnerPassword}
                   >
-                    {isVerifyingOwnerPassword ? 'جارٍ التحقق...' : 'تحقق'}
+                    {isVerifyingOwnerPassword ? '⏳ جاري التحقق...' : '✓ تحقق من الهوية'}
                   </button>
                 </div>
               </div>

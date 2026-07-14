@@ -11,6 +11,8 @@ export const SECURITY_CONFIG = {
     'http://localhost:8081',
     'https://imei-safe.me',
     'https://admin.imei-safe.me',
+    "https://app.imei-safe.me",
+
     'https://imei-admin-control.onrender.com',
 
     'capacitor://localhost',

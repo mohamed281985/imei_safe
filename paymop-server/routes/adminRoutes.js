@@ -13,14 +13,13 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       // If it's an array, decrypt each element
       if (Array.isArray(value)) return value.map((v) => decryptDeep(v));
 
-      // If it's an object, check if it's an encrypted payload object
+      // If it's an object, recursively decrypt its keys or handle encrypted object form
       if (typeof value === 'object') {
         if (!value) return null;
         if (value.encryptedData && value.iv && value.authTag) {
           // decryptField accepts object form too
           return decryptField(value);
         }
-        // Otherwise recursively process keys and return a plain object
         const out = {};
         for (const k of Object.keys(value)) {
           out[k] = decryptDeep(value[k]);
@@ -35,7 +34,6 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       if (typeof value === 'string') {
         const attempted = decryptField(value);
         if (attempted === null) {
-          // if original contains obvious encrypted markers, don't return raw
           if (value.includes('encryptedData') || value.includes('authTag') || value.includes('iv')) return null;
           return value;
         }
@@ -47,6 +45,17 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
     } catch (e) {
       return null;
     }
+  };
+
+  // ✅ SECURITY: Shared guard for admin-only endpoints. Must be used together
+  // with verifyJwtToken (which populates req.user.role from the `users` table)
+  // on every route under /admin/* that returns or mutates sensitive data.
+  const requireAdmin = (req, res, next) => {
+    const roleCheck = (req.user && req.user.role) ? String(req.user.role).toLowerCase() : '';
+    if (!roleCheck.includes('admin')) {
+      return res.status(403).json({ success: false, error: 'forbidden: admin only' });
+    }
+    return next();
   };
 
   // Load translations (best-effort) from frontend `src/translations` folder.
@@ -236,86 +245,311 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
   });
 
   // POST /admin/create-special-ad - create special ad via admin secret and service role
-  app.post('/admin/create-special-ad', async (req, res) => {
-    try {
-      const providedSecret = req.header('X-Admin-Secret');
-      const authHeader = req.header('Authorization');
-      const configuredSecret = process.env.ADMIN_SECRET || process.env.ADMIN_API_SECRET || process.env.ADMIN_SECRET_KEY || null;
-      const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SERVICE_ROLE_KEY || null;
-      const isAuthorizedByServiceRole = Boolean(serviceRoleKey && authHeader && authHeader.startsWith('Bearer ') && authHeader.replace('Bearer ', '').trim() === serviceRoleKey);
-      const isAuthorizedByHeader = Boolean(configuredSecret && providedSecret && providedSecret === configuredSecret);
-      const isAuthorized = isAuthorizedByHeader || isAuthorizedByServiceRole || (!providedSecret && Boolean(serviceRoleKey));
+  // POST /admin/create-special-ad
+  app.post(
+    '/admin/create-special-ad',
+    verifyJwtToken,
+    requireAdmin,
+    async (req, res) => {
+      try {
+        const body = req.body;
 
-      if (!configuredSecret && !serviceRoleKey) {
-        console.error('/admin/create-special-ad: no admin secret or service role key configured');
-        return res.status(500).json({ success: false, error: 'Admin secret not configured' });
-      }
+        if (!body || typeof body !== 'object' || Array.isArray(body)) {
+          return res.status(400).json({
+            success: false,
+            error: 'Request body must be an object'
+          });
+        }
 
-      if (!isAuthorized) {
+        const insertPayload = {
+          ...body,
+          transaction: 'admin_special',
+          payment_status: 'paid',
+          is_active: true,
+          type: 'special'
+        };
+
+        const { data, error } = await supabase
+          .from('ads_payment')
+          .insert(insertPayload)
+          .select('id')
+          .maybeSingle();
+
+        if (error) {
+          console.error('/admin/create-special-ad insert error', error);
+          return res.status(500).json({
+            success: false,
+            error: error.message || 'Failed to create special ad'
+          });
+        }
+
         try {
           await logAudit({
-            userId: null,
-            action: 'admin_create_special_ad_forbidden',
+            userId: req.user?.id || null,
+            action: 'admin_create_special_ad',
             resourceType: 'ads_payment',
-            resourceId: null,
-            details: { reason: 'Invalid admin secret', route: '/admin/create-special-ad' },
+            resourceId: data?.id || null,
+            newValues: insertPayload,
+            details: {
+              route: '/admin/create-special-ad'
+            },
             ip: getAuditIp(req),
             userAgent: req.headers['user-agent'] || null,
-            status: 'failed'
+            status: 'success'
           });
         } catch (e) {
-          console.warn('/admin/create-special-ad forbidden audit failed', e);
+          console.warn('/admin/create-special-ad audit failed', e);
         }
-        return res.status(401).json({ success: false, error: 'Invalid admin secret' });
+
+        return res.status(201).json({
+          success: true,
+          id: data?.id || null
+        });
+
+      } catch (err) {
+        console.error('/admin/create-special-ad unexpected error', err);
+
+        return res.status(500).json({
+          success: false,
+          error: 'Server error'
+        });
       }
+    }
+  );
 
-      const body = req.body;
-      if (!body || typeof body !== 'object' || Array.isArray(body)) {
-        return res.status(400).json({ success: false, error: 'Request body must be an object' });
+  // POST /admin/create-publish-ad - admin creates a publish ad (creates ads_payment then publish_ad)
+  app.post(
+    '/admin/create-publish-ad',
+    verifyJwtToken,
+    requireAdmin,
+    async (req, res) => {
+      try {
+        const body = req.body;
+
+        if (!body || typeof body !== 'object' || Array.isArray(body)) {
+          return res.status(400).json({
+            success: false,
+            error: 'Request body must be an object'
+          });
+        }
+
+        const {
+          image_url,
+          expires_at,
+          duration_days,
+          page,
+          page_name,
+          is_active = false,
+          upload_date,
+          type: incomingType
+        } = body || {};
+
+        // Basic validation
+        if (!image_url || !upload_date || !expires_at || typeof duration_days === 'undefined') {
+          return res.status(400).json({ success: false, error: 'Missing required fields: image_url, upload_date, expires_at, duration_days' });
+        }
+
+        const now = new Date().toISOString();
+
+        const insertPayload = {
+          ...body,
+          transaction: 'admin_publish',
+          payment_status: 'paid',
+          is_paid: true,
+          is_active: false,
+          type: 'publish',
+          payment_date: now
+        };
+
+        const { data: adsData, error: adsErr } = await supabase
+          .from('ads_payment')
+          .insert(insertPayload)
+          .select('*')
+          .maybeSingle();
+
+        if (adsErr || !adsData) {
+          console.error('/admin/create-publish-ad ads_payment insert error', adsErr);
+          return res.status(500).json({ success: false, error: adsErr?.message || 'Failed to create ads_payment' });
+        }
+
+        // Build publish_ad payload and associate with ads_payment
+        const publishPayload = {
+          ad_id: adsData.id,
+          image_url,
+          expires_at,
+          duration_days,
+          page,
+          page_name,
+          is_active: toBoolean(is_active),
+          upload_date,
+          type: 'publish',
+          transaction: 'admin_publish',
+          created_at: now,
+          updated_at: now
+        };
+
+        const { data: pubData, error: pubErr } = await supabase
+          .from('publish_ad')
+          .insert(publishPayload)
+          .select('id')
+          .maybeSingle();
+
+        if (pubErr || !pubData) {
+          console.error('/admin/create-publish-ad publish_ad insert error', pubErr);
+          // Rollback ads_payment
+          try {
+            await supabase.from('ads_payment').delete().eq('id', adsData.id);
+          } catch (delErr) {
+            console.error('/admin/create-publish-ad rollback failed', delErr);
+          }
+          return res.status(500).json({ success: false, error: pubErr?.message || 'Failed to create publish_ad; ads_payment rolled back' });
+        }
+
+        try {
+          await logAudit({
+            userId: req.user?.id || null,
+            action: 'admin_create_publish_ad',
+            resourceType: 'publish_ad',
+            resourceId: pubData?.id || null,
+            newValues: publishPayload,
+            details: { ads_payment_id: adsData.id, route: '/admin/create-publish-ad' },
+            ip: getAuditIp(req),
+            userAgent: req.headers['user-agent'] || null,
+            status: 'success'
+          });
+        } catch (e) {
+          console.warn('/admin/create-publish-ad audit failed', e);
+        }
+
+        return res.status(201).json({
+          success: true,
+          ads_payment_id: adsData.id,
+          publish_ad_id: pubData.id
+        });
+      } catch (err) {
+        console.error('/admin/create-publish-ad unexpected error', err);
+        return res.status(500).json({ success: false, error: 'Server error' });
       }
-
-      const insertPayload = {
-        ...body,
-        transaction: 'admin_special',
-        payment_status: 'paid',
-        is_active: true,
-        type: 'special'
-      };
-
+    }
+  );
+  app.get(
+  '/admin/publish_ads',
+  verifyJwtToken,
+  requireAdmin,
+  async (req, res) => {
+    try {
       const { data, error } = await supabase
-        .from('ads_payment')
-        .insert(insertPayload)
-        .select('id')
-        .maybeSingle();
+        .from('publish_ad')
+        .select('*')
+        .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('/admin/create-special-ad insert error', error);
-        return res.status(500).json({ success: false, error: error.message || 'Failed to create special ad' });
-      }
-
-      try {
-        await logAudit({
-          userId: null,
-          action: 'admin_create_special_ad',
-          resourceType: 'ads_payment',
-          resourceId: data?.id || null,
-          newValues: insertPayload,
-          details: { route: '/admin/create-special-ad' },
-          ip: getAuditIp(req),
-          userAgent: req.headers['user-agent'] || null,
-          status: 'success'
+        return res.status(500).json({
+          success: false,
+          error: error.message
         });
-      } catch (e) {
-        console.warn('/admin/create-special-ad audit failed', e);
       }
 
-      return res.status(201).json({ success: true, id: data?.id || null });
-    } catch (err) {
-      console.error('/admin/create-special-ad unexpected error', err);
-      return res.status(500).json({ success: false, error: 'Server error' });
-    }
-  });
+      return res.json({
+        success: true,
+        publish_ads: data
+      });
 
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({
+        success: false,
+        error: 'Server error'
+      });
+    }
+  }
+);
+app.patch(
+  '/admin/publish_ads',
+  verifyJwtToken,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const { ad_id, is_active } = req.body;
+
+      if (!ad_id) {
+        return res.status(400).json({
+          success: false,
+          error: 'ad_id is required'
+        });
+      }
+
+      const { data, error } = await supabase
+        .from('publish_ad')
+        .update({
+          is_active: !!is_active,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', ad_id)
+        .select()
+        .single();
+
+      if (error) {
+        return res.status(500).json({
+          success: false,
+          error: error.message
+        });
+      }
+
+      return res.json({
+        success: true,
+        data
+      });
+
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({
+        success: false,
+        error: 'Server error'
+      });
+    }
+  }
+);
+app.delete(
+  '/admin/publish_ads',
+  verifyJwtToken,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const { ad_id } = req.body;
+
+      if (!ad_id) {
+        return res.status(400).json({
+          success: false,
+          error: 'ad_id is required'
+        });
+      }
+
+      const { error } = await supabase
+        .from('publish_ad')
+        .delete()
+        .eq('id', ad_id);
+
+      if (error) {
+        return res.status(500).json({
+          success: false,
+          error: error.message
+        });
+      }
+
+      return res.json({
+        success: true
+      });
+
+    } catch (err) {
+      console.error(err);
+      return res.status(500).json({
+        success: false,
+        error: 'Server error'
+      });
+    }
+  }
+);
   // GET /admin/notification-campaigns - list notification campaigns
   app.get('/admin/notification-campaigns', verifyJwtToken, async (req, res) => {
     try {
@@ -1463,7 +1697,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
   });
 
   // GET /admin/dashboard - summary + recent samples
-  app.get('/admin/dashboard', async (req, res) => {
+  app.get('/admin/dashboard', verifyJwtToken, requireAdmin, async (req, res) => {
     try {
       const [{ data: usersCount }, { data: reportsCount }, { data: adsCount }, { data: transfersCount }] = await Promise.all([
         supabase.from('users').select('id', { count: 'exact' }),
@@ -1498,7 +1732,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
   });
 
   // GET /admin/reports - list reports (decrypted)
-  app.get('/admin/reports', async (req, res) => {
+  app.get('/admin/reports', verifyJwtToken, requireAdmin, async (req, res) => {
     try {
       const limit = Math.min(Number(req.query.limit || 200), 1000);
       const filter = (req.query.filter || '').toString();
@@ -1713,22 +1947,22 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       if (notification) {
 
         /* إشعار داخلي داخل التطبيق */
-      const { error: notificationError } = await supabase
-  .from('notifications')
-  .insert({
-    user_id: data.user_id,
-    title: notification.title,
-    body: notification.body,
-    type: 'report_update',
-    is_read: false,
-    created_at: new Date().toISOString()
-  });
+        const { error: notificationError } = await supabase
+          .from('notifications')
+          .insert({
+            user_id: data.user_id,
+            title: notification.title,
+            body: notification.body,
+            type: 'report_update',
+            is_read: false,
+            created_at: new Date().toISOString()
+          });
 
-if (notificationError) {
-  console.error('Notification Insert Error:', notificationError);
-} else {
-  console.log('Notification inserted successfully');
-}
+        if (notificationError) {
+          console.error('Notification Insert Error:', notificationError);
+        } else {
+          console.log('Notification inserted successfully');
+        }
 
         /* الحصول على FCM Token */
         const { data: user } = await supabase
@@ -1773,7 +2007,7 @@ if (notificationError) {
   });
 
   // GET /admin/ads - list phone ads (decrypted)
-  app.get('/admin/ads', async (req, res) => {
+  app.get('/admin/ads', verifyJwtToken, requireAdmin, async (req, res) => {
     try {
       const limit = Math.min(Number(req.query.limit || 200), 1000);
       const filter = (req.query.filter || '').toString();
@@ -1808,7 +2042,7 @@ if (notificationError) {
   });
 
   // Backwards-compatible alias: GET /admin/ads_payment
-  app.get('/admin/ads_payment',  verifyJwtToken, async (req, res) => {
+  app.get('/admin/ads_payment', verifyJwtToken, requireAdmin, async (req, res) => {
     try {
       const limit = Math.min(Number(req.query.limit || 200), 1000);
       const filter = (req.query.filter || '').toString();
@@ -1844,27 +2078,27 @@ if (notificationError) {
       return res.status(500).json({ error: 'Server error' });
     }
   });
-app.get('/admin/special_ads',  verifyJwtToken, async (req, res) => {
-  try {
-    const { data, error } = await supabase
-      .from('Special_Ad')
-      .select('*')
-      .order('id', { ascending: false });
+  app.get('/admin/special_ads', verifyJwtToken, requireAdmin, async (req, res) => {
+    try {
+      const { data, error } = await supabase
+        .from('Special_Ad')
+        .select('*')
+        .order('id', { ascending: false });
 
-    if (error) throw error;
+      if (error) throw error;
 
-    return res.json({
-      ok: true,
-      special_ads: data
-    });
-  } catch (err) {
-    console.error('/admin/special_ads error:', err);
-    return res.status(500).json({
-      ok: false,
-      error: 'Server error'
-    });
-  }
-});
+      return res.json({
+        ok: true,
+        special_ads: data
+      });
+    } catch (err) {
+      console.error('/admin/special_ads error:', err);
+      return res.status(500).json({
+        ok: false,
+        error: 'Server error'
+      });
+    }
+  });
   // ------------------------------------------------------------------
   // Admin: Manage Special_Ad table (service-role client expected)
   // PATCH /admin/special_ads/:id - update is_active
@@ -1967,7 +2201,7 @@ app.get('/admin/special_ads',  verifyJwtToken, async (req, res) => {
   });
 
   // GET /admin/users - list users (decrypted)
-  app.get('/admin/users', async (req, res) => {
+  app.get('/admin/users', verifyJwtToken, requireAdmin, async (req, res) => {
     try {
       const limit = Math.min(Number(req.query.limit || 200), 1000);
       const { data, error } = await supabase.from('users').select('*').order('id', { ascending: false }).limit(limit);
@@ -1985,9 +2219,7 @@ app.get('/admin/special_ads',  verifyJwtToken, async (req, res) => {
   app.patch('/admin/users/:id', verifyJwtToken, async (req, res) => {
     try {
       const acting = req.user || null;
-           const roleCheck = (acting && acting.role) ? String(acting.role).toLowerCase() : '';
-      console.log('REQ USER =', req.user);
-      console.log('ACTING =', acting);
+      const roleCheck = (acting && acting.role) ? String(acting.role).toLowerCase() : '';
       if (!roleCheck.includes('admin')) {
         try {
           await logAudit({
@@ -2184,7 +2416,7 @@ app.get('/admin/special_ads',  verifyJwtToken, async (req, res) => {
   });
 
   // GET /admin/phones - list phones (decrypted) with images
-  app.get('/admin/phones', async (req, res) => {
+  app.get('/admin/phones', verifyJwtToken, requireAdmin, async (req, res) => {
     try {
       const limit = Math.min(Number(req.query.limit || 200), 1000);
 
@@ -2253,7 +2485,7 @@ app.get('/admin/special_ads',  verifyJwtToken, async (req, res) => {
   });
 
   // GET /admin/accessories - list accessories (decrypted) with images
-  app.get('/admin/accessories', async (req, res) => {
+  app.get('/admin/accessories', verifyJwtToken, requireAdmin, async (req, res) => {
     try {
       const limit = Math.min(Number(req.query.limit || 200), 1000);
 
@@ -2322,7 +2554,7 @@ app.get('/admin/special_ads',  verifyJwtToken, async (req, res) => {
   });
 
   // GET /admin/ads_price - list ads price rows, optional ?type=...
-  app.get('/admin/ads_price', async (req, res) => {
+  app.get('/admin/ads_price', verifyJwtToken, requireAdmin, async (req, res) => {
     try {
       const limit = Math.min(Number(req.query.limit || 200), 1000);
       let q = supabase.from('ads_price').select('*').order('id', { ascending: false }).limit(limit);
@@ -2338,7 +2570,7 @@ app.get('/admin/special_ads',  verifyJwtToken, async (req, res) => {
   });
 
   // POST /admin/update-ads-price - update ads prices (admin only)
-  app.post('/admin/update-ads-price', verifyJwtToken, async (req, res) => {
+  app.post('/admin/update-ads-price', verifyJwtToken, requireAdmin, async (req, res) => {
     try {
       const { prices } = req.body;
 
@@ -2403,7 +2635,7 @@ app.get('/admin/special_ads',  verifyJwtToken, async (req, res) => {
   });
 
   // GET /admin/game_win - list game wins
-  app.get('/admin/game_win', async (req, res) => {
+  app.get('/admin/game_win', verifyJwtToken, requireAdmin, async (req, res) => {
     try {
       const limit = Math.min(Number(req.query.limit || 200), 1000);
       const { data, error } = await supabase.from('game_win').select('*').order('id', { ascending: false }).limit(limit);
@@ -2417,7 +2649,7 @@ app.get('/admin/special_ads',  verifyJwtToken, async (req, res) => {
   });
 
   // GET /admin/user_rewards - list user rewards
-  app.get('/admin/user_rewards', async (req, res) => {
+  app.get('/admin/user_rewards', verifyJwtToken, requireAdmin, async (req, res) => {
     try {
       const limit = Math.min(Number(req.query.limit || 200), 1000);
       const { data, error } = await supabase.from('user_rewards').select('*').order('id', { ascending: false }).limit(limit);
@@ -2431,7 +2663,7 @@ app.get('/admin/special_ads',  verifyJwtToken, async (req, res) => {
   });
 
   // GET /admin/ownerships - list registered phones (decrypted)
-  app.get('/admin/ownerships', async (req, res) => {
+  app.get('/admin/ownerships', verifyJwtToken, requireAdmin, async (req, res) => {
     try {
       const limit = Math.min(Number(req.query.limit || 200), 1000);
       const { data, error } = await supabase.from('registered_phones').select('*').order('id', { ascending: false }).limit(limit);
@@ -2446,7 +2678,7 @@ app.get('/admin/special_ads',  verifyJwtToken, async (req, res) => {
   });
 
   // Backwards-compatible alias: GET /admin/registered_phones
-  app.get('/admin/registered_phones', async (req, res) => {
+  app.get('/admin/registered_phones', verifyJwtToken, requireAdmin, async (req, res) => {
     try {
       const limit = Math.min(Number(req.query.limit || 200), 1000);
       const filter = (req.query.filter || '').toString();
@@ -2494,8 +2726,189 @@ app.get('/admin/special_ads',  verifyJwtToken, async (req, res) => {
     }
   });
 
+  // GET /admin/ownership_verification_requests - list ownership verification requests
+  app.get('/admin/ownership_verification_requests', verifyJwtToken, requireAdmin, async (req, res) => {
+    try {
+      const { limit = 100 } = req.query;
+
+      const { data, error } = await supabase
+        .from('ownership_verification_requests')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(Number(limit));
+
+      if (error) {
+        return res.status(500).json({
+          success: false,
+          error: error.message
+        });
+      }
+
+      const out = (data || []).map(r => ({ id: r.id, ...decryptDeep(r) }));
+
+      return res.json({
+        success: true,
+        ownership_verification_requests: out
+      });
+    } catch (err) {
+      console.error('/admin/ownership_verification_requests error', err);
+      return res.status(500).json({
+        success: false,
+        error: 'Server error'
+      });
+    }
+  });
+
+  // PATCH /admin/ownership_verification_requests/:id - update ownership verification request
+  app.patch('/admin/ownership_verification_requests/:id', verifyJwtToken, requireAdmin, async (req, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ success: false, error: 'Unauthorized' });
+      }
+
+      const id = req.params.id;
+      if (!id) {
+        return res.status(400).json({ success: false, error: 'Missing request id' });
+      }
+
+      const { status, review_notes } = req.body || {};
+      const updates = {};
+
+      if (typeof status !== 'undefined' && status !== null) {
+        updates.status = String(status).toLowerCase();
+      }
+
+      if (typeof review_notes !== 'undefined' && review_notes !== null) {
+        updates.review_notes = review_notes;
+      }
+
+      if (Object.keys(updates).length === 0) {
+        return res.status(400).json({ success: false, error: 'Nothing to update' });
+      }
+
+      updates.updated_at = new Date().toISOString();
+
+      const { data: existing, error: fetchErr } = await supabase
+        .from('ownership_verification_requests')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+
+      if (fetchErr) {
+        console.error('PATCH /admin/ownership_verification_requests/:id fetch error', fetchErr);
+        return res.status(500).json({ success: false, error: 'Database error' });
+      }
+
+      if (!existing) {
+        return res.status(404).json({ success: false, error: 'Request not found' });
+      }
+
+      const { data, error } = await supabase
+        .from('ownership_verification_requests')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .maybeSingle();
+
+      if (error) {
+        console.error('PATCH /admin/ownership_verification_requests/:id update error', error);
+        return res.status(500).json({ success: false, error: 'Failed to update request' });
+      }
+
+      try {
+        if (typeof logAudit === 'function') {
+          await logAudit({
+            userId: user.id,
+            action: 'admin_update_ownership_verification_request',
+            resourceType: 'ownership_verification_requests',
+            resourceId: id,
+            oldValues: { status: existing.status, review_notes: existing.review_notes },
+            newValues: updates,
+            details: { admin_id: user.id },
+            ip: getAuditIp(req),
+            userAgent: req.headers['user-agent'] || null,
+            status: 'success'
+          });
+        }
+      } catch (e) {
+        console.warn('PATCH /admin/ownership_verification_requests/:id audit failed', e);
+      }
+
+      // إرسال إشعارات عند تغيير الحالة
+      const targetUserId = data.user_id || existing.user_id;
+      if (targetUserId && updates.status && updates.status !== existing.status) {
+        const notificationMessages = {
+          approved: {
+            title: 'تمت الموافقة على التحقق من الملكية',
+            body: 'تمت مراجعة طلب التحقق من ملكيتك بنجاح والموافقة عليه.'
+          },
+          rejected: {
+            title: 'تم رفض التحقق من الملكية',
+            body: 'للأسف، لم يتم الموافقة على طلب التحقق من ملكيتك في الوقت الحالي.'
+          },
+          pending: {
+            title: 'تم تحديث حالة الطلب',
+            body: 'تم تحديث حالة طلب التحقق من ملكيتك.'
+          }
+        };
+
+        const notification = notificationMessages[updates.status];
+
+        if (notification) {
+          // إشعار داخل التطبيق
+          const { error: notificationError } = await supabase
+            .from('notifications')
+            .insert({
+              user_id: targetUserId,
+              title: notification.title,
+              body: notification.body,
+              type: 'ownership_verification_update',
+              is_read: false,
+              created_at: new Date().toISOString()
+            });
+
+          if (notificationError) {
+            console.error('Notification Insert Error:', notificationError);
+          } else {
+            console.log('Notification inserted successfully');
+          }
+
+          // جلب FCM Token المستخدم وإرسال إشعار خارجي
+          try {
+            const { data: userData, error: userErr } = await supabase
+              .from('users')
+              .select('fcm_token, language')
+              .eq('id', targetUserId)
+              .single();
+
+            if (!userErr && userData?.fcm_token) {
+              await sendFCMNotificationV1({
+                token: userData.fcm_token,
+                title: notification.title,
+                body: notification.body
+              });
+
+              console.log('FCM notification sent successfully');
+            }
+          } catch (err) {
+            console.error('FCM Error:', err);
+          }
+        }
+      }
+
+      return res.json({
+        success: true,
+        data: { id: data.id, ...decryptDeep(data) }
+      });
+    } catch (err) {
+      console.error('PATCH /admin/ownership_verification_requests/:id error', err);
+      return res.status(500).json({ success: false, error: 'Server error' });
+    }
+  });
+
   // GET /admin/stats - counts
-  app.get('/admin/stats', async (req, res) => {
+  app.get('/admin/stats', verifyJwtToken, requireAdmin, async (req, res) => {
     try {
       const [{ count: usersCount }, { count: reportsCount }, { count: adsCount }, { count: transfersCount }] = await Promise.all([
         supabase.from('users').select('*', { count: 'exact' }),
@@ -2597,7 +3010,6 @@ app.get('/admin/special_ads',  verifyJwtToken, async (req, res) => {
           .single();
 
         if (!userErr && userRow?.fcm_token) {
-          console.log('FCM TOKEN =', userRow.fcm_token);
           const fcmTitle = getNotificationText(userRow?.language, 'admin.reject_phone_fcm_title', 'Phone Registration Rejected', 'تم رفض تسجيل الهاتف');
           const fcmBody = getNotificationText(userRow?.language, 'admin.reject_phone_fcm_body', 'Please check the app for more details.', 'يرجى مراجعة التطبيق لمعرفة التفاصيل.');
           await sendFCMNotificationV1({
@@ -2721,7 +3133,6 @@ app.get('/admin/special_ads',  verifyJwtToken, async (req, res) => {
           .single();
 
         if (!userErr && userRow?.fcm_token) {
-          console.log('FCM TOKEN =', userRow?.fcm_token);
           const fcmTitle = getNotificationText(userRow?.language, 'admin.approve_phone_fcm_title', 'Phone Registration Approved', 'تمت الموافقة على تسجيل الهاتف');
           const fcmBody = getNotificationText(userRow?.language, 'admin.approve_phone_fcm_body', 'Your phone registration request has been approved', 'تمت مراجعة طلب تسجيل الهاتف والموافقة عليه');
           await sendFCMNotificationV1({
@@ -2865,7 +3276,7 @@ app.get('/admin/special_ads',  verifyJwtToken, async (req, res) => {
   });
 
   // GET /admin/publish_ad - list published ads
-  app.get('/admin/publish_ad', async (req, res) => {
+  app.get('/admin/publish_ad', verifyJwtToken, requireAdmin, async (req, res) => {
     try {
       const limit = Math.min(Number(req.query.limit || 200), 1000);
       const { data, error } = await supabase.from('publish_ad').select('*').order('id', { ascending: false }).limit(limit);
@@ -2878,8 +3289,82 @@ app.get('/admin/special_ads',  verifyJwtToken, async (req, res) => {
     }
   });
 
+  // POST /admin/publish_ads - create new published ad
+  app.post('/admin/publish_ads', verifyJwtToken, requireAdmin, async (req, res) => {
+    try {
+      const {
+        ad_id,
+        image_url,
+        is_active,
+        location,
+        shop_name,
+        phone_number,
+        longitude,
+        latitude,
+        created_at,
+        expires_at
+      } = req.body || {};
+
+      // التحقق من البيانات المطلوبة
+      if (!ad_id) {
+        return res.status(400).json({ success: false, error: 'ad_id مطلوب' });
+      }
+      if (!image_url) {
+        return res.status(400).json({ success: false, error: 'image_url مطلوب' });
+      }
+
+      const payload = {
+        ad_id: Number(ad_id),
+        image_url: String(image_url).trim(),
+        page: page ? String(page).trim() : null,
+        is_active: typeof is_active !== 'undefined' ? Boolean(is_active) : true,
+        location: location ? String(location).trim() : null,
+        shop_name: shop_name ? String(shop_name).trim() : null,
+        phone_number: phone_number ? String(phone_number).trim() : null,
+        longitude: typeof longitude !== 'undefined' && longitude !== null ? Number(longitude) : null,
+        latitude: typeof latitude !== 'undefined' && latitude !== null ? Number(latitude) : null,
+        created_at: created_at ? new Date(created_at).toISOString() : new Date().toISOString(),
+        expires_at: expires_at ? new Date(expires_at).toISOString() : null
+      };
+
+      const { data: inserted, error } = await supabase.from('publish_ad').insert(payload).select().maybeSingle();
+      if (error) {
+        console.error('/admin/publish_ads POST insert error', error);
+        return res.status(500).json({ success: false, error: error.message || 'خطأ في إدراج البيانات' });
+      }
+      if (!inserted) {
+        return res.status(500).json({ success: false, error: 'فشل في إنشاء الإعلان المنشور' });
+      }
+
+      try {
+        if (typeof logAudit === 'function') {
+          await logAudit({
+            userId: req.user?.id || null,
+            action: 'admin_create_publish_ad',
+            resourceType: 'publish_ad',
+            resourceId: inserted.id,
+            newValues: inserted,
+            ip: getAuditIp(req),
+            userAgent: req.headers['user-agent'] || null,
+            status: 'success'
+          });
+        }
+      } catch (e) {
+        console.warn('/admin/publish_ads POST audit failed', e);
+      }
+
+      return res.json({
+        success: true,
+        data: [{ id: inserted.id, ...decryptDeep(inserted) }]
+      });
+    } catch (err) {
+      console.error('/admin/publish_ads POST error', err);
+      return res.status(500).json({ success: false, error: 'خطأ في السيرفر' });
+    }
+  });
+
   // GET /admin/plans - list available plans, sorted by price (asc)
-  app.get('/admin/plans', async (req, res) => {
+  app.get('/admin/plans', verifyJwtToken, requireAdmin, async (req, res) => {
     try {
       const { data, error } = await supabase.from('plans').select('*').order('price', { ascending: true });
       if (error) throw error;
@@ -3141,7 +3626,7 @@ app.get('/admin/special_ads',  verifyJwtToken, async (req, res) => {
   });
 
   // GET /admin/ads_offar - list ads_offar (decrypted)
-  app.get('/admin/ads_offar', async (req, res) => {
+  app.get('/admin/ads_offar', verifyJwtToken, requireAdmin, async (req, res) => {
     try {
       // الحصول على نوع العرض من الاستعلام (Query Parameter)
       const { type } = req.query;
@@ -3173,29 +3658,12 @@ app.get('/admin/special_ads',  verifyJwtToken, async (req, res) => {
   });
 
   // GET /admin/transfers - list transfer_records (decrypted)
-  app.get('/admin/transfers', async (req, res) => {
+  // ✅ SECURITY FIX: Previously this only checked that the Authorization header
+  // *started with* "Bearer " without validating the token itself, so any random
+  // string after "Bearer " was accepted. Now uses the real verifyJwtToken +
+  // requireAdmin guards, consistent with the rest of the admin routes.
+  app.get('/admin/transfers', verifyJwtToken, requireAdmin, async (req, res) => {
     try {
-      // تحقق مبدئي من وجود توكن (يمكن استبداله بميدل وير JWT الحقيقي)
-      const authHeader = req.headers.authorization;
-      if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        try {
-          await logAudit({
-            userId: req.user?.id || null,
-            action: 'unauthorized_access',
-            resourceType: 'transfer_records',
-            resourceId: null,
-            details: { reason: 'غير مصرح: مفقود رمز المصادقة' },
-            ip: getAuditIp(req),
-            userAgent: req.headers['user-agent'] || null,
-            status: 'failed',
-            errorMessage: 'Unauthorized'
-          });
-        } catch (e) {
-          console.warn('/admin/transfers unauthorized audit failed', e);
-        }
-        return res.status(401).json({ error: 'غير مصرح: مفقود رمز المصادقة' });
-      }
-
       const { data, error } = await supabase
         .from('transfer_records')
         .select('*')
@@ -3213,7 +3681,7 @@ app.get('/admin/special_ads',  verifyJwtToken, async (req, res) => {
   });
 
   // GET /admin/businesses/:userId - get business details by user ID
-  app.get('/admin/businesses/:userId', async (req, res) => {
+  app.get('/admin/businesses/:userId', verifyJwtToken, requireAdmin, async (req, res) => {
     try {
       // استخراج معرف المستخدم من المسار
       const { userId } = req.params;

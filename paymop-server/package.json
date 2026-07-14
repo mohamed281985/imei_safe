@@ -26,8 +26,8 @@
     "googleapis": "^171.4.0",
     "helmet": "^8.0.0",
     "ioredis": "^5.3.2",
-    "jsonwebtoken": "^9.0.3",
     "node-fetch": "^3.3.2",
+    "qrcode": "^1.5.1",
     "resend": "^2.0.0",
     "sharp": "^0.34.2"
   }

@@ -769,6 +769,23 @@ toast({ title: t('success'), description: t('biometric_enabled_success') });
                         <div className="mb-6">
                             <h3 className="text-lg font-bold text-blue-600 mb-3">{t('settings')}</h3>
                             <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg overflow-hidden">
+                                {/* Recovery Cards - Barcode My Phones */}
+                                <button
+                                    onClick={() => navigate('/recovery-cards')}
+                                    className="w-full flex items-center justify-between p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full bg-cyan-100 flex items-center justify-center">
+                                            <Phone className="w-5 h-5 text-cyan-600" />
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="font-medium text-gray-800">{t('barcode_my_phones') || 'باركود هواتفي'}</div>
+                                            <div className="text-xs text-gray-500">{t('manage_recovery_cards') || 'إدارة بطاقات الاسترداد'}</div>
+                                        </div>
+                                    </div>
+                                    <ChevronLeft className="w-5 h-5 text-gray-400" />
+                                </button>
+
                                 {/* Language */}
                                 <button
                                     onClick={() => setShowLanguageModal(true)}
@@ -846,6 +863,8 @@ toast({ title: t('success'), description: t('biometric_enabled_success') });
                                     </div>
                                     <ChevronLeft className="w-5 h-5 text-gray-400" />
                                 </button>
+
+                                
 
                                 {/* Support */}
                                 <button

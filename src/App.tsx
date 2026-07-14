@@ -10,6 +10,7 @@ import type { PluginListenerHandle } from '@capacitor/core';
 import { supabase } from './lib/supabase';
 import { Routes, Route, useNavigate, useLocation, Link } from "react-router-dom";
 import { PushNotifications, Token } from '@capacitor/push-notifications';
+import { LocalNotifications } from '@capacitor/local-notifications';
 
 import { LanguageProvider } from "./contexts/LanguageContext";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
@@ -37,6 +38,8 @@ const PhoneDetails = lazy(() => import("./pages/PhoneDetails"));
 const OwnershipTransfer = lazy(() => import('./pages/OwnershipTransfer.tsx'));
 const PayToUnlock = lazy(() => import('./pages/OwnershipTransfer.tsx'));
 const RegisterPhone = lazy(() => import("./pages/RegisterPhone"));
+const RecoveryCard = lazy(() => import('./pages/RecoveryCard'));
+const RecoveryCards = lazy(() => import('./pages/RecoveryCards'));
 const TransferHistory = lazy(() => import('./pages/TransferHistory'));
 const CreateAdvertisement = lazy(() => import('./pages/CreateAdvertisement'));
 const PublishAd = lazy(() => import('./pages/PublishAd'));
@@ -45,8 +48,7 @@ const WebViewPage = lazy(() => import('./pages/WebViewPage'));
 const MyAds = lazy(() => import('./pages/MyAds'));
 const Reset = lazy(() => import("./pages/Reset"));
 const DeepLinkHandler = lazy(() => import('./DeepLinkHandler'));
-const PhoneFound = lazy(() => import('./pages/PhoneFound'));
-const ResetRegister = lazy(() => import("./pages/ResetRegister"));
+const PhoneFound = lazy(() => import('./pages/PhoneFound'));const FoundByQrToken = lazy(() => import('./pages/FoundByQrToken'));const ResetRegister = lazy(() => import("./pages/ResetRegister"));
 const PaymentSuccess = lazy(() => import('./pages/PaymentSuccess'));
 const PaymentFailed = lazy(() => import('./pages/PaymentFailed'));
 const PaymobRedirectSuccess = lazy(() => import('./pages/PaymobRedirectSuccess'));
@@ -64,6 +66,8 @@ const AccessoriesForSalePage = lazy(() => import('@/pages/AccessoriesForSalePage
 const ChallengeGamePage = lazy(() => import('./pages/ChallengeGamePage'));
 const ProfileMenuPage = lazy(() => import('./pages/ProfileMenuPage'));
 const RewardsPage = lazy(() => import('./pages/RewardsPage'));
+const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
+const TermsOfUse = lazy(() => import('./pages/TermsOfUse'));
 const EditPhoneListing = lazy(() => import('./pages/EditPhoneListing'));
 const EditAccessoryListing = lazy(() => import('./pages/EditAccessoryListing'));
 const ProductDetails = lazy(() => import('./pages/ProductDetails'));
@@ -231,7 +235,23 @@ const AppCore = () => {
       }
 
       try {
-        // طلب الأذونات
+        // طلب أذونات الاشعارات المحلية وPush
+        try {
+          const localPerm = await LocalNotifications.requestPermissions();
+          if (localPerm.display !== 'granted') {
+            console.warn('لم يمنح المستخدم إذن الإشعارات المحلية.');
+          }
+
+          await LocalNotifications.createChannel({
+            id: 'default',
+            name: 'Default Notifications',
+            description: 'Foreground push notification channel',
+            importance: 5,
+          });
+        } catch (err) {
+          console.warn('فشل إعداد الإشعارات المحلية:', err);
+        }
+
         let permStatus = await PushNotifications.checkPermissions();
         if (permStatus.receive === 'prompt') {
           permStatus = await PushNotifications.requestPermissions();
@@ -248,7 +268,7 @@ const AppCore = () => {
 
         // أ. عند نجاح التسجيل والحصول على التوكن
         PushNotifications.addListener('registration', (token: Token) => {
-          // console.log removed: sensitive token data
+          console.log('✅ FCM Token registered successfully');
           updateTokenToServer(token.value);
         });
 
@@ -258,13 +278,39 @@ const AppCore = () => {
         });
 
         // ج. عند استقبال إشعار والتطبيق في الواجهة الأمامية (foreground)
-        PushNotifications.addListener('pushNotificationReceived', (notification) => {
-          // console.log removed: notification data not logged
+        PushNotifications.addListener('pushNotificationReceived', async (notification) => {
+          console.log('🔔 Foreground notification received:', notification);
+          const title = notification.title || notification.data?.title || 'إشعار جديد';
+          const body = notification.body || notification.data?.body || '';
+          console.log('📱 Showing notification:', { title, body });
+
           toast({
-            title: notification.title || 'إشعار جديد',
-            description: notification.body || '',
+            title,
+            description: body,
             duration: 6000,
           });
+
+          try {
+            const notificationId = Number(`${Date.now()}`.slice(-6));
+            console.log('📤 Scheduling local notification with ID:', notificationId);
+            await LocalNotifications.schedule({
+              notifications: [
+                {
+                  title,
+                  body,
+                  id: notificationId,
+                  channelId: 'default',
+                  extra: notification.data || {},
+                  schedule: { at: new Date(Date.now() + 100) },
+                  sound: 'default',
+                  smallIcon: 'ic_stat_notify', // Important for Android
+                },
+              ],
+            });
+            console.log('✅ Local notification scheduled successfully');
+          } catch (err) {
+            console.error('❌ Failed to show local notification:', err);
+          }
         });
 
         // ⭐ د. عند الضغط على الإشعار (توجيه مباشر دائماً إلى صفحة PhoneFound)
@@ -360,6 +406,9 @@ const AppCore = () => {
             <Route path="/BusinessTransfersell" element={<AuthGuard><BusinessTransferSell /></AuthGuard>} />
             <Route path="/phone-found/:imei" element={<PhoneFound />} />
             <Route path="/phone-found" element={<PhoneFound />} />
+            <Route path="/found/:qrToken" element={<FoundByQrToken />} />
+            <Route path="/phone-card/:id" element={<AuthGuard><RecoveryCard /></AuthGuard>} />
+            <Route path="/recovery-cards" element={<AuthGuard><RecoveryCards /></AuthGuard>} />
             <Route path="/phones-for-sale" element={<AuthGuard><PhonesForSale /></AuthGuard>} /> {/* Add the new route */}
             <Route path="/seller-dashboard" element={<AuthGuard><SellerDashboard /></AuthGuard>} />
             <Route path="/add-phone" element={<AuthGuard><AddPhoneForm /></AuthGuard>} />
@@ -368,6 +417,8 @@ const AppCore = () => {
             <Route path="/accessories-for-sale" element={<AuthGuard><AccessoriesForSalePage /></AuthGuard>} />
             <Route path="/edit-accessory/:id" element={<AuthGuard><EditAccessoryListing /></AuthGuard>} />
             <Route path="/product/:id" element={<AuthGuard><React.Suspense fallback={null}><ProductDetails /></React.Suspense></AuthGuard>} />
+            <Route path="/privacy-policy" element={<AuthGuard><PrivacyPolicy /></AuthGuard>} />
+            <Route path="/terms-of-use" element={<AuthGuard><TermsOfUse /></AuthGuard>} />
             <Route path="/favorites" element={<Favorites />} />
             <Route path="*" element={<NotFound />} />
             <Route path="/profile-menu" element={<AuthGuard><ProfileMenuPage /></AuthGuard>} />
