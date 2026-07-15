@@ -14,7 +14,7 @@ import ImageViewer from '@/components/ImageViewer';
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import PageAdvertisement from '@/components/advertisements/PageAdvertisement';
-import AdsOfferSlider from '@/components/advertisements/AdsOfferSlider';
+import AdsOfferSlider from '@/components/AdsOfferSlider';
 import { useScrollToTop } from '../hooks/useScrollToTop';
 import { supabase } from '@/lib/supabase';
 
@@ -108,8 +108,8 @@ const validateImageFile = (file: File): Promise<boolean> => {
       if (e.target?.readyState === FileReader.DONE) {
         const arr = (new Uint8Array(e.target.result as ArrayBuffer)).subarray(0, 4);
         let header = "";
-        for(let i = 0; i < arr.length; i++) {
-           header += arr[i].toString(16);
+        for (let i = 0; i < arr.length; i++) {
+          header += arr[i].toString(16);
         }
         let isValid = false;
         if (header.startsWith('ffd8')) isValid = true; // JPEG
@@ -129,7 +129,7 @@ const validateImageFile = (file: File): Promise<boolean> => {
 const ReportPhone: React.FC = () => {
   useScrollToTop();
   const resultRef = useRef<any>(null);
-  
+
   // حالة لتخزين القيم الأصلية
   const [originalData, setOriginalData] = useState({
     ownerName: '',
@@ -137,18 +137,19 @@ const ReportPhone: React.FC = () => {
     idLast6: '',
     countryCode: '' // إضافة رمز الدولة للبيانات الأصلية
   });
-  
+
   const [imageUrls, setImageUrls] = useState<string[]>([]);
-  
+
   const cleanupImageUrls = useCallback(() => {
     imageUrls.forEach(url => URL.revokeObjectURL(url));
     setImageUrls([]);
   }, []);
-  
+
   useEffect(() => {
     return cleanupImageUrls;
   }, []);
-  
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+
   const { t } = useLanguage();
   const REGISTERED_IN_SYSTEM = '__REGISTERED_IN_SYSTEM__';
   const registeredInSystemLabel = t('registered_in_system');
@@ -221,7 +222,7 @@ const ReportPhone: React.FC = () => {
   const [whatsappNumber, setWhatsappNumber] = useState('');
   const [whatsappCountryCode, setWhatsappCountryCode] = useState('+20'); // Default to Egypt
   const [showUpgradeDialog, setShowUpgradeDialog] = useState(false);
-  
+
   const [userRole, setUserRole] = useState<string | null>(null);
   const [isCheckingRole, setIsCheckingRole] = useState(false);
 
@@ -297,14 +298,14 @@ const ReportPhone: React.FC = () => {
       });
       return;
     }
-    
+
     const cleanedRole = userRole ? userRole.trim() : '';
     const isGoldUser = cleanedRole === 'gold_user' || cleanedRole === 'gold_business';
-    
+
     if (isGoldUser) {
       setShareWhatsApp(!shareWhatsApp);
     } else {
-      setShowUpgradeDialog(true);
+      setShowUpgradeModal(true);
     }
   };
 
@@ -313,13 +314,13 @@ const ReportPhone: React.FC = () => {
       toast({ title: t('error'), description: t('continue_in_data_mode'), variant: 'destructive' });
       return false;
     }
-    
+
     // التحقق من حقل الواتساب إذا كان مفعلاً
     if (shareWhatsApp && !whatsappNumber) {
       toast({ title: t('error'), description: t('whatsapp_number_required'), variant: 'destructive' });
       return false;
     }
-    
+
     if (!isImeiRegisteredStatus && data.idLast6 !== REGISTERED_IN_SYSTEM) {
       const val = String(data.idLast6 || '');
       const isMasked = /\*/.test(val);
@@ -341,7 +342,7 @@ const ReportPhone: React.FC = () => {
       // In quick mode, skip receipt/report image requirements entirely.
       return true;
     }
-    
+
     if (!currentFieldReadOnlyState.receiptImage) {
       if (!data.receiptImage && data.ownerName !== REGISTERED_IN_SYSTEM) {
         toast({ title: t('error'), description: t('receipt_image_required'), variant: 'destructive' });
@@ -360,7 +361,7 @@ const ReportPhone: React.FC = () => {
         return false;
       }
     }
-    
+
     if (!currentFieldReadOnlyState.reportImage && !data.reportImage) {
       toast({ title: t('error'), description: t('report_image_required'), variant: 'destructive' });
       return false;
@@ -664,55 +665,55 @@ const ReportPhone: React.FC = () => {
           setIsImeiRegistered(false);
           setIsImeiValid(true);
           setActiveReportWarning('phone_not_registered_can_report');
-          
+
           // ⭐ التعديل الجديد: التعامل مع البيانات المقنعة من الخادم
-        // في دالة fetchMaskedImeiInfo
-if (result.autoFillData) {
-  const {
-    ownerName,
-    phoneNumber,
-    phoneNumberRaw, // استخدام الرقم الفعلي (غير المقنع) إذا كان متوفراً
-    idLast6,
-    isReadOnly,
-    countryKey,
-    country_key,
-    country_code
-  } = result.autoFillData;
+          // في دالة fetchMaskedImeiInfo
+          if (result.autoFillData) {
+            const {
+              ownerName,
+              phoneNumber,
+              phoneNumberRaw, // استخدام الرقم الفعلي (غير المقنع) إذا كان متوفراً
+              idLast6,
+              isReadOnly,
+              countryKey,
+              country_key,
+              country_code
+            } = result.autoFillData;
 
-  // فصل رمز الدولة عن الرقم إذا كانا مدمجين
-  const providedCountry = country_code || countryKey || country_key || '';
-  let extractedCountryCode = providedCountry || '+20';
-  
-  // استخدام الرقم الفعلي (غير المقنع) إذا كان متوفراً، وإلا استخدام الرقم المقنع للعرض
-  let extractedPhoneNumber = phoneNumberRaw || phoneNumber || '';
-  let displayPhoneNumber = phoneNumber || ''; // الرقم المقنع للعرض
+            // فصل رمز الدولة عن الرقم إذا كانا مدمجين
+            const providedCountry = country_code || countryKey || country_key || '';
+            let extractedCountryCode = providedCountry || '+20';
 
-  // إذا لم يكن هناك رمز دولة صريح، حاول فصله من الرقم الفعلي
-  if (!providedCountry && extractedPhoneNumber && extractedPhoneNumber.startsWith('+')) {
-    const match = extractedPhoneNumber.match(/^\+(\d{1,3})(.*)$/);
-    if (match) {
-      extractedCountryCode = `+${match[1]}`;
-      extractedPhoneNumber = match[2];
-    }
-  }
+            // استخدام الرقم الفعلي (غير المقنع) إذا كان متوفراً، وإلا استخدام الرقم المقنع للعرض
+            let extractedPhoneNumber = phoneNumberRaw || phoneNumber || '';
+            let displayPhoneNumber = phoneNumber || ''; // الرقم المقنع للعرض
 
-  // تحديث الحالة
-  setCountryCode(extractedCountryCode);
+            // إذا لم يكن هناك رمز دولة صريح، حاول فصله من الرقم الفعلي
+            if (!providedCountry && extractedPhoneNumber && extractedPhoneNumber.startsWith('+')) {
+              const match = extractedPhoneNumber.match(/^\+(\d{1,3})(.*)$/);
+              if (match) {
+                extractedCountryCode = `+${match[1]}`;
+                extractedPhoneNumber = match[2];
+              }
+            }
 
-  setFormData(prev => ({
-    ...prev,
-    ownerName: ownerName || '',
-    // استخدام الرقم المقنع للعرض، والرقم الفعلي للحفظ في originalData
-    phoneNumber: displayPhoneNumber, // استخدام الرقم المقنع للعرض
-    idLast6: idLast6 ? (/\*/.test(String(idLast6)) ? String(idLast6) : maskIdNumber(String(idLast6))) : '',
-  }));
+            // تحديث الحالة
+            setCountryCode(extractedCountryCode);
 
-  setOriginalData({
-    ownerName: ownerName || '',
-    phoneNumber: extractedPhoneNumber.replace(/\D/g, ''), // حفظ الرقم الفعلي بدون رمز
-    idLast6: idLast6 || '',
-    countryCode: extractedCountryCode
-  });
+            setFormData(prev => ({
+              ...prev,
+              ownerName: ownerName || '',
+              // استخدام الرقم المقنع للعرض، والرقم الفعلي للحفظ في originalData
+              phoneNumber: displayPhoneNumber, // استخدام الرقم المقنع للعرض
+              idLast6: idLast6 ? (/\*/.test(String(idLast6)) ? String(idLast6) : maskIdNumber(String(idLast6))) : '',
+            }));
+
+            setOriginalData({
+              ownerName: ownerName || '',
+              phoneNumber: extractedPhoneNumber.replace(/\D/g, ''), // حفظ الرقم الفعلي بدون رمز
+              idLast6: idLast6 || '',
+              countryCode: extractedCountryCode
+            });
 
 
             if (isReadOnly) {
@@ -727,7 +728,7 @@ if (result.autoFillData) {
               });
             }
           }
-          
+
           return;
         }
 
@@ -794,7 +795,7 @@ if (result.autoFillData) {
           }
 
           setCountryCode(registeredCountryCode);
-          
+
           setFormData(prev => (({
             ...prev,
             ownerName: REGISTERED_IN_SYSTEM,
@@ -991,7 +992,7 @@ if (result.autoFillData) {
           if (typeof crypto !== 'undefined' && typeof (crypto as any).randomUUID === 'function') {
             return (crypto as any).randomUUID();
           }
-        } catch (e) {}
+        } catch (e) { }
         return `${Date.now()}_${Math.floor(Math.random() * 1e9)}`;
       };
 
@@ -1027,7 +1028,7 @@ if (result.autoFillData) {
         if (!url) {
           try {
             let jwtToken = '';
-            try { const sessionResp = await supabase.auth.getSession(); jwtToken = (sessionResp?.data as any)?.session?.access_token || ''; } catch(e) { jwtToken = ''; }
+            try { const sessionResp = await supabase.auth.getSession(); jwtToken = (sessionResp?.data as any)?.session?.access_token || ''; } catch (e) { jwtToken = ''; }
 
             try {
               const resp = await axiosInstance.post('/api/imei-masked-info', { imei: formData.imei });
@@ -1078,7 +1079,7 @@ if (result.autoFillData) {
         setIsSubmitting(false);
         return;
       }
-      
+
       // In quick mode we allow submitting without images
       if (!reportImageToSend && !isQuickMode) {
         toast({ title: t('error'), description: t('report_image_required'), variant: 'destructive' });
@@ -1251,7 +1252,7 @@ if (result.autoFillData) {
       <div className="pb-3">
         <AppNavbar />
         <PageAdvertisement pageName="reportphone" />
-        
+
         <div className="flex items-center mb-6 pt-3" style={{ background: 'linear-gradient(to top, #053060 0%, #0a4d8c 100%)', padding: '0.3rem', borderRadius: '1rem', marginTop: '1rem' }}>
           <BackButton className="mr-4" />
           <h1
@@ -1270,23 +1271,21 @@ if (result.autoFillData) {
                   <React.Fragment key={step}>
                     <div className="flex flex-col items-center z-10">
                       <div
-                        className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white transition-all duration-500 ${
-                          currentStep === step
-                            ? 'bg-gradient-to-r from-blue-600 to-cyan-600 shadow-lg ring-4 ring-blue-100 scale-110'
-                            : currentStep > step
+                        className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-white transition-all duration-500 ${currentStep === step
+                          ? 'bg-gradient-to-r from-blue-600 to-cyan-600 shadow-lg ring-4 ring-blue-100 scale-110'
+                          : currentStep > step
                             ? 'bg-green-500'
                             : 'bg-gray-300'
-                        }`}
+                          }`}
                       >
                         {currentStep > step ? <CheckCircle className="w-6 h-6" /> : step}
                       </div>
                     </div>
                     {step < 4 && (
                       <div className="flex-1 h-1 mx-[-10px] -mt-0">
-                        <div 
-                          className={`h-full transition-all duration-500 ${
-                            currentStep > step ? 'bg-green-500' : 'bg-gray-300'
-                          }`}
+                        <div
+                          className={`h-full transition-all duration-500 ${currentStep > step ? 'bg-green-500' : 'bg-gray-300'
+                            }`}
                         />
                       </div>
                     )}
@@ -1755,9 +1754,9 @@ if (result.autoFillData) {
               </div>
             </div>
             <DialogFooter>
-              <Button 
-                type="button" 
-                onClick={handleModalSubmit} 
+              <Button
+                type="button"
+                onClick={handleModalSubmit}
                 disabled={isLoading || isSubmitting}
                 className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-bold"
               >
@@ -1766,37 +1765,9 @@ if (result.autoFillData) {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-
-        {showUpgradeDialog && createPortal(
-          <div className="fixed inset-0 z-50 flex items-center justify-center">
-            <div className="absolute inset-0 bg-black/30" onClick={() => setShowUpgradeDialog(false)} />
-            <div className="relative z-10 w-full max-w-lg mx-auto">
-              <div className="bg-green-100/30 backdrop-blur-2xl rounded-2xl shadow-2xl w-[95%] h-[95vh] max-w-lg mx-auto border border-white/0 relative overflow-hidden pt-[50px] bg-clip-padding">
-                <button onClick={() => setShowUpgradeDialog(false)} className="absolute top-3 right-3 bg-red-600 text-white rounded-full p-1.5 shadow-lg hover:bg-red-700 transition-colors z-10" aria-label="إغلاق">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-x"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
-                </button>
-
-                <div className="flex flex-col items-center justify-center h-full pt-10 pb-16 px-6">
-                  <div className="mb-12 animate-pulse">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-gem w-28 h-28 text-cyan-200 drop-shadow-[0_2px_5px_rgba(0,255,255,0.5)]">
-                      <path d="M6 3h12l4 6-10 13L2 9Z" />
-                      <path d="M11 3 8 9l4 13 4-13-3-6" />
-                      <path d="M2 9h20" />
-                    </svg>
-                  </div>
-
-                  <h2 className="text-4xl md:text-5xl font-extrabold text-center select-none mb-4 text-white font-sans [text-shadow:_0_4px_6px_rgba(0,0,0,0.6)] transform -skew-y-6 tracking-wider">UPGRADE NOW</h2>
-
-                  <h2 className="text-2xl md:text-3xl font-extrabold text-center select-none mb-8 text-white font-sans [text-shadow:_0_4px_6px_rgba(0,0,0,0.6)] transform -skew-y-5 tracking-wider">{t('upgrade_now')}</h2>
-
-                  <div className="w-full max-w-2xl px-4">
-                    <AdsOfferSlider isUpgradePrompt={false} showHeader={false} />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        , document.getElementById('modal-root') || document.body)}
+ {showUpgradeModal && user && (
+          <AdsOfferSlider onClose={() => setShowUpgradeModal(false)} userId={user.id} isUpgradePrompt={true} />
+        )}
       </div>
     </PageContainer>
   );
