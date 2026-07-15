@@ -4656,7 +4656,7 @@ app.get('/api/user-phones', verifyJwtToken, async (req, res) => {
       .from('registered_phones')
       .select('id, imei, phone_type, registration_date, last_confirmed_at, status, user_id')
       .eq('user_id', userId)
-  
+      .not('status', 'rejected'); // استبعاد الهواتف المرفوضة
 
     if (error) throw error;
 
