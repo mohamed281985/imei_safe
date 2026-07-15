@@ -47,6 +47,7 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
   const [ads, setAds] = useState<AdDisplay[]>([]);
   const [currentAdIndex, setCurrentAdIndex] = useState(0);
   const [showLocalAd, setShowLocalAd] = useState(true);
+  const [imagesReady, setImagesReady] = useState(false);
   const [lastShownIndex, setLastShownIndex] = useState<number | null>(null);
 
   const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) || 'https://imei-safe.me';
@@ -179,39 +180,58 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
     }
 
     // البحث عن إعلانات المسؤول
-    adminAds = mergedAds.filter(ad => ad.transaction === 'admin_publish');
+    // إعلانات الأدمن (تظهر دائماً)
+    adminAds = mergedAds.filter(
+      ad => ad.transaction === 'admin_publish'
+    );
 
-    // دمج الإعلانات: أولاً الإعلانات القريبة، ثم إعلانات المسؤول
-    let fetchedAds: AdDisplay[] = [];
-    if (nearbyAds.length > 0) {
-      fetchedAds = [...nearbyAds];
-    }
-    if (adminAds.length > 0) {
-      fetchedAds = [...fetchedAds, ...adminAds];
-    }
+    // الإعلانات النهائية
+    const map = new Map<string, AdDisplay>();
+
+    // أولاً أضف الإعلانات القريبة
+    nearbyAds.forEach(ad => map.set(ad.id, ad));
+
+    // ثم أضف إعلانات الأدمن (ستظهر دائماً)
+    adminAds.forEach(ad => map.set(ad.id, ad));
+
+    const fetchedAds = Array.from(map.values());
 
     if (fetchedAds.length > 0) {
+      setImagesReady(false);
       setAds(fetchedAds);
+      setCurrentAdIndex(0);
+      setLastShownIndex(null);
       setShowLocalAd(false);
       localStorage.setItem(cacheKey, JSON.stringify(fetchedAds));
     }
   };
 
   // دالة لتحميل الصور مسبقاً
-  const preloadImages = (imageUrls: string[]) => {
-    imageUrls.forEach(url => {
-      if (url) {
+  const preloadImages = async (imageUrls: string[]) => {
+    const promises = imageUrls.map(url => {
+      return new Promise<void>((resolve) => {
+        if (!url) return resolve();
+
         const img = new Image();
+
+        img.onload = () => resolve();
+        img.onerror = () => resolve();
+
         img.src = url;
-      }
+      });
     });
+
+    await Promise.all(promises);
+
+    setImagesReady(true);
   };
 
   // تأثير منفصل لتحميل الصور مسبقاً عند تغير قائمة الإعلانات فقط
   useEffect(() => {
     if (ads.length > 0) {
-      const imageUrls = ads.map(ad => ad.image_url).filter(Boolean);
-      preloadImages(imageUrls);
+      preloadImages(
+        ads.map(ad => ad.image_url).filter(Boolean)
+      );
     }
   }, [ads]);
 
@@ -247,18 +267,18 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
 
   // تأثير لتحديث الإعلان بشكل عشوائي
   useEffect(() => {
-    if (!ads || ads.length <= 1) return;
+    if (!imagesReady) return;
+    if (ads.length <= 1) return;
 
-    const timer = setInterval(() => {
-      setCurrentAdIndex(prevIndex => {
-        const newIndex = getRandomAdIndex(prevIndex, lastShownIndex);
-        setLastShownIndex(newIndex);
-        return newIndex;
-      });
+    const timer = setTimeout(() => {
+      const next = getRandomAdIndex(currentAdIndex, currentAdIndex);
+
+      setLastShownIndex(currentAdIndex);
+      setCurrentAdIndex(next);
     }, 2000);
 
-    return () => clearInterval(timer);
-  }, [ads.length]);
+    return () => clearTimeout(timer);
+  }, [currentAdIndex, ads, imagesReady]);
 
   // الحالة الحالية لإعلان معالج (تُستخدم للتمكين/التعطيل)
   const currentAd = ads[currentAdIndex];
