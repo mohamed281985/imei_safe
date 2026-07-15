@@ -250,15 +250,7 @@ const RecoveryCard: React.FC = () => {
                         <ImageIcon size={16} className="ml-2" />
                         عرض بحجم أكبر
                       </Button>
-                      <Button 
-                        variant="secondary" 
-                        size="sm"
-                        onClick={handleDownload}
-                        className="bg-white/90 hover:bg-white text-slate-800 border-slate-200"
-                      >
-                        <Download size={16} className="ml-2" />
-                        تنزيل
-                      </Button>
+                    
                     </div>
                   </div>
                 ) : (
