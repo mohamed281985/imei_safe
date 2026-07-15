@@ -16,6 +16,8 @@ interface PhoneForConfirmation {
   phone_type: string;
   hasActiveReport?: boolean;
   imei?: string;
+  status?: string; // إضافة خاصية الحالة
+
 }
 
 interface OwnershipConfirmationModalProps {
@@ -48,11 +50,13 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
-
   React.useEffect(() => {
-    const filtered = (phones || []).filter(p => !removedPhoneIds.includes(p.id));
+    const filtered = (phones || []).filter(p =>
+      !removedPhoneIds.includes(p.id) && p.status !== 'rejected'
+    );
     setLocalPhones(filtered);
   }, [phones, removedPhoneIds]);
+
 
   const startCamera = async (phoneId: string) => {
     try {
@@ -250,12 +254,12 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
         const token = session?.access_token;
         const resultResp = await axiosInstance.post('/api/resolve-report', { imei_encrypted: phoneWithReport.imei_encrypted });
         const result = resultResp.data;
-        
+
         // التعديل هنا: نقبل النجاح حتى لو كان "already_resolved"
         if (!result || (!result.success && result.message !== 'already_resolved')) {
           throw new Error(result?.error || 'Failed to resolve report');
         }
-        
+
         toast({ title: t('success_title'), description: t('report_status_updated_successfully') });
         onConfirm([phoneWithReport.id]);
         // إزالة الهاتف من العرض المحلي بعد الحل

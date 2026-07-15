@@ -16,7 +16,8 @@ const buildRecoveryCardResponse = async (supabase, phoneRow) => {
     phone_type: phoneRow.phone_type,
     status: phoneRow.status,
     phone_image_url: phoneRow.phone_image_url,
-    is_transferred: phoneRow.status === 'transferred' || phoneRow.status === 'sold'
+    is_transferred: phoneRow.status === 'transferred' || phoneRow.status === 'sold',
+    is_rejected: phoneRow.status === 'rejected' // إضافة حالة الرفض
   };
 };
 
@@ -25,6 +26,7 @@ const fetchRegisteredPhoneById = async (supabase, id) => {
     .from('registered_phones')
     .select('id, user_id, qr_token, device_code, qr_card_url, qr_created_at, phone_type, status, phone_image_url, imei, imei_hash, owner_name')
     .eq('id', id)
+    .neq('status', 'rejected') // استبعاد الهواتف المرفوضة
     .maybeSingle();
 
   if (error) throw error;
@@ -36,6 +38,7 @@ const fetchRegisteredPhoneByToken = async (supabase, qrToken) => {
     .from('registered_phones')
     .select('id, user_id, qr_token, device_code, qr_card_url, qr_created_at, phone_type, status, phone_image_url, imei, imei_hash, owner_name')
     .eq('qr_token', qrToken)
+    .neq('status', 'rejected') // استبعاد الهواتف المرفوضة
     .maybeSingle();
 
   if (error) throw error;
@@ -181,112 +184,114 @@ export function registerQrRoutes({ app, supabase, verifyJwtToken, sendError, dec
       return sendError(res, 500, 'حدث خطأ في الخادم', err);
     }
   });
+app.get('/api/found/:token', async (req, res) => {
+  try {
+    const token = req.params.token;
+    if (!token) {
+      return res.status(404).json({ success: false, message: 'Invalid QR Code' });
+    }
 
-  app.get('/api/found/:token', async (req, res) => {
+    // Query only required fields from registered_phones
+    const { data: phone, error: phoneErr } = await supabase
+      .from('registered_phones')
+      .select('id, imei_hash, owner_name, phone_number, device_code, status')
+      .eq('qr_token', token)
+      .maybeSingle();
+
+    if (phoneErr) {
+      console.error('/api/found registered_phones query error:', phoneErr);
+      return sendError(res, 500, 'Server error', phoneErr);
+    }
+
+    if (!phone || !phone.id) {
+      return res.status(404).json({ success: false, message: 'Invalid QR Code' });
+    }
+
+    const statusLower = String(phone.status || '').trim().toLowerCase();
+    
+    // استبعاد الهواتف المرفوضة والمنقولة والمباعة
+    if (['rejected', 'transferred', 'sold'].includes(statusLower)) {
+      return res.status(404).json({ success: false, message: 'Invalid QR Code' });
+    }
+
+    // Look for active report by imei_hash (do NOT use imei)
+    let reported = false;
+    let whatsapp_enabled = false;
+    let whatsapp_number = null;
+
     try {
-      const token = req.params.token;
-      if (!token) {
-        return res.status(404).json({ success: false, message: 'Invalid QR Code' });
-      }
+      if (phone.imei_hash) {
+        const { data: repRows, error: repErr } = await supabase
+          .from('phone_reports')
+          .select('whatsapp, anther_number')
+          .eq('imei_hash', phone.imei_hash)
+          .eq('status', 'active')
+          .limit(1);
 
-      // Query only required fields from registered_phones
-      const { data: phone, error: phoneErr } = await supabase
-        .from('registered_phones')
-        .select('id, imei_hash, owner_name, phone_number, device_code, status')
-        .eq('qr_token', token)
-        .maybeSingle();
+        if (repErr) {
+          console.error('/api/found phone_reports query error:', repErr);
+          return sendError(res, 500, 'Server error', repErr);
+        }
 
-      if (phoneErr) {
-        console.error('/api/found registered_phones query error:', phoneErr);
-        return sendError(res, 500, 'Server error', phoneErr);
-      }
-
-      if (!phone || !phone.id) {
-        return res.status(404).json({ success: false, message: 'Invalid QR Code' });
-      }
-
-      const statusLower = String(phone.status || '').trim().toLowerCase();
-      if (['transferred', 'sold'].includes(statusLower)) {
-        return res.status(404).json({ success: false, message: 'Invalid QR Code' });
-      }
-
-      // Look for active report by imei_hash (do NOT use imei)
-      let reported = false;
-      let whatsapp_enabled = false;
-      let whatsapp_number = null;
-
-      try {
-        if (phone.imei_hash) {
-          const { data: repRows, error: repErr } = await supabase
-            .from('phone_reports')
-            .select('whatsapp, anther_number')
-            .eq('imei_hash', phone.imei_hash)
-            .eq('status', 'active')
-            .limit(1);
-
-          if (repErr) {
-            console.error('/api/found phone_reports query error:', repErr);
-            return sendError(res, 500, 'Server error', repErr);
-          }
-
-          if (repRows && repRows.length > 0) {
-            reported = true;
-            const r = repRows[0];
-            whatsapp_enabled = !!r.whatsapp;
-            if (whatsapp_enabled && r.anther_number) {
-              try {
-                whatsapp_number = decryptField(r.anther_number) || r.anther_number;
-              } catch (decErr) {
-                console.error('/api/found decrypt phone_reports.anther_number error:', decErr);
-                whatsapp_number = r.anther_number;
-              }
+        if (repRows && repRows.length > 0) {
+          reported = true;
+          const r = repRows[0];
+          whatsapp_enabled = !!r.whatsapp;
+          if (whatsapp_enabled && r.anther_number) {
+            try {
+              whatsapp_number = decryptField(r.anther_number) || r.anther_number;
+            } catch (decErr) {
+              console.error('/api/found decrypt phone_reports.anther_number error:', decErr);
+              whatsapp_number = r.anther_number;
             }
           }
         }
-      } catch (err) {
-        console.error('/api/found phone_reports lookup failed:', err);
-        return sendError(res, 500, 'Server error', err);
       }
-
-      if (!reported) {
-        return res.json({
-          success: true,
-          reported: false,
-          message: 'هذا الهاتف غير مسجل به إخطار فقد حتى الآن.'
-        });
-      }
-
-      // Decrypt only allowed fields when there is an active report
-      let ownerName = '';
-      try {
-        if (phone.owner_name) ownerName = decryptField(phone.owner_name) || phone.owner_name;
-      } catch (decErr) {
-        console.error('/api/found decrypt owner_name error:', decErr);
-        ownerName = phone.owner_name || '';
-      }
-
-      let ownerPhone = '';
-      try {
-        if (phone.phone_number) ownerPhone = decryptField(phone.phone_number) || phone.phone_number;
-      } catch (decErr) {
-        console.error('/api/found decrypt phone_number error:', decErr);
-        ownerPhone = phone.phone_number || '';
-      }
-
-      return res.json({
-        success: true,
-        reported: true,
-        owner_name: ownerName,
-        phone: ownerPhone,
-        device_code: phone.device_code || '',
-        whatsapp_enabled,
-        whatsapp_number
-      });
     } catch (err) {
-      console.error('/api/found/:token error:', err);
+      console.error('/api/found phone_reports lookup failed:', err);
       return sendError(res, 500, 'Server error', err);
     }
-  });
+
+    if (!reported) {
+      return res.json({
+        success: true,
+        reported: false,
+        message: 'هذا الهاتف غير مسجل به إخطار فقد حتى الآن.'
+      });
+    }
+
+    // Decrypt only allowed fields when there is an active report
+    let ownerName = '';
+    try {
+      if (phone.owner_name) ownerName = decryptField(phone.owner_name) || phone.owner_name;
+    } catch (decErr) {
+      console.error('/api/found decrypt owner_name error:', decErr);
+      ownerName = phone.owner_name || '';
+    }
+
+    let ownerPhone = '';
+    try {
+      if (phone.phone_number) ownerPhone = decryptField(phone.phone_number) || phone.phone_number;
+    } catch (decErr) {
+      console.error('/api/found decrypt phone_number error:', decErr);
+      ownerPhone = phone.phone_number || '';
+    }
+
+    return res.json({
+      success: true,
+      reported: true,
+      owner_name: ownerName,
+      phone: ownerPhone,
+      device_code: phone.device_code || '',
+      whatsapp_enabled,
+      whatsapp_number
+    });
+  } catch (err) {
+    console.error('/api/found/:token error:', err);
+    return sendError(res, 500, 'Server error', err);
+  }
+});
+
 
   app.post('/api/found/:qrToken/notify-owner', async (req, res) => {
     try {
