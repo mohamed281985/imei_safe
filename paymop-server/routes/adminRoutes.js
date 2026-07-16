@@ -2775,8 +2775,64 @@ return res.json({
         });
       }
 
-      const out = (data || []).map(r => ({ id: r.id, ...decryptDeep(r) }));
+const out = [];
 
+for (const row of (data || [])) {
+  const r = { id: row.id, ...decryptDeep(row) };
+
+  // صورة الهاتف
+  if (r.phone_image_url) {
+    try {
+      const path = normalizeStoragePath(r.phone_image_url);
+
+      const { data: signed } = await supabase.storage
+        .from('registerphone')
+        .createSignedUrl(path, 60 * 60);
+
+      if (signed?.signedUrl) {
+        r.phone_image_url = signed.signedUrl;
+      }
+    } catch (e) {
+      console.error('phone_image_url signed url error', e);
+    }
+  }
+
+  // صورة الفاتورة
+  if (r.receipt_image_url) {
+    try {
+      const path = normalizeStoragePath(r.receipt_image_url);
+
+      const { data: signed } = await supabase.storage
+        .from('registerphone')
+        .createSignedUrl(path, 60 * 60);
+
+      if (signed?.signedUrl) {
+        r.receipt_image_url = signed.signedUrl;
+      }
+    } catch (e) {
+      console.error('receipt_image_url signed url error', e);
+    }
+  }
+
+  // صورة إثبات الملكية
+  if (r.ownership_image_url) {
+    try {
+      const path = normalizeStoragePath(r.ownership_image_url);
+
+      const { data: signed } = await supabase.storage
+        .from('registerphone')
+        .createSignedUrl(path, 60 * 60);
+
+      if (signed?.signedUrl) {
+        r.ownership_image_url = signed.signedUrl;
+      }
+    } catch (e) {
+      console.error('ownership_image_url signed url error', e);
+    }
+  }
+
+  out.push(r);
+}
       return res.json({
         success: true,
         ownership_verification_requests: out
