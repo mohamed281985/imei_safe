@@ -3953,7 +3953,10 @@ async function verifyJwtToken(req, res, next) {
       .select('role, expires_at')
       .eq('id', user.id)
       .maybeSingle();
-
+    if (roleError) {
+      console.error(roleError);
+      return res.status(500).json({ error: "Role lookup failed" });
+    }
     // 3. دمج الدور مع بيانات المستخدم
     // إذا لم يتم العثور على دور، نستخدم القيمة الافتراضية 'free_user'
     let userRole = (appUserData && appUserData.role) ? appUserData.role : 'free_user';
@@ -5665,11 +5668,11 @@ const checkAuthBlocked = (key) => {
 app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
   const phoneData = req.body;
   const userId = req.user.id;
- const limitCheck = await checkRegisterLimit(req.user.id);
+  const limitCheck = await checkRegisterLimit(req.user.id);
 
-if (!limitCheck.canRegister) {
+  if (!limitCheck.canRegister) {
     return res.status(403).json(limitCheck);
-}
+  }
   const rawImei = typeof phoneData.imei === 'string' ? phoneData.imei : '';
   // If an IMEI is provided, compute a stable SHA-256 hash of the normalized digits
   // and store it in `imei_hash` for indexing/searching (non-reversible).
