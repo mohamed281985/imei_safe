@@ -2717,9 +2717,40 @@ app.delete(
 
       const { data, error } = await q;
       if (error) throw error;
-      const out = (data || []).map(r => ({ id: r.id, ...decryptDeep(r) }));
+    const out = [];
 
-      return res.json({ ok: true, registered_phones: out });
+for (const row of (data || [])) {
+  const r = { id: row.id, ...decryptDeep(row) };
+
+  // صورة الهاتف
+  if (r.phone_image_url) {
+    const { data: signed } = await supabase.storage
+      .from('registerphone')
+      .createSignedUrl(r.phone_image_url, 300);
+
+    if (signed?.signedUrl) {
+      r.phone_image_url = signed.signedUrl;
+    }
+  }
+
+  // صورة الفاتورة
+  if (r.receipt_image_url) {
+    const { data: signed } = await supabase.storage
+      .from('registerphone')
+      .createSignedUrl(r.receipt_image_url, 300);
+
+    if (signed?.signedUrl) {
+      r.receipt_image_url = signed.signedUrl;
+    }
+  }
+
+  out.push(r);
+}
+
+return res.json({
+  ok: true,
+  registered_phones: out,
+});
     } catch (err) {
       console.error('/admin/registered_phones error', err);
       return res.status(500).json({ error: 'Server error' });

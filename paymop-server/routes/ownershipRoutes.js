@@ -469,13 +469,16 @@ export function registerOwnershipRoutes({
         return res.status(429).json({ ok: false, error: 'Rate limit exceeded', retryAfter });
       }
 
-      const { data: phones, error } = await supabase
-        .from('registered_phones')
-        .select('id, imei, password, user_id')
-        .limit(1000);
-      if (error) throw error;
+      const imeiHash = getImeiHash(imei);
 
-      const found = phones ? phones.find((p) => decryptField(p.imei) === imei) : null;
+const { data: registeredPhone, error } = await supabase
+  .from('registered_phones')
+  .select('*')
+  .eq('imei_hash', imeiHash)
+  .maybeSingle();
+
+if (error) throw error;
+
       if (!found) return res.status(404).json({ ok: false, error: 'Phone not found' });
       if (found.user_id !== req.user.id) {
         try {
@@ -611,13 +614,15 @@ export function registerOwnershipRoutes({
         return res.status(400).json({ error: 'imei, sellerPassword and newOwner required' });
       }
 
-      const { data: phones, error } = await supabase
-        .from('registered_phones')
-        .select('*')
-        .limit(1000);
-      if (error) throw error;
+const imeiHash = getImeiHash(imei);
 
-      const registeredPhone = phones ? phones.find((p) => decryptField(p.imei) === imei) : null;
+const { data: registeredPhone, error } = await supabase
+  .from('registered_phones')
+  .select('*')
+  .eq('imei_hash', imeiHash)
+  .maybeSingle();
+
+if (error) throw error;
       if (!registeredPhone) return res.status(404).json({ error: 'Phone not found' });
 
       console.log('[transfer-ownership] registeredPhone (raw) for imei=', imei, {
@@ -1028,17 +1033,18 @@ export function registerOwnershipRoutes({
       if (!userId) return res.status(401).json({ error: 'Unauthorized' });
       if (!imei) return res.status(400).json({ error: 'imei is required' });
 
-      const { data: ownPhones, error: ownPhonesErr } = await supabase
-        .from('registered_phones')
-        .select('imei')
-        .eq('user_id', userId)
-        .limit(1000);
-      if (ownPhonesErr) throw ownPhonesErr;
+     const imeiHash = getImeiHash(imei);
 
-      const imeiOwned = (ownPhones || []).some((p) => {
-        const decImei = decryptField(p.imei) || p.imei;
-        return normalizeDigitsOnly(decImei) === normalizeDigitsOnly(imei);
-      });
+const { data: ownPhone, error: ownPhonesErr } = await supabase
+  .from('registered_phones')
+  .select('id')
+  .eq('user_id', userId)
+  .eq('imei_hash', imeiHash)
+  .maybeSingle();
+
+if (ownPhonesErr) throw ownPhonesErr;
+
+const imeiOwned = !!ownPhone;
       if (!imeiOwned) return res.status(403).json({ error: 'Not authorized' });
 
       const { data: records, error } = await supabase
@@ -1113,17 +1119,15 @@ export function registerOwnershipRoutes({
       if (cardLast6.length !== 6 || !/^\d+$/.test(cardLast6)) {
         return res.status(400).json({ error: 'cardLast6 must be exactly 6 digits' });
       }
+const imeiHash = getImeiHash(imei);
 
-      const { data: phones, error: phonesErr } = await supabase
-        .from('registered_phones')
-        .select('id, user_id, imei, password, id_last6')
-        .limit(1000);
-      if (phonesErr) throw phonesErr;
+const { data: matching, error: phonesErr } = await supabase
+  .from('registered_phones')
+  .select('id, user_id, imei, password, id_last6')
+  .eq('imei_hash', imeiHash)
+  .maybeSingle();
 
-      const matching = (phones || []).find((p) => {
-        const dec = decryptField(p.imei) || p.imei;
-        return normalizeDigitsOnly(dec) === normalizeDigitsOnly(imei);
-      });
+if (phonesErr) throw phonesErr;
       if (!matching) return res.status(404).json({ error: 'Owner not found for IMEI' });
 
       const storedHash = matching.password;
@@ -1181,11 +1185,15 @@ export function registerOwnershipRoutes({
       if (!incomingImei) return res.status(400).json({ success: false, error: 'Invalid imei_encrypted' });
       const normalizedIncoming = normalizeDigitsOnly(incomingImei);
 
-      const { data: reports, error: fetchErr } = await supabase
-        .from('phone_reports')
-        .select('*')
-        .limit(1000);
-      if (fetchErr) throw fetchErr;
+const imeiHash = getImeiHash(incomingImei);
+
+const { data: report, error: fetchErr } = await supabase
+  .from('phone_reports')
+  .select('*')
+  .eq('imei_hash', imeiHash)
+  .maybeSingle();
+
+if (fetchErr) throw fetchErr;
 
       const matchingActive = (reports || []).filter((r) => {
         try {
@@ -1249,11 +1257,15 @@ export function registerOwnershipRoutes({
       const normalizedIncoming = normalizeDigitsOnly(incomingImei);
 
       // جلب كل البلاغات الفعالة لمستخدمنا أو عامة للبحث
-      const { data: reports, error: fetchErr } = await supabase
-        .from('phone_reports')
-        .select('*')
-        .limit(1000);
-      if (fetchErr) throw fetchErr;
+      const imeiHash = getImeiHash(incomingImei);
+
+const { data: report, error: fetchErr } = await supabase
+  .from('phone_reports')
+  .select('*')
+  .eq('imei_hash', imeiHash)
+  .maybeSingle();
+
+if (fetchErr) throw fetchErr;
 
       // Diagnostic: show decrypted incoming and a small sample of decrypted report IMEIs
       // ✅ SECURITY: بناء العينة المفكوكة التشفير وطباعتها يقتصران على وضع التطوير فقط
@@ -1401,14 +1413,16 @@ export function registerOwnershipRoutes({
     try {
       const { imei, newPassword } = req.body;
       if (!imei || !newPassword) return res.status(400).json({ error: 'imei and newPassword required' });
+const imeiHash = getImeiHash(imei);
 
-      const { data: phones, error } = await supabase
-        .from('registered_phones')
-        .select('id, imei, email, user_id')
-        .limit(1000);
-      if (error) throw error;
+const { data: found, error } = await supabase
+  .from('registered_phones')
+  .select('id, imei, email, user_id')
+  .eq('imei_hash', imeiHash)
+  .maybeSingle();
 
-      const found = phones ? phones.find((p) => decryptField(p.imei) === imei) : null;
+if (error) throw error;
+
       if (!found) return res.status(404).json({ error: 'Phone not found' });
 
       const userKey = req.user && req.user.id ? `uid:${req.user.id}` : `ip:${req.ip}`;

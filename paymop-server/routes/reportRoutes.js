@@ -1061,11 +1061,23 @@ export function registerReportRoutes({
             } else if (imei) {
               const imeiHash = getImeiHash(imei);
               if (imeiHash) {
-                const { data: allReports, error: reportErr } = await supabase.from('phone_reports').select('id').eq('imei_hash', imeiHash).limit(1000);
-                if (!reportErr && allReports && allReports.length) {
-                  for (const r of allReports) {
-                    const { error: upErr2 } = await supabase.from('phone_reports').update({ finder_phone: encryptedVal, finder_user_id: userId }).eq('id', r.id);
-                    if (!upErr2) { updated = true; break; }
+                const { data: report, error: reportErr } =
+                  await supabase
+                    .from('phone_reports')
+                    .select('id')
+                    .eq('imei_hash', imeiHash)
+                    .maybeSingle();
+                if (!reportErr && report) {
+                  const { error: upErr2 } = await supabase
+                    .from('phone_reports')
+                    .update({
+                      finder_phone: encryptedVal,
+                      finder_user_id: userId
+                    })
+                    .eq('id', report.id);
+
+                  if (!upErr2) {
+                    updated = true;
                   }
                 }
               } else {
