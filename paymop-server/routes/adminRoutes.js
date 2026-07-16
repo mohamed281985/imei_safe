@@ -2784,21 +2784,28 @@ for (const row of (data || [])) {
   };
 
   // إنشاء Signed URL لصورة الهاتف
-  if (r.phone_image) {
-    try {
-      const path = normalizeStoragePath(r.phone_image);
+ if (r.phone_image) {
+  try {
+    const path = normalizeStoragePath(r.phone_image);
 
-      const { data: signed, error } = await supabase.storage
-        .from('registerphone')
-        .createSignedUrl(path, 60 * 60);
+    console.log("Bucket:", "registerphone");
+    console.log("Original:", r.phone_image);
+    console.log("Path:", path);
 
-      if (!error && signed?.signedUrl) {
-        r.phone_image = signed.signedUrl;
-      }
-    } catch (e) {
-      console.error('phone_image signed url error:', e);
+    const { data: signed, error } = await supabase.storage
+      .from("registerphone")
+      .createSignedUrl(path, 3600);
+
+    console.log("Signed:", signed);
+    console.log("Error:", error);
+
+    if (!error && signed?.signedUrl) {
+      r.phone_image = signed.signedUrl;
     }
+  } catch (e) {
+    console.error("phone_image signed url error:", e);
   }
+}
 
   out.push(r);
 }
