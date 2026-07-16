@@ -3,6 +3,10 @@ import { getMessaging } from '../firebaseAdmin.js';
 import fs from 'fs';
 import path from 'path';
 import vm from 'vm';
+import {
+  createOrRefreshRecoveryCard,
+  normalizeStoragePath
+} from '../utils/qrCardUtils.js';
 export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToken, logAudit: rawLogAudit }) {
   const logAudit = (config) => rawLogAudit({ supabase, ...config });
   // Deep decrypt helper: recursively decrypt strings or encrypted objects.
