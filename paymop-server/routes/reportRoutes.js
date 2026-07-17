@@ -108,8 +108,27 @@ export function registerReportRoutes({
       const isValidImageUrl = (url) => {
         if (!url) return false;
         if (typeof url !== 'string') return false;
-        // يجب أن يبدأ الرابط بـ https:// ويحتوي على /storage/v1/object/public/
-        return url.startsWith('https://') && url.includes('/storage/v1/object/public/');
+
+        // Path داخل الـ Bucket
+        if (url.startsWith('reports/')) return true;
+
+        // Signed URL
+        if (
+          url.startsWith('https://') &&
+          url.includes('/storage/v1/object/sign/')
+        ) {
+          return true;
+        }
+
+        // Public URL (للتوافق مع البيانات القديمة)
+        if (
+          url.startsWith('https://') &&
+          url.includes('/storage/v1/object/public/')
+        ) {
+          return true;
+        }
+
+        return false;
       };
 
       // التحقق مما إذا كان الهاتف مسجلاً ومنع غير المالك من تقديم البلاغ
@@ -194,15 +213,28 @@ export function registerReportRoutes({
       }
 
       // الآن بعد تعبئة الحقول من registered_phones، نفّذ تحقق روابط الصور النهائي
-      const isQuickMode = (String(data.report_mode || '').toLowerCase() === 'quick');
-      if (!isQuickMode) {
-        if (!('receipt_image_url' in data) || !data.receipt_image_url || !isValidImageUrl(data.receipt_image_url)) {
-          return res.status(400).json({ success: false, error: 'يجب رفع صورة الفاتورة بشكل صحيح (رابط صالح).' });
-        }
-        if ('report_image_url' in data && data.report_image_url && !isValidImageUrl(data.report_image_url)) {
-          return res.status(400).json({ success: false, error: 'رابط صورة المحضر غير صالح أو لم يتم رفع الصورة بشكل صحيح.' });
-        }
-      } else {
+      if (
+        !('receipt_image_url' in data) ||
+        !data.receipt_image_url ||
+        !isValidImageUrl(data.receipt_image_url)
+      ) {
+        return res.status(400).json({
+          success: false,
+          error: 'يجب رفع صورة الفاتورة بشكل صحيح'
+        });
+      }
+
+      if (
+        'report_image_url' in data &&
+        data.report_image_url &&
+        !isValidImageUrl(data.report_image_url)
+      ) {
+        return res.status(400).json({
+          success: false,
+          error: 'صورة المحضر غير صالحة أو لم يتم رفعها بشكل صحيح'
+        });
+      }
+      else {
         // quick mode: allow missing images, but ensure expiry is set (default to 48 hours)
         try {
           if (!data.expiry) {
