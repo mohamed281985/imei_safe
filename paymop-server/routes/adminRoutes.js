@@ -1823,7 +1823,7 @@ for (const r of out) {
   // صورة الفاتورة
   if (r.receipt_image_url) {
     const { data: signed } = await supabase.storage
-      .from('registerphone')
+      .from('phone-images')
       .createSignedUrl(r.receipt_image_url, 300);
 
     if (signed?.signedUrl) {
