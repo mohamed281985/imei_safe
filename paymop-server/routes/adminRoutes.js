@@ -1823,30 +1823,27 @@ for (const r of out) {
   // صورة الفاتورة
  // صورة الفاتورة
 if (r.receipt_image_url) {
-  let signedUrl = null;
 
-  // المحاولة الأولى: phone-images
-  let { data } = await supabase.storage
-    .from('phone-images')
-    .createSignedUrl(r.receipt_image_url, 300);
+  // إذا كانت القيمة رابطاً كاملاً استخدمها كما هي
+  if (r.receipt_image_url.startsWith('http')) {
 
-  if (data?.signedUrl) {
-    signedUrl = data.signedUrl;
-  }
+    r.receipt_image_url = r.receipt_image_url;
 
-  // إذا لم توجد، جرّب registerphone
-  if (!signedUrl) {
-    const { data: data2 } = await supabase.storage
-      .from('registerphone')
-      .createSignedUrl(r.receipt_image_url, 300);
+  } else {
 
-    if (data2?.signedUrl) {
-      signedUrl = data2.signedUrl;
+    // إذا كانت مساراً فقط فجرب البوكتين
+    const buckets = ['phone-images', 'registerphone'];
+
+    for (const bucket of buckets) {
+      const { data } = await supabase.storage
+        .from(bucket)
+        .createSignedUrl(r.receipt_image_url, 300);
+
+      if (data?.signedUrl) {
+        r.receipt_image_url = data.signedUrl;
+        break;
+      }
     }
-  }
-
-  if (signedUrl) {
-    r.receipt_image_url = signedUrl;
   }
 }
 
