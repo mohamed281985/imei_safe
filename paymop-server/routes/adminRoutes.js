@@ -1821,15 +1821,34 @@ app.delete(
 for (const r of out) {
 
   // صورة الفاتورة
-  if (r.receipt_image_url) {
-    const { data: signed } = await supabase.storage
-      .from('phone-images')
+ // صورة الفاتورة
+if (r.receipt_image_url) {
+  let signedUrl = null;
+
+  // المحاولة الأولى: phone-images
+  let { data } = await supabase.storage
+    .from('phone-images')
+    .createSignedUrl(r.receipt_image_url, 300);
+
+  if (data?.signedUrl) {
+    signedUrl = data.signedUrl;
+  }
+
+  // إذا لم توجد، جرّب registerphone
+  if (!signedUrl) {
+    const { data: data2 } = await supabase.storage
+      .from('registerphone')
       .createSignedUrl(r.receipt_image_url, 300);
 
-    if (signed?.signedUrl) {
-      r.receipt_image_url = signed.signedUrl;
+    if (data2?.signedUrl) {
+      signedUrl = data2.signedUrl;
     }
   }
+
+  if (signedUrl) {
+    r.receipt_image_url = signedUrl;
+  }
+}
 
   // صورة البلاغ
   if (r.report_image_url) {
