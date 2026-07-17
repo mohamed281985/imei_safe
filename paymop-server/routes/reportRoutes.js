@@ -1054,7 +1054,7 @@ export function registerReportRoutes({
         if (decryptedPhone) {
           // ⭐ دمج كود الدولة مع رقم الهاتف
           const cleanPhone = decryptedPhone.replace(/\D/g, '');
-          const fullPhone = countryCode.replace('+', '') + cleanPhone;
+          const fullPhone = `${countryCode}${cleanPhone}`;
           finderPhoneNumber = fullPhone;
           console.log('تم العثور على رقم هاتف في جدول users:', finderPhoneNumber);
         }
