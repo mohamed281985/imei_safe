@@ -4099,8 +4099,9 @@ app.get('/api/get-contact-info', verifyJwtToken, async (req, res) => {
 
     const { data: allReports, error: reportError } = await supabase
       .from('phone_reports')
-      .not('status', 'eq', 'rejected')
       .select('id, imei, email, owner_name, finder_phone, user_id, finder_user_id')
+
+      .not('status', 'eq', 'rejected')
       .order('id', { ascending: true });
 
     if (reportError || !allReports || allReports.length === 0) {
