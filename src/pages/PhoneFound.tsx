@@ -8,6 +8,7 @@ import PageContainer from '../components/PageContainer';
 import AppNavbar from '../components/AppNavbar';
 import { FaWhatsapp } from 'react-icons/fa';
 import { Smartphone, PartyPopper, Home } from 'lucide-react';
+import { AppLauncher } from '@capacitor/app-launcher'; // 1. استيراد المكتبة
 import '../styles/animations.css';
 
 const PhoneFound: React.FC = () => {
@@ -94,25 +95,43 @@ const PhoneFound: React.FC = () => {
     return () => clearTimeout(timer);
   }, [routeImei]); // إضافة routeImei كاعتماد
 
-  const handleWhatsAppClick = () => {
+  // تعديل دالة فتح واتساب
+  const handleWhatsAppClick = async () => {
     if (!finderPhone) {
       alert('لم يتم العثور على رقم هاتف من عثر على الهاتف.');
       return;
     }
 
     const cleanPhone = finderPhone.replace(/\D/g, '');
-    console.log('فتح واتساب مع الرقم:', cleanPhone);
+    console.log('محاولة فتح واتساب مع الرقم:', cleanPhone);
+    
+    // رابط تطبيق واتساب
     const whatsappDeepLink = `whatsapp://send?phone=${cleanPhone}`;
+    // رابط نسخة الويب (للاحتياط)
     const whatsappWebLink = `https://wa.me/${cleanPhone}`;
 
+    // التحقق مما إذا كنا داخل بيئة Capacitor
     const capacitor = (window as any)?.Capacitor;
+    
     if (capacitor) {
       try {
-        capacitor.Plugins.Browser.open({ url: whatsappDeepLink });
+        // محاولة فتح التطبيق باستخدام AppLauncher
+        const { value } = await AppLauncher.canOpenUrl({ url: whatsappDeepLink });
+        
+        if (value) {
+          await AppLauncher.openUrl({ url: whatsappDeepLink });
+        } else {
+          // إذا لم يكن التطبيق مثبتاً، نفتح رابط الويب
+          console.log('تطبيق واتساب غير مثبت، جاري فتح المتصفح...');
+          await AppLauncher.openUrl({ url: whatsappWebLink });
+        }
       } catch (e) {
-        capacitor.Plugins.Browser.open({ url: whatsappWebLink });
+        console.error('خطأ في فتح واتساب:', e);
+        // في حالة حدوث خطأ، نحاول فتح رابط الويب مباشرة
+        window.open(whatsappWebLink, '_blank');
       }
     } else {
+      // إذا كنا في المتصفح (بيئة التطوير)
       window.location.href = whatsappDeepLink;
       setTimeout(() => {
         window.open(whatsappWebLink, '_blank', 'noopener,noreferrer');
