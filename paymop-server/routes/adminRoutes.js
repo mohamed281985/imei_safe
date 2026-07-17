@@ -2792,16 +2792,16 @@ for (const row of (data || [])) {
   try {
     const path = normalizeStoragePath(r.phone_image);
 
-    console.log("Bucket:", "registerphone");
-    console.log("Original:", r.phone_image);
-    console.log("Path:", path);
+   // console.log("Bucket:", "registerphone");
+    //console.log("Original:", r.phone_image);
+    //console.log("Path:", path);
 
     const { data: signed, error } = await supabase.storage
       .from("registerphone")
       .createSignedUrl(path, 3600);
 
-    console.log("Signed:", signed);
-    console.log("Error:", error);
+    //console.log("Signed:", signed);
+    //console.log("Error:", error);
 
     if (!error && signed?.signedUrl) {
       r.phone_image = signed.signedUrl;

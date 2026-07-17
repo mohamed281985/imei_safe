@@ -1061,6 +1061,7 @@ const ReportPhone: React.FC = () => {
       }
 
       let reportImageToSend: string | null = null;
+    
       try {
         if (formData.reportImage && ((typeof File !== 'undefined' && formData.reportImage instanceof File) || (typeof Blob !== 'undefined' && formData.reportImage instanceof Blob))) {
           reportImageToSend = await uploadToSupabase(formData.reportImage, 'report');

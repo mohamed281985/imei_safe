@@ -403,13 +403,10 @@ export function registerReportRoutes({
       }
 
       // Construct a guaranteed public URL (format: {SUPABASE_URL}/storage/v1/object/public/{bucket}/{path})
-      try {
-        const supabaseUrl = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
-        const publicUrl = supabaseUrl ? `${supabaseUrl}/storage/v1/object/public/phone-images/${filePath}` : null;
-        return res.json({ success: true, path: filePath, publicUrl });
-      } catch (e) {
-        return res.json({ success: true, path: filePath });
-      }
+      return res.json({
+        success: true,
+        path: filePath
+      });
     } catch (err) {
       console.error('/api/upload-report-image error', err);
       return res.status(500).json({ success: false, error: 'Server error' });
