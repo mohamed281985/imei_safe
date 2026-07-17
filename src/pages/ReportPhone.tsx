@@ -1061,7 +1061,7 @@ const ReportPhone: React.FC = () => {
       }
 
       let reportImageToSend: string | null = null;
-    
+
       try {
         if (formData.reportImage && ((typeof File !== 'undefined' && formData.reportImage instanceof File) || (typeof Blob !== 'undefined' && formData.reportImage instanceof Blob))) {
           reportImageToSend = await uploadToSupabase(formData.reportImage, 'report');
@@ -1199,10 +1199,12 @@ const ReportPhone: React.FC = () => {
         user_id: user?.id || null,
         email: user?.email || '',
         fcm_token: fcmToken,
-        whatsapp: shareWhatsApp,
-        whatsapp_number: shareWhatsApp ? `${whatsappCountryCode}${whatsappNumber}` : null,
-        whatsapp_country_code: shareWhatsApp ? whatsappCountryCode : null,
+
       };
+      payload.whatsapp = shareWhatsApp;
+      if (shareWhatsApp) {
+        payload.whatsapp_number = `${whatsappCountryCode}${whatsappNumber}`;
+      }
 
       // Quick-mode flags: set report_mode and expiry (48 hours)
       if (isQuickMode) {
@@ -1766,7 +1768,7 @@ const ReportPhone: React.FC = () => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
- {showUpgradeModal && user && (
+        {showUpgradeModal && user && (
           <AdsOfferSlider onClose={() => setShowUpgradeModal(false)} userId={user.id} isUpgradePrompt={true} />
         )}
       </div>
