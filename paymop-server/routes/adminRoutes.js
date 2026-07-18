@@ -1819,46 +1819,15 @@ app.delete(
 
       const out = rows.map(r => ({ id: r.id, ...decryptDeep(r) }));
 for (const r of out) {
-
-  // صورة الفاتورة
- if (r.receipt_image_url) {
-
-  // إذا كانت القيمة رابطًا كاملاً
-  if (r.receipt_image_url.startsWith('http')) {
-    // لا تفعل شيئًا
-  } else {
-
-    let signed = null;
-
-    // phone-images
-    ({ data: signed } = await supabase.storage
-      .from('phone-images')
-      .createSignedUrl(r.receipt_image_url, 300));
-
-    // إذا لم يجد الملف جرّب registerphone
-    if (!signed?.signedUrl) {
-      ({ data: signed } = await supabase.storage
-        .from('registerphone')
-        .createSignedUrl(r.receipt_image_url, 300));
-    }
+  if (r.receipt_image_url) {
+    const { data: signed } = await supabase.storage
+      .from("registerphone")
+      .createSignedUrl(r.receipt_image_url, 3600);
 
     if (signed?.signedUrl) {
       r.receipt_image_url = signed.signedUrl;
     }
   }
-}
-
-  // صورة البلاغ
-  if (r.report_image_url) {
-    const { data: signed } = await supabase.storage
-      .from('phone-images')
-      .createSignedUrl(r.report_image_url, 300);
-
-    if (signed?.signedUrl) {
-      r.report_image_url = signed.signedUrl;
-    }
-  }
-
 }
       return res.json({ ok: true, reports: out });
     } catch (err) {
