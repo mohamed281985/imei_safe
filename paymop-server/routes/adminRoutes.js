@@ -3793,13 +3793,13 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
         }
         // إيصال البائع
 
-        if (copy.seller_receipt_image_url) {
+        if (record.seller_receipt_image_url) {
           const { data } = await supabase.storage
             .from("registerphone")
-            .createSignedUrl(copy.seller_receipt_image_url, 300);
+            .createSignedUrl(record.seller_receipt_image_url, 300);
 
           if (data?.signedUrl) {
-            copy.seller_receipt_image_url = data.signedUrl;
+            record.seller_receipt_image_url = data.signedUrl;
           }
         }
         // إيصال المشتري
