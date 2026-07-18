@@ -437,123 +437,123 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
     }
   );
   app.get(
-  '/admin/publish_ads',
-  verifyJwtToken,
-  requireAdmin,
-  async (req, res) => {
-    try {
-      const { data, error } = await supabase
-        .from('publish_ad')
-        .select('*')
-        .order('created_at', { ascending: false });
+    '/admin/publish_ads',
+    verifyJwtToken,
+    requireAdmin,
+    async (req, res) => {
+      try {
+        const { data, error } = await supabase
+          .from('publish_ad')
+          .select('*')
+          .order('created_at', { ascending: false });
 
-      if (error) {
+        if (error) {
+          return res.status(500).json({
+            success: false,
+            error: error.message
+          });
+        }
+
+        return res.json({
+          success: true,
+          publish_ads: data
+        });
+
+      } catch (err) {
+        console.error(err);
         return res.status(500).json({
           success: false,
-          error: error.message
+          error: 'Server error'
         });
       }
-
-      return res.json({
-        success: true,
-        publish_ads: data
-      });
-
-    } catch (err) {
-      console.error(err);
-      return res.status(500).json({
-        success: false,
-        error: 'Server error'
-      });
     }
-  }
-);
-app.patch(
-  '/admin/publish_ads',
-  verifyJwtToken,
-  requireAdmin,
-  async (req, res) => {
-    try {
-      const { ad_id, is_active } = req.body;
+  );
+  app.patch(
+    '/admin/publish_ads',
+    verifyJwtToken,
+    requireAdmin,
+    async (req, res) => {
+      try {
+        const { ad_id, is_active } = req.body;
 
-      if (!ad_id) {
-        return res.status(400).json({
-          success: false,
-          error: 'ad_id is required'
+        if (!ad_id) {
+          return res.status(400).json({
+            success: false,
+            error: 'ad_id is required'
+          });
+        }
+
+        const { data, error } = await supabase
+          .from('publish_ad')
+          .update({
+            is_active: !!is_active,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', ad_id)
+          .select()
+          .single();
+
+        if (error) {
+          return res.status(500).json({
+            success: false,
+            error: error.message
+          });
+        }
+
+        return res.json({
+          success: true,
+          data
         });
-      }
 
-      const { data, error } = await supabase
-        .from('publish_ad')
-        .update({
-          is_active: !!is_active,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', ad_id)
-        .select()
-        .single();
-
-      if (error) {
+      } catch (err) {
+        console.error(err);
         return res.status(500).json({
           success: false,
-          error: error.message
+          error: 'Server error'
         });
       }
-
-      return res.json({
-        success: true,
-        data
-      });
-
-    } catch (err) {
-      console.error(err);
-      return res.status(500).json({
-        success: false,
-        error: 'Server error'
-      });
     }
-  }
-);
-app.delete(
-  '/admin/publish_ads',
-  verifyJwtToken,
-  requireAdmin,
-  async (req, res) => {
-    try {
-      const { ad_id } = req.body;
+  );
+  app.delete(
+    '/admin/publish_ads',
+    verifyJwtToken,
+    requireAdmin,
+    async (req, res) => {
+      try {
+        const { ad_id } = req.body;
 
-      if (!ad_id) {
-        return res.status(400).json({
-          success: false,
-          error: 'ad_id is required'
+        if (!ad_id) {
+          return res.status(400).json({
+            success: false,
+            error: 'ad_id is required'
+          });
+        }
+
+        const { error } = await supabase
+          .from('publish_ad')
+          .delete()
+          .eq('id', ad_id);
+
+        if (error) {
+          return res.status(500).json({
+            success: false,
+            error: error.message
+          });
+        }
+
+        return res.json({
+          success: true
         });
-      }
 
-      const { error } = await supabase
-        .from('publish_ad')
-        .delete()
-        .eq('id', ad_id);
-
-      if (error) {
+      } catch (err) {
+        console.error(err);
         return res.status(500).json({
           success: false,
-          error: error.message
+          error: 'Server error'
         });
       }
-
-      return res.json({
-        success: true
-      });
-
-    } catch (err) {
-      console.error(err);
-      return res.status(500).json({
-        success: false,
-        error: 'Server error'
-      });
     }
-  }
-);
+  );
   // GET /admin/notification-campaigns - list notification campaigns
   app.get('/admin/notification-campaigns', verifyJwtToken, async (req, res) => {
     try {
@@ -1817,43 +1817,43 @@ app.delete(
         });
       }
 
-const out = rows.map(r => ({
-  id: r.id,
-  ...decryptDeep(r)
-}));
+      const out = rows.map(r => ({
+        id: r.id,
+        ...decryptDeep(r)
+      }));
 
-for (const r of out) {
+      for (const r of out) {
 
-  // ===== صورة الفاتورة =====
-  if (
-    r.receipt_image_url &&
-    !r.receipt_image_url.startsWith("http")
-  ) {
-    const { data } = await supabase.storage
-      .from("registerphone")
-      .createSignedUrl(r.receipt_image_url, 3600);
+        // ===== صورة الفاتورة =====
+        if (
+          r.receipt_image_url &&
+          !r.receipt_image_url.startsWith("http")
+        ) {
+          const { data } = await supabase.storage
+            .from("registerphone")
+            .createSignedUrl(r.receipt_image_url, 3600);
 
-    if (data?.signedUrl) {
-      r.receipt_image_url = data.signedUrl;
-    }
-  }
+          if (data?.signedUrl) {
+            r.receipt_image_url = data.signedUrl;
+          }
+        }
 
-  // ===== صورة المحضر =====
-  if (
-    r.report_image_url &&
-    !r.report_image_url.startsWith("http")
-  ) {
-    const { data } = await supabase.storage
-      .from("phone-images")
-      .createSignedUrl(r.report_image_url, 3600);
+        // ===== صورة المحضر =====
+        if (
+          r.report_image_url &&
+          !r.report_image_url.startsWith("http")
+        ) {
+          const { data } = await supabase.storage
+            .from("phone-images")
+            .createSignedUrl(r.report_image_url, 3600);
 
-    if (data?.signedUrl) {
-      r.report_image_url = data.signedUrl;
-    }
-  }
-}
+          if (data?.signedUrl) {
+            r.report_image_url = data.signedUrl;
+          }
+        }
+      }
 
-res.json(out);
+      res.json(out);
       return res.json({ ok: true, reports: out });
     } catch (err) {
       console.error('/admin/reports error', err);
@@ -2756,40 +2756,40 @@ res.json(out);
 
       const { data, error } = await q;
       if (error) throw error;
-    const out = [];
+      const out = [];
 
-for (const row of (data || [])) {
-  const r = { id: row.id, ...decryptDeep(row) };
+      for (const row of (data || [])) {
+        const r = { id: row.id, ...decryptDeep(row) };
 
-  // صورة الهاتف
-  if (r.phone_image_url) {
-    const { data: signed } = await supabase.storage
-      .from('registerphone')
-      .createSignedUrl(r.phone_image_url, 300);
+        // صورة الهاتف
+        if (r.phone_image_url) {
+          const { data: signed } = await supabase.storage
+            .from('registerphone')
+            .createSignedUrl(r.phone_image_url, 300);
 
-    if (signed?.signedUrl) {
-      r.phone_image_url = signed.signedUrl;
-    }
-  }
+          if (signed?.signedUrl) {
+            r.phone_image_url = signed.signedUrl;
+          }
+        }
 
-  // صورة الفاتورة
-  if (r.receipt_image_url) {
-    const { data: signed } = await supabase.storage
-      .from('registerphone')
-      .createSignedUrl(r.receipt_image_url, 300);
+        // صورة الفاتورة
+        if (r.receipt_image_url) {
+          const { data: signed } = await supabase.storage
+            .from('registerphone')
+            .createSignedUrl(r.receipt_image_url, 300);
 
-    if (signed?.signedUrl) {
-      r.receipt_image_url = signed.signedUrl;
-    }
-  }
+          if (signed?.signedUrl) {
+            r.receipt_image_url = signed.signedUrl;
+          }
+        }
 
-  out.push(r);
-}
+        out.push(r);
+      }
 
-return res.json({
-  ok: true,
-  registered_phones: out,
-});
+      return res.json({
+        ok: true,
+        registered_phones: out,
+      });
     } catch (err) {
       console.error('/admin/registered_phones error', err);
       return res.status(500).json({ error: 'Server error' });
@@ -2814,40 +2814,40 @@ return res.json({
         });
       }
 
-const out = [];
+      const out = [];
 
-for (const row of (data || [])) {
-  const r = {
-    id: row.id,
-    ...decryptDeep(row),
-  };
+      for (const row of (data || [])) {
+        const r = {
+          id: row.id,
+          ...decryptDeep(row),
+        };
 
-  // إنشاء Signed URL لصورة الهاتف
- if (r.phone_image) {
-  try {
-    const path = normalizeStoragePath(r.phone_image);
+        // إنشاء Signed URL لصورة الهاتف
+        if (r.phone_image) {
+          try {
+            const path = normalizeStoragePath(r.phone_image);
 
-   // console.log("Bucket:", "registerphone");
-    //console.log("Original:", r.phone_image);
-    //console.log("Path:", path);
+            // console.log("Bucket:", "registerphone");
+            //console.log("Original:", r.phone_image);
+            //console.log("Path:", path);
 
-    const { data: signed, error } = await supabase.storage
-      .from("registerphone")
-      .createSignedUrl(path, 3600);
+            const { data: signed, error } = await supabase.storage
+              .from("registerphone")
+              .createSignedUrl(path, 3600);
 
-    //console.log("Signed:", signed);
-    //console.log("Error:", error);
+            //console.log("Signed:", signed);
+            //console.log("Error:", error);
 
-    if (!error && signed?.signedUrl) {
-      r.phone_image = signed.signedUrl;
-    }
-  } catch (e) {
-    console.error("phone_image signed url error:", e);
-  }
-}
+            if (!error && signed?.signedUrl) {
+              r.phone_image = signed.signedUrl;
+            }
+          } catch (e) {
+            console.error("phone_image signed url error:", e);
+          }
+        }
 
-  out.push(r);
-}
+        out.push(r);
+      }
       return res.json({
         success: true,
         ownership_verification_requests: out
@@ -3773,7 +3773,40 @@ for (const row of (data || [])) {
 
       if (error) throw error;
 
-      const out = (data || []).map(r => ({ id: r.id, ...decryptDeep(r) }));
+      const out = [];
+
+      for (const row of (data || [])) {
+        const record = {
+          id: row.id,
+          ...decryptDeep(row)
+        };
+
+        // صورة الجهاز
+        if (record.phone_image && !record.phone_image.startsWith("http")) {
+          const { data: phoneUrl } = await supabase.storage
+            .from("registerphone")
+            .createSignedUrl(record.phone_image, 300);
+
+          if (phoneUrl?.signedUrl) {
+            record.phone_image = phoneUrl.signedUrl;
+          }
+        }
+
+        // إيصال المشتري
+        if (record.receipt_image && !record.receipt_image.startsWith("http")) {
+          const { data: receiptUrl } = await supabase.storage
+            .from("registerphone")
+            .createSignedUrl(record.receipt_image, 300);
+
+          if (receiptUrl?.signedUrl) {
+            record.receipt_image = receiptUrl.signedUrl;
+          }
+        }
+
+        out.push(record);
+      }
+
+      return res.status(200).json(out);
 
       return res.status(200).json(out);
     } catch (err) {
