@@ -3791,7 +3791,17 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
             record.phone_image = phoneUrl.signedUrl;
           }
         }
+        // إيصال البائع
 
+        if (copy.seller_receipt_image_url) {
+          const { data } = await supabase.storage
+            .from("registerphone")
+            .createSignedUrl(copy.seller_receipt_image_url, 300);
+
+          if (data?.signedUrl) {
+            copy.seller_receipt_image_url = data.signedUrl;
+          }
+        }
         // إيصال المشتري
         if (record.receipt_image && !record.receipt_image.startsWith("http")) {
           const { data: receiptUrl } = await supabase.storage
