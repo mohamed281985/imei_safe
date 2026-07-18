@@ -1089,6 +1089,8 @@ export function registerOwnershipRoutes({
             const receiptImage = copy.receipt_image;
             if (receiptImage && typeof receiptImage === 'string' && !receiptImage.startsWith('http') && !receiptImage.startsWith('data:') && !receiptImage.startsWith('blob:')) {
               const cleaned = String(receiptImage).replace(/^\/+/, '');
+              console.log("bucket =", bucket);
+              console.log("cleaned =", cleaned);
               let signedUrl = null;
 
               // أولاً حاول registerphone
