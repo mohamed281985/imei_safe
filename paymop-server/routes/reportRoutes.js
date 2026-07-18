@@ -104,36 +104,31 @@ export function registerReportRoutes({
 
       // تحقق من روابط الصور (الفاتورة والمحضر) — سنجري التحقق بعد تعبئة القيم من
       // registered_phones لأن الواجهة قد ترسل placeholders بدلاً من رابط الفاتورة.
-      const isValidImageUrl = (url) => {
-        if (!url) return false;
-        if (typeof url !== 'string') return false;
+     const isValidImageUrl = (url) => {
+  if (!url || typeof url !== "string") return false;
 
-        // Path داخل الـ Bucket
-        if (url.startsWith('reports/')) return true;
+  if (url.startsWith("reports/")) return true;
 
-        // Signed URL
-        if (
-          url.startsWith('https://') &&
-          url.includes('/storage/v1/object/sign/')
-        ) {
-          return true;
-        }
+  if (
+    url.startsWith("https://") &&
+    url.includes("/storage/v1/object/sign/")
+  ) return true;
 
-        // Public URL (للتوافق مع البيانات القديمة)
-        if (
-          url.startsWith('https://') &&
-          url.includes('/storage/v1/object/public/')
-        ) {
-          return true;
-        }
+  if (
+    url.startsWith("https://") &&
+    url.includes("/storage/v1/object/public/")
+  ) return true;
 
-        // مسار داخل Bucket registerphone
-        if (url.startsWith('registerphone/')) return true;
+  if (url.startsWith("registerphone/")) return true;
 
-        // مسار داخل Bucket phone-images
-        if (url.startsWith('phone-images/')) return true;
-        return false;
-      };
+  if (url.startsWith("phone-images/")) return true;
+
+  // اسم الملف فقط
+  if (!url.includes("/") && /\.(jpg|jpeg|png|webp)$/i.test(url))
+    return true;
+
+  return false;
+};
 
       // التحقق مما إذا كان الهاتف مسجلاً ومنع غير المالك من تقديم البلاغ
       if (data.imei) {
