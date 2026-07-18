@@ -127,6 +127,11 @@ export function registerReportRoutes({
           return true;
         }
 
+        // مسار داخل Bucket registerphone
+        if (url.startsWith('registerphone/')) return true;
+
+        // مسار داخل Bucket phone-images
+        if (url.startsWith('phone-images/')) return true;
         return false;
       };
 
