@@ -25,6 +25,15 @@ export function registerOwnershipRoutes({
   clearAuthFailures,
   sendFCMNotificationV1
 }) {
+const getImeiHash = (imei) => {
+  const normalized = normalizeDigitsOnly(imei);
+  if (!normalized) return null;
+
+  return crypto
+    .createHash("sha256")
+    .update(normalized)
+    .digest("hex");
+};
   const logAudit = (config) => rawLogAudit({ supabase, ...config });
   app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
     try {
