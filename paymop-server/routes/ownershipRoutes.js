@@ -186,7 +186,7 @@ export function registerOwnershipRoutes({
         let callerCountryKey = null;
         try {
           const { data: urow } = await supabase.from('users').select('country_code').eq('id', userId).maybeSingle();
-            if (urow) callerCountryKey = urow.country_code || urow.country_key || null;
+          if (urow) callerCountryKey = urow.country_code || urow.country_key || null;
         } catch (e) {
           console.warn('[IMEI-MASKED-INFO] failed to fetch caller country key:', e);
         }
@@ -471,13 +471,13 @@ export function registerOwnershipRoutes({
 
       const imeiHash = getImeiHash(imei);
 
-const { data: registeredPhone, error } = await supabase
-  .from('registered_phones')
-  .select('*')
-  .eq('imei_hash', imeiHash)
-  .maybeSingle();
+      const { data: registeredPhone, error } = await supabase
+        .from('registered_phones')
+        .select('*')
+        .eq('imei_hash', imeiHash)
+        .maybeSingle();
 
-if (error) throw error;
+      if (error) throw error;
 
       if (!found) return res.status(404).json({ ok: false, error: 'Phone not found' });
       if (found.user_id !== req.user.id) {
@@ -614,15 +614,15 @@ if (error) throw error;
         return res.status(400).json({ error: 'imei, sellerPassword and newOwner required' });
       }
 
-const imeiHash = getImeiHash(imei);
+      const imeiHash = getImeiHash(imei);
 
-const { data: registeredPhone, error } = await supabase
-  .from('registered_phones')
-  .select('*')
-  .eq('imei_hash', imeiHash)
-  .maybeSingle();
+      const { data: registeredPhone, error } = await supabase
+        .from('registered_phones')
+        .select('*')
+        .eq('imei_hash', imeiHash)
+        .maybeSingle();
 
-if (error) throw error;
+      if (error) throw error;
       if (!registeredPhone) return res.status(404).json({ error: 'Phone not found' });
 
       console.log('[transfer-ownership] registeredPhone (raw) for imei=', imei, {
@@ -842,99 +842,99 @@ if (error) throw error;
       }
 
       try {
-  // إشعار البائع
-  const { data: sellerRow } = await supabase
-    .from('users')
-    .select('fcm_token, language')
-    .eq('id', userId)
-    .single();
+        // إشعار البائع
+        const { data: sellerRow } = await supabase
+          .from('users')
+          .select('fcm_token, language')
+          .eq('id', userId)
+          .single();
 
-  if (sellerRow?.fcm_token) {
-    // Simple localized messages; if you want to use the full frontend translation files
-    // we can load them separately. For now use these keys to cover supported langs.
-    const notificationTranslations = {
-      en: {
-        ownership_transferred_title: 'Ownership Transferred',
-        ownership_transferred_body: 'Your phone ownership has been successfully transferred.',
-        ownership_received_title: 'Ownership Received',
-        ownership_received_body: 'You are now the new owner of this phone.'
-      },
-      ar: {
-        ownership_transferred_title: 'تم نقل ملكية الهاتف',
-        ownership_transferred_body: 'تم نقل ملكية هاتفك بنجاح إلى المالك الجديد.',
-        ownership_received_title: 'تم استلام ملكية الهاتف',
-        ownership_received_body: 'أصبحت المالك الجديد لهذا الهاتف بنجاح.'
-      },
-      fr: {
-        ownership_transferred_title: 'Transfert de propriété',
-        ownership_transferred_body: "La propriété de votre téléphone a été transférée avec succès.",
-        ownership_received_title: 'Propriété reçue',
-        ownership_received_body: "Vous êtes désormais le nouveau propriétaire de ce téléphone."
-      },
-      hi: {
-        ownership_transferred_title: 'Ownership Transferred',
-        ownership_transferred_body: 'Your phone ownership has been successfully transferred.',
-        ownership_received_title: 'Ownership Received',
-        ownership_received_body: 'You are now the new owner of this phone.'
+        if (sellerRow?.fcm_token) {
+          // Simple localized messages; if you want to use the full frontend translation files
+          // we can load them separately. For now use these keys to cover supported langs.
+          const notificationTranslations = {
+            en: {
+              ownership_transferred_title: 'Ownership Transferred',
+              ownership_transferred_body: 'Your phone ownership has been successfully transferred.',
+              ownership_received_title: 'Ownership Received',
+              ownership_received_body: 'You are now the new owner of this phone.'
+            },
+            ar: {
+              ownership_transferred_title: 'تم نقل ملكية الهاتف',
+              ownership_transferred_body: 'تم نقل ملكية هاتفك بنجاح إلى المالك الجديد.',
+              ownership_received_title: 'تم استلام ملكية الهاتف',
+              ownership_received_body: 'أصبحت المالك الجديد لهذا الهاتف بنجاح.'
+            },
+            fr: {
+              ownership_transferred_title: 'Transfert de propriété',
+              ownership_transferred_body: "La propriété de votre téléphone a été transférée avec succès.",
+              ownership_received_title: 'Propriété reçue',
+              ownership_received_body: "Vous êtes désormais le nouveau propriétaire de ce téléphone."
+            },
+            hi: {
+              ownership_transferred_title: 'Ownership Transferred',
+              ownership_transferred_body: 'Your phone ownership has been successfully transferred.',
+              ownership_received_title: 'Ownership Received',
+              ownership_received_body: 'You are now the new owner of this phone.'
+            }
+          };
+
+          const userLang = (sellerRow.language || 'en').toString().slice(0, 2).toLowerCase();
+          const dict = notificationTranslations[userLang] || notificationTranslations['en'];
+
+          await sendFCMNotificationV1({
+            token: sellerRow.fcm_token,
+            title: dict.ownership_transferred_title,
+            body: dict.ownership_transferred_body
+          });
+
+          await supabase.from('notifications').insert({
+            user_id: userId,
+            title: dict.ownership_transferred_title,
+            body: dict.ownership_transferred_body,
+            type: 'ownership_transfer'
+          });
+        }
+
+        // إشعار المشتري
+        const buyerUserId = updateData.user_id;
+
+        if (buyerUserId) {
+          const { data: buyerRow } = await supabase
+            .from('users')
+            .select('fcm_token, language')
+            .eq('id', buyerUserId)
+            .single();
+
+          if (buyerRow?.fcm_token) {
+            const buyerTitle =
+              buyerRow.language === 'en'
+                ? 'Ownership Received'
+                : 'تم استلام ملكية الهاتف';
+
+            const buyerBody =
+              buyerRow.language === 'en'
+                ? 'You are now the new owner of this phone.'
+                : 'أصبحت المالك الجديد لهذا الهاتف بنجاح.';
+
+            await sendFCMNotificationV1({
+              token: buyerRow.fcm_token,
+              title: buyerTitle,
+              body: buyerBody
+            });
+
+            await supabase.from('notifications').insert({
+              user_id: buyerUserId,
+              title: buyerTitle,
+              body: buyerBody,
+              type: 'ownership_transfer',
+              is_read: false
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Ownership FCM Error:', err);
       }
-    };
-
-    const userLang = (sellerRow.language || 'en').toString().slice(0,2).toLowerCase();
-    const dict = notificationTranslations[userLang] || notificationTranslations['en'];
-
-    await sendFCMNotificationV1({
-      token: sellerRow.fcm_token,
-      title: dict.ownership_transferred_title,
-      body: dict.ownership_transferred_body
-    });
-
-    await supabase.from('notifications').insert({
-      user_id: userId,
-      title: dict.ownership_transferred_title,
-      body: dict.ownership_transferred_body,
-      type: 'ownership_transfer'
-    });
-  }
-
-  // إشعار المشتري
-  const buyerUserId = updateData.user_id;
-
-  if (buyerUserId) {
-    const { data: buyerRow } = await supabase
-      .from('users')
-      .select('fcm_token, language')
-      .eq('id', buyerUserId)
-      .single();
-
-    if (buyerRow?.fcm_token) {
-      const buyerTitle =
-        buyerRow.language === 'en'
-          ? 'Ownership Received'
-          : 'تم استلام ملكية الهاتف';
-
-      const buyerBody =
-        buyerRow.language === 'en'
-          ? 'You are now the new owner of this phone.'
-          : 'أصبحت المالك الجديد لهذا الهاتف بنجاح.';
-
-      await sendFCMNotificationV1({
-        token: buyerRow.fcm_token,
-        title: buyerTitle,
-        body: buyerBody
-      });
-
-      await supabase.from('notifications').insert({
-        user_id: buyerUserId,
-        title: buyerTitle,
-        body: buyerBody,
-        type: 'ownership_transfer',
-        is_read: false
-      });
-    }
-  }
-} catch (err) {
-  console.error('Ownership FCM Error:', err);
-}
       console.log('[transfer-ownership] registered_phones updated result:', updated);
 
       const encryptToJson = (value) => {
@@ -1033,18 +1033,18 @@ if (error) throw error;
       if (!userId) return res.status(401).json({ error: 'Unauthorized' });
       if (!imei) return res.status(400).json({ error: 'imei is required' });
 
-     const imeiHash = getImeiHash(imei);
+      const imeiHash = getImeiHash(imei);
 
-const { data: ownPhone, error: ownPhonesErr } = await supabase
-  .from('registered_phones')
-  .select('id')
-  .eq('user_id', userId)
-  .eq('imei_hash', imeiHash)
-  .maybeSingle();
+      const { data: ownPhone, error: ownPhonesErr } = await supabase
+        .from('registered_phones')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('imei_hash', imeiHash)
+        .maybeSingle();
 
-if (ownPhonesErr) throw ownPhonesErr;
+      if (ownPhonesErr) throw ownPhonesErr;
 
-const imeiOwned = !!ownPhone;
+      const imeiOwned = !!ownPhone;
       if (!imeiOwned) return res.status(403).json({ error: 'Not authorized' });
 
       const { data: records, error } = await supabase
@@ -1089,9 +1089,29 @@ const imeiOwned = !!ownPhone;
             const receiptImage = copy.receipt_image;
             if (receiptImage && typeof receiptImage === 'string' && !receiptImage.startsWith('http') && !receiptImage.startsWith('data:') && !receiptImage.startsWith('blob:')) {
               const cleaned = String(receiptImage).replace(/^\/+/, '');
-              const bucket = cleaned.startsWith('receipts/') ? 'transfer-assets' : 'registerphone';
-              const { data: urlData, error: urlErr } = await supabase.storage.from(bucket).createSignedUrl(cleaned, 300);
-              if (!urlErr && urlData && urlData.signedUrl) copy.receipt_image = urlData.signedUrl;
+              let signedUrl = null;
+
+              // أولاً حاول registerphone
+              let { data: urlData } = await supabase.storage
+                .from("registerphone")
+                .createSignedUrl(cleaned, 300);
+
+              if (urlData?.signedUrl) {
+                signedUrl = urlData.signedUrl;
+              } else {
+                // إذا لم يوجد، حاول transfer-assets
+                ({ data: urlData } = await supabase.storage
+                  .from("transfer-assets")
+                  .createSignedUrl(cleaned, 300));
+
+                if (urlData?.signedUrl) {
+                  signedUrl = urlData.signedUrl;
+                }
+              }
+
+              if (signedUrl) {
+                copy.receipt_image = signedUrl;
+              }
             }
           } catch {
           }
@@ -1114,20 +1134,20 @@ const imeiOwned = !!ownPhone;
     try {
       const { imei, ownerPassword, cardLast6 } = req.body || {};
       if (!imei || !ownerPassword || !cardLast6) return res.status(400).json({ error: 'imei, ownerPassword, and cardLast6 are required' });
-      
+
       // التحقق من صيغة آخر 6 أرقام من البطاقة
       if (cardLast6.length !== 6 || !/^\d+$/.test(cardLast6)) {
         return res.status(400).json({ error: 'cardLast6 must be exactly 6 digits' });
       }
-const imeiHash = getImeiHash(imei);
+      const imeiHash = getImeiHash(imei);
 
-const { data: matching, error: phonesErr } = await supabase
-  .from('registered_phones')
-  .select('id, user_id, imei, password, id_last6')
-  .eq('imei_hash', imeiHash)
-  .maybeSingle();
+      const { data: matching, error: phonesErr } = await supabase
+        .from('registered_phones')
+        .select('id, user_id, imei, password, id_last6')
+        .eq('imei_hash', imeiHash)
+        .maybeSingle();
 
-if (phonesErr) throw phonesErr;
+      if (phonesErr) throw phonesErr;
       if (!matching) return res.status(404).json({ error: 'Owner not found for IMEI' });
 
       const storedHash = matching.password;
@@ -1136,7 +1156,7 @@ if (phonesErr) throw phonesErr;
       // التحقق من كلمة المرور
       const passwordMatches = await bcrypt.compare(String(ownerPassword), String(storedHash));
       if (!passwordMatches) return res.status(401).json({ error: 'Invalid owner credentials' });
-      
+
       // التحقق من آخر 6 أرقام من البطاقة
       const storedCardLast6 = matching.id_last6 ? decryptField(matching.id_last6) : null;
       if (!storedCardLast6 || storedCardLast6.slice(-6) !== cardLast6) {
@@ -1185,15 +1205,15 @@ if (phonesErr) throw phonesErr;
       if (!incomingImei) return res.status(400).json({ success: false, error: 'Invalid imei_encrypted' });
       const normalizedIncoming = normalizeDigitsOnly(incomingImei);
 
-const imeiHash = getImeiHash(incomingImei);
+      const imeiHash = getImeiHash(incomingImei);
 
-const { data: report, error: fetchErr } = await supabase
-  .from('phone_reports')
-  .select('*')
-  .eq('imei_hash', imeiHash)
-  .maybeSingle();
+      const { data: report, error: fetchErr } = await supabase
+        .from('phone_reports')
+        .select('*')
+        .eq('imei_hash', imeiHash)
+        .maybeSingle();
 
-if (fetchErr) throw fetchErr;
+      if (fetchErr) throw fetchErr;
 
       const matchingActive = (reports || []).filter((r) => {
         try {
@@ -1259,13 +1279,13 @@ if (fetchErr) throw fetchErr;
       // جلب كل البلاغات الفعالة لمستخدمنا أو عامة للبحث
       const imeiHash = getImeiHash(incomingImei);
 
-const { data: report, error: fetchErr } = await supabase
-  .from('phone_reports')
-  .select('*')
-  .eq('imei_hash', imeiHash)
-  .maybeSingle();
+      const { data: report, error: fetchErr } = await supabase
+        .from('phone_reports')
+        .select('*')
+        .eq('imei_hash', imeiHash)
+        .maybeSingle();
 
-if (fetchErr) throw fetchErr;
+      if (fetchErr) throw fetchErr;
 
       // Diagnostic: show decrypted incoming and a small sample of decrypted report IMEIs
       // ✅ SECURITY: بناء العينة المفكوكة التشفير وطباعتها يقتصران على وضع التطوير فقط
@@ -1413,15 +1433,15 @@ if (fetchErr) throw fetchErr;
     try {
       const { imei, newPassword } = req.body;
       if (!imei || !newPassword) return res.status(400).json({ error: 'imei and newPassword required' });
-const imeiHash = getImeiHash(imei);
+      const imeiHash = getImeiHash(imei);
 
-const { data: found, error } = await supabase
-  .from('registered_phones')
-  .select('id, imei, email, user_id')
-  .eq('imei_hash', imeiHash)
-  .maybeSingle();
+      const { data: found, error } = await supabase
+        .from('registered_phones')
+        .select('id, imei, email, user_id')
+        .eq('imei_hash', imeiHash)
+        .maybeSingle();
 
-if (error) throw error;
+      if (error) throw error;
 
       if (!found) return res.status(404).json({ error: 'Phone not found' });
 
