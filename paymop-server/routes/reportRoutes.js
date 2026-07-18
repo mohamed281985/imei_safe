@@ -193,7 +193,12 @@ export function registerReportRoutes({
           console.error('Error processing registered phone data:', e);
         }
       }
-
+console.log("================================");
+console.log("receipt_image_url:", data.receipt_image_url);
+console.log("typeof:", typeof data.receipt_image_url);
+console.log("exists:", "receipt_image_url" in data);
+console.log("isValid:", isValidImageUrl(data.receipt_image_url));
+console.log("================================");
       // الآن بعد تعبئة الحقول من registered_phones، نفّذ تحقق روابط الصور النهائي
       if (
         !('receipt_image_url' in data) ||
