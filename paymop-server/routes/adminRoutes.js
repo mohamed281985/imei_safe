@@ -1817,18 +1817,43 @@ app.delete(
         });
       }
 
-      const out = rows.map(r => ({ id: r.id, ...decryptDeep(r) }));
+const out = rows.map(r => ({
+  id: r.id,
+  ...decryptDeep(r)
+}));
+
 for (const r of out) {
-  if (r.receipt_image_url) {
-    const { data: signed } = await supabase.storage
+
+  // ===== صورة الفاتورة =====
+  if (
+    r.receipt_image_url &&
+    !r.receipt_image_url.startsWith("http")
+  ) {
+    const { data } = await supabase.storage
       .from("registerphone")
       .createSignedUrl(r.receipt_image_url, 3600);
 
-    if (signed?.signedUrl) {
-      r.receipt_image_url = signed.signedUrl;
+    if (data?.signedUrl) {
+      r.receipt_image_url = data.signedUrl;
+    }
+  }
+
+  // ===== صورة المحضر =====
+  if (
+    r.report_image_url &&
+    !r.report_image_url.startsWith("http")
+  ) {
+    const { data } = await supabase.storage
+      .from("phone-images")
+      .createSignedUrl(r.report_image_url, 3600);
+
+    if (data?.signedUrl) {
+      r.report_image_url = data.signedUrl;
     }
   }
 }
+
+res.json(out);
       return res.json({ ok: true, reports: out });
     } catch (err) {
       console.error('/admin/reports error', err);
