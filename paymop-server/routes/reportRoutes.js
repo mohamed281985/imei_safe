@@ -102,7 +102,6 @@ export function registerReportRoutes({
         // ignore logging failures
       }
 
-
       // تحقق من روابط الصور (الفاتورة والمحضر) — سنجري التحقق بعد تعبئة القيم من
       // registered_phones لأن الواجهة قد ترسل placeholders بدلاً من رابط الفاتورة.
       const isValidImageUrl = (url) => {
@@ -181,34 +180,12 @@ export function registerReportRoutes({
           if (idLast6Real) data.idLast6 = idLast6Real;
           if (phoneTypeReal) data.phone_type = phoneTypeReal;
           // إذا كانت صورة الفاتورة محفوظة في سجل registered_phones، استخدمها كقيمة افتراضية
-          if ((!data.receipt_image_url || data.receipt_image_url === '') && registeredPhoneForReport.receipt_image_url) {
-            let rurl = registeredPhoneForReport.receipt_image_url;
-            try {
-              if (typeof rurl === 'string' && (!rurl.startsWith('https://') || !rurl.includes('/storage/v1/object/public/'))) {
-                // حاول استخلاص المسار ثم الحصول على publicUrl عبر service role
-                let path = rurl;
-                const idx = rurl.indexOf('/object/public/');
-                if (idx !== -1) {
-                  path = rurl.substring(idx + '/object/public/'.length);
-                } else {
-                  const idx2 = rurl.indexOf('phone-images/');
-                  if (idx2 !== -1) path = rurl.substring(idx2 + 'phone-images/'.length);
-                }
-                const { data: publicUrlData, error: puErr } = await supabase.storage.from('phone-images').getPublicUrl(path);
-                if (!puErr && publicUrlData && publicUrlData.publicUrl) {
-                  data.receipt_image_url = publicUrlData.publicUrl;
-                } else {
-                  data.receipt_image_url = rurl;
-                }
-              } else {
-                data.receipt_image_url = rurl;
-              }
-            } catch (e) {
-              data.receipt_image_url = rurl;
-            }
+          if (registeredPhoneForReport) {
+            data.receipt_image_url = registeredPhoneForReport.receipt_image_url;
           }
+
         } catch (e) {
-          console.warn('report-lost-phone: failed to hydrate placeholders from registered_phones', e);
+          console.error('Error processing registered phone data:', e);
         }
       }
 
@@ -367,7 +344,6 @@ export function registerReportRoutes({
           body
         });
       }
-
 
       // 📝 Audit Log: Record lost phone report
       const reportedImei = req.body.imei || 'unknown';
