@@ -983,23 +983,34 @@ const getImeiHash = (imei) => {
         }
       })();
 
-      const transferRecord = {
-        date: new Date().toISOString(),
-        imei: encryptToJson(imei),
-        phone_type: newOwner.phone_type || registeredPhone.phone_type || null,
-        seller_name: encryptToJson(previousOwnerName),
-        seller_phone: encryptToJson(sellerMergedPhone),
-        seller_id_last6: encryptToJson(previousOwnerIdLast6),
-        buyer_name: encryptToJson(newOwner.owner_name || ''),
-        buyer_phone: encryptToJson(buyerMergedPhone || (newOwner.phone_number || '')),
-        buyer_id_last6: encryptToJson(newOwner.id_last6 || null),
-        receipt_image:
-          uploadedReceiptPath ||
-          new_receipt_image_url ||
-          registeredPhone.receipt_image_url ||
-          null,
-        phone_image: registeredPhone.phone_image_url || null
-      };
+     const transferRecord = {
+  date: new Date().toISOString(),
+  imei: encryptToJson(imei),
+  phone_type: newOwner.phone_type || registeredPhone.phone_type || null,
+
+  seller_name: encryptToJson(previousOwnerName),
+  seller_phone: encryptToJson(sellerMergedPhone),
+  seller_id_last6: encryptToJson(previousOwnerIdLast6),
+
+  buyer_name: encryptToJson(newOwner.owner_name || ''),
+  buyer_phone: encryptToJson(
+    buyerMergedPhone || (newOwner.phone_number || '')
+  ),
+  buyer_id_last6: encryptToJson(newOwner.id_last6 || null),
+
+  // أضف هذا السطر
+  seller_receipt_image_url: registeredPhone.receipt_image_url || null,
+
+  // فاتورة المشتري
+  receipt_image:
+    uploadedReceiptPath ||
+    new_receipt_image_url ||
+    registeredPhone.receipt_image_url ||
+    null,
+
+  // صورة الجهاز
+  phone_image: registeredPhone.phone_image_url || null
+};
 
       const { data: transferInserted, error: transferErr } = await supabase
         .from('transfer_records')
