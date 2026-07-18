@@ -488,14 +488,14 @@ const getImeiHash = (imei) => {
 
       if (error) throw error;
 
-      if (!found) return res.status(404).json({ ok: false, error: 'Phone not found' });
-      if (found.user_id !== req.user.id) {
+     if (!registeredPhone) return res.status(404).json({ ok: false, error: 'Phone not found' });
+      if (registeredPhone.user_id !== req.user.id) {
         try {
           await logAudit({
             userId: req.user?.id || null,
             action: 'forbidden_access',
             resourceType: 'registered_phone',
-            resourceId: found?.id || null,
+            resourceId: registeredPhone?.id || null,
             details: { reason: 'Not owner' },
             ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
             userAgent: req.headers['user-agent'] || null,
@@ -508,8 +508,8 @@ const getImeiHash = (imei) => {
         return res.status(403).json({ ok: false, error: 'Not owner' });
       }
 
-      const passwordMatched = found.password
-        ? await bcrypt.compare(String(password), String(found.password))
+      const passwordMatched = registeredPhone.password
+        ? await bcrypt.compare(String(password), String(registeredPhone.password))
         : false;
       if (!passwordMatched) {
         recordAuthFailure(userKey);
@@ -518,7 +518,7 @@ const getImeiHash = (imei) => {
             userId: req.user?.id || null,
             action: 'verify_seller_password',
             resourceType: 'registered_phone',
-            resourceId: found?.id || null,
+            resourceId: registeredPhone?.id || null,
             details: { reason: 'Wrong Password', imei_last_4: String(imei || '').slice(-4) },
             ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
             userAgent: req.headers['user-agent'] || null,
@@ -537,7 +537,7 @@ const getImeiHash = (imei) => {
           userId: req.user?.id || null,
           action: 'verify_seller_password',
           resourceType: 'registered_phone',
-          resourceId: found?.id || null,
+          resourceId: registeredPhone?.id || null,
           oldValues: null,
           newValues: null,
           details: { imei_last_4: String(imei || '').slice(-4) },
