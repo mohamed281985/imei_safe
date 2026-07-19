@@ -224,17 +224,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
 
             // التحقق من اكتمال بيانات الحساب التجاري عند استعادة الجلسة
-            if (userProfile.role === 'business') {
+            if (userProfile.role === 'free_business') {
               const { data: profile, error: profileError } = await supabase
                 .from('businesses')
-                .select('store_image_url, license_image_url')
+                .select('store_image_url, license_image_url, status')
                 .eq('user_id', user.id)
                 .maybeSingle();
 
               if (profileError) console.error("Error fetching business profile on session check:", profileError);
 
-              const isComplete = !!(profile && profile.store_image_url && profile.license_image_url);
-              setNeedsProfileCompletion(!isComplete);
+              const isPendingOrRejected = profile && (profile.status === 'pending' || profile.status === 'rejected');
+              const isComplete = !!(profile && profile.store_image_url && profile.license_image_url && profile.status === 'approved');
+              setNeedsProfileCompletion(!isComplete || isPendingOrRejected);
             } else {
               setNeedsProfileCompletion(false);
             }
@@ -308,13 +309,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (userProfile.role === 'free_business') {
           const { data: profile, error: profileError } = await supabase
             .from('businesses')
-            .select('store_image_url, license_image_url')
+            .select('store_image_url, license_image_url, status')
             .eq('user_id', user.id)
             .maybeSingle();
 
           if (profileError) console.error("Error fetching business profile:", profileError);
 
-          if (!profile || !profile.store_image_url || !profile.license_image_url) {
+          const needsBusinessCompletion = !profile || profile.status !== 'approved';
+          if (needsBusinessCompletion) {
             setNeedsProfileCompletion(true);
             return { success: true, needsProfileCompletion: true };
           }

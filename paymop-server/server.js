@@ -1201,7 +1201,9 @@ app.post('/api/register', async (req, res) => {
         country_code: country_code, // حفظ رمز الدولة
         address: encAddress ? JSON.stringify(encAddress) : null,
         id_last6: encIdLast6 ? JSON.stringify(encIdLast6) : null,
-        business_type: business_type || ''
+        business_type: business_type || '',
+        status: 'pending',
+reason: null,
       };
 
       const { error: businessError } = await supabase
@@ -4193,7 +4195,7 @@ app.get('/api/businesses/me', verifyJwtToken, async (req, res) => {
 
     const { data, error } = await supabase
       .from('businesses')
-      .select('store_name, phone')
+      .select('store_name, phone, business_type, status, reason')
       .eq('user_id', userId)
       .maybeSingle();
 
@@ -4203,7 +4205,12 @@ app.get('/api/businesses/me', verifyJwtToken, async (req, res) => {
     }
     if (!data) return res.json({ ok: true, business: null });
 
-    const out = { store_name: data.store_name || null };
+    const out = {
+      store_name: data.store_name || null,
+      business_type: data.business_type || null,
+      status: data.status || null,
+      reason: data.reason || null,
+    };
     try {
       out.phone = decryptField(data.phone);
     } catch (e) {
@@ -6904,7 +6911,9 @@ async function pollConfirmedUsersOnce() {
           address: encAddress,
           business_type,
           id_last6: encIdLast6 ? JSON.stringify(encIdLast6) : null,
-          user_id: user.id
+          user_id: user.id,
+          status: 'pending',
+          reason: null,
         };
 
         const { error: businessInsertError } = await supabase.from('businesses').insert(businessRow);

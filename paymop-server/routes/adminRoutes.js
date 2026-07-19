@@ -166,6 +166,156 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
     }
   }
 
+  const getSignedBusinessImageUrl = async (pathOrUrl) => {
+    if (!pathOrUrl || typeof pathOrUrl !== 'string') return null;
+    if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://')) return pathOrUrl;
+
+    try {
+      const { data, error } = await supabase.storage
+        .from('business-assets')
+        .createSignedUrl(pathOrUrl, 60 * 60);
+
+      if (error) {
+        console.warn('Could not create signed URL for business asset:', pathOrUrl, error);
+        return null;
+      }
+
+      return data?.signedUrl || data?.signed_url || null;
+    } catch (err) {
+      console.warn('Unexpected error signing business asset URL:', pathOrUrl, err);
+      return null;
+    }
+  };
+
+  const signBusinessImages = async (businessRow) => {
+    const signedRow = { ...businessRow };
+    signedRow.store_image_url = await getSignedBusinessImageUrl(signedRow.store_image_url);
+    signedRow.license_image_url = await getSignedBusinessImageUrl(signedRow.license_image_url);
+    return signedRow;
+  };
+
+  // GET /admin/businesses - list businesses filtered by status and optional search
+  app.get('/admin/businesses', verifyJwtToken, requireAdmin, async (req, res) => {
+    try {
+      const statusFilter = typeof req.query.status === 'string' ? req.query.status : 'pending';
+      const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+
+      let query = supabase.from('businesses').select('*');
+      if (statusFilter) query = query.eq('status', statusFilter);
+      if (search) query = query.ilike('store_name', `%${search}%`);
+
+      const { data, error } = await query.order('created_at', { ascending: false }).limit(200);
+      if (error) {
+        console.error('/admin/businesses list error:', error);
+        return res.status(500).json({ error: 'Failed to fetch businesses' });
+      }
+
+      const out = [];
+      for (const row of data || []) {
+        const decrypted = decryptDeep(row);
+        const signed = await signBusinessImages(decrypted);
+        out.push(signed);
+      }
+
+      return res.status(200).json(out);
+    } catch (error) {
+      console.error('/admin/businesses list unexpected error:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  // POST /admin/businesses/:userId/approve - approve a business verification request
+  app.post('/admin/businesses/:userId/approve', verifyJwtToken, requireAdmin, async (req, res) => {
+    try {
+      const { userId } = req.params;
+      if (!userId || typeof userId !== 'string') return res.status(400).json({ error: 'User ID is required' });
+
+      const { data, error } = await supabase
+        .from('businesses')
+        .update({ status: 'approved', reason: null })
+        .eq('user_id', userId)
+        .select()
+        .maybeSingle();
+
+      if (error) {
+        console.error('/admin/businesses/:userId/approve error:', error);
+        return res.status(500).json({ error: 'Failed to approve business' });
+      }
+      if (!data) {
+        return res.status(404).json({ error: 'Business not found' });
+      }
+
+      try {
+        await logAudit({
+          userId: req.user?.id || null,
+          action: 'approve_business',
+          resourceType: 'businesses',
+          resourceId: userId,
+          oldValues: null,
+          newValues: { status: 'approved', reason: null },
+          details: { route: '/admin/businesses/:userId/approve' },
+          ip: getAuditIp(req),
+          userAgent: req.headers['user-agent'] || null,
+          status: 'success'
+        });
+      } catch (e) {
+        console.warn('/admin/businesses/:userId/approve audit failed', e);
+      }
+
+      return res.status(200).json({ success: true, data });
+    } catch (error) {
+      console.error('/admin/businesses/:userId/approve unexpected error:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  // POST /admin/businesses/:userId/reject - reject a business verification request with a reason
+  app.post('/admin/businesses/:userId/reject', verifyJwtToken, requireAdmin, async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+      if (!userId || typeof userId !== 'string') return res.status(400).json({ error: 'User ID is required' });
+      if (!reason) return res.status(400).json({ error: 'Rejection reason is required' });
+
+      const { data, error } = await supabase
+        .from('businesses')
+        .update({ status: 'rejected', reason })
+        .eq('user_id', userId)
+        .select()
+        .maybeSingle();
+
+      if (error) {
+        console.error('/admin/businesses/:userId/reject error:', error);
+        return res.status(500).json({ error: 'Failed to reject business' });
+      }
+      if (!data) {
+        return res.status(404).json({ error: 'Business not found' });
+      }
+
+      try {
+        await logAudit({
+          userId: req.user?.id || null,
+          action: 'reject_business',
+          resourceType: 'businesses',
+          resourceId: userId,
+          oldValues: null,
+          newValues: { status: 'rejected', reason },
+          details: { route: '/admin/businesses/:userId/reject' },
+          ip: getAuditIp(req),
+          userAgent: req.headers['user-agent'] || null,
+          status: 'success'
+        });
+      } catch (e) {
+        console.warn('/admin/businesses/:userId/reject audit failed', e);
+      }
+
+      return res.status(200).json({ success: true, data });
+    } catch (error) {
+      console.error('/admin/businesses/:userId/reject unexpected error:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
   // POST /admin/notification-campaigns - create notification campaign as draft (no FCM send)
   app.post('/admin/notification-campaigns', verifyJwtToken, async (req, res) => {
     try {
@@ -3861,6 +4011,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
 
       // فك تشفير البيانات قبل إرجاعها
       const decryptedData = decryptDeep(data[0]);
+      const signedData = await signBusinessImages(decryptedData);
 
       try {
         await logAudit({
@@ -3880,7 +4031,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       }
 
       // إرجاع البيانات
-      return res.status(200).json(decryptedData);
+      return res.status(200).json(signedData);
     } catch (error) {
       console.error('Error in business details API:', error);
       return res.status(500).json({ error: 'Internal server error' });
