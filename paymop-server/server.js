@@ -1939,7 +1939,9 @@ registerAdminRoutes({
   decryptField,
   verifyJwtToken,
   logAudit,
-  csrfProtection
+  csrfProtection,
+  resend,
+  sendFCMNotificationV1
 });
 
 // --- نقاط نهاية Paymob ---
