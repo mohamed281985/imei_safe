@@ -167,40 +167,40 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
   }
 
   const getSignedBusinessImageUrl = async (pathOrUrl) => {
-  if (!pathOrUrl || typeof pathOrUrl !== 'string') return null;
+    if (!pathOrUrl || typeof pathOrUrl !== 'string') return null;
 
-  let filePath = pathOrUrl;
+    let filePath = pathOrUrl;
 
-  // إذا كان رابطاً كاملاً استخرج المسار داخل البوكت
-  if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
-    const marker = '/business-assets/';
-    const index = filePath.indexOf(marker);
+    // إذا كان رابطاً كاملاً استخرج المسار داخل البوكت
+    if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
+      const marker = '/business-assets/';
+      const index = filePath.indexOf(marker);
 
-    if (index === -1) {
-      return filePath;
+      if (index === -1) {
+        return filePath;
+      }
+
+      filePath = filePath.substring(index + marker.length);
     }
+    console.log("FILEPATH =", filePath);
+    console.log("PATH:", pathOrUrl);
+    try {
+      const { data, error } = await supabase.storage
+        .from('business-assets')
 
-    filePath = filePath.substring(index + marker.length);
-  }
-  console.log("FILEPATH =", filePath);
-console.log("PATH:", pathOrUrl);
-  try {
-    const { data, error } = await supabase.storage
-      .from('business-assets')
-      
-      .createSignedUrl(filePath, 60 * 60);
+        .createSignedUrl(filePath, 60 * 60);
 
-    if (error) {
-      console.warn('Could not create signed URL:', filePath, error);
+      if (error) {
+        console.warn('Could not create signed URL:', filePath, error);
+        return null;
+      }
+
+      return data?.signedUrl || data?.signed_url || null;
+    } catch (err) {
+      console.warn('Unexpected error:', err);
       return null;
     }
-
-    return data?.signedUrl || data?.signed_url || null;
-  } catch (err) {
-    console.warn('Unexpected error:', err);
-    return null;
-  }
-};
+  };
 
   const signBusinessImages = async (businessRow) => {
     const signedRow = { ...businessRow };
@@ -213,38 +213,43 @@ console.log("PATH:", pathOrUrl);
   app.get('/admin/businesses', verifyJwtToken, requireAdmin, async (req, res) => {
     try {
       const statusFilter =
-  typeof req.query.status === 'string'
-    ? req.query.status.trim()
-    : '';
+        typeof req.query.status === 'string'
+          ? req.query.status.trim()
+          : '';
 
-const search =
-  typeof req.query.search === 'string'
-    ? req.query.search.trim()
-    : '';
+      const search =
+        typeof req.query.search === 'string'
+          ? req.query.search.trim()
+          : '';
 
-let query = supabase.from('businesses').select('*');
+      let query = supabase.from('businesses').select('*');
 
-if (statusFilter) {
-  query = query.eq('status', statusFilter);
-}
+      if (statusFilter) {
+        query = query.eq('status', statusFilter);
+      }
+      const { data, error } = await query
+        .order('created_at', { ascending: false })
+        .limit(200);
 
-if (search) {
-  query = query.ilike('store_name', `%${search}%`);
-}
-
-      const { data, error } = await query.order('created_at', { ascending: false }).limit(200);
       if (error) {
-        console.error('/admin/businesses list error:', error);
         return res.status(500).json({ error: 'Failed to fetch businesses' });
       }
-
-      const out = [];
+      let out = [];
       for (const row of data || []) {
         const decrypted = decryptDeep(row);
         const signed = await signBusinessImages(decrypted);
         out.push(signed);
       }
+ if (search) {
+        const keyword = search.toLowerCase();
 
+        out = out.filter(item =>
+          (item.store_name || '').toLowerCase().includes(keyword) ||
+          (item.owner_name || '').toLowerCase().includes(keyword) ||
+          (item.email || '').toLowerCase().includes(keyword) ||
+          (item.phone || '').includes(search)
+        );
+      }
       return res.status(200).json(out);
     } catch (error) {
       console.error('/admin/businesses list unexpected error:', error);
