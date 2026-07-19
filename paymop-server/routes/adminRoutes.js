@@ -228,15 +228,10 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
         query = query.eq('status', statusFilter);
       }
 
-      // If a search keyword is provided, apply it server-side across
-      // store_name, owner_name, email and phone using ILIKE for partial matches.
-      if (search) {
-        const like = `%${search}%`;
-        // Use Supabase .or to combine multiple ilike conditions
-        query = query.or(
-          `store_name.ilike.${like},owner_name.ilike.${like},email.ilike.${like},phone.ilike.${like}`
-        );
-      }
+      // NOTE: many fields are stored encrypted in the DB, so server-side
+      // ILIKE on those columns will not match. We fetch rows (optionally
+      // filtered by status) and apply the search on decrypted values below.
+      // Keep the query minimal to avoid unnecessary server-side filtering.
 
       const { data, error } = await query
         .order('created_at', { ascending: false })
@@ -251,7 +246,41 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
         const signed = await signBusinessImages(decrypted);
         out.push(signed);
       }
-      // Server-side search applied; no additional client-side filtering required.
+
+      // If search keyword provided, filter in-memory on decrypted fields.
+      if (search) {
+        const keyword = String(search).trim();
+        const keywordLower = keyword.toLowerCase();
+        const digitsOnly = keyword.replace(/\D/g, '');
+
+        out = out.filter(item => {
+          try {
+            const store = (item.store_name || '').toString().toLowerCase();
+            const owner = (item.owner_name || '').toString().toLowerCase();
+            const email = (item.email || '').toString().toLowerCase();
+            const phone = (item.phone || '').toString();
+            const country = (item.country_code || '').toString();
+
+            // If the keyword looks like a phone (has digits), match against
+            // country+phone and phone alone (digits-only comparison).
+            if (digitsOnly.length >= 3) {
+              const combined = (country + phone).replace(/\D/g, '');
+              if (combined.includes(digitsOnly)) return true;
+              if (phone.replace(/\D/g, '').includes(digitsOnly)) return true;
+            }
+
+            // Otherwise match text fields (store name, owner name, email)
+            if (store.includes(keywordLower)) return true;
+            if (owner.includes(keywordLower)) return true;
+            if (email.includes(keywordLower)) return true;
+
+            return false;
+          } catch (e) {
+            return false;
+          }
+        });
+      }
+
       return res.status(200).json(out);
     } catch (error) {
       console.error('/admin/businesses list unexpected error:', error);
