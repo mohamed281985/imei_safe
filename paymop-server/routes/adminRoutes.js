@@ -227,6 +227,17 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       if (statusFilter) {
         query = query.eq('status', statusFilter);
       }
+
+      // If a search keyword is provided, apply it server-side across
+      // store_name, owner_name, email and phone using ILIKE for partial matches.
+      if (search) {
+        const like = `%${search}%`;
+        // Use Supabase .or to combine multiple ilike conditions
+        query = query.or(
+          `store_name.ilike.${like},owner_name.ilike.${like},email.ilike.${like},phone.ilike.${like}`
+        );
+      }
+
       const { data, error } = await query
         .order('created_at', { ascending: false })
         .limit(200);
@@ -240,16 +251,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
         const signed = await signBusinessImages(decrypted);
         out.push(signed);
       }
- if (search) {
-        const keyword = search.toLowerCase();
-
-        out = out.filter(item =>
-          (item.store_name || '').toLowerCase().includes(keyword) ||
-          (item.owner_name || '').toLowerCase().includes(keyword) ||
-          (item.email || '').toLowerCase().includes(keyword) ||
-          (item.phone || '').includes(search)
-        );
-      }
+      // Server-side search applied; no additional client-side filtering required.
       return res.status(200).json(out);
     } catch (error) {
       console.error('/admin/businesses list unexpected error:', error);
