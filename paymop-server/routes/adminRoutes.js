@@ -167,25 +167,38 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
   }
 
   const getSignedBusinessImageUrl = async (pathOrUrl) => {
-    if (!pathOrUrl || typeof pathOrUrl !== 'string') return null;
-    if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://')) return pathOrUrl;
+  if (!pathOrUrl || typeof pathOrUrl !== 'string') return null;
 
-    try {
-      const { data, error } = await supabase.storage
-        .from('business-assets')
-        .createSignedUrl(pathOrUrl, 60 * 60);
+  let filePath = pathOrUrl;
 
-      if (error) {
-        console.warn('Could not create signed URL for business asset:', pathOrUrl, error);
-        return null;
-      }
+  // إذا كان رابطاً كاملاً استخرج المسار داخل البوكت
+  if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
+    const marker = '/business-assets/';
+    const index = filePath.indexOf(marker);
 
-      return data?.signedUrl || data?.signed_url || null;
-    } catch (err) {
-      console.warn('Unexpected error signing business asset URL:', pathOrUrl, err);
+    if (index === -1) {
+      return filePath;
+    }
+
+    filePath = filePath.substring(index + marker.length);
+  }
+
+  try {
+    const { data, error } = await supabase.storage
+      .from('business-assets')
+      .createSignedUrl(filePath, 60 * 60);
+
+    if (error) {
+      console.warn('Could not create signed URL:', filePath, error);
       return null;
     }
-  };
+
+    return data?.signedUrl || data?.signed_url || null;
+  } catch (err) {
+    console.warn('Unexpected error:', err);
+    return null;
+  }
+};
 
   const signBusinessImages = async (businessRow) => {
     const signedRow = { ...businessRow };
