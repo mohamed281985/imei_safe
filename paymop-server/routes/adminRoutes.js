@@ -182,10 +182,11 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
 
     filePath = filePath.substring(index + marker.length);
   }
-
+console.log("PATH:", pathOrUrl);
   try {
     const { data, error } = await supabase.storage
       .from('business-assets')
+      
       .createSignedUrl(filePath, 60 * 60);
 
     if (error) {
