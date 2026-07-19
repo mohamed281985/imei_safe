@@ -7,7 +7,7 @@ import {
   createOrRefreshRecoveryCard,
   normalizeStoragePath
 } from '../utils/qrCardUtils.js';
-export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToken, logAudit: rawLogAudit }) {
+export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToken, logAudit: rawLogAudit, resend, sendFCMNotificationV1: sendFCMFn }) {
   const logAudit = (config) => rawLogAudit({ supabase, ...config });
   // Deep decrypt helper: recursively decrypt strings or encrypted objects.
   const decryptDeep = (value) => {
@@ -109,6 +109,27 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       return fallbackEn || fallbackAr || key;
     } catch (e) {
       return fallbackEn || fallbackAr || key;
+    }
+  };
+
+  // دالة إرسال البريد الإلكتروني باستخدام Resend
+  const sendEmail = async ({ to, subject, text, html }) => {
+    if (!resend) {
+      console.warn('Resend is not available. Email will not be sent.');
+      return;
+    }
+    try {
+      const response = await resend.emails.send({
+        from: process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev',
+        to: to.trim(),
+        subject: subject,
+        html: html || `<p>${text}</p>`
+      });
+      console.log('Email sent successfully via Resend:', response);
+      return response;
+    } catch (error) {
+      console.error('Error sending email via Resend:', error);
+      throw error;
     }
   };
 
@@ -326,6 +347,68 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
         console.warn('/admin/businesses/:userId/approve audit failed', e);
       }
 
+      // جلب بيانات المستخدم لإرسال الإشعارات والبريد الإلكتروني
+      const { data: userData, error: userErr } = await supabase
+        .from('users')
+        .select('email, fcm_token, language')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (!userErr && userData) {
+        // 1. إدراج إشعار في جدول الإشعارات
+        const notifTitle = getNotificationText(userData?.language, 'business.approved_title', 'Business Registration Approved', 'تمت الموافقة على تسجيل نشاطك التجاري');
+        const notifBody = getNotificationText(userData?.language, 'business.approved_body', 'Your business registration has been approved. You can now access all features.', 'تمت مراجعة تسجيل نشاطك التجاري والموافقة عليه. يمكنك الآن الوصول إلى جميع الميزات.');
+        
+        const notif = {
+          user_id: userId,
+          title: notifTitle,
+          body: notifBody,
+          type: 'business_approved',
+          is_read: false,
+          created_at: new Date().toISOString()
+        };
+
+        const { error: notifErr } = await supabase.from('notifications').insert(notif);
+        if (notifErr) console.warn('/admin/businesses/:userId/approve notification insert failed', notifErr);
+
+        // 2. إرسال إشعار FCM
+        if (userData.fcm_token && sendFCMFn) {
+          try {
+            const fcmTitle = getNotificationText(userData?.language, 'business.approved_fcm_title', 'Business Approved', 'تمت الموافقة على نشاطك');
+            const fcmBody = getNotificationText(userData?.language, 'business.approved_fcm_body', 'Check the app for more details.', 'يرجى مراجعة التطبيق لمعرفة التفاصيل.');
+            await sendFCMFn({
+              token: userData.fcm_token,
+              title: fcmTitle,
+              body: fcmBody
+            });
+            console.log('FCM business approval sent successfully');
+          } catch (fcmErr) {
+            console.warn('/admin/businesses/:userId/approve FCM error:', fcmErr);
+          }
+        }
+
+        // 3. إرسال بريد إلكتروني
+        if (userData.email) {
+          try {
+            const emailSubject = getNotificationText(userData?.language, 'business.approved_email_subject', 'Business Registration Approved', 'تمت الموافقة على تسجيل نشاطك التجاري');
+            const emailBody = getNotificationText(userData?.language, 'business.approved_email_body', 
+              'Your business registration has been successfully approved. You can now access all features and manage your business profile.',
+              'تمت مراجعة تسجيل نشاطك التجاري والموافقة عليه بنجاح. يمكنك الآن الوصول إلى جميع الميزات وإدارة ملف نشاطك التجاري.'
+            );
+            
+            await sendEmail({
+              to: userData.email,
+              subject: emailSubject,
+              text: emailBody,
+              html: `<p>${emailBody}</p>`
+            });
+            console.log('Business approval email sent successfully');
+          } catch (emailErr) {
+            console.warn('/admin/businesses/:userId/approve email error:', emailErr);
+          }
+        }
+      }
+
       return res.status(200).json({ success: true, data });
     } catch (error) {
       console.error('/admin/businesses/:userId/approve unexpected error:', error);
@@ -371,6 +454,68 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
         });
       } catch (e) {
         console.warn('/admin/businesses/:userId/reject audit failed', e);
+      }
+
+      // جلب بيانات المستخدم لإرسال الإشعارات والبريد الإلكتروني
+      const { data: userData, error: userErr } = await supabase
+        .from('users')
+        .select('email, fcm_token, language')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (!userErr && userData) {
+        // 1. إدراج إشعار في جدول الإشعارات
+        const notifTitle = getNotificationText(userData?.language, 'business.rejected_title', 'Business Registration Rejected', 'تم رفض تسجيل نشاطك التجاري');
+        const notifBody = getNotificationText(userData?.language, 'business.rejected_body', `Rejection reason: ${reason}`, `سبب الرفض: ${reason}`);
+        
+        const notif = {
+          user_id: userId,
+          title: notifTitle,
+          body: notifBody,
+          type: 'business_rejected',
+          is_read: false,
+          created_at: new Date().toISOString()
+        };
+
+        const { error: notifErr } = await supabase.from('notifications').insert(notif);
+        if (notifErr) console.warn('/admin/businesses/:userId/reject notification insert failed', notifErr);
+
+        // 2. إرسال إشعار FCM
+        if (userData.fcm_token && sendFCMFn) {
+          try {
+            const fcmTitle = getNotificationText(userData?.language, 'business.rejected_fcm_title', 'Business Registration Rejected', 'تم رفض تسجيل نشاطك');
+            const fcmBody = getNotificationText(userData?.language, 'business.rejected_fcm_body', 'Please check the app for more details.', 'يرجى مراجعة التطبيق لمعرفة التفاصيل.');
+            await sendFCMFn({
+              token: userData.fcm_token,
+              title: fcmTitle,
+              body: fcmBody
+            });
+            console.log('FCM business rejection sent successfully');
+          } catch (fcmErr) {
+            console.warn('/admin/businesses/:userId/reject FCM error:', fcmErr);
+          }
+        }
+
+        // 3. إرسال بريد إلكتروني
+        if (userData.email) {
+          try {
+            const emailSubject = getNotificationText(userData?.language, 'business.rejected_email_subject', 'Business Registration Rejected', 'تم رفض تسجيل نشاطك التجاري');
+            const emailBody = getNotificationText(userData?.language, 'business.rejected_email_body', 
+              `Your business registration was rejected. Reason: ${reason}`,
+              `تم رفض تسجيل نشاطك التجاري. السبب: ${reason}`
+            );
+            
+            await sendEmail({
+              to: userData.email,
+              subject: emailSubject,
+              text: emailBody,
+              html: `<p>${emailBody}</p>`
+            });
+            console.log('Business rejection email sent successfully');
+          } catch (emailErr) {
+            console.warn('/admin/businesses/:userId/reject email error:', emailErr);
+          }
+        }
       }
 
       return res.status(200).json({ success: true, data });
