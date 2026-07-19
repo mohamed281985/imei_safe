@@ -7,8 +7,9 @@ interface ImageUploaderProps {
   label: string;
   image: string;
   setImage: (url: string) => void;
-  onCameraClick: () => void;
+  onCameraClick: () => void | Promise<void>;
   disabled?: boolean;
+  additionalActions?: React.ReactNode;
 }
 
 const ImageUploader: React.FC<ImageUploaderProps> = ({
@@ -17,6 +18,7 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
   setImage,
   onCameraClick,
   disabled,
+  additionalActions,
 }) => {
   const { t } = useLanguage();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -131,6 +133,9 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
               />
             </div>
           </div>
+        )}
+        {additionalActions && (
+          <div className="mt-2">{additionalActions}</div>
         )}
       </div>
     </div>

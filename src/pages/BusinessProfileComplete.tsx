@@ -25,9 +25,6 @@ export default function BusinessProfileComplete() {
   const [previews, setPreviews] = useState<{ storeImage: string | null; licenseImage: string | null }>({ storeImage: null, licenseImage: null });
   const [loading, setLoading] = useState(false);
   const [processing, setProcessing] = useState(false);
-  const [businessStatus, setBusinessStatus] = useState<string | null>(null);
-  const [rejectionReason, setRejectionReason] = useState<string | null>(null);
-  const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
   const { completeProfile, logout } = useAuth();
@@ -36,7 +33,7 @@ export default function BusinessProfileComplete() {
   const [showCropModal, setShowCropModal] = useState(false);
   const [cropImageType, setCropImageType] = useState<'store' | 'license' | null>(null);
   const [cropImageSrc, setCropImageSrc] = useState('');
-  const [crop, setCrop] = useState<Crop>({ unit: '%', width: 90, aspect: 16 / 9 });
+  const [crop, setCrop] = useState<Crop>({ unit: '%', x: 5, y: 5, width: 90, height: 56 });
   const [completedCrop, setCompletedCrop] = useState<PixelCrop | null>(null);
 
   // التحقق مما إذا كنا في بيئة تطبيق حقيقي
@@ -49,31 +46,6 @@ export default function BusinessProfileComplete() {
       if (previews.licenseImage) URL.revokeObjectURL(previews.licenseImage);
     };
   }, [previews.storeImage, previews.licenseImage]);
-
-  useEffect(() => {
-    const loadBusinessStatus = async () => {
-      try {
-        const resp = await fetch('/api/businesses/me', { method: 'GET' });
-        if (!resp.ok) return;
-        const json = await resp.json();
-        const business = json.business || null;
-        if (!business) return;
-
-        setBusinessStatus(business.status || null);
-        setRejectionReason(business.reason || null);
-
-        if (business.status === 'pending') {
-          setInfoMessage(t('business_account_under_review'));
-        } else if (business.status === 'rejected') {
-          setInfoMessage(t('business_registration_rejected'));
-        }
-      } catch (error) {
-        console.warn('Failed to load business status:', error);
-      }
-    };
-
-    loadBusinessStatus();
-  }, [t]);
 
   // دالة لاقتطاع الصورة
   const handleCropComplete = useCallback(async (crop: PixelCrop, image: HTMLImageElement) => {
@@ -234,13 +206,33 @@ export default function BusinessProfileComplete() {
 
   const uploadBusinessAsset = async (userId: string, file: File, assetName: string): Promise<string> => {
     const filePath = `${userId}/${assetName}_${Date.now()}.webp`;
-    const { error: uploadError } = await supabase.storage
+    const { data: uploadData, error: uploadError } = await supabase.storage
       .from('business-assets')
       .upload(filePath, file, { upsert: true });
     if (uploadError) throw new Error(`Failed to upload ${assetName}: ${uploadError.message}`);
 
-    // Store the object path only; the bucket is private and signed URLs are generated server-side.
-    return filePath;
+    // Try to get a public URL first
+    try {
+      const { data: { publicUrl } } = supabase.storage.from('business-assets').getPublicUrl(filePath);
+      if (publicUrl) return publicUrl;
+    } catch (err) {
+      console.warn('getPublicUrl error or returned no url', err);
+    }
+
+    // If no public URL (private bucket), attempt to create a signed URL
+    try {
+      const expiresIn = 60 * 60 * 24 * 7; // 7 days
+      const { data: signedData, error: signedError } = await supabase.storage
+        .from('business-assets')
+        .createSignedUrl(filePath, expiresIn);
+      if (signedError) throw signedError;
+      if (signedData && (((signedData as any).signedUrl) || ((signedData as any).signed_url))) {
+        return (signedData as any).signedUrl || (signedData as any).signed_url;
+      }
+      throw new Error('Could not obtain a signed URL');
+    } catch (err: any) {
+      throw new Error(`Could not get URL for ${assetName}: ${err?.message || err}`);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -289,10 +281,8 @@ export default function BusinessProfileComplete() {
         const { data: updatedRows, error: updateError } = await supabase
           .from('businesses')
           .update({ 
-            store_image_url: storeImageUrl,
-            license_image_url: licenseImageUrl,
-            status: 'pending',
-            reason: null
+            store_image_url: storeImageUrl, 
+            license_image_url: licenseImageUrl 
           })
           .eq('user_id', userId)
           .select();
@@ -318,9 +308,7 @@ export default function BusinessProfileComplete() {
             owner_name: metadata.full_name || metadata.owner_name || '',
             address: metadata.address || '',
             business_type: metadata.business_type || '',
-            id_last6: metadata.id_last6 || '',
-            status: 'pending',
-            reason: null
+            id_last6: metadata.id_last6 || ''
           })
           .select();
 
@@ -336,9 +324,6 @@ export default function BusinessProfileComplete() {
 
       // 5. إتمام العملية
       completeProfile();
-      setBusinessStatus('pending');
-      setRejectionReason(null);
-      setInfoMessage(t('business_account_under_review'));
       toast({
         title: t('business_profile_completed_successfully'),
         description: t('business_data_saved_redirecting'),
@@ -465,23 +450,8 @@ export default function BusinessProfileComplete() {
             </CardHeader>
             <CardContent className="p-4">
               <form onSubmit={handleSubmit}>
-                {(businessStatus === 'pending' || businessStatus === 'rejected' || infoMessage) && (
-                  <div className="mb-6 rounded-lg border border-orange-300 bg-orange-50 p-4 text-orange-900">
-                    <p className="font-semibold mb-2">{infoMessage || t('business_account_under_review')}</p>
-                    {businessStatus === 'rejected' && rejectionReason && (
-                      <p className="text-sm leading-6">
-                        {t('rejection_reason')}: {rejectionReason}
-                      </p>
-                    )}
-                    {businessStatus === 'rejected' && (
-                      <p className="mt-2 text-sm text-orange-800">
-                        {t('business_registration_rejected_instructions')}
-                      </p>
-                    )}
-                  </div>
-                )}
-                <div className="mb-6">
-                  <h2 className="text-lg font-semibold text-black mb-3">{t('store_image')}</h2>
+              <div className="mb-6">
+                <h2 className="text-lg font-semibold text-black mb-3">{t('store_image')}</h2>
                 <ImageUploader
                   label=""
                   image={previews.storeImage || ''}
