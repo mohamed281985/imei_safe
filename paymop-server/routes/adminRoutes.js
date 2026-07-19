@@ -197,7 +197,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
   // GET /admin/businesses - list businesses filtered by status and optional search
   app.get('/admin/businesses', verifyJwtToken, requireAdmin, async (req, res) => {
     try {
-      const statusFilter = typeof req.query.status === 'string' ? req.query.status : 'pending';
+      const statusFilter = typeof req.query.status === 'string' ? req.query.status : 'trim';
       const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
 
       let query = supabase.from('businesses').select('*');
