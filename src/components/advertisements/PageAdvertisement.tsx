@@ -322,7 +322,7 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
             <img
               src={ads[currentAdIndex]?.image_url}
               alt={t('advertisement')}
-              style={{ width: '100%', height: '100%', display: 'block', cursor: isClickable ? 'pointer' : 'not-allowed', opacity: isClickable ? 1 : 0.8 }}
+              style={{ width: '100%', height: '100%', display: 'block', cursor: isClickable ? 'pointer' : 'not-allowed', opacity: 1}}
               onClick={(e) => {
                 e.stopPropagation();
                 if (!isClickable) return;
