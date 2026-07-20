@@ -2698,11 +2698,11 @@ app.get('/api/ads/package-remaining', verifyJwtToken, async (req, res) => {
     let planRow = null;
     try {
       console.log(`[PACKAGE-REMAINING] DEBUG: searching for plan with normalizedRole="${normalizedRole}"`);
-      
+
       // Exact type match first (e.g. gold_business)
       const { data: exactPlan, error: exactErr } = await supabase
         .from('plans')
-        .select('type, Publish_Ad, publish_ad, publishAd, publish_ads, publishAds, duration_days')
+        .select('type, Publish_Ad, duration_days')
         .eq('type', normalizedRole)
         .maybeSingle();
       console.log(`[PACKAGE-REMAINING] DEBUG exact match (${normalizedRole}):`, exactPlan, exactErr);
@@ -2714,7 +2714,7 @@ app.get('/api/ads/package-remaining', verifyJwtToken, async (req, res) => {
       if (!planRow) {
         const { data: ilikePlan, error: ilikeErr } = await supabase
           .from('plans')
-          .select('type, Publish_Ad, publish_ad, publishAd, publish_ads, publishAds, duration_days')
+          .select('type, Publish_Ad, duration_days')
           .ilike('type', `%${normalizedRole}%`)
           .maybeSingle();
         console.log(`[PACKAGE-REMAINING] DEBUG ilike match (%${normalizedRole}%):`, ilikePlan, ilikeErr);
@@ -2730,7 +2730,7 @@ app.get('/api/ads/package-remaining', verifyJwtToken, async (req, res) => {
         if (basePlan) {
           const { data: basePlanRow, error: baseErr } = await supabase
             .from('plans')
-            .select('type, Publish_Ad, publish_ad, publishAd, publish_ads, publishAds, duration_days')
+            .select('type, Publish_Ad, duration_days')
             .ilike('type', `%${basePlan}%`)
             .maybeSingle();
           console.log(`[PACKAGE-REMAINING] DEBUG base match (%${basePlan}%):`, basePlanRow, baseErr);
@@ -2744,7 +2744,8 @@ app.get('/api/ads/package-remaining', verifyJwtToken, async (req, res) => {
       if (!planRow) {
         const { data: allPlans, error: allErr } = await supabase
           .from('plans')
-          .select('type, Publish_Ad, publish_ad, publishAd, publish_ads, publishAds, duration_days');
+
+          .select('type, Publish_Ad, duration_days')
         console.log(`[PACKAGE-REMAINING] DEBUG fetching all plans:`, allPlans?.length || 0, 'records', allErr);
         if (allErr) {
           console.error('[PACKAGE-REMAINING] DEBUG all plans error:', allErr);
@@ -2767,7 +2768,7 @@ app.get('/api/ads/package-remaining', verifyJwtToken, async (req, res) => {
 
       if (planRow) {
         // Extract common column name variants for publish quota
-        const publishVal = planRow.Publish_Ad ?? planRow.publish_ad ?? planRow.publishAd ?? planRow.publish_ads ?? planRow.publishAds ?? null;
+        const publishVal = planRow.Publish_Ad;
         const num = publishVal != null ? Number(publishVal) : null;
         maxAdsAllowed = Number.isFinite(num) ? num : null;
         if (planRow.duration_days != null) planDuration = Number(planRow.duration_days);
@@ -2787,7 +2788,7 @@ app.get('/api/ads/package-remaining', verifyJwtToken, async (req, res) => {
         if (baseToken) {
           const { data: tokenPlans, error: tokenErr } = await supabase
             .from('plans')
-            .select('type, Publish_Ad, publish_ad, publishAds, publish_ads, publishAd')
+            .select('type, Publish_Ad, duration_days')
             .ilike('type', `%${baseToken}%`)
             .limit(5);
 
