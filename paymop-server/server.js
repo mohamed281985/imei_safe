@@ -2751,9 +2751,12 @@ app.get('/api/ads/package-remaining', verifyJwtToken, async (req, res) => {
       }
 
       if (planRow) {
-        maxAdsAllowed = planRow.Publish_Ad;
-        if (maxAdsAllowed != null) maxAdsAllowed = Number(maxAdsAllowed);
+        // Extract common column name variants for publish quota
+        const publishVal = planRow.Publish_Ad ?? planRow.publish_ad ?? planRow.publishAd ?? planRow.publish_ads ?? planRow.publishAds ?? null;
+        const num = publishVal != null ? Number(publishVal) : null;
+        maxAdsAllowed = Number.isFinite(num) ? num : null;
         if (planRow.duration_days != null) planDuration = Number(planRow.duration_days);
+        console.log(`[PACKAGE-REMAINING] resolved planRow.type=${planRow.type} publishVal=${publishVal} -> maxAdsAllowed=${maxAdsAllowed} duration_days=${planRow.duration_days}`);
       }
     } catch (e) {
       console.error('package-remaining: error fetching plan', e);
