@@ -2763,7 +2763,38 @@ app.get('/api/ads/package-remaining', verifyJwtToken, async (req, res) => {
     }
 
     if (!maxAdsAllowed || !Number.isFinite(maxAdsAllowed)) {
-      return res.status(400).json({ error: 'Could not determine plan quota' });
+      console.warn('package-remaining: publish quota not found from initial resolution, attempting additional fallbacks');
+      try {
+        // Try to find any plan row that mentions the base token (gold/silver) and has a numeric publish quota
+        const baseToken = normalizedRole.split('_')[0];
+        if (baseToken) {
+          const { data: tokenPlans, error: tokenErr } = await supabase
+            .from('plans')
+            .select('type, Publish_Ad, publish_ad, publishAds, publish_ads, publishAd')
+            .ilike('type', `%${baseToken}%`)
+            .limit(5);
+
+          if (!tokenErr && Array.isArray(tokenPlans) && tokenPlans.length) {
+            for (const p of tokenPlans) {
+              const publishVal = p.Publish_Ad ?? p.publish_ad ?? p.publishAd ?? p.publish_ads ?? p.publishAds ?? null;
+              const num = publishVal != null ? Number(publishVal) : null;
+              if (Number.isFinite(num)) {
+                maxAdsAllowed = num;
+                console.log(`package-remaining: fallback found publish quota from plan type=${p.type} -> ${maxAdsAllowed}`);
+                break;
+              }
+            }
+          }
+        }
+      } catch (fallbackErr) {
+        console.error('package-remaining: error during fallback plan lookup', fallbackErr);
+      }
+
+      // If still not determined, set safe-default (0) to avoid client 400 and expose that quota could not be resolved
+      if (!maxAdsAllowed || !Number.isFinite(maxAdsAllowed)) {
+        console.warn('package-remaining: unable to resolve publish quota for', normalizedRole, '- returning 0 as safe default');
+        maxAdsAllowed = 0;
+      }
     }
 
     // 3) جلب تاريخ بداية الباقة الحالية

@@ -116,8 +116,7 @@ const PublishAd: React.FC = () => {
   const [actualPublishedAdsCount, setActualPublishedAdsCount] = useState<number | null>(null);
   // عدد الإعلانات المتبقية (من الخادم)
   const [packageAdsRemaining, setPackageAdsRemaining] = useState<number | null>(null);
-  // تاريخ بداية الباقة (لعد الإعلانات المنشورة ضمنها)
-  const [packageStartDate, setPackageStartDate] = useState<string | null>(null);
+  // (packageStartDate removed) — server provides authoritative counts
 
   // Derived remaining ads to display (يتم الحصول عليه من الخادم الآن)
   const packagePublishAdsRemaining = useMemo(() => {
@@ -187,145 +186,8 @@ const PublishAd: React.FC = () => {
     return () => clearInterval(interval);
   }, [user?.id, isPackageUser]);
 
-  useEffect(() => {
-    if (!basePlan) return;
-    let cancelled = false;
-
-    const fetchPlanRow = async () => {
-      try {
-        // Build normalized role to attempt exact match against `plans.type`
-        const normalizedFull = normalizedRoleFromDB ?? String(user?.role || '').toLowerCase().trim().replace(/[\s\-]+/g, '_');
-        let row = null;
-
-        // Try exact match with full normalized role (e.g. 'gold_business')
-        if (normalizedFull) {
-          console.log('PublishAd: querying plans.type exact=', normalizedFull);
-          const exact = await supabase.from('plans').select('*').eq('type', normalizedFull).maybeSingle();
-          console.log('PublishAd: exact query result:', exact);
-          row = exact.data;
-        }
-
-        // Try ilike with full normalized role if exact not found
-        if (!row && normalizedFull) {
-          console.log('PublishAd: querying plans.type ilike %' + normalizedFull + '%');
-          const res2 = await supabase.from('plans').select('*').ilike('type', `%${normalizedFull}%`).maybeSingle();
-          console.log('PublishAd: ilike(full) result:', res2);
-          row = res2.data;
-        }
-
-        // Fallback to searching by base token (e.g. 'gold')
-        if (!row) {
-          console.log('PublishAd: querying plans.type ilike base token %' + basePlan + '%');
-          const res3 = await supabase.from('plans').select('*').ilike('type', `%${basePlan}%`).maybeSingle();
-          console.log('PublishAd: ilike(base) result:', res3);
-          row = res3.data;
-        }
-
-        console.log('PublishAd: selected plan row:', row);
-
-        // If DB queries didn't return a row, fetch all plans and try a local match
-        if (!row) {
-          try {
-            console.log('PublishAd: fetching all plans for local scan');
-            const allRes = await supabase.from('plans').select('*');
-            console.log('PublishAd: all plans result:', allRes);
-            const list = allRes.data || [];
-            const normalizedFullLocal = normalizedFull || '';
-            const found = list.find((r: any) => {
-              const typ = String(r.type || '').toLowerCase().trim();
-              return (
-                (normalizedFullLocal && typ.includes(normalizedFullLocal)) ||
-                (basePlan && typ.includes(basePlan))
-              );
-            });
-            console.log('PublishAd: found by local scan:', found);
-            row = found || null;
-          } catch (scanErr) {
-            console.error('PublishAd: error scanning all plans', scanErr);
-          }
-        }
-
-        if (!row) {
-          if (!cancelled) setPackagePublishAdsCount(null);
-          return;
-        }
-
-        // Try common column name variants for Publish_Ad
-        const publishVal = row.Publish_Ad ?? row.publish_ad ?? row.publishAd ?? row.publish_ads ?? row.publishAds ?? null;
-        const num = publishVal != null ? Number(publishVal) : null;
-        if (!cancelled) setPackagePublishAdsCount(Number.isFinite(num) ? num : null);
-
-        // Get plan duration for fallback packageStartDate calculation
-        const planDuration = row?.duration_days ? Number(row.duration_days) : 30; // Default to 30 days
-
-        // --- 2. Determine packageStartDate ---
-        let calculatedPackageStartDate: string | null = null;
-        // Try to get the earliest payment date for the current package type
-        const { data: firstPaid, error: firstPaidErr } = await supabase
-          .from('ads_payment')
-          .select('payment_date')
-          .eq('user_id', user.id)
-          .eq('is_paid', true)
-          .eq('type', normalizedFull) // Use normalizedFull for specific package type
-          .order('payment_date', { ascending: false }) // جلب أحدث دفعة لتبدأ العد منها
-          .limit(1)
-          .maybeSingle();
-
-        if (!firstPaidErr && firstPaid && firstPaid.payment_date) {
-          calculatedPackageStartDate = firstPaid.payment_date;
-        } else {
-          // Fallback: use user's expires_at and plan duration
-          const { data: userData, error: userError } = await supabase
-            .from('users')
-            .select('expires_at')
-            .eq('id', user.id)
-            .maybeSingle();
-
-          if (!userError && userData?.expires_at) {
-            const expiresAt = new Date(userData.expires_at);
-            const start = new Date(expiresAt);
-            start.setDate(start.getDate() - planDuration);
-            calculatedPackageStartDate = start.toISOString();
-          }
-        }
-        if (cancelled) return;
-        setPackageStartDate(calculatedPackageStartDate);
-
-        // --- 3. Count actual published ads (pending + approved, not expired) ---
-        if (calculatedPackageStartDate) {
-          const { data: adsList, error: countErr } = await supabase
-            .from('ads_payment')
-            .select('id, status, upload_date, expires_at')
-            .eq('user_id', user.id)
-            .gte('upload_date', calculatedPackageStartDate);
-
-          if (!countErr && Array.isArray(adsList)) {
-            const count = adsList.filter(ad => {
-              return ad.status === 'pending' || ad.status === 'approved';
-            }).length;
-            if (!cancelled) setActualPublishedAdsCount(count);
-          } else {
-            if (!cancelled) setActualPublishedAdsCount(0);
-            console.error('PublishAd: error counting user ads from ads_payment', countErr);
-          }
-        } else {
-          if (!cancelled) setActualPublishedAdsCount(0); // Cannot determine count without start date
-        }
-      } catch (err) {
-        console.error('PublishAd: failed fetching plan row', err);
-        if (!cancelled) {
-          setPackagePublishAdsCount(null);
-          setActualPublishedAdsCount(null);
-          setPackageStartDate(null);
-        }
-      } finally {
-        if (!cancelled) setIsPlanLoading(false);
-      }
-    };
-
-    fetchPlanRow();
-    return () => { cancelled = true; }; // Cleanup function
-  }, [user?.id, basePlan, normalizedRoleFromDB]); // Dependencies
+  // All ads_payment counting is done server-side. Frontend must not query ads_payment directly.
+  // We rely on `fetchPackageRemaining()` (above) to populate package counts and days remaining.
 
   // Fetch package expiry date and calculate remaining days
   useEffect(() => {
