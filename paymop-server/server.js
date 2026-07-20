@@ -2702,7 +2702,7 @@ app.get('/api/ads/package-remaining', verifyJwtToken, async (req, res) => {
       // Exact type match first (e.g. gold_business)
       const { data: exactPlan, error: exactErr } = await supabase
         .from('plans')
-        .select('type, Publish_Ad, duration_days')
+          .select('type, Publish_Ad')
         .eq('type', normalizedRole)
         .maybeSingle();
       console.log(`[PACKAGE-REMAINING] DEBUG exact match (${normalizedRole}):`, exactPlan, exactErr);
@@ -2714,7 +2714,7 @@ app.get('/api/ads/package-remaining', verifyJwtToken, async (req, res) => {
       if (!planRow) {
         const { data: ilikePlan, error: ilikeErr } = await supabase
           .from('plans')
-          .select('type, Publish_Ad, duration_days')
+          .select('type, Publish_Ad')
           .ilike('type', `%${normalizedRole}%`)
           .maybeSingle();
         console.log(`[PACKAGE-REMAINING] DEBUG ilike match (%${normalizedRole}%):`, ilikePlan, ilikeErr);
@@ -2730,7 +2730,7 @@ app.get('/api/ads/package-remaining', verifyJwtToken, async (req, res) => {
         if (basePlan) {
           const { data: basePlanRow, error: baseErr } = await supabase
             .from('plans')
-            .select('type, Publish_Ad, duration_days')
+          .select('type, Publish_Ad')
             .ilike('type', `%${basePlan}%`)
             .maybeSingle();
           console.log(`[PACKAGE-REMAINING] DEBUG base match (%${basePlan}%):`, basePlanRow, baseErr);
@@ -2745,7 +2745,7 @@ app.get('/api/ads/package-remaining', verifyJwtToken, async (req, res) => {
         const { data: allPlans, error: allErr } = await supabase
           .from('plans')
 
-          .select('type, Publish_Ad, duration_days')
+          .select('type, Publish_Ad')
         console.log(`[PACKAGE-REMAINING] DEBUG fetching all plans:`, allPlans?.length || 0, 'records', allErr);
         if (allErr) {
           console.error('[PACKAGE-REMAINING] DEBUG all plans error:', allErr);
@@ -2788,7 +2788,7 @@ app.get('/api/ads/package-remaining', verifyJwtToken, async (req, res) => {
         if (baseToken) {
           const { data: tokenPlans, error: tokenErr } = await supabase
             .from('plans')
-            .select('type, Publish_Ad, duration_days')
+            .select('type, Publish_Ad')
             .ilike('type', `%${baseToken}%`)
             .limit(5);
 
