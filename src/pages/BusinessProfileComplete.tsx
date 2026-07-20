@@ -25,6 +25,8 @@ export default function BusinessProfileComplete() {
   const [previews, setPreviews] = useState<{ storeImage: string | null; licenseImage: string | null }>({ storeImage: null, licenseImage: null });
   const [loading, setLoading] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [businessStatus, setBusinessStatus] = useState<'pending' | 'approved' | 'rejected' | null>(null);
+  const [rejectionReason, setRejectionReason] = useState<string | null>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
   const { completeProfile, logout } = useAuth();
@@ -46,6 +48,36 @@ export default function BusinessProfileComplete() {
       if (previews.licenseImage) URL.revokeObjectURL(previews.licenseImage);
     };
   }, [previews.storeImage, previews.licenseImage]);
+
+  // fetch current business status and rejection reason
+  useEffect(() => {
+    const loadBusinessStatus = async () => {
+      try {
+        const { data: { user }, error: userErr } = await supabase.auth.getUser();
+        if (userErr || !user) return;
+
+        const { data: business, error: businessErr } = await supabase
+          .from('businesses')
+          .select('status, reason')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (businessErr) {
+          console.warn('BusinessProfileComplete: failed to load business status', businessErr);
+          return;
+        }
+
+        if (business) {
+          setBusinessStatus(business.status || null);
+          setRejectionReason(business.reason || null);
+        }
+      } catch (error) {
+        console.error('BusinessProfileComplete: loadBusinessStatus error', error);
+      }
+    };
+
+    loadBusinessStatus();
+  }, []);
 
   // دالة لاقتطاع الصورة
   const handleCropComplete = useCallback(async (crop: PixelCrop, image: HTMLImageElement) => {
@@ -282,7 +314,9 @@ export default function BusinessProfileComplete() {
           .from('businesses')
           .update({ 
             store_image_url: storeImageUrl, 
-            license_image_url: licenseImageUrl 
+            license_image_url: licenseImageUrl,
+            status: 'pending',
+            reason: null
           })
           .eq('user_id', userId)
           .select();
@@ -308,7 +342,9 @@ export default function BusinessProfileComplete() {
             owner_name: metadata.full_name || metadata.owner_name || '',
             address: metadata.address || '',
             business_type: metadata.business_type || '',
-            id_last6: metadata.id_last6 || ''
+            id_last6: metadata.id_last6 || '',
+            status: 'pending',
+            reason: null
           })
           .select();
 
@@ -322,15 +358,13 @@ export default function BusinessProfileComplete() {
         throw new Error(`${t('data_save_failed')}: ${resultError.message}`);
       }
 
-      // 5. إتمام العملية
-      completeProfile();
+      // 5. إتمام العملية: حالة التحقق ستصبح قيد المراجعة
+      setBusinessStatus('pending');
+      setRejectionReason(null);
       toast({
         title: t('business_profile_completed_successfully'),
-        description: t('business_data_saved_redirecting'),
+        description: t('business_data_saved_redirecting') || 'تم إرسال بيانات النشاط التجاري بنجاح، وهي الآن قيد المراجعة.'
       });
-      setTimeout(() => {
-        navigate('/dashboard');
-      }, 2000);
 
     } catch (error: any) {
       console.error('[BusinessProfile] handleSubmit error:', error);
@@ -450,6 +484,18 @@ export default function BusinessProfileComplete() {
             </CardHeader>
             <CardContent className="p-4">
               <form onSubmit={handleSubmit}>
+                {businessStatus === 'pending' && (
+                  <div className="mb-4 rounded-lg border border-yellow-400 bg-yellow-50 p-4 text-yellow-900">
+                    <p className="font-semibold">{t('business_registration_under_review') || 'طلبك قيد المراجعة'}</p>
+                    <p>{t('business_registration_under_review_description') || 'سيتم مراجعة بياناتك التجارية قريباً. لا يمكنك الدخول إلى التطبيق حتى يتم الموافقة على طلبك.'}</p>
+                  </div>
+                )}
+                {businessStatus === 'rejected' && (
+                  <div className="mb-4 rounded-lg border border-red-400 bg-red-50 p-4 text-red-900">
+                    <p className="font-semibold">{t('business_registration_rejected') || 'تم رفض طلب التسجيل'}</p>
+                    <p>{rejectionReason || t('business_registration_rejected_description') || 'يرجى تعديل البيانات وإعادة إرسال نموذج التحقق.'}</p>
+                  </div>
+                )}
               <div className="mb-6">
                 <h2 className="text-lg font-semibold text-black mb-3">{t('store_image')}</h2>
                 <ImageUploader
