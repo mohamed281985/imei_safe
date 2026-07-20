@@ -196,159 +196,69 @@ const ProfileMenuPage: React.FC = () => {
         fetchSupportInfo();
     }, []);
 
-    // Fetch package information
+    // Fetch package information from server
     useEffect(() => {
         const fetchPackageInfo = async () => {
             if (!user?.id) return;
 
             try {
-                // Get user role and expiration date
-                const { data: userData, error: userError } = await supabase
-                    .from('users')
-                    .select('role, expires_at')
-                    .eq('id', user.id)
-                    .maybeSingle();
+                let token: string | undefined;
+                try {
+                    const sessionRes: any = await supabase.auth.getSession();
+                    token = sessionRes?.data?.session?.access_token;
+                } catch (e) {
+                    try {
+                        // @ts-ignore
+                        const sess = await supabase.auth.session();
+                        // @ts-ignore
+                        token = sess?.access_token;
+                    } catch (e2) {
+                        token = undefined;
+                    }
+                }
 
-                if (userError || !userData) {
-                    console.error('Error fetching user data:', userError);
+                const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '';
+                const api = (path: string) => (API_BASE ? `${API_BASE}${path}` : path);
+
+                const resp = await fetch(api('/api/ads/package-remaining'), {
+                    headers: token ? { Authorization: `Bearer ${token}` } : {}
+                });
+
+                if (!resp.ok) {
+                    console.error('Error fetching package info from server:', resp.status);
                     return;
                 }
 
-                // Determine plan type
-                const rawRole = String(userData.role || '').toLowerCase().trim();
-                const normalizedRole = rawRole.replace(/[\s\-]+/g, '_');
-                const basePlan = normalizedRole.split('_')[0];
-
-                // Get plan information
-                let plan = null;
-                const normalizedFull = normalizedRole || String(user?.role || '').toLowerCase().trim().replace(/[\s\-]+/g, '_');
-
-                // Try exact match with full normalized role
-                if (normalizedFull) {
-                    const exact = await supabase.from('plans').select('*').eq('type', normalizedFull).maybeSingle();
-                    plan = exact.data;
-                }
-
-                // Try ilike with full normalized role if exact not found
-                if (!plan && normalizedFull) {
-                    const res2 = await supabase.from('plans').select('*').ilike('type', `%${normalizedFull}%`).maybeSingle();
-                    plan = res2.data;
-                }
-
-                // Fallback to searching by base token
-                if (!plan) {
-                    const res3 = await supabase.from('plans').select('*').ilike('type', `%${basePlan}%`).maybeSingle();
-                    plan = res3.data;
-                }
-
-                // If DB queries didn't return a row, fetch all plans and try local match
-                if (!plan) {
-                    try {
-                        const allRes = await supabase.from('plans').select('*');
-                        const list = allRes.data || [];
-                        const found = list.find((r: any) => {
-                            const typ = String(r.type || '').toLowerCase().trim();
-                            return (
-                                (normalizedFull && typ.includes(normalizedFull)) ||
-                                (basePlan && typ.includes(basePlan))
-                            );
-                        });
-                        plan = found || null;
-                    } catch (scanErr) {
-                        console.error('Error in local search:', scanErr);
-                    }
-                }
-
-                // Try users_plans as fallback
-                if (!plan) {
-                    try {
-                        const upRes = await supabase.from('users_plans').select('*').eq('user_id', user.id).maybeSingle();
-                        const up = upRes.data;
-
-                        if (up) {
-                            const goldQuota = up.gold_ad ?? up.gold_ads ?? up.publish_ad ?? up.publishAd ?? null;
-                            const silverQuota = up.silver_ad ?? up.silver_ads ?? null;
-                            const quota = basePlan === 'gold' ? goldQuota : basePlan === 'silver' ? silverQuota : null;
-
-                            if (quota != null) {
-                                const qnum = Number(quota);
-                                if (Number.isFinite(qnum)) {
-                                    plan = { Publish_Ad: qnum };
-                                }
-                            }
-                        }
-                    } catch (upErr) {
-                        console.error('Error in users_plans search:', upErr);
-                    }
-                }
-
-                // --- 2. Determine packageStartDate (Latest payment for current cycle) ---
-                let packageStartDate: string | null = null;
-                const { data: latestPaid, error: latestPaidErr } = await supabase
-                    .from('ads_payment')
-                    .select('payment_date')
-                    .eq('user_id', user.id)
-                    .eq('is_paid', true)
-                    .eq('type', normalizedFull)
-                    .order('payment_date', { ascending: false }) // جلب أحدث دفعة لتبدأ الدورة منها
-                    .limit(1)
-                    .maybeSingle();
-
-                if (!latestPaidErr && latestPaid && latestPaid.payment_date) {
-                    packageStartDate = latestPaid.payment_date;
+                const json = await resp.json();
+                if (json.ok && json.isPackageUser) {
+                    setPackageInfo({
+                        planType: json.planType || 'UNKNOWN',
+                        expiresAt: '',
+                        daysRemaining: json.daysRemaining || 0,
+                        publishAdsCount: json.publishAdsCount || 0,
+                        publishedAdsCount: json.actualPublishedAdsCount || 0,
+                        remainingAds: json.remainingAds || 0
+                    });
                 } else {
-                    // Fallback: use user's expires_at and plan duration
-                    const planDuration = plan?.duration_days ? Number(plan.duration_days) : 30;
-                    if (userData.expires_at) {
-                        const expiresAt = new Date(userData.expires_at);
-                        const start = new Date(expiresAt);
-                        start.setDate(start.getDate() - planDuration);
-                        packageStartDate = start.toISOString();
-                    }
+                    // User is not a package user
+                    setPackageInfo({
+                        planType: 'NONE',
+                        expiresAt: '',
+                        daysRemaining: 0,
+                        publishAdsCount: 0,
+                        publishedAdsCount: 0,
+                        remainingAds: 0
+                    });
                 }
-
-                // --- 3. Count actual published ads (pending + approved) since package start ---
-                let actualPublishedCount = 0;
-                if (packageStartDate) {
-                    const { data: adsList, error: countErr } = await supabase
-                        .from('ads_payment')
-                        .select('id, status, upload_date')
-                        .eq('user_id', user.id)
-                        .gte('upload_date', packageStartDate);
-
-                    if (!countErr && Array.isArray(adsList)) {
-                        actualPublishedCount = adsList.filter(ad => ad.status === 'pending' || ad.status === 'approved').length;
-                    }
-                }
-
-                // Calculate remaining ads
-                const publishVal = plan?.Publish_Ad ?? plan?.publish_ad ?? plan?.publishAd ?? plan?.publish_ads ?? plan?.publishAds ?? null;
-                const publishAdsCount = publishVal != null ? Number(publishVal) : 0;
-                const remainingAds = Math.max(0, publishAdsCount - actualPublishedCount);
-
-                // Calculate remaining days
-                let daysRemaining = 0;
-                if (userData.expires_at) {
-                    const expiryDate = new Date(userData.expires_at);
-                    const today = new Date();
-                    const diffTime = expiryDate.getTime() - today.getTime();
-                    daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                }
-
-                setPackageInfo({
-                    planType: basePlan.toUpperCase(),
-                    expiresAt: userData.expires_at || '',
-                    daysRemaining: Math.max(0, daysRemaining),
-                    publishAdsCount,
-                    publishedAdsCount: actualPublishedCount,
-                    remainingAds
-                });
             } catch (err) {
                 console.error('Error fetching package info:', err);
             }
         };
 
         fetchPackageInfo();
+        // Refresh every 30 seconds
+        const interval = setInterval(fetchPackageInfo, 30000);
+        return () => clearInterval(interval);
     }, [user?.id]);
 
     // Check biometric status on page load

@@ -2661,6 +2661,150 @@ app.post('/api/ads/package-publish', verifyJwtToken, paymentLimiter, rateLimitMi
   }
 });
 
+// Endpoint لحساب عدد الإعلانات المتبقية من باقة المستخدم
+app.get('/api/ads/package-remaining', verifyJwtToken, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    // 1) جلب دور المستخدم ونوع الباقة
+    const { data: userData, error: userErr } = await supabase
+      .from('users')
+      .select('role, expires_at')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (userErr || !userData) {
+      console.error('package-remaining: error fetching user data', userErr);
+      return res.status(400).json({ error: 'User not found' });
+    }
+
+    const normalizedRole = String(userData.role || '').toLowerCase().trim().replace(/[\s\-]+/g, '_');
+    if (!normalizedRole.includes('gold') && !normalizedRole.includes('silver')) {
+      return res.json({
+        ok: true,
+        isPackageUser: false,
+        publishAdsCount: 0,
+        actualPublishedAdsCount: 0,
+        remainingAds: 0,
+        daysRemaining: 0,
+        planType: null
+      });
+    }
+
+    // 2) جلب الحد الأقصى من جدول plans
+    let maxAdsAllowed = null;
+    try {
+      const { data: planRow, error: planErr } = await supabase
+        .from('plans')
+        .select('type, Publish_Ad, duration_days')
+        .ilike('type', `%${normalizedRole}%`)
+        .maybeSingle();
+
+      if (!planErr && planRow) {
+        maxAdsAllowed = planRow.Publish_Ad;
+        if (maxAdsAllowed != null) maxAdsAllowed = Number(maxAdsAllowed);
+      }
+    } catch (e) {
+      console.error('package-remaining: error fetching plan', e);
+    }
+
+    if (!maxAdsAllowed || !Number.isFinite(maxAdsAllowed)) {
+      return res.status(400).json({ error: 'Could not determine plan quota' });
+    }
+
+    // 3) جلب تاريخ بداية الباقة الحالية
+    let packageStartDate = null;
+    try {
+      const { data: latestPaid, error: latestErr } = await supabase
+        .from('ads_payment')
+        .select('payment_date')
+        .eq('user_id', userId)
+        .eq('is_paid', true)
+        .eq('type', normalizedRole)
+        .order('payment_date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!latestErr && latestPaid?.payment_date) {
+        packageStartDate = latestPaid.payment_date;
+      }
+    } catch (e) {
+      console.error('package-remaining: error fetching payment date', e);
+    }
+
+    // 4) Fallback لحساب تاريخ البداية من expires_at
+    if (!packageStartDate) {
+      try {
+        let planDuration = 30;
+        try {
+          const { data: planRow } = await supabase
+            .from('plans')
+            .select('duration_days')
+            .ilike('type', `%${normalizedRole}%`)
+            .maybeSingle();
+
+          if (planRow?.duration_days) planDuration = Number(planRow.duration_days);
+        } catch { }
+
+        if (userData.expires_at) {
+          const expiresAt = new Date(userData.expires_at);
+          const start = new Date(expiresAt);
+          start.setDate(start.getDate() - planDuration);
+          packageStartDate = start.toISOString();
+        }
+      } catch (e) {
+        console.error('package-remaining: error in fallback calculation', e);
+      }
+    }
+
+    // 5) عدّ الإعلانات الحالية (pending + approved + any non-expired ads)
+    let currentAdsCount = 0;
+    if (packageStartDate) {
+      try {
+        const { data: adsList, error: countErr } = await supabase
+          .from('ads_payment')
+          .select('id, status, upload_date')
+          .eq('user_id', userId)
+          .gte('upload_date', packageStartDate);
+
+        if (!countErr && Array.isArray(adsList)) {
+          currentAdsCount = adsList.filter(ad => ad.status === 'pending' || ad.status === 'approved').length;
+        }
+      } catch (e) {
+        console.error('package-remaining: error counting ads', e);
+      }
+    }
+
+    // 6) حساب الأيام المتبقية
+    let daysRemaining = 0;
+    if (userData.expires_at) {
+      const expiryDate = new Date(userData.expires_at);
+      const today = new Date();
+      const diffTime = expiryDate.getTime() - today.getTime();
+      daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    }
+
+    const remainingAds = Math.max(0, maxAdsAllowed - currentAdsCount);
+    const planType = normalizedRole.split('_')[0].toUpperCase();
+
+    console.log(`[PACKAGE-REMAINING] userId=${userId} | maxAdsAllowed=${maxAdsAllowed} | currentAdsCount=${currentAdsCount} | remainingAds=${remainingAds} | daysRemaining=${daysRemaining}`);
+
+    return res.json({
+      ok: true,
+      isPackageUser: true,
+      publishAdsCount: maxAdsAllowed,
+      actualPublishedAdsCount: currentAdsCount,
+      remainingAds,
+      daysRemaining: Math.max(0, daysRemaining),
+      planType
+    });
+  } catch (e) {
+    console.error('Error in /api/ads/package-remaining:', e);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // نقطة نهاية لإنشاء الفواتير
 app.post("/paymob/create-invoice", async (req, res) => {
   // per-operation timeout guard

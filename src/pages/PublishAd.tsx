@@ -114,18 +114,78 @@ const PublishAd: React.FC = () => {
   const [packageDaysRemaining, setPackageDaysRemaining] = useState<number | null>(null);
   // عدد الإعلانات المنشورة فعلياً (pending + approved وغير منتهية الصلاحية) من جدول ads_payment
   const [actualPublishedAdsCount, setActualPublishedAdsCount] = useState<number | null>(null);
+  // عدد الإعلانات المتبقية (من الخادم)
+  const [packageAdsRemaining, setPackageAdsRemaining] = useState<number | null>(null);
   // تاريخ بداية الباقة (لعد الإعلانات المنشورة ضمنها)
   const [packageStartDate, setPackageStartDate] = useState<string | null>(null);
 
-  // Derived remaining ads to display (plans.Publish_Ad - published ads count from users_plans)
+  // Derived remaining ads to display (يتم الحصول عليه من الخادم الآن)
   const packagePublishAdsRemaining = useMemo(() => {
+    // إذا كان لدينا القيمة من الخادم، استخدمها
+    if (packageAdsRemaining != null) {
+      return packageAdsRemaining;
+    }
+    // Fallback للحساب المحلي إذا لم يكن متاحاً
     if (packagePublishAdsCount != null && actualPublishedAdsCount != null) {
       const diff = Number(packagePublishAdsCount) - Number(actualPublishedAdsCount);
       return Number.isFinite(diff) ? Math.max(0, diff) : null;
     }
     if (packagePublishAdsCount != null) return packagePublishAdsCount;
     return null; // If actual count is not available, show max allowed
-  }, [packagePublishAdsCount, actualPublishedAdsCount]);
+  }, [packageAdsRemaining, packagePublishAdsCount, actualPublishedAdsCount]);
+
+  // Fetch package remaining ads from server
+  const fetchPackageRemaining = async () => {
+    if (!user?.id) return;
+
+    try {
+      let token: string | undefined;
+      try {
+        const sessionRes: any = await supabase.auth.getSession();
+        token = sessionRes?.data?.session?.access_token;
+      } catch (e) {
+        try {
+          // @ts-ignore
+          const sess = await supabase.auth.session();
+          // @ts-ignore
+          token = sess?.access_token;
+        } catch (e2) {
+          token = undefined;
+        }
+      }
+
+      const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '';
+      const api = (path: string) => (API_BASE ? `${API_BASE}${path}` : path);
+
+      const resp = await fetch(api('/api/ads/package-remaining'), {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+
+      if (!resp.ok) {
+        console.error('Failed to fetch package remaining:', resp.status);
+        return;
+      }
+
+      const json = await resp.json();
+      if (json.ok) {
+        setPackagePublishAdsCount(json.publishAdsCount);
+        setActualPublishedAdsCount(json.actualPublishedAdsCount);
+        setPackageAdsRemaining(json.remainingAds);
+        setPackageDaysRemaining(json.daysRemaining);
+        console.log(`[PublishAd] Package stats: remaining=${json.remainingAds}, published=${json.actualPublishedAdsCount}, max=${json.publishAdsCount}`);
+      }
+    } catch (err) {
+      console.error('Error fetching package remaining:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (!user?.id || !isPackageUser) return;
+    fetchPackageRemaining();
+    // Refresh every 30 seconds
+    const interval = setInterval(fetchPackageRemaining, 30000);
+    return () => clearInterval(interval);
+  }, [user?.id, isPackageUser]);
 
   useEffect(() => {
     if (!basePlan) return;
@@ -809,6 +869,8 @@ const PublishAd: React.FC = () => {
             title: t('success'), 
             description: 'تم إرسال إعلانك بنجاح! سيتم مراجعته ونشره في أقرب وقت.' 
           });
+          // Refresh package remaining ads from server
+          await fetchPackageRemaining();
           goToMyAdsAfterDelay();
           return; // done — server handled DB insertion and no payment gateway is required
         } catch (err: any) {
