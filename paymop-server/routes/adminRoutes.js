@@ -371,7 +371,42 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
         const { error: notifErr } = await supabase.from('notifications').insert(notif);
         if (notifErr) console.warn('/admin/businesses/:userId/approve notification insert failed', notifErr);
 
-        // لا يتم إرسال إشعارات FCM أو بريد إلكتروني لطلبات التحقق من الشركات
+        // 2. إرسال إشعار FCM
+        if (userData.fcm_token && sendFCMFn) {
+          try {
+            const fcmTitle = getNotificationText(userData?.language, 'business.approved_fcm_title', 'Business Approved', 'تمت الموافقة على نشاطك');
+            const fcmBody = getNotificationText(userData?.language, 'business.approved_fcm_body', 'Check the app for more details.', 'يرجى مراجعة التطبيق لمعرفة التفاصيل.');
+            await sendFCMFn({
+              token: userData.fcm_token,
+              title: fcmTitle,
+              body: fcmBody
+            });
+            console.log('FCM business approval sent successfully');
+          } catch (fcmErr) {
+            console.warn('/admin/businesses/:userId/approve FCM error:', fcmErr);
+          }
+        }
+
+        // 3. إرسال بريد إلكتروني
+        if (userData.email) {
+          try {
+            const emailSubject = getNotificationText(userData?.language, 'business.approved_email_subject', 'Business Registration Approved', 'تمت الموافقة على تسجيل نشاطك التجاري');
+            const emailBody = getNotificationText(userData?.language, 'business.approved_email_body', 
+              'Your business registration has been successfully approved. You can now access all features and manage your business profile.',
+              'تمت مراجعة تسجيل نشاطك التجاري والموافقة عليه بنجاح. يمكنك الآن الوصول إلى جميع الميزات وإدارة ملف نشاطك التجاري.'
+            );
+            
+            await sendEmail({
+              to: userData.email,
+              subject: emailSubject,
+              text: emailBody,
+              html: `<p>${emailBody}</p>`
+            });
+            console.log('Business approval email sent successfully');
+          } catch (emailErr) {
+            console.warn('/admin/businesses/:userId/approve email error:', emailErr);
+          }
+        }
       }
 
       return res.status(200).json({ success: true, data });
@@ -445,7 +480,42 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
         const { error: notifErr } = await supabase.from('notifications').insert(notif);
         if (notifErr) console.warn('/admin/businesses/:userId/reject notification insert failed', notifErr);
 
-        // لا يتم إرسال إشعارات FCM أو بريد إلكتروني لطلبات التحقق من الشركات
+        // 2. إرسال إشعار FCM
+        if (userData.fcm_token && sendFCMFn) {
+          try {
+            const fcmTitle = getNotificationText(userData?.language, 'business.rejected_fcm_title', 'Business Registration Rejected', 'تم رفض تسجيل نشاطك');
+            const fcmBody = getNotificationText(userData?.language, 'business.rejected_fcm_body', 'Please check the app for more details.', 'يرجى مراجعة التطبيق لمعرفة التفاصيل.');
+            await sendFCMFn({
+              token: userData.fcm_token,
+              title: fcmTitle,
+              body: fcmBody
+            });
+            console.log('FCM business rejection sent successfully');
+          } catch (fcmErr) {
+            console.warn('/admin/businesses/:userId/reject FCM error:', fcmErr);
+          }
+        }
+
+        // 3. إرسال بريد إلكتروني
+        if (userData.email) {
+          try {
+            const emailSubject = getNotificationText(userData?.language, 'business.rejected_email_subject', 'Business Registration Rejected', 'تم رفض تسجيل نشاطك التجاري');
+            const emailBody = getNotificationText(userData?.language, 'business.rejected_email_body', 
+              `Your business registration was rejected. Reason: ${reason}`,
+              `تم رفض تسجيل نشاطك التجاري. السبب: ${reason}`
+            );
+            
+            await sendEmail({
+              to: userData.email,
+              subject: emailSubject,
+              text: emailBody,
+              html: `<p>${emailBody}</p>`
+            });
+            console.log('Business rejection email sent successfully');
+          } catch (emailErr) {
+            console.warn('/admin/businesses/:userId/reject email error:', emailErr);
+          }
+        }
       }
 
       return res.status(200).json({ success: true, data });
