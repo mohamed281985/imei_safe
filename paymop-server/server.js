@@ -1203,7 +1203,7 @@ app.post('/api/register', async (req, res) => {
         id_last6: encIdLast6 ? JSON.stringify(encIdLast6) : null,
         business_type: business_type || '',
         status: 'pending',
-reason: null,
+        reason: null,
       };
 
       const { error: businessError } = await supabase
@@ -2644,7 +2644,13 @@ app.post('/api/ads/package-publish', verifyJwtToken, paymentLimiter, rateLimitMi
         }
       }
 
-      return res.json({ ok: true, adId: inserted.id });
+      return res.json({
+        ok: true,
+        adId: inserted.id,
+        currentAdsCount: currentAdsCount + 1,
+        remainingAds: maxAdsAllowed - (currentAdsCount + 1),
+        maxAdsAllowed
+      });
     } catch (e) {
       console.error('package-publish: unexpected error', e);
       return res.status(500).json({ error: 'Server error' });
