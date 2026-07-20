@@ -2694,16 +2694,66 @@ app.get('/api/ads/package-remaining', verifyJwtToken, async (req, res) => {
 
     // 2) جلب الحد الأقصى من جدول plans
     let maxAdsAllowed = null;
+    let planDuration = 30;
+    let planRow = null;
     try {
-      const { data: planRow, error: planErr } = await supabase
+      // Exact type match first (e.g. gold_business)
+      const { data: exactPlan, error: exactErr } = await supabase
         .from('plans')
         .select('type, Publish_Ad, duration_days')
-        .ilike('type', `%${normalizedRole}%`)
+        .eq('type', normalizedRole)
         .maybeSingle();
+      if (!exactErr && exactPlan) {
+        planRow = exactPlan;
+      }
 
-      if (!planErr && planRow) {
+      // If no exact match, search by normalized role using ilike
+      if (!planRow) {
+        const { data: ilikePlan, error: ilikeErr } = await supabase
+          .from('plans')
+          .select('type, Publish_Ad, duration_days')
+          .ilike('type', `%${normalizedRole}%`)
+          .maybeSingle();
+        if (!ilikeErr && ilikePlan) {
+          planRow = ilikePlan;
+        }
+      }
+
+      // If still no plan, search by base plan token (gold/silver)
+      if (!planRow) {
+        const basePlan = normalizedRole.split('_')[0];
+        if (basePlan) {
+          const { data: basePlanRow, error: baseErr } = await supabase
+            .from('plans')
+            .select('type, Publish_Ad, duration_days')
+            .ilike('type', `%${basePlan}%`)
+            .maybeSingle();
+          if (!baseErr && basePlanRow) {
+            planRow = basePlanRow;
+          }
+        }
+      }
+
+      // If still not found, fetch all plans and search locally
+      if (!planRow) {
+        const { data: allPlans, error: allErr } = await supabase
+          .from('plans')
+          .select('type, Publish_Ad, duration_days');
+        if (!allErr && Array.isArray(allPlans)) {
+          const found = allPlans.find((p) => {
+            const pType = String(p.type || '').toLowerCase().trim();
+            return pType.includes(normalizedRole) || pType.includes(normalizedRole.split('_')[0]);
+          });
+          if (found) {
+            planRow = found;
+          }
+        }
+      }
+
+      if (planRow) {
         maxAdsAllowed = planRow.Publish_Ad;
         if (maxAdsAllowed != null) maxAdsAllowed = Number(maxAdsAllowed);
+        if (planRow.duration_days != null) planDuration = Number(planRow.duration_days);
       }
     } catch (e) {
       console.error('package-remaining: error fetching plan', e);
