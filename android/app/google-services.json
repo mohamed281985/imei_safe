@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "1011442883573",
-    "project_id": "imeisafe-b2dd8",
-    "storage_bucket": "imeisafe-b2dd8.firebasestorage.app"
+    "project_number": "378247456995",
+    "project_id": "imei-safe-daff2",
+    "storage_bucket": "imei-safe-daff2.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:1011442883573:android:8641659398940ed8a79ebc",
+        "mobilesdk_app_id": "1:378247456995:android:02140a97949a4bf521bdd6",
         "android_client_info": {
           "package_name": "com.imeisafe.app"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyB9SpSv4SvFQ8cL5Nxq7D_CZyfDucLHw9k"
+          "current_key": "AIzaSyBHE3xsNwTyiQOdjUJrbMs-u-_4uhTw4Ko"
         }
       ],
       "services": {

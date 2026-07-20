@@ -2697,12 +2697,15 @@ app.get('/api/ads/package-remaining', verifyJwtToken, async (req, res) => {
     let planDuration = 30;
     let planRow = null;
     try {
+      console.log(`[PACKAGE-REMAINING] DEBUG: searching for plan with normalizedRole="${normalizedRole}"`);
+      
       // Exact type match first (e.g. gold_business)
       const { data: exactPlan, error: exactErr } = await supabase
         .from('plans')
-        .select('type, Publish_Ad, duration_days')
+        .select('type, Publish_Ad, publish_ad, publishAd, publish_ads, publishAds, duration_days')
         .eq('type', normalizedRole)
         .maybeSingle();
+      console.log(`[PACKAGE-REMAINING] DEBUG exact match (${normalizedRole}):`, exactPlan, exactErr);
       if (!exactErr && exactPlan) {
         planRow = exactPlan;
       }
@@ -2711,9 +2714,10 @@ app.get('/api/ads/package-remaining', verifyJwtToken, async (req, res) => {
       if (!planRow) {
         const { data: ilikePlan, error: ilikeErr } = await supabase
           .from('plans')
-          .select('type, Publish_Ad, duration_days')
+          .select('type, Publish_Ad, publish_ad, publishAd, publish_ads, publishAds, duration_days')
           .ilike('type', `%${normalizedRole}%`)
           .maybeSingle();
+        console.log(`[PACKAGE-REMAINING] DEBUG ilike match (%${normalizedRole}%):`, ilikePlan, ilikeErr);
         if (!ilikeErr && ilikePlan) {
           planRow = ilikePlan;
         }
@@ -2722,12 +2726,14 @@ app.get('/api/ads/package-remaining', verifyJwtToken, async (req, res) => {
       // If still no plan, search by base plan token (gold/silver)
       if (!planRow) {
         const basePlan = normalizedRole.split('_')[0];
+        console.log(`[PACKAGE-REMAINING] DEBUG: trying base token "${basePlan}"`);
         if (basePlan) {
           const { data: basePlanRow, error: baseErr } = await supabase
             .from('plans')
-            .select('type, Publish_Ad, duration_days')
+            .select('type, Publish_Ad, publish_ad, publishAd, publish_ads, publishAds, duration_days')
             .ilike('type', `%${basePlan}%`)
             .maybeSingle();
+          console.log(`[PACKAGE-REMAINING] DEBUG base match (%${basePlan}%):`, basePlanRow, baseErr);
           if (!baseErr && basePlanRow) {
             planRow = basePlanRow;
           }
@@ -2738,12 +2744,21 @@ app.get('/api/ads/package-remaining', verifyJwtToken, async (req, res) => {
       if (!planRow) {
         const { data: allPlans, error: allErr } = await supabase
           .from('plans')
-          .select('type, Publish_Ad, duration_days');
-        if (!allErr && Array.isArray(allPlans)) {
+          .select('type, Publish_Ad, publish_ad, publishAd, publish_ads, publishAds, duration_days');
+        console.log(`[PACKAGE-REMAINING] DEBUG fetching all plans:`, allPlans?.length || 0, 'records', allErr);
+        if (allErr) {
+          console.error('[PACKAGE-REMAINING] DEBUG all plans error:', allErr);
+        } else if (Array.isArray(allPlans)) {
+          // Log each plan's type and publish_ad value for debugging
+          allPlans.forEach((p, i) => {
+            const publishVal = p.Publish_Ad ?? p.publish_ad ?? p.publishAd ?? p.publish_ads ?? p.publishAds ?? '???';
+            console.log(`[PACKAGE-REMAINING] DEBUG all[${i}]:`, { type: p.type, publish_column_value: publishVal });
+          });
           const found = allPlans.find((p) => {
             const pType = String(p.type || '').toLowerCase().trim();
             return pType.includes(normalizedRole) || pType.includes(normalizedRole.split('_')[0]);
           });
+          console.log(`[PACKAGE-REMAINING] DEBUG local scan found:`, found);
           if (found) {
             planRow = found;
           }
@@ -2757,6 +2772,8 @@ app.get('/api/ads/package-remaining', verifyJwtToken, async (req, res) => {
         maxAdsAllowed = Number.isFinite(num) ? num : null;
         if (planRow.duration_days != null) planDuration = Number(planRow.duration_days);
         console.log(`[PACKAGE-REMAINING] resolved planRow.type=${planRow.type} publishVal=${publishVal} -> maxAdsAllowed=${maxAdsAllowed} duration_days=${planRow.duration_days}`);
+      } else {
+        console.warn('[PACKAGE-REMAINING] DEBUG: no planRow found after all attempts');
       }
     } catch (e) {
       console.error('package-remaining: error fetching plan', e);
