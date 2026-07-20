@@ -296,10 +296,10 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
   const isClickable = isWhatsappEnabled; // الصورة قابلة للضغط فقط إذا كان الواتساب مفعل
 
   if (showLocalAd) {
-    return (
+      return (
       <div className="sticky top-1 z-10">
-        <div className="rounded-lg overflow-hidden shadow-2xl w-full aspect-video relative bg-black">
-          <img src={localAdImage} alt={t('local_ad')} className="w-full h-full object-cover absolute inset-0" />
+        <div className="rounded-2xl overflow-hidden shadow-2xl w-full h-[160px] relative bg-black" style={{ position: 'relative' }}>
+          <img src={localAdImage} alt={t('local_ad')} style={{ width: '100%', height: '100%', display: 'block', position: 'relative' }} />
         </div>
       </div>
     );
@@ -309,9 +309,10 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
   return (
     <div className="sticky top-1 z-10">
       {currentAdIndex < ads.length && (
-        <div className="rounded-lg overflow-hidden shadow-[0_5px_8px_rgba(0,0,0,0.6)] w-full aspect-video relative bg-gray-100 mb-3 ring-1 ring-black/5">
+        <div className="rounded-2xl overflow-hidden shadow-[0_8px_24px_rgba(0,0,0,0.18)] w-full h-[160px] relative bg-gray-100 mb-3 ring-1 ring-black/5" style={{ position: 'relative' }}>
           <div
             className={`block w-full h-full relative ${isClickable ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+            style={{ position: 'relative' }}
             onClick={(e) => {
               e.preventDefault();
               if (!isClickable) return;
@@ -321,7 +322,7 @@ const PageAdvertisement = ({ pageName }: PageAdvertisementProps) => {
             <img
               src={ads[currentAdIndex]?.image_url}
               alt={t('advertisement')}
-              className={`w-full h-full object-cover absolute inset-0 ${isClickable ? 'cursor-pointer' : 'cursor-not-allowed opacity-80'}`}
+              style={{ width: '100%', height: '100%', display: 'block', cursor: isClickable ? 'pointer' : 'not-allowed', opacity: isClickable ? 1 : 0.8 }}
               onClick={(e) => {
                 e.stopPropagation();
                 if (!isClickable) return;
