@@ -2318,7 +2318,8 @@ app.post("/paymob/create-payment", paymentLimiter, rateLimitMiddleware({ windowM
         paymob_order_id: orderData.id, // ربط الإعلان بطلب الدفع
         payment_status: 'pending', // ⭐ تغيير: حالة الدفع المبدئية
         is_paid: false,
-        status: 'pending'
+        status: 'pending',
+        transaction: 'publish'
       };
 
       try {
