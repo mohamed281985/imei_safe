@@ -358,7 +358,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
         // 1. إدراج إشعار في جدول الإشعارات
         const notifTitle = getNotificationText(userData?.language, 'business.approved_title', 'Business Registration Approved', 'تمت الموافقة على تسجيل نشاطك التجاري');
         const notifBody = getNotificationText(userData?.language, 'business.approved_body', 'Your business registration has been approved. You can now access all features.', 'تمت مراجعة تسجيل نشاطك التجاري والموافقة عليه. يمكنك الآن الوصول إلى جميع الميزات.');
-        
+
         const notif = {
           user_id: userId,
           title: notifTitle,
@@ -391,11 +391,11 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
         if (userData.email) {
           try {
             const emailSubject = getNotificationText(userData?.language, 'business.approved_email_subject', 'Business Registration Approved', 'تمت الموافقة على تسجيل نشاطك التجاري');
-            const emailBody = getNotificationText(userData?.language, 'business.approved_email_body', 
+            const emailBody = getNotificationText(userData?.language, 'business.approved_email_body',
               'Your business registration has been successfully approved. You can now access all features and manage your business profile.',
               'تمت مراجعة تسجيل نشاطك التجاري والموافقة عليه بنجاح. يمكنك الآن الوصول إلى جميع الميزات وإدارة ملف نشاطك التجاري.'
             );
-            
+
             await sendEmail({
               to: userData.email,
               subject: emailSubject,
@@ -467,7 +467,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
         // 1. إدراج إشعار في جدول الإشعارات
         const notifTitle = getNotificationText(userData?.language, 'business.rejected_title', 'Business Registration Rejected', 'تم رفض تسجيل نشاطك التجاري');
         const notifBody = getNotificationText(userData?.language, 'business.rejected_body', `Rejection reason: ${reason}`, `سبب الرفض: ${reason}`);
-        
+
         const notif = {
           user_id: userId,
           title: notifTitle,
@@ -500,11 +500,11 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
         if (userData.email) {
           try {
             const emailSubject = getNotificationText(userData?.language, 'business.rejected_email_subject', 'Business Registration Rejected', 'تم رفض تسجيل نشاطك التجاري');
-            const emailBody = getNotificationText(userData?.language, 'business.rejected_email_body', 
+            const emailBody = getNotificationText(userData?.language, 'business.rejected_email_body',
               `Your business registration was rejected. Reason: ${reason}`,
               `تم رفض تسجيل نشاطك التجاري. السبب: ${reason}`
             );
-            
+
             await sendEmail({
               to: userData.email,
               subject: emailSubject,
@@ -4075,6 +4075,54 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
 
         console.log('ads_payment update result for id=', id, 'error=', error, 'updated=', updated);
         if (error) return res.status(500).json({ success: false, error: error.message || error });
+        // إذا كان الإعلان Publish قم بمزامنة publish_ad
+        if (
+          updated &&
+          updated.type === 'publish'
+        ) {
+          if (updated.is_active && updated.status === 'approved') {
+
+            const { data: existing } = await supabase
+              .from('publish_ad')
+              .select('id')
+              .eq('ad_id', updated.id)
+              .maybeSingle();
+
+            const publishData = {
+              ad_id: updated.id,
+              image_url: updated.image_url,
+              is_active: updated.is_active,
+              location: updated.location,
+              shop_name: updated.store_name,
+              phone_number: updated.phone,
+              longitude: updated.longitude,
+              latitude: updated.latitude,
+              created_at: updated.upload_date,
+              expires_at: updated.expires_at
+            };
+
+            if (existing) {
+              await supabase
+                .from('publish_ad')
+                .update(publishData)
+                .eq('ad_id', updated.id);
+            } else {
+              await supabase
+                .from('publish_ad')
+                .insert(publishData);
+            }
+
+          } else {
+
+            await supabase
+              .from('publish_ad')
+              .update({
+                is_active: false
+              })
+              .eq('ad_id', updated.id);
+
+          }
+        }
         return res.json({ success: true, data: updated });
       } catch (e) {
         console.error('ads_payment update exception:', e);
