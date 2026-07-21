@@ -641,8 +641,9 @@ const PublishAd: React.FC = () => {
 
       // Bonus-based publish removed; proceed with normal payment flow
 
-      // Decide amount: package users (gold/silver) pay 0 here
-      const amount = isPackageUser ? 0 : (prices[duration] || 0);
+      // Decide amount: package users pay 0 only if they have remaining package slots
+      const effectivePackageRemaining = packageAdsRemaining != null ? Number(packageAdsRemaining) : null;
+      const amount = (isPackageUser && effectivePackageRemaining !== null && effectivePackageRemaining > 0) ? 0 : (prices[duration] || 0);
       const fullAdData = {
         user_id: activeUser.id,
         store_name: storeName,
@@ -673,8 +674,9 @@ const PublishAd: React.FC = () => {
         redirect_url_success: `https://imei-safe.me/paymob/redirect-success`,
         redirect_url_failed: `https://imei-safe.me/paymob/redirect-failed`
       };
-      // If user is on a package (gold/silver), call server endpoint to verify and create the ad/payment
-      if (isPackageUser) {
+      // If user is on a package AND has remaining ads in the package, call package-publish endpoint.
+      // If the packageRemaining is 0, fall through to normal payment flow so user can pay for an extra ad.
+      if (isPackageUser && (effectivePackageRemaining === null || effectivePackageRemaining > 0)) {
         try {
           // Acquire a server-authorized token (if available) to let server validate subscription
           let token: string | undefined;
@@ -840,6 +842,9 @@ const PublishAd: React.FC = () => {
               <PackageBadge user={user} />
             </div>
           </div>
+
+            {/* If package exhausted, show price and CTA hint */}
+            {/* package-exhausted notice removed as requested */}
 
 
 
@@ -1062,20 +1067,26 @@ const PublishAd: React.FC = () => {
                         <h3 className="text-base font-bold text-gray-800">{days} {t('days')}</h3>
                       </div>
 
-                      {!isPackageUser && (
-                        <div className="w-full mt-auto pt-2 border-t border-gray-100">
-                          <div className="flex items-center justify-center gap-1 mb-1">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-credit-card text-gray-400">
-                              <rect width="20" height="14" x="2" y="5" rx="2"></rect>
-                              <line x1="2" y1="10" x2="22" y2="10"></line>
-                            </svg>
-                            <span className="text-xs text-gray-600">{t('price')}</span>
+                          {/* Always show price (for package users show 'included' when they have remaining slots) */}
+                          <div className="w-full mt-auto pt-2 border-t border-gray-100">
+                            <div className="flex items-center justify-center gap-1 mb-1">
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-credit-card text-gray-400">
+                                <rect width="20" height="14" x="2" y="5" rx="2"></rect>
+                                <line x1="2" y1="10" x2="22" y2="10"></line>
+                              </svg>
+                              <span className="text-xs text-gray-600">{t('price')}</span>
+                            </div>
+                            <div className="text-lg font-bold text-gray-900 flex items-center justify-center gap-1 [&:has([data-state=checked])]:text-orange-500">
+                              {(() => {
+                                const effectivePackageRemainingInRender = packageAdsRemaining != null ? Number(packageAdsRemaining) : null;
+                                const isIncluded = isPackageUser && effectivePackageRemainingInRender !== null && effectivePackageRemainingInRender > 0;
+                                if (isIncluded) {
+                                  return (t('included') || 'مشمول');
+                                }
+                                return `${prices[days] || 0}`;
+                              })()} <span className="text-xs font-normal text-gray-500">{t('currency_short')}</span>
+                            </div>
                           </div>
-                          <div className="text-lg font-bold text-gray-900 flex items-center justify-center gap-1 [&:has([data-state=checked])]:text-orange-500">
-                            {prices[days] || 0} <span className="text-xs font-normal text-gray-500">{t('currency_short')}</span>
-                          </div>
-                        </div>
-                      )}
                     </Label>
                   ))}
                 </RadioGroup>
