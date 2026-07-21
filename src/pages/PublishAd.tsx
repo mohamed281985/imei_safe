@@ -722,26 +722,9 @@ const PublishAd: React.FC = () => {
             body: JSON.stringify(serverPayload)
           });
 
-          const respJson = await resp.json().catch(() => ({}));
-          if (respJson.requiresPayment) {
-            const invoiceUrl = respJson.invoice_url || respJson.invoiceUrl;
-            if (invoiceUrl) {
-              if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser) {
-                await window.Capacitor.Plugins.Browser.open({ url: invoiceUrl, toolbarColor: '#000000' });
-              } else {
-                window.open(invoiceUrl, '_blank', 'noopener,noreferrer');
-              }
-              toast({
-                title: t('success'),
-                description: 'تم إنشاء فاتورة الدفع، سيتم إعادة توجيهك لإتمام العملية.'
-              });
-              return;
-            }
-            throw new Error(respJson.error || t('ad_publish_package_failed'));
-          }
-
           if (!resp.ok) {
-            throw new Error(respJson.error || t('ad_publish_package_failed'));
+            const errJson = await resp.json().catch(() => ({}));
+            throw new Error(errJson.error || t('ad_publish_package_failed'));
           }
 
           toast({ 

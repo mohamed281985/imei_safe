@@ -2161,82 +2161,6 @@ const getPaymentKey = async (token, { amount, orderId, email, name, phone, redir
   }
 };
 
-const resolvePackagePublishAmount = async (adData) => {
-  try {
-    if (!adData || typeof adData !== 'object') return null;
-
-    const numericAmount = typeof adData.amount !== 'undefined' && adData.amount !== null
-      ? Number(adData.amount)
-      : null;
-    if (numericAmount && Number.isFinite(numericAmount) && numericAmount > 0) {
-      return numericAmount;
-    }
-
-    const durationDays = adData.duration_days || adData.duration || null;
-    const type = typeof adData.type === 'string' ? adData.type.trim() : null;
-    const durationCandidates = [];
-    if (durationDays !== null && typeof durationDays !== 'undefined') {
-      durationCandidates.push(durationDays);
-      const parsed = Number(durationDays);
-      if (!Number.isNaN(parsed)) durationCandidates.push(parsed);
-      durationCandidates.push(String(durationDays));
-    }
-
-    if (type) {
-      for (const d of durationCandidates) {
-        const { data: priceRow, error: priceErr } = await supabase
-          .from('ads_price')
-          .select('amount, price')
-          .eq('type', type)
-          .eq('duration_days', d)
-          .limit(1)
-          .maybeSingle();
-        if (!priceErr && priceRow) {
-          const amount = typeof priceRow.amount !== 'undefined' && priceRow.amount !== null
-            ? Number(priceRow.amount)
-            : (typeof priceRow.price !== 'undefined' && priceRow.price !== null ? Number(priceRow.price) : null);
-          if (amount && Number.isFinite(amount) && amount > 0) return amount;
-        }
-      }
-
-      const { data: priceRow, error: priceErr } = await supabase
-        .from('ads_price')
-        .select('amount, price')
-        .eq('type', type)
-        .limit(1)
-        .maybeSingle();
-      if (!priceErr && priceRow) {
-        const amount = typeof priceRow.amount !== 'undefined' && priceRow.amount !== null
-          ? Number(priceRow.amount)
-          : (typeof priceRow.price !== 'undefined' && priceRow.price !== null ? Number(priceRow.price) : null);
-        if (amount && Number.isFinite(amount) && amount > 0) return amount;
-      }
-    }
-
-    if (durationCandidates.length > 0) {
-      for (const d of durationCandidates) {
-        const { data: priceRow, error: priceErr } = await supabase
-          .from('ads_price')
-          .select('amount, price')
-          .eq('duration_days', d)
-          .limit(1)
-          .maybeSingle();
-        if (!priceErr && priceRow) {
-          const amount = typeof priceRow.amount !== 'undefined' && priceRow.amount !== null
-            ? Number(priceRow.amount)
-            : (typeof priceRow.price !== 'undefined' && priceRow.price !== null ? Number(priceRow.price) : null);
-          if (amount && Number.isFinite(amount) && amount > 0) return amount;
-        }
-      }
-    }
-
-    return null;
-  } catch (e) {
-    console.error('resolvePackagePublishAmount error:', e);
-    return null;
-  }
-};
-
 app.post("/paymob/create-payment", paymentLimiter, rateLimitMiddleware({ windowMs: 15 * 60 * 1000, max: 10 }), async (req, res) => {
   // per-operation timeout guard
   let _timedOut = false;
@@ -2658,70 +2582,8 @@ app.post('/api/ads/package-publish', verifyJwtToken, paymentLimiter, rateLimitMi
     }
 
     if (currentAdsCount >= maxAdsAllowed) {
-      console.log(`[PACKAGE-PUBLISH] quota exhausted; creating Paymob invoice instead of rejecting (${currentAdsCount}/${maxAdsAllowed})`);
-
-      const invoiceAmount = await resolvePackagePublishAmount(adData);
-      if (!invoiceAmount || !Number.isFinite(invoiceAmount) || invoiceAmount <= 0) {
-        console.error('[PACKAGE-PUBLISH] unable to resolve invoice amount for exhausted quota', { adData });
-        return res.status(500).json({ error: 'تعذر تحديد مبلغ الدفع لإعلان باقة جديد' });
-      }
-
-      let shippingData = {
-        first_name: 'Customer',
-        last_name: 'NA',
-        phone_number: adData.phone || '01000000000',
-        email: null
-      };
-      try {
-        const { data: userRec, error: userRecErr } = await supabase
-          .from('users')
-          .select('email, full_name, username')
-          .eq('id', userId)
-          .maybeSingle();
-        if (!userRecErr && userRec) {
-          shippingData.email = userRec.email || shippingData.email;
-          if (userRec.full_name) {
-            const [first, ...rest] = userRec.full_name.split(' ');
-            shippingData.first_name = first || shippingData.first_name;
-            shippingData.last_name = rest.join(' ') || shippingData.last_name;
-          } else if (userRec.username) {
-            shippingData.first_name = userRec.username;
-          }
-        }
-      } catch (e) {
-        console.warn('[PACKAGE-PUBLISH] failed to fetch user shipping data for invoice', e);
-      }
-
-      try {
-        const token = await getAuthToken();
-        const invoiceData = await registerInvoice(token, {
-          amount: invoiceAmount,
-          currency: 'EGP',
-          shippingData,
-          items: [
-            {
-              name: String(adData.store_name || adData.type || 'Ad Payment'),
-              amount_cents: String(Math.round(invoiceAmount * 100)),
-              quantity: '1',
-              description: String(adData.store_name || adData.type || 'إعلان')
-            }
-          ]
-        });
-        const invoiceUrl = invoiceData && invoiceData.id
-          ? `https://accept.paymob.com/api/ecommerce/invoices/${invoiceData.id}`
-          : null;
-
-        return res.json({
-          requiresPayment: true,
-          invoice_url: invoiceUrl,
-          invoice_id: invoiceData?.id || null,
-          merchant_order_id: merchantOrderId || null,
-          reason: 'package_quota_exhausted'
-        });
-      } catch (e) {
-        console.error('[PACKAGE-PUBLISH] failed to create Paymob invoice', e);
-        return res.status(500).json({ error: 'فشل إنشاء فاتورة الدفع عند وصول الحد الأقصى للباقة' });
-      }
+      console.log(`[PACKAGE-PUBLISH] منع النشر: المستخدم وصل للحد الأقصى (${currentAdsCount}/${maxAdsAllowed})`);
+      return res.status(403).json({ error: 'لقد وصلت للحد الأقصى للإعلانات المسموح بها في باقتك. لا يمكنك نشر إعلان جديد حتى انتهاء أو حذف إعلان سابق.' });
     }
 
     // ...باقي الكود كما هو (إدراج الإعلان)
@@ -2784,7 +2646,6 @@ app.post('/api/ads/package-publish', verifyJwtToken, paymentLimiter, rateLimitMi
 
       return res.json({
         ok: true,
-        requiresPayment: false,
         adId: inserted.id,
         currentAdsCount: currentAdsCount + 1,
         remainingAds: maxAdsAllowed - (currentAdsCount + 1),
