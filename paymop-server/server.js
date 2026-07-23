@@ -678,7 +678,7 @@ app.get('/api/signed-url', verifyJwtToken, async (req, res) => {
     }
 
     // تحقق من أن الـ bucket آمن (whitelist of allowed buckets)
-    const allowedBuckets = ['registerphone', 'phone-images', 'transfer-assets'];
+    const allowedBuckets = ['registerphone', 'phone_reports', 'transfer-assets'];
     if (!allowedBuckets.includes(String(bucket))) {
       return res.status(400).json({ error: 'Invalid bucket' });
     }
@@ -755,7 +755,7 @@ app.get('/api/signed-url', verifyJwtToken, async (req, res) => {
           if (process.env.NODE_ENV !== 'production') {
             try {
               const listChecks = {};
-              const prefixesToCheck = [cleanedPath, `receipts/${cleanedPath}`, `images/${cleanedPath}`, `phone-images/${cleanedPath}`];
+              const prefixesToCheck = [cleanedPath, `receipts/${cleanedPath}`, `images/${cleanedPath}`, `phone_reports/${cleanedPath}`];
               for (const p of prefixesToCheck) {
                 try {
                   const prefix = p.replace(/^\/+/, '').replace(/\/+$/, '');

@@ -853,6 +853,8 @@ export default {
   "brand_placeholder": "उदा: Apple या Anker",
   "price_egp_required": "EGP में कीमत*",
   "currency_short": "EGP",
+  "included": "शामिल है",
+  "free": "नि:शुल्क",
   "price_placeholder": "कीमत दर्ज करें",
   "condition_required": "स्थिति*",
   "warranty_placeholder": "वारंटी अवधि दर्ज करें",

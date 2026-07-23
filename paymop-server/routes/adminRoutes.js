@@ -2203,7 +2203,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
           !r.report_image_url.startsWith("http")
         ) {
           const { data } = await supabase.storage
-            .from("phone-images")
+            .from("phone_reports")
             .createSignedUrl(r.report_image_url, 3600);
 
           if (data?.signedUrl) {

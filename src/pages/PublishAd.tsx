@@ -1081,10 +1081,15 @@ const PublishAd: React.FC = () => {
                                 const effectivePackageRemainingInRender = packageAdsRemaining != null ? Number(packageAdsRemaining) : null;
                                 const isIncluded = isPackageUser && effectivePackageRemainingInRender !== null && effectivePackageRemainingInRender > 0;
                                 if (isIncluded) {
-                                  return (t('included') || 'مشمول');
+                                  return t('free') || 'مجاني';
                                 }
-                                return `${prices[days] || 0}`;
-                              })()} <span className="text-xs font-normal text-gray-500">{t('currency_short')}</span>
+                                return (
+                                  <>
+                                    {prices[days] || 0}
+                                    <span className="text-xs font-normal text-gray-500">{t('currency_short')}</span>
+                                  </>
+                                );
+                              })()}
                             </div>
                           </div>
                     </Label>

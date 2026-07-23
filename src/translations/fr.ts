@@ -860,6 +860,8 @@ export default {
   "brand_placeholder": "Ex : Apple ou Anker",
   "price_egp_required": "Prix en EGP*",
   "currency_short": "EGP",
+  "included": "Inclus",
+  "free": "Gratuit",
   "price_placeholder": "Entrez le prix",
   "condition_required": "État*",
   "warranty_placeholder": "Entrez la durée de garantie",

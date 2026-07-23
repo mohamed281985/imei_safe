@@ -121,7 +121,7 @@ export function registerReportRoutes({
 
   if (url.startsWith("registerphone/")) return true;
 
-  if (url.startsWith("phone-images/")) return true;
+  if (url.startsWith("phone_reports/")) return true;
 
   // اسم الملف فقط
   if (!url.includes("/") && /\.(jpg|jpeg|png|webp)$/i.test(url))
@@ -408,8 +408,8 @@ console.log("================================");
       const fileName = `${fileId}_${type}_${Date.now()}.${String(fileExt).replace(/[^a-z0-9]/gi, '')}`;
       const filePath = `reports/${fileName}`;
 
-      // Upload to bucket `phone-images` (server uses service role client passed as `supabase`)
-      const { data: uploadData, error: uploadErr } = await supabase.storage.from('phone-images').upload(filePath, buffer, { contentType, upsert: true });
+      // Upload to bucket `phone_reports` (server uses service role client passed as `supabase`)
+      const { data: uploadData, error: uploadErr } = await supabase.storage.from('phone_reports').upload(filePath, buffer, { contentType, upsert: true });
       if (uploadErr) {
         console.error('Server upload error:', uploadErr);
         return res.status(500).json({ success: false, error: 'Upload failed', details: uploadErr.message || uploadErr });
@@ -438,7 +438,7 @@ console.log("================================");
       }
 
       // Try to extract bucket and path from known supabase URL patterns
-      let bucket = 'phone-images';
+      let bucket = 'phone_reports';
       let path = null;
 
       // Pattern: /storage/v1/object/sign/{bucket}/{path}
@@ -469,12 +469,12 @@ console.log("================================");
         }
       }
 
-      // Fallback: detect bucket name in plain strings like 'phone-images/...' or full path containing 'phone-images/'
+      // Fallback: detect bucket name in plain strings like 'phone-reports/...' or full path containing 'phone-reports/'
       if (!path) {
-        const idx = url.indexOf('phone-images/');
+        const idx = url.indexOf('phone-reports/');
         if (idx !== -1) {
-          path = url.substring(idx + 'phone-images/'.length).split('?')[0];
-          bucket = 'phone-images';
+          path = url.substring(idx + 'phone-reports/'.length).split('?')[0];
+          bucket = 'phone-reports';
         }
       }
 
