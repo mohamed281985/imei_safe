@@ -878,6 +878,8 @@ export default {
   "brand_placeholder": "مثال: Apple أو Anker",
   "price_egp_required": "السعر بالجنيه المصري*",
   "currency_short": "ج.م",
+  "included": "مشمول",
+  "free": "مجاني",
   "price_placeholder": "أدخل السعر",
   "condition_required": "الحالة*",
   "warranty_placeholder": "أدخل مدة الضمان",
