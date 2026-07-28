@@ -341,8 +341,32 @@ const EditPhoneListing: React.FC = () => {
                     placeholder={t('warranty_placeholder')}
                   />
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('warranty_months_label')}</label>
+                  <input
+                    name="warranty_months"
+                    type="number"
+                    value={form.warranty_months}
+                    onChange={(e) => setForm(prev => ({ ...prev, warranty_months: e.target.value }))}
+                    className="w-full p-2 border rounded-lg"
+                    placeholder={t('warranty_placeholder')}
+                  />
+                </div>
               </div>
             </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{t('description')}</label>
+              <textarea
+                name="description"
+                value={form.description}
+                onChange={(e) => setForm(prev => ({ ...prev, description: e.target.value }))}
+                rows={4} // عدد الصفوف الظاهرة
+                className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder={t('description_placeholder')} // تأكد من وجود هذه الترجمة في ملف اللغة
+              />
+            </div>
+           
 
             <div className="mt-6">
               <h3 className="text-lg font-medium text-gray-900 mb-3">{t('phone_images')}</h3>

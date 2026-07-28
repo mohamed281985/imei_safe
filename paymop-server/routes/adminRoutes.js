@@ -2705,7 +2705,122 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       return res.status(500).json({ error: 'Server error' });
     }
   });
+ app.patch('/admin/phones', verifyJwtToken, async (req, res) => {
+  try {
+    const user = req.user;
 
+    if (!user) {
+      return res.status(401).json({
+        ok: false,
+        error: 'Unauthorized'
+      });
+    }
+
+    const userRole = (user.role || '').toLowerCase();
+    if (!userRole.includes('admin')) {
+      return res.status(403).json({
+        ok: false,
+        error: 'Forbidden: admin only'
+      });
+    }
+
+    // يستقبل ?id=eq.123
+    const idParam = req.query.id;
+
+    if (!idParam || typeof idParam !== 'string') {
+      return res.status(400).json({
+        ok: false,
+        error: 'Missing id'
+      });
+    }
+
+    const id = Number(idParam.replace('eq.', ''));
+
+    if (!id) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Invalid id'
+      });
+    }
+
+    const updates = {};
+
+    if (req.body.status !== undefined) {
+      updates.status = req.body.status;
+    }
+
+    updates.updated_at = new Date().toISOString();
+
+    const { data: existingPhone, error: fetchError } = await supabase
+      .from('phones')
+      .select('id,status')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (fetchError) {
+      return res.status(500).json({
+        ok: false,
+        error: fetchError.message
+      });
+    }
+
+    if (!existingPhone) {
+      return res.status(404).json({
+        ok: false,
+        error: 'Phone not found'
+      });
+    }
+
+    const { data, error } = await supabase
+      .from('phones')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      return res.status(500).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    try {
+      if (typeof logAudit === 'function') {
+        await logAudit({
+          userId: user.id,
+          action: 'admin_update_phone',
+          resourceType: 'phones',
+          resourceId: String(id),
+          oldValues: {
+            status: existingPhone.status
+          },
+          newValues: updates,
+          details: {
+            admin_id: user.id
+          },
+          ip: getAuditIp(req),
+          userAgent: req.headers['user-agent'] || null,
+          status: 'success'
+        });
+      }
+    } catch (e) {
+      console.warn('Phone audit failed', e);
+    }
+
+    return res.json({
+      ok: true,
+      phone: data
+    });
+
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({
+      ok: false,
+      error: 'Server error'
+    });
+  }
+});
   // PATCH /admin/accessories/:id - update accessory (admin light endpoint)
   app.patch('/admin/accessories/:id', verifyJwtToken, async (req, res) => {
     try {

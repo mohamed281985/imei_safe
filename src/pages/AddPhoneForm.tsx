@@ -790,10 +790,13 @@ const AddPhoneForm: React.FC = () => {
   ];
   const totalSteps = steps.length;
   const atLastStep = currentStep === totalSteps - 1;
+  
+  // ⭐ تم تعديل الكلاس: حجم الخط text-base (أكبر) و font-bold (عريض)
   const fieldClass =
-    'w-full rounded-2xl border border-blue-300/50 bg-white px-4 py-3 text-sm text-slate-800 shadow-[0_2px_10px rgba(37,99,235,0.08)] outline-none transition-all duration-300 placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-200/60 focus:shadow-[0_6px_18px_rgba(37,99,235,0.18)]';
+    'w-full rounded-2xl border border-blue-300/50 bg-white px-4 py-3 text-base font-bold text-slate-800 shadow-[0_2px_10px rgba(37,99,235,0.08)] outline-none transition-all duration-300 placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-200/60 focus:shadow-[0_6px_18px_rgba(37,99,235,0.18)]';
+    
   const cardClass =
-    'rounded-3xl border border-white/70 bg-white/70 backdrop-blur-xl p-5 sm:p-6 shadow-[0_10px_30px_rgba(15,23,42,0.08)] transition-all duration-500';
+    'rounded-3xl border border-white/70 bg-white/70 backdrop-blur-xl p-5 sm:p-6 shadow-[0_10px_30px rgba(15,23,42,0.08)] transition-all duration-500';
 
   const nextStep = () => {
     setCurrentStep(prev => Math.min(prev + 1, totalSteps - 1));
@@ -822,7 +825,7 @@ const AddPhoneForm: React.FC = () => {
             <p className="mt-1 text-sm text-blue-100">{t('add_phone_subtitle')}</p>
           </div>
 
-          <div className="mb-5 rounded-3xl border border-white/70 bg-white/70 p-4 backdrop-blur-xl shadow-[0_8px_24px_rgba(15,23,42,0.07)]">
+          <div className="mb-5 rounded-3xl border border-white/70 bg-white/70 p-4 backdrop-blur-xl shadow-[0_8px_24px rgba(15,23,42,0.07)]">
             <div className="mb-3 h-1.5 rounded-full bg-slate-200">
               <div
                 className="h-1.5 rounded-full bg-blue-600 transition-all duration-500"
@@ -872,7 +875,8 @@ const AddPhoneForm: React.FC = () => {
               </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                  {/* ⭐ تم تغيير font-semibold إلى font-bold */}
+                  <label className="mb-1 flex items-center gap-1 text-sm font-bold text-slate-700">
                     <Store className="h-4 w-4 text-orange-500" />
                     {t('store_name')}
                   </label>
@@ -882,7 +886,8 @@ const AddPhoneForm: React.FC = () => {
                   </div>
                 </div>
                 <div>
-                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                  {/* ⭐ تم تغيير font-semibold إلى font-bold */}
+                  <label className="mb-1 flex items-center gap-1 text-sm font-bold text-slate-700">
                     <Phone className="h-4 w-4 text-orange-500" />
                     {t('phone_number')}
                   </label>
@@ -892,7 +897,8 @@ const AddPhoneForm: React.FC = () => {
                   </div>
                 </div>
                 <div>
-                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                  {/* ⭐ تم تغيير font-semibold إلى font-bold */}
+                  <label className="mb-1 flex items-center gap-1 text-sm font-bold text-slate-700">
                     <MapPin className="h-4 w-4 text-orange-500" />
                     {t('city')}
                   </label>
@@ -908,7 +914,8 @@ const AddPhoneForm: React.FC = () => {
                   </div>
                 </div>
                 <div>
-                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                  {/* ⭐ تم تغيير font-semibold إلى font-bold */}
+                  <label className="mb-1 flex items-center gap-1 text-sm font-bold text-slate-700">
                     <MapPin className="h-4 w-4 text-orange-500" />
                     {t('country')}
                   </label>
@@ -918,11 +925,12 @@ const AddPhoneForm: React.FC = () => {
                   </div>
                 </div>
                 <div className="sm:col-span-2">
-                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                  {/* ⭐ تم تغيير font-semibold إلى font-bold */}
+                  <label className="mb-1 flex items-center gap-1 text-sm font-bold text-slate-700">
                     <MapPinned className="h-4 w-4 text-orange-500" />
                     {t('map_location')}
                   </label>
-                  <div className="overflow-hidden rounded-2xl border border-blue-300/50 bg-white shadow-[0_2px_10px_rgba(37,99,235,0.08)]">
+                  <div className="overflow-hidden rounded-2xl border border-blue-300/50 bg-white shadow-[0_2px_10px rgba(37,99,235,0.08)]">
                     {coords ? (
                       <div className="h-48 w-full">
                         <MapContainer
@@ -956,7 +964,8 @@ const AddPhoneForm: React.FC = () => {
               </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="sm:col-span-2">
-                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                  {/* ⭐ تم تغيير font-semibold إلى font-bold */}
+                  <label className="mb-1 flex items-center gap-1 text-sm font-bold text-slate-700">
                     <Hash className="h-4 w-4 text-orange-500" />
                     {t('imei')}*
                   </label>
@@ -1003,7 +1012,8 @@ const AddPhoneForm: React.FC = () => {
                   {imeiStatus === 'already_advertised' && <p className="mt-1 text-xs text-red-600">{t('phone_already_advertised_detail')}</p>}
                 </div>
                 <div>
-                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                  {/* ⭐ تم تغيير font-semibold إلى font-bold */}
+                  <label className="mb-1 flex items-center gap-1 text-sm font-bold text-slate-700">
                     <Smartphone className="h-4 w-4 text-orange-500" />
                     {t('phone_type') || t('brand')}*
                   </label>
@@ -1013,7 +1023,8 @@ const AddPhoneForm: React.FC = () => {
                   </div>
                 </div>
                 <div>
-                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                  {/* ⭐ تم تغيير font-semibold إلى font-bold */}
+                  <label className="mb-1 flex items-center gap-1 text-sm font-bold text-slate-700">
                     <Database className="h-4 w-4 text-orange-500" />
                     {t('model')}*
                   </label>
@@ -1023,7 +1034,8 @@ const AddPhoneForm: React.FC = () => {
                   </div>
                 </div>
                 <div>
-                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                  {/* ⭐ تم تغيير font-semibold إلى font-bold */}
+                  <label className="mb-1 flex items-center gap-1 text-sm font-bold text-slate-700">
                     <Wallet className="h-4 w-4 text-orange-500" />
                     {t('price_currency')}*
                   </label>
@@ -1033,7 +1045,8 @@ const AddPhoneForm: React.FC = () => {
                   </div>
                 </div>
                 <div>
-                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                  {/* ⭐ تم تغيير font-semibold إلى font-bold */}
+                  <label className="mb-1 flex items-center gap-1 text-sm font-bold text-slate-700">
                     <CheckCircle2 className="h-4 w-4 text-orange-500" />
                     {t('condition')}*
                   </label>
@@ -1053,7 +1066,8 @@ const AddPhoneForm: React.FC = () => {
               </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                  {/* ⭐ تم تغيير font-semibold إلى font-bold */}
+                  <label className="mb-1 flex items-center gap-1 text-sm font-bold text-slate-700">
                     <Database className="h-4 w-4 text-orange-500" />
                     {t('memory_ram')}
                   </label>
@@ -1063,7 +1077,8 @@ const AddPhoneForm: React.FC = () => {
                   </div>
                 </div>
                 <div>
-                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                  {/* ⭐ تم تغيير font-semibold إلى font-bold */}
+                  <label className="mb-1 flex items-center gap-1 text-sm font-bold text-slate-700">
                     <Database className="h-4 w-4 text-orange-500" />
                     {t('storage')}
                   </label>
@@ -1073,7 +1088,8 @@ const AddPhoneForm: React.FC = () => {
                   </div>
                 </div>
                 <div>
-                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                  {/* ⭐ تم تغيير font-semibold إلى font-bold */}
+                  <label className="mb-1 flex items-center gap-1 text-sm font-bold text-slate-700">
                     <Palette className="h-4 w-4 text-orange-500" />
                     {t('color')}
                   </label>
@@ -1083,7 +1099,8 @@ const AddPhoneForm: React.FC = () => {
                   </div>
                 </div>
                 <div>
-                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                  {/* ⭐ تم تغيير font-semibold إلى font-bold */}
+                  <label className="mb-1 flex items-center gap-1 text-sm font-bold text-slate-700">
                     <CalendarDays className="h-4 w-4 text-orange-500" />
                     {t('warranty_months_label')}
                   </label>
@@ -1093,7 +1110,8 @@ const AddPhoneForm: React.FC = () => {
                   </div>
                 </div>
                 <div className="sm:col-span-2">
-                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                  {/* ⭐ تم تغيير font-semibold إلى font-bold */}
+                  <label className="mb-1 flex items-center gap-1 text-sm font-bold text-slate-700">
                     <FileText className="h-4 w-4 text-orange-500" />
                     {t('ad_title')}*
                   </label>
@@ -1112,7 +1130,8 @@ const AddPhoneForm: React.FC = () => {
                   </div>
                 </div>
                 <div className="sm:col-span-2">
-                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                  {/* ⭐ تم تغيير font-semibold إلى font-bold */}
+                  <label className="mb-1 flex items-center gap-1 text-sm font-bold text-slate-700">
                     <FileText className="h-4 w-4 text-orange-500" />
                     {t('description')}*
                   </label>
