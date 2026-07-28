@@ -2734,14 +2734,14 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       });
     }
 
-    const id = Number(idParam.replace('eq.', ''));
+const id = idParam.replace('eq.', '').trim();
 
-    if (!id) {
-      return res.status(400).json({
-        ok: false,
-        error: 'Invalid id'
-      });
-    }
+if (!id) {
+  return res.status(400).json({
+    ok: false,
+    error: 'Invalid id'
+  });
+}
 
     const updates = {};
 
