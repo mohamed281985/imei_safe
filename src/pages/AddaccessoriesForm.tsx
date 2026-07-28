@@ -744,8 +744,11 @@ const AddAccessoriesForm: React.FC = () => {
   ];
   const totalSteps = steps.length;
   const atLastStep = currentStep === totalSteps - 1;
+  
+  // Updated field class with larger font and bold text
   const fieldClass =
-    'w-full rounded-2xl border border-blue-300/50 bg-white px-4 py-3 text-sm text-slate-800 shadow-[0_2px_10px_rgba(37,99,235,0.08)] outline-none transition-all duration-300 placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-200/60 focus:shadow-[0_6px_18px_rgba(37,99,235,0.18)]';
+    'w-full rounded-2xl border border-blue-300/50 bg-white px-4 py-3 text-base font-bold text-slate-800 shadow-[0_2px_10px_rgba(37,99,235,0.08)] outline-none transition-all duration-300 placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-200/60 focus:shadow-[0_6px_18px_rgba(37,99,235,0.18)]';
+    
   const cardClass =
     'rounded-3xl border border-white/70 bg-white/70 backdrop-blur-xl p-5 sm:p-6 shadow-[0_10px_30px_rgba(15,23,42,0.08)] transition-all duration-500';
 
@@ -819,7 +822,7 @@ const AddAccessoriesForm: React.FC = () => {
           {error && (
             <div className="mb-4 flex items-start rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-red-700 shadow-sm">
               <X className="ml-2 mt-0.5 h-4 w-4 shrink-0" />
-              <p className="text-sm">{error}</p>
+              <p className="text-sm font-bold">{error}</p>
             </div>
           )}
 
@@ -831,14 +834,14 @@ const AddAccessoriesForm: React.FC = () => {
               </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                  <label className="mb-1 flex items-center gap-1 text-base font-bold text-slate-700">
                     <Store className="h-4 w-4 text-orange-500" />
                     {t('store_name')}
                   </label>
                   <input name="store_name" value={formData.store_name} readOnly className={fieldClass} placeholder={t('fetched_automatically')} />
                 </div>
                 <div>
-                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                  <label className="mb-1 flex items-center gap-1 text-base font-bold text-slate-700">
                     <Phone className="h-4 w-4 text-orange-500" />
                     {t('phone_number')}
                   </label>
@@ -848,7 +851,7 @@ const AddAccessoriesForm: React.FC = () => {
                   </div>
                 </div>
                 <div>
-                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                  <label className="mb-1 flex items-center gap-1 text-base font-bold text-slate-700">
                     <MapPin className="h-4 w-4 text-orange-500" />
                     {t('city')}
                   </label>
@@ -861,14 +864,14 @@ const AddAccessoriesForm: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                  <label className="mb-1 flex items-center gap-1 text-base font-bold text-slate-700">
                     <MapPin className="h-4 w-4 text-orange-500" />
                     {t('country')}
                   </label>
                   <input name="country" value={formData.country || ''} readOnly className={fieldClass} placeholder={t('fetched_automatically')} />
                 </div>
                 <div className="sm:col-span-2">
-                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                  <label className="mb-1 flex items-center gap-1 text-base font-bold text-slate-700">
                     <MapPinned className="h-4 w-4 text-orange-500" />
                     {t('store_location_on_map')}
                   </label>
@@ -890,7 +893,7 @@ const AddAccessoriesForm: React.FC = () => {
                         </MapContainer>
                       </div>
                     ) : (
-                      <div className="flex h-48 items-center justify-center text-sm font-medium text-slate-500">{t('loading_map_location')}</div>
+                      <div className="flex h-48 items-center justify-center text-sm font-bold text-slate-500">{t('loading_map_location')}</div>
                     )}
                   </div>
                 </div>
@@ -904,35 +907,35 @@ const AddAccessoriesForm: React.FC = () => {
               </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                  <label className="mb-1 flex items-center gap-1 text-base font-bold text-slate-700">
                     <Database className="h-4 w-4 text-orange-500" />
                     {t('category_required')}
                   </label>
                   <input type="text" name="category" required value={formData.category} onChange={handleInputChange} className={fieldClass} placeholder={t('category_placeholder')} />
                 </div>
                 <div>
-                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                  <label className="mb-1 flex items-center gap-1 text-base font-bold text-slate-700">
                     <Palette className="h-4 w-4 text-orange-500" />
                     {t('brand_optional')}
                   </label>
                   <input type="text" name="brand" value={formData.brand} onChange={handleInputChange} className={fieldClass} placeholder={t('brand_placeholder')} />
                 </div>
                 <div>
-                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                  <label className="mb-1 flex items-center gap-1 text-base font-bold text-slate-700">
                     <ShieldCheck className="h-4 w-4 text-orange-500" />
                     {t('compatible_devices_optional')}
                   </label>
                   <input type="text" name="compatibility" value={formData.compatibility} onChange={handleInputChange} className={fieldClass} placeholder={t('compatibility_placeholder')} />
                 </div>
                 <div>
-                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                  <label className="mb-1 flex items-center gap-1 text-base font-bold text-slate-700">
                     <Wallet className="h-4 w-4 text-orange-500" />
                     {t('price_egp_required')}
                   </label>
                   <input type="number" name="price" required min="0" value={formData.price} onChange={handleInputChange} className={fieldClass} placeholder={t('price_placeholder')} />
                 </div>
                 <div>
-                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                  <label className="mb-1 flex items-center gap-1 text-base font-bold text-slate-700">
                     <CheckCircle2 className="h-4 w-4 text-orange-500" />
                     {t('condition_required')}
                   </label>
@@ -942,7 +945,7 @@ const AddAccessoriesForm: React.FC = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                  <label className="mb-1 flex items-center gap-1 text-base font-bold text-slate-700">
                     <CalendarDays className="h-4 w-4 text-orange-500" />
                     {t('warranty_months_label')}
                   </label>
@@ -958,14 +961,14 @@ const AddAccessoriesForm: React.FC = () => {
               </div>
               <div className="grid grid-cols-1 gap-4">
                 <div>
-                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                  <label className="mb-1 flex items-center gap-1 text-base font-bold text-slate-700">
                     <FileText className="h-4 w-4 text-orange-500" />
                     {t('ad_title_required')}
                   </label>
                   <input type="text" name="title" required value={formData.title} onChange={handleInputChange} className={fieldClass} placeholder={t('ad_title_placeholder')} />
                 </div>
                 <div>
-                  <label className="mb-1 flex items-center gap-1 text-sm font-semibold text-slate-700">
+                  <label className="mb-1 flex items-center gap-1 text-base font-bold text-slate-700">
                     <FileText className="h-4 w-4 text-orange-500" />
                     {t('description_required')}
                   </label>
@@ -982,7 +985,7 @@ const AddAccessoriesForm: React.FC = () => {
 
               <div className="mb-4 rounded-2xl border border-dashed border-blue-200 bg-blue-50/50 p-4 text-center">
                 <Upload className="mx-auto mb-2 h-6 w-6 text-orange-500" />
-                <label htmlFor="images" className="cursor-pointer text-sm font-semibold text-blue-700">{t('choose_images')}</label>
+                <label htmlFor="images" className="cursor-pointer text-base font-bold text-blue-700">{t('choose_images')}</label>
                 <input id="images" name="images" type="file" multiple accept="image/*" className="sr-only" onChange={handleImageChange} required={images.length === 0} />
                 <p className="mt-1 text-xs text-slate-500">{t('image_upload_info')}</p>
               </div>
@@ -1001,20 +1004,20 @@ const AddAccessoriesForm: React.FC = () => {
               )}
 
               <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-                <h3 className="mb-3 text-sm font-bold text-slate-800">{t('final_ad_preview')}</h3>
-                <div className="space-y-1 text-sm text-slate-600">
-                  <p><span className="font-semibold text-slate-800">{t('preview_title_label')}:</span> {formData.title || '—'}</p>
-                  <p><span className="font-semibold text-slate-800">{t('preview_store_label')}:</span> {formData.store_name || '—'}</p>
-                  <p><span className="font-semibold text-slate-800">{t('preview_category_label')}:</span> {formData.category || '—'}</p>
-                  <p><span className="font-semibold text-slate-800">{t('preview_price_label')}:</span> {formData.price ? `${formData.price} ${t('currency_short')}` : '—'}</p>
-                  <p><span className="font-semibold text-slate-800">{t('preview_location_label')}:</span> {formData.city || '—'}</p>
+                <h3 className="mb-3 text-base font-bold text-slate-800">{t('final_ad_preview')}</h3>
+                <div className="space-y-1 text-base font-bold text-slate-600">
+                  <p><span className="font-bold text-slate-800">{t('preview_title_label')}:</span> {formData.title || '—'}</p>
+                  <p><span className="font-bold text-slate-800">{t('preview_store_label')}:</span> {formData.store_name || '—'}</p>
+                  <p><span className="font-bold text-slate-800">{t('preview_category_label')}:</span> {formData.category || '—'}</p>
+                  <p><span className="font-bold text-slate-800">{t('preview_price_label')}:</span> {formData.price ? `${formData.price} ${t('currency_short')}` : '—'}</p>
+                  <p><span className="font-bold text-slate-800">{t('preview_location_label')}:</span> {formData.city || '—'}</p>
                 </div>
 
                 {/* Ad duration preview */}
-                <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-slate-700">
+                <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50 p-3 text-base font-bold text-slate-700">
                   <div className="flex items-center justify-between">
                     <div>
-                      <div className="text-xs text-slate-600">{t('ad_duration_label') || 'مدة الإعلان'}</div>
+                      <div className="text-sm text-slate-600">{t('ad_duration_label') || 'مدة الإعلان'}</div>
                       <div className="mt-1 font-bold text-orange-500">{selectedSellDuration} {t('days') || 'يوم'}</div>
                     </div>
                     <div className="text-right">
@@ -1022,19 +1025,19 @@ const AddAccessoriesForm: React.FC = () => {
                         <select
                           value={selectedSellDuration}
                           onChange={(e) => setSelectedSellDuration(Number(e.target.value))}
-                          className="rounded-md border p-1 text-sm "
+                          className="rounded-md border p-1 text-base font-bold"
                         >
                           {sellDurations.map(d => (
                             <option key={d} value={d}>{d} {t('days')}</option>
                           ))}
                         </select>
                       ) : (
-                        <div className="text-xs text-slate-500">{t('loading') || 'جاري التحميل...'}</div>
+                        <div className="text-sm text-slate-500">{t('loading') || 'جاري التحميل...'}</div>
                       )}
                     </div>
                   </div>
-                  <div className="mt-2 text-[13px] text-slate-600">
-                    <span className="font-medium">{t('expires_on') || 'ينتهي بتاريخ'}:</span>{' '}
+                  <div className="mt-2 text-sm text-slate-600">
+                    <span className="font-bold">{t('expires_on') || 'ينتهي بتاريخ'}:</span>{' '}
                     {new Date(Date.now() + selectedSellDuration * 24 * 60 * 60 * 1000).toLocaleDateString()}
                   </div>
                 </div>
@@ -1046,7 +1049,7 @@ const AddAccessoriesForm: React.FC = () => {
                 type="button"
                 onClick={prevStep}
                 disabled={currentStep === 0}
-                className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-4 py-2 text-base font-bold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <ChevronRight className="h-4 w-4" />
                 {t('previous')}
@@ -1056,7 +1059,7 @@ const AddAccessoriesForm: React.FC = () => {
                 <button
                   type="button"
                   onClick={nextStep}
-                  className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-l from-blue-600 to-blue-500 px-5 py-2 text-sm font-bold text-white shadow-[0_10px_20px_rgba(37,99,235,0.35)] transition hover:from-blue-700 hover:to-blue-600"
+                  className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-l from-blue-600 to-blue-500 px-5 py-2 text-base font-bold text-white shadow-[0_10px_20px_rgba(37,99,235,0.35)] transition hover:from-blue-700 hover:to-blue-600"
                 >
                   {t('next')}
                   <ChevronLeft className="h-4 w-4" />
@@ -1065,7 +1068,7 @@ const AddAccessoriesForm: React.FC = () => {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-l from-blue-600 to-blue-500 px-5 py-2 text-sm font-bold text-white shadow-[0_10px_20px_rgba(37,99,235,0.35)] transition hover:from-blue-700 hover:to-blue-600 disabled:opacity-50"
+                  className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-l from-blue-600 to-blue-500 px-5 py-2 text-base font-bold text-white shadow-[0_10px_20px_rgba(37,99,235,0.35)] transition hover:from-blue-700 hover:to-blue-600 disabled:opacity-50"
                 >
                   {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : t('publish_ad_now')}
                   <ChevronLeft className="h-4 w-4" />
@@ -1100,11 +1103,11 @@ const AddAccessoriesForm: React.FC = () => {
               <h2 className="text-2xl font-bold text-gray-900 mb-2">
                 ✨ {t('make_ad_top')}
               </h2>
-              <p className="text-gray-600 mb-6">
+              <p className="text-base font-bold text-gray-600 mb-6">
                 {t('featured_ad_service_description')}
               </p>
 
-              <div className="text-right space-y-4 text-gray-700 mb-8 px-1">
+              <div className="text-right space-y-4 text-base font-bold text-gray-700 mb-8 px-1">
                 <p>
                   {t('featured_ad_benefits')}
                 </p>
@@ -1112,23 +1115,23 @@ const AddAccessoriesForm: React.FC = () => {
                 <ul className="space-y-3">
                   <li className="flex items-start">
                     <Star className="w-5 h-5 text-orange-500 ml-3 flex-shrink-0 mt-0.5" />
-                    <span><span className="font-semibold">{t('ad_at_top')}</span> {t('first_seen_by_buyer')}</span>
+                    <span><span className="font-bold">{t('ad_at_top')}</span> {t('first_seen_by_buyer')}</span>
                   </li>
                   <li className="flex items-start">
                     <MapPin className="w-5 h-5 text-red-500 ml-3 flex-shrink-0 mt-0.5" />
-                    <span><span className="font-semibold">{t('precise_location_targeting')}</span> {t('reach_nearby_buyers')}</span>
+                    <span><span className="font-bold">{t('precise_location_targeting')}</span> {t('reach_nearby_buyers')}</span>
                   </li>
                   <li className="flex items-start">
                     <Clock className="w-5 h-5 text-blue-500 ml-3 flex-shrink-0 mt-0.5" />
-                    <span><span className="font-semibold">{t('seven_days_validity')}</span> {t('full_week_featured')}</span>
+                    <span><span className="font-bold">{t('seven_days_validity')}</span> {t('full_week_featured')}</span>
                   </li>
                   <li className="flex items-start">
                     <Eye className="w-5 h-5 text-blue-500 ml-3 flex-shrink-0 mt-0.5" />
-                    <span><span className="font-semibold">{t('more_views_attention')}</span> {t('attract_serious_buyers')}</span>
+                    <span><span className="font-bold">{t('more_views_attention')}</span> {t('attract_serious_buyers')}</span>
                   </li>
                   <li className="flex items-start">
                     <Zap className="w-5 h-5 text-orange-500 ml-3 flex-shrink-0 mt-0.5" />
-                    <span><span className="font-semibold">{t('increase_selling_speed')}</span> {t('dont_miss_opportunity')}</span>
+                    <span><span className="font-bold">{t('increase_selling_speed')}</span> {t('dont_miss_opportunity')}</span>
                   </li>
                 </ul>
               </div>
@@ -1137,7 +1140,7 @@ const AddAccessoriesForm: React.FC = () => {
                 <PackageBadge user={user} />
               </div>
 
-              <div className="text-right space-y-2 text-gray-700 mb-6">
+              <div className="text-right space-y-2 text-base font-bold text-gray-700 mb-6">
                 <h3 className="font-bold text-lg">{t('select_feature_duration')}</h3>
                 <div className="grid grid-cols-2 gap-3">
                   {availableDurations.map((days) => (
@@ -1147,19 +1150,19 @@ const AddAccessoriesForm: React.FC = () => {
                         <CalendarDays className="w-5 h-5 text-gray-600" />
                         <span className="text-base font-bold text-gray-800">{days} {t('days')}</span>
                       </div>
-                      <span className="text-sm font-semibold text-orange-600 mt-1">{promotionPrices[days] || 0} {t('currency_short')}</span>
+                      <span className="text-base font-bold text-orange-600 mt-1">{promotionPrices[days] || 0} {t('currency_short')}</span>
                     </label>
                   ))}
                 </div>
               </div>
 
               <div className="mt-4 p-3 bg-gray-100 border border-gray-200 rounded-lg text-center">
-                <p className="text-gray-800 font-medium">
+                <p className="text-base font-bold text-gray-800">
                   {t('total')}: <span className="text-xl font-bold text-gray-900">{promotionPrice || 0} {t('currency')}</span>
                 </p>
               </div>
 
-              <p className="text-gray-800 font-semibold mb-6">
+              <p className="text-base font-bold text-gray-800 mb-6">
               ✨ {t('dont_let_ad_get_lost')}
               </p>
 

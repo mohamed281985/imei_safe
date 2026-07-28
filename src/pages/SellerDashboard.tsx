@@ -29,7 +29,7 @@ const SellerDashboard: React.FC = () => {
     pending: 0,
     rejected: 0
   });
-  
+
   // حالة رمز العملة
   const [userCurrencySymbol, setUserCurrencySymbol] = React.useState(t('currency_short') || 'EGP');
   const [currencyLoading, setCurrencyLoading] = React.useState(true);
@@ -38,10 +38,10 @@ const SellerDashboard: React.FC = () => {
   React.useEffect(() => {
     const fetchUserCurrency = async () => {
       setCurrencyLoading(true);
-      
+
       // جلب المستخدم الحالي من Supabase Auth
       const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
-      
+
       if (authError) {
         console.error('Error fetching auth user:', authError);
         setCurrencyLoading(false);
@@ -77,10 +77,10 @@ const SellerDashboard: React.FC = () => {
         }
 
         console.log('User country:', userData.countries);
-        
+
         // تنظيف اسم البلد
         const userCountryName = userData.countries.trim();
-        
+
         // 2. محاولة البحث في العمود العربي أولاً (لأن البيانات غالباً بالعربية)
         const { data: countryDataAr, error: countryErrorAr } = await supabase
           .from('countries')
@@ -145,21 +145,71 @@ const SellerDashboard: React.FC = () => {
         { data: phonesData, error: phonesError },
         { data: accessoriesData, error: accessoriesError }
       ] = await Promise.all([fetchPhones, fetchAccessories]);
-
+console.log("phonesData", JSON.stringify(phonesData, null, 2));
       if (phonesError) throw phonesError;
       if (accessoriesError) throw accessoriesError;
 
-      const transformedPhones: Product[] = (phonesData || []).map(p => ({
-        ...p,
-        images: p.phone_images,
-        type: 'phone'
-      }));
+      // --- معالجة صور الهواتف ---
+      const transformedPhones: Product[] = (phonesData || []).map(p => {
+        // طباعة بيانات الصور القادمة من قاعدة البيانات للهواتف (للتشخيص)
+        console.log('Raw Phone Images:', p.phone_images);
 
-      const transformedAccessories: Product[] = (accessoriesData || []).map(a => ({
-        ...a,
-        images: a.accessory_images,
-        type: 'accessory'
-      }));
+        const processedImages = (p.phone_images || []).map(img => {
+          let finalPath = img.image_path;
+
+          // التحقق مما إذا كان الرابط يبدأ بـ http
+          if (!img.image_path.startsWith('http')) {
+            // محاولة جلب الرابط العام
+            // ملاحظة: تأكد من أن 'phone-images' هو اسم الـ Bucket الصحيح
+            // إذا كان اسم الـ Bucket مختلفاً، قم بتغييره هنا
+            const { data } = supabase.storage.from('phone-images').getPublicUrl(img.image_path);
+            finalPath = data.publicUrl;
+
+            // طباعة الرابط الناتج للتأكد
+            console.log('Generated Phone URL:', finalPath);
+          }
+
+          return {
+            image_path: finalPath,
+            main_image: img.main_image
+          };
+        });
+
+        return {
+          ...p,
+          images: processedImages,
+          type: 'phone' as const
+        };
+      });
+
+      // --- معالجة صور الإكسسوارات ---
+      const transformedAccessories: Product[] = (accessoriesData || []).map(a => {
+        // طباعة بيانات الصور القادمة من قاعدة البيانات للإكسسوارات
+        console.log('Raw Accessory Images:', a.accessory_images);
+
+        const processedImages = (a.accessory_images || []).map(img => {
+          let finalPath = img.image_path;
+
+          if (!img.image_path.startsWith('http')) {
+            // ملاحظة: تأكد من أن 'accessory-images' هو اسم الـ Bucket الصحيح
+            const { data } = supabase.storage.from('accessory-images').getPublicUrl(img.image_path);
+            finalPath = data.publicUrl;
+
+            console.log('Generated Accessory URL:', finalPath);
+          }
+
+          return {
+            image_path: finalPath,
+            main_image: img.main_image
+          };
+        });
+
+        return {
+          ...a,
+          images: processedImages,
+          type: 'accessory' as const
+        };
+      });
 
       const allProducts = [...transformedPhones, ...transformedAccessories]
         .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
@@ -174,11 +224,12 @@ const SellerDashboard: React.FC = () => {
       });
 
     } catch (error) {
-      console.error('Error fetching phones:', error);
+      console.error('Error fetching products:', error);
     } finally {
       setLoading(false);
     }
   };
+
   const fetchPhones = fetchProducts; // Alias for backward compatibility if needed
 
   const deleteProduct = async (id: string, type: 'phone' | 'accessory') => {
@@ -309,9 +360,15 @@ const SellerDashboard: React.FC = () => {
                     <div className="flex items-center">
                       <div className="h-10 w-10 flex-shrink-0">
                         <img
-                          className="h-10 w-10 rounded-lg object-cover"
-                          src={product.images?.[0]?.image_path || '/placeholder-phone.png'}
+                          className="h-10 w-10 rounded-lg object-cover border border-red-500"
+                          src={product.images?.[0]?.image_path}
                           alt={product.title}
+                          onLoad={() => console.log("Loaded", product.title)}
+                          onError={(e) => {
+                            console.log("Error", product.title);
+                            console.log(product.images);
+                            console.log(product.images?.[0]?.image_path);
+                          }}
                         />
                       </div>
                       <div className="mr-4">
@@ -321,7 +378,7 @@ const SellerDashboard: React.FC = () => {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-md font-bold text-gray-900">{(product.price || 0).toLocaleString()} {userCurrencySymbol}</div>
-                </td>
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(product.status)}`}>
                       {getStatusText(product.status)}
@@ -379,11 +436,11 @@ const SellerDashboard: React.FC = () => {
 
       {/* نافذة الاختيار المنبثقة */}
       {isModalOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center transition-opacity duration-300"
           onClick={() => setIsModalOpen(false)}
         >
-          <div 
+          <div
             className="bg-white p-8 rounded-2xl shadow-2xl text-center w-full max-w-md transform transition-all duration-300 scale-95"
             onClick={(e) => e.stopPropagation()}
           >
