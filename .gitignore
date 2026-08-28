@@ -13,3 +13,16 @@ android/build/
 # VSCode and IDE files
 .vscode/
 .idea/
+# Sensitive Android/Firebase files
+**/google-services.json
+**/*.jks
+**/*.keystore
+**/*.p12
+**/*.pem
+**/*.key
+
+# Local environment files
+.env
+.env.*
+!.env.example
+!.env.example.*
