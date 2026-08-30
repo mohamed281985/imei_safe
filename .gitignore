@@ -26,3 +26,7 @@ android/build/
 .env.*
 !.env.example
 !.env.example.*
+
+# Git history cleanup files
+.history/
+*.bundle
