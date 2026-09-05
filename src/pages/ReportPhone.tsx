@@ -156,12 +156,14 @@ const ReportPhone: React.FC = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user } = useAuth();
+  const location = useLocation();
+  const passedImei = String(location.state?.imei || '').replace(/\D/g, '').slice(0, 15);
 
   const [countryCode, setCountryCode] = useState('+20');
   const [formData, setFormData] = useState<FormData>({
     ownerName: '',
     phoneNumber: '',
-    imei: '',
+    imei: passedImei,
     phone_type: '',
     lossLocation: '',
     lossTime: '',
@@ -203,7 +205,6 @@ const ReportPhone: React.FC = () => {
   const [modalConfirmPassword, setModalConfirmPassword] = useState('');
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [isImeiValid, setIsImeiValid] = useState(false);
-  const location = useLocation();
   const [isQuickMode, setIsQuickMode] = useState<boolean>(false);
 
   const [isImageViewerOpen, setImageViewerOpen] = useState(false);

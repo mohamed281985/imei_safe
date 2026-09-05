@@ -4964,6 +4964,8 @@ app.get('/api/user-phones', verifyJwtToken, async (req, res) => {
         registration_date: phone.registration_date,
         last_confirmed_at: phone.last_confirmed_at,
         status: phone.status,
+        // هذا endpoint محمي ويعيد هواتف المستخدم الحالي فقط.
+        imei: decryptedImei,
         imei_encrypted: encryptedImei,
         imei_masked: maskedImei,
         hasActiveReport: hasActiveReport
@@ -4974,6 +4976,29 @@ app.get('/api/user-phones', verifyJwtToken, async (req, res) => {
   } catch (error) {
     console.error('Error fetching user phones:', error);
     return sendError(res, 500, 'حدث خطأ في الخادم', error, { success: false });
+  }
+});
+
+app.get('/api/user-phones/:id/imei', verifyJwtToken, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { data: phone, error } = await supabase
+      .from('registered_phones')
+      .select('imei')
+      .eq('id', req.params.id)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!phone) return res.status(404).json({ error: 'Phone not found' });
+
+    const imei = decryptField(phone.imei) || '';
+    return res.json({ imei: normalizeDigitsOnly(imei) });
+  } catch (error) {
+    console.error('Error fetching user phone IMEI:', error);
+    return sendError(res, 500, 'حدث خطأ في الخادم', error);
   }
 });
 

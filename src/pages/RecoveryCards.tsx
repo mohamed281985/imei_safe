@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import PageContainer from '../components/PageContainer';
 import AppNavbar from '../components/AppNavbar';
 import { Button } from '@/components/ui/button';
-import { Download, Eye, ImageIcon, Loader2, ArrowLeft } from 'lucide-react';
+import { Download, Eye, ImageIcon, Loader2, AlertTriangle } from 'lucide-react';
 import axiosInstance from '@/services/axiosInterceptor';
 import { toast } from 'sonner';
 import { Directory, Filesystem } from '@capacitor/filesystem';
@@ -59,6 +59,20 @@ const RecoveryCards: React.FC = () => {
     navigate(`/phone-card/${id}`, { state: { phone } });
   };
 
+  const handleLostReport = async (phone: any) => {
+    try {
+      let imei = phone.imei;
+      if (!imei) {
+        const response = await axiosInstance.get(`/api/user-phones/${phone.id}/imei`);
+        imei = response.data?.imei;
+      }
+      if (!imei) throw new Error('رقم IMEI غير متوفر لهذه البطاقة');
+      navigate('/report', { state: { imei } });
+    } catch (error: any) {
+      toast.error(error?.response?.data?.error || error?.message || 'تعذر فتح بلاغ الفقد');
+    }
+  };
+
 const downloadImage = async (url: string | null, phoneId: string) => {
   if (!url) return;
 
@@ -106,7 +120,7 @@ const downloadImage = async (url: string | null, phoneId: string) => {
   return (
     <PageContainer>
       <AppNavbar />
-      <div className="w-full mx-auto px-4 py-8 mx-[1rem]">
+      <div className="w-full px-4 py-8 mx-[1rem]">
         <div className="mb-6 text-center">
           <h1 className="text-4xl font-bold text-slate-800 mb-2">بطاقات الاسترداد</h1>
           <p className="text-slate-600">إدارة بطاقات استرداد أجهزتك وحمايتها</p>
@@ -172,6 +186,14 @@ const downloadImage = async (url: string | null, phoneId: string) => {
                         <Download size={16} className="mr-2" />
                       )}
                       تنزيل
+                    </Button>
+
+                    <Button
+                      type="button"
+                      onClick={() => handleLostReport(p)}
+                      className="col-span-2 !bg-red-600 !text-white hover:!bg-red-700 font-medium text-sm h-9 shadow-md"
+                    >
+                      <AlertTriangle size={16} className="mr-2" /> إخطار فقد
                     </Button>
                   </div>
                 </div>
