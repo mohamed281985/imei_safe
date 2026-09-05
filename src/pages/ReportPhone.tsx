@@ -193,7 +193,6 @@ const ReportPhone: React.FC = () => {
 
   const stepItems = [
     { title: t('step_device_info_title'), description: t('step_device_info_desc') },
-    { title: t('step_personal_info_title'), description: t('step_personal_info_desc') },
     { title: t('step_loss_details_title'), description: t('step_loss_details_desc') },
     { title: t('step_attachments_title'), description: t('step_attachments_desc') },
   ];
@@ -310,25 +309,9 @@ const ReportPhone: React.FC = () => {
   };
 
   const validateForm = (data: FormData, isImeiRegisteredStatus: boolean, actualDbPassword: string | null, currentFieldReadOnlyState: typeof fieldReadOnlyState, quickMode: boolean): boolean => {
-    if (!data.ownerName || !data.phoneNumber || !data.imei || !data.phone_type || !data.lossLocation || !data.lossTime || !data.idLast6) {
+    if (!data.imei || !data.phone_type || !data.lossLocation || !data.lossTime) {
       toast({ title: t('error'), description: t('continue_in_data_mode'), variant: 'destructive' });
       return false;
-    }
-
-    // التحقق من حقل الواتساب إذا كان مفعلاً
-    if (shareWhatsApp && !whatsappNumber) {
-      toast({ title: t('error'), description: t('whatsapp_number_required'), variant: 'destructive' });
-      return false;
-    }
-
-    if (!isImeiRegisteredStatus && data.idLast6 !== REGISTERED_IN_SYSTEM) {
-      const val = String(data.idLast6 || '');
-      const isMasked = /\*/.test(val);
-      const isNumeric6 = /^\d{6}$/.test(val);
-      if (!isMasked && !isNumeric6) {
-        toast({ title: t('error'), description: t('id_last6_invalid'), variant: 'destructive' });
-        return false;
-      }
     }
 
     if (isImeiRegisteredStatus) {
@@ -344,19 +327,7 @@ const ReportPhone: React.FC = () => {
     }
 
     if (!currentFieldReadOnlyState.receiptImage) {
-      if (!data.receiptImage && data.ownerName !== REGISTERED_IN_SYSTEM) {
-        toast({ title: t('error'), description: t('receipt_image_required'), variant: 'destructive' });
-        return false;
-      }
-      if (
-        data.ownerName === REGISTERED_IN_SYSTEM && (
-          !resultRef.current ||
-          !resultRef.current.receipt_image_url ||
-          typeof resultRef.current.receipt_image_url !== 'string' ||
-          resultRef.current.receipt_image_url.trim() === '' ||
-          (!resultRef.current.receipt_image_url.startsWith('http') && !resultRef.current.receipt_image_url.startsWith('https'))
-        )
-      ) {
+      if (!data.receiptImage) {
         toast({ title: t('error'), description: t('receipt_image_required'), variant: 'destructive' });
         return false;
       }
@@ -937,8 +908,8 @@ const ReportPhone: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (currentStep < 4) {
-      setCurrentStep((prev) => Math.min(prev + 1, 4));
+    if (currentStep < 3) {
+      setCurrentStep((prev) => Math.min(prev + 1, 3));
       return;
     }
 
@@ -1090,104 +1061,7 @@ const ReportPhone: React.FC = () => {
 
       let fcmToken = '';
 
-      // ⭐ التعديل الجديد: التعامل مع البيانات المقنعة عند الإرسال
-      let effectiveOwnerName = isImeiRegistered ? originalData.ownerName : formData.ownerName;
-      let effectivePhoneNumber = isImeiRegistered ? originalData.phoneNumber : formData.phoneNumber;
-      let effectiveIdLast6 = isImeiRegistered ? originalData.idLast6 : formData.idLast6;
-      let effectiveCountryCode = isImeiRegistered ? originalData.countryCode : countryCode;
-
-      // إذا كانت البيانات مقنعة (تحتوي على نجوم)، نستخدم القيم من resultRef.current
-      if (effectiveOwnerName && effectiveOwnerName.includes('*')) {
-        const r = resultRef.current;
-        if (r && r.autoFillData) {
-          effectiveOwnerName = r.autoFillData.ownerNameRaw || r.autoFillData.ownerName || effectiveOwnerName;
-        }
-      }
-
-      if (effectivePhoneNumber && effectivePhoneNumber.includes('*')) {
-        const r = resultRef.current;
-        if (r && r.autoFillData) {
-          effectivePhoneNumber = r.autoFillData.phoneNumberRaw || r.autoFillData.phoneNumber || effectivePhoneNumber;
-          // تحديث رمز الدولة إذا كان متوفراً في البيانات الأصلية
-          const afCountry = r.autoFillData.country_code || r.autoFillData.countryKey || r.autoFillData.country_key;
-          if (afCountry) {
-            effectiveCountryCode = afCountry;
-          }
-        }
-      }
-
-      if (effectiveIdLast6 && effectiveIdLast6.includes('*')) {
-        const r = resultRef.current;
-        if (r && r.autoFillData) {
-          effectiveIdLast6 = r.autoFillData.idLast6Raw || r.autoFillData.idLast6 || effectiveIdLast6;
-        }
-      }
-
-      if (effectiveOwnerName === REGISTERED_IN_SYSTEM || effectivePhoneNumber === REGISTERED_IN_SYSTEM || effectiveIdLast6 === REGISTERED_IN_SYSTEM) {
-        const r = resultRef.current;
-        if (r) {
-          const maybeOwner = r.owner_name || r.ownerName || r.owner || r.name || null;
-          const maybePhone = r.phone_number || r.phoneNumber || r.phone || r.owner_phone || null;
-          const maybeId6 = r.id_last6 || r.idLast6 || r.id_last_6 || null;
-          const maybeCountryCode =
-            r.country_code || r.countryKey || r.country_key ||
-            r.phoneDetails?.country_code || r.phoneDetails?.countryKey || r.phoneDetails?.country_key ||
-            '+20';
-
-          if (maybeOwner) effectiveOwnerName = maybeOwner;
-          if (maybePhone) {
-            // إذا كان الرقم يبدأ بـ +، نفصله
-            if (maybePhone.startsWith('+')) {
-              const match = maybePhone.match(/^\+(\d{1,3})(.*)$/);
-              if (match) {
-                effectiveCountryCode = `+${match[1]}`;
-                effectivePhoneNumber = match[2];
-              }
-            } else {
-              effectivePhoneNumber = maybePhone;
-            }
-          }
-          if (maybeId6) effectiveIdLast6 = maybeId6;
-          if (maybeCountryCode) effectiveCountryCode = maybeCountryCode;
-        } else {
-          try {
-            const sessionResp = await supabase.auth.getSession();
-            const jwt = (sessionResp?.data as any)?.session?.access_token || '';
-            const resp = await axiosInstance.post('/api/imei-masked-info', { imei: formData.imei }, { headers: jwt ? { Authorization: `Bearer ${jwt}` } : {} });
-            const json = resp?.data;
-            const maybeOwner = json?.owner_name || json?.ownerName || null;
-            const maybePhone = json?.phone_number || json?.phoneNumber || null;
-            const maybeId6 = json?.id_last6 || json?.idLast6 || null;
-            const maybeCountryCode =
-              json?.country_code || json?.countryKey || json?.country_key ||
-              json?.phoneDetails?.country_code || json?.phoneDetails?.countryKey || json?.phoneDetails?.country_key ||
-              '+20';
-
-            if (maybeOwner) effectiveOwnerName = maybeOwner;
-            if (maybePhone) {
-              if (maybePhone.startsWith('+')) {
-                const match = maybePhone.match(/^\+(\d{1,3})(.*)$/);
-                if (match) {
-                  effectiveCountryCode = `+${match[1]}`;
-                  effectivePhoneNumber = match[2];
-                }
-              } else {
-                effectivePhoneNumber = maybePhone;
-              }
-            }
-            if (maybeId6) effectiveIdLast6 = maybeId6;
-            if (maybeCountryCode) effectiveCountryCode = maybeCountryCode;
-          } catch (e) {
-            console.error('Failed to fetch real owner data for REGISTERED_IN_SYSTEM fallback:', e);
-          }
-        }
-      }
-
-      // ⭐ التعديل الجديد: إرسال البيانات منفصلة
       const payload: any = {
-        ownerName: effectiveOwnerName,
-        phoneNumber: effectivePhoneNumber.replace(/\D/g, ''), // إرسال الرقم فقط
-        country_code: effectiveCountryCode, // إرسال رمز الدولة منفصلاً
         imei: formData.imei,
         phone_type: formData.phone_type === REGISTERED_IN_SYSTEM ? (resultRef.current?.phone_type || '') : formData.phone_type,
         loss_location: formData.lossLocation,
@@ -1195,12 +1069,10 @@ const ReportPhone: React.FC = () => {
         receipt_image_url: receiptImageToSend,
         report_image_url: reportImageToSend,
         password: password,
-        id_last6: effectiveIdLast6,
         user_id: user?.id || null,
-        email: user?.email || '',
         fcm_token: fcmToken,
-
       };
+
       payload.whatsapp = shareWhatsApp;
       if (shareWhatsApp) {
         payload.whatsapp_number = `${whatsappCountryCode}${whatsappNumber}`;
@@ -1270,7 +1142,7 @@ const ReportPhone: React.FC = () => {
           <div className="max-w-5xl mx-auto space-y-6">
             <div className="mb-8 px-2 sticky top-0 z-0 bg-white/95 backdrop-blur-sm py-2 rounded-xl">
               <div className="flex items-center justify-between relative">
-                {[1, 2, 3, 4].map((step) => (
+                {[1, 2, 3].map((step) => (
                   <React.Fragment key={step}>
                     <div className="flex flex-col items-center z-10">
                       <div
@@ -1284,7 +1156,7 @@ const ReportPhone: React.FC = () => {
                         {currentStep > step ? <CheckCircle className="w-6 h-6" /> : step}
                       </div>
                     </div>
-                    {step < 4 && (
+                    {step < 3 && (
                       <div className="flex-1 h-1 mx-[-10px] -mt-0">
                         <div
                           className={`h-full transition-all duration-500 ${currentStep > step ? 'bg-green-500' : 'bg-gray-300'
@@ -1296,10 +1168,9 @@ const ReportPhone: React.FC = () => {
                 ))}
               </div>
               <div className="flex justify-between mt-2 text-[9px] md:text-[11px] font-bold text-gray-600 gap-1">
-                <span className={`w-1/4 text-center leading-tight break-words ${currentStep === 1 ? 'text-blue-600' : ''}`}>{t('step_device_info_title')}</span>
-                <span className={`w-1/4 text-center leading-tight break-words ${currentStep === 2 ? 'text-blue-600' : ''}`}>{t('step_personal_info_title')}</span>
-                <span className={`w-1/4 text-center leading-tight break-words ${currentStep === 3 ? 'text-blue-600' : ''}`}>{t('step_loss_details_title')}</span>
-                <span className={`w-1/4 text-center leading-tight break-words ${currentStep === 4 ? 'text-blue-600' : ''}`}>{t('step_attachments_title')}</span>
+                <span className={`w-1/3 text-center leading-tight break-words ${currentStep === 1 ? 'text-blue-600' : ''}`}>{t('step_device_info_title')}</span>
+                <span className={`w-1/3 text-center leading-tight break-words ${currentStep === 2 ? 'text-blue-600' : ''}`}>{t('step_loss_details_title')}</span>
+                <span className={`w-1/3 text-center leading-tight break-words ${currentStep === 3 ? 'text-blue-600' : ''}`}>{t('step_attachments_title')}</span>
               </div>
             </div>
 
@@ -1405,123 +1276,6 @@ const ReportPhone: React.FC = () => {
                   <div className="flex items-center mb-6 px-2">
                     <span className="w-8 h-8 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-full flex items-center justify-center text-white text-sm ml-2">2</span>
                     <h3 className="text-xl font-bold text-blue-900">
-                      {t('step_personal_info_title')}
-                    </h3>
-                  </div>
-                  <div className="space-y-3">
-                    <label htmlFor="ownerName" className="flex items-center gap-2 text-slate-800 font-medium">
-                      <User className="h-4 w-4 text-[#0a4d8c]" />
-                      {t('owner_name')}
-                    </label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <User className="h-4 w-4 text-gray-500" />
-                      </div>
-                      <Input
-                        type="text"
-                        id="ownerName"
-                        name="ownerName"
-                        value={formData.ownerName === REGISTERED_IN_SYSTEM ? registeredInSystemLabel : formData.ownerName}
-                        onChange={handleChange}
-                        placeholder={
-                          formData.ownerName === REGISTERED_IN_SYSTEM
-                            ? registeredInSystemLabel
-                            : (formData.ownerName && /^[*]+$/.test(formData.ownerName) ? registeredInSystemLabel : t('owner_name'))
-                        }
-                        disabled={isReadOnly || fieldReadOnlyState.ownerName || isSubmitting || formData.ownerName === REGISTERED_IN_SYSTEM}
-                        className={`input-field w-full bg-[#c0dee5] text-gray-800 !pl-12 ${/^[*]+$/.test(formData.ownerName) || formData.ownerName.length < 2 ? 'text-gray-400 italic' : ''}`}
-                        style={(() => {
-                          if (/^[*]+$/.test(formData.ownerName) || formData.ownerName.length < 2) {
-                            return { letterSpacing: '0.2em' };
-                          }
-                          return /[a-zA-Z0-9]/.test(formData.ownerName) ? { direction: 'ltr', textAlign: 'left' } : { direction: 'rtl', textAlign: 'right' };
-                        })()}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    <label htmlFor="idLast6" className="flex items-center gap-2 text-slate-800 font-medium">
-                      <CreditCard className="h-4 w-4 text-[#0a4d8c]" />
-                      {t('id_last_6_digits')}
-                    </label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <CreditCard className="h-4 w-4 text-gray-500" />
-                      </div>
-                      <Input
-                        type="text"
-                        id="idLast6"
-                        name="idLast6"
-                        value={formData.idLast6 === REGISTERED_IN_SYSTEM ? registeredInSystemLabel : formData.idLast6}
-                        onChange={handleChange}
-                        className={`input-field w-full bg-[#c0dee5] text-gray-800 !pl-12 ${/^[*]+$/.test(formData.idLast6) || formData.idLast6.length < 2 ? 'text-gray-400 italic' : ''}`}
-                        style={(() => {
-                          if (/^[*]+$/.test(formData.idLast6) || formData.idLast6.length < 2) {
-                            return { letterSpacing: '0.2em' };
-                          }
-                          return /[a-zA-Z0-9]/.test(formData.idLast6) ? { direction: 'ltr', textAlign: 'left' } : { direction: 'rtl', textAlign: 'right' };
-                        })()}
-                        maxLength={6}
-                        pattern="[0-9]{6}"
-                        inputMode="numeric"
-                        required
-                        placeholder={
-                          formData.idLast6 === REGISTERED_IN_SYSTEM
-                            ? registeredInSystemLabel
-                            : (formData.idLast6 && /^[*]+$/.test(formData.idLast6) ? registeredInSystemLabel : t('id_last_6_digits_placeholder'))
-                        }
-                        disabled={fieldReadOnlyState.idLast6 || isReadOnly || isSubmitting || formData.idLast6 === REGISTERED_IN_SYSTEM}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    <label htmlFor="phoneNumber" className="flex items-center gap-2 text-slate-800 font-medium">
-                      <Phone className="h-4 w-4 text-[#0a4d8c]" />
-                      {t('phone_number')}
-                    </label>
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                      <CountryCodeSelector
-                        value={countryCode}
-                        onChange={setCountryCode}
-                        disabled={fieldReadOnlyState.phoneNumber || isReadOnly || isSubmitting || formData.phoneNumber === REGISTERED_IN_SYSTEM}
-                      />
-                      <div className="relative w-full">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <Phone className="h-4 w-4 text-gray-500" />
-                        </div>
-                        <Input
-                          id="phoneNumber"
-                          name="phoneNumber"
-                          type="tel"
-                          value={formData.phoneNumber === REGISTERED_IN_SYSTEM ? registeredInSystemLabel : formData.phoneNumber}
-                          onChange={handleChange}
-                          disabled={fieldReadOnlyState.phoneNumber || isReadOnly || isSubmitting || formData.phoneNumber === REGISTERED_IN_SYSTEM}
-                          className={`input-field w-full bg-[#c0dee5] text-gray-800 !pl-12 ${/^[*]+$/.test(formData.phoneNumber) || formData.phoneNumber.length < 2 ? 'text-gray-400 italic' : ''}`}
-                          style={(() => {
-                            if (/^[*]+$/.test(formData.phoneNumber) || formData.phoneNumber.length < 2) {
-                              return { letterSpacing: '0.2em' };
-                            }
-                            return /[a-zA-Z0-9]/.test(formData.phoneNumber) ? { direction: 'ltr', textAlign: 'left' } : { direction: 'rtl', textAlign: 'right' };
-                          })()}
-                          placeholder={
-                            formData.phoneNumber === REGISTERED_IN_SYSTEM
-                              ? registeredInSystemLabel
-                              : (formData.phoneNumber && /^[*]+$/.test(formData.phoneNumber) ? registeredInSystemLabel : t('phone_placeholder'))
-                          }
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {currentStep === 3 && (
-                <div className="space-y-5">
-                  <div className="flex items-center mb-6 px-2">
-                    <span className="w-8 h-8 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-full flex items-center justify-center text-white text-sm ml-2">3</span>
-                    <h3 className="text-xl font-bold text-blue-900">
                       {t('step_loss_details_title')}
                     </h3>
                   </div>
@@ -1568,10 +1322,10 @@ const ReportPhone: React.FC = () => {
                 </div>
               )}
 
-              {currentStep === 4 && (
+              {currentStep === 3 && (
                 <div className="space-y-5">
                   <div className="flex items-center mb-6 px-2">
-                    <span className="w-8 h-8 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-full flex items-center justify-center text-white text-sm ml-2">4</span>
+                    <span className="w-8 h-8 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-full flex items-center justify-center text-white text-sm ml-2">3</span>
                     <h3 className="text-xl font-bold text-blue-900">
                       {t('step_attachments_title')}
                     </h3>
@@ -1627,14 +1381,8 @@ const ReportPhone: React.FC = () => {
                       {t('share_whatsapp_number')}
                     </label>
                     <Smartphone className="w-4 h-4 text-blue-600 ml-2" />
-                    {isCheckingRole && (
-                      <span className="text-xs text-blue-600 mr-2">
-                        {t('checking_user_role')}
-                      </span>
-                    )}
                   </div>
 
-                  {/* حقل إدخال رقم الواتساب */}
                   {shareWhatsApp && (
                     <div className="mb-4 p-4 bg-green-50 rounded-lg border border-green-200">
                       <label className="block text-sm font-medium text-gray-700 mb-3">{t('enter_whatsapp_number_for_contact')}</label>
@@ -1655,7 +1403,6 @@ const ReportPhone: React.FC = () => {
                           required={shareWhatsApp}
                         />
                       </div>
-                      <p className="text-xs text-gray-500 mt-2">{t('whatsapp_number_help_text')}</p>
                     </div>
                   )}
 
@@ -1704,7 +1451,7 @@ const ReportPhone: React.FC = () => {
                 disabled={isLoading || isSubmitting || isReadOnly}
                 className="flex-1 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-500 px-2 py-4 text-white font-bold shadow-lg transition hover:from-blue-700 hover:to-cyan-600"
               >
-                {currentStep < 4 ? t('next') : t('submit_report')}
+                {currentStep < 3 ? t('next') : t('submit_report')}
               </Button>
             </div>
           </div>

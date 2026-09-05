@@ -87,7 +87,20 @@ export function registerReportRoutes({
       }
       const data = { ...(req.body || {}) };
       data.user_id = req.user?.id || null;
-      data.email = req.user?.email || data.email || '';
+      // بلاغ الفقد لا يخزن بيانات شخصية؛ الأعمدة القديمة تبقى فارغة للتوافق.
+      [
+        'owner_name', 'ownerName',
+        'phone_number', 'phoneNumber',
+        'country_code', 'countryCode',
+        'id_last6', 'idLast6',
+        'email',
+          'whatsapp_number', 'whatsapp_country_code', 'anther_number'
+      ].forEach((field) => delete data[field]);
+      data.owner_name = '';
+      data.phone_number = '';
+      data.country_code = '';
+      data.id_last6 = '';
+      data.email = '';
       const PLACEHOLDER_REGISTERED = 'مسجل بالنظام';
       let registeredPhoneForReport = null;
 
@@ -165,19 +178,11 @@ export function registerReportRoutes({
         }
       }
 
-      // إذا كانت الواجهة أرسلت placeholders (مسجل بالنظام)، استبدلها بالقيم الفعلية من registered_phones
-      // ثم قم بتشفيرها وحفظها في phone_reports.
+      // إذا كانت الواجهة أرسلت placeholders (مسجل بالنظام)، استخدم صورة الفاتورة فقط.
       if (registeredPhoneForReport) {
         try {
-          const ownerNameReal = decryptField(registeredPhoneForReport.owner_name) || registeredPhoneForReport.owner_name;
-          const phoneReal = decryptField(registeredPhoneForReport.phone_number) || registeredPhoneForReport.phone_number;
-          const idLast6Real = decryptField(registeredPhoneForReport.id_last6) || registeredPhoneForReport.id_last6;
           const phoneTypeReal = registeredPhoneForReport.phone_type || null;
 
-          // احفظ القيم الحقيقية دائماً عندما تكون متوفرة في سجل registered_phones
-          if (ownerNameReal) data.ownerName = ownerNameReal;
-          if (phoneReal) data.phoneNumber = phoneReal;
-          if (idLast6Real) data.idLast6 = idLast6Real;
           if (phoneTypeReal) data.phone_type = phoneTypeReal;
           // إذا كانت صورة الفاتورة محفوظة في سجل registered_phones، استخدمها كقيمة افتراضية
           if (registeredPhoneForReport) {
@@ -263,38 +268,7 @@ console.log("================================");
         }
         data.imei = JSON.stringify({ encryptedData: encryptedImei.encryptedData, iv: encryptedImei.iv, authTag: encryptedImei.authTag });
       }
-      if (data.ownerName) {
-        const encryptedOwner = encryptAES(data.ownerName);
-        if (!encryptedOwner) {
-          return res.status(400).json({ success: false, error: 'فشل تشفير اسم المالك' });
-        }
-        data.owner_name = JSON.stringify({ encryptedData: encryptedOwner.encryptedData, iv: encryptedOwner.iv, authTag: encryptedOwner.authTag });
-        delete data.ownerName;
-      }
-      if (data.phoneNumber) {
-        const encryptedPhone = encryptAES(data.phoneNumber);
-        if (!encryptedPhone) {
-          return res.status(400).json({ success: false, error: 'فشل تشفير رقم الهاتف' });
-        }
-        data.phone_number = JSON.stringify({ encryptedData: encryptedPhone.encryptedData, iv: encryptedPhone.iv, authTag: encryptedPhone.authTag });
-        delete data.phoneNumber;
-      }
-      if (data.idLast6) {
-        const encryptedId = encryptAES(data.idLast6);
-        if (!encryptedId) {
-          return res.status(400).json({ success: false, error: 'فشل تشفير رقم الهوية' });
-        }
-        data.id_last6 = JSON.stringify({ encryptedData: encryptedId.encryptedData, iv: encryptedId.iv, authTag: encryptedId.authTag });
-        delete data.idLast6;
-      }
-      if (data.email) {
-        const encryptedEmail = encryptAES(data.email);
-        if (!encryptedEmail) {
-          return res.status(400).json({ success: false, error: 'فشل تشفير البريد الإلكتروني' });
-        }
-        data.email = JSON.stringify({ encryptedData: encryptedEmail.encryptedData, iv: encryptedEmail.iv, authTag: encryptedEmail.authTag });
-      }
-      // تشفير رقم الواتساب وحفظه في عمود anther_number
+      // حفظ رقم WhatsApp فقط عند اختيار المستخدم مشاركته.
       if (data.whatsapp_number) {
         const encryptedWhatsapp = encryptAES(data.whatsapp_number);
         if (!encryptedWhatsapp) {
@@ -304,8 +278,9 @@ console.log("================================");
         delete data.whatsapp_number;
       }
       if (data.whatsapp_country_code) {
-        delete data.whatsapp_country_code; // لا نحتاج لتخزين كود الدولة منفصلاً (هو جزء من الرقم المشفر)
+        delete data.whatsapp_country_code;
       }
+
       // حفظ البلاغ في قاعدة البيانات
       const { data: inserted, error } = await supabase
         .from('phone_reports')
