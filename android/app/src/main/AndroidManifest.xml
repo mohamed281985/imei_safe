@@ -54,8 +54,8 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="idpnvgvamdedaynetjvm.supabase.co" android:pathPrefix="/auth/v1/verify" />
             </intent-filter>
-            <!-- Universal deep link for myapp://* (autoVerify) -->
-            <intent-filter android:autoVerify="true">
+            <!-- Universal deep link for myapp://*  -->
+            <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />

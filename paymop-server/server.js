@@ -5931,6 +5931,16 @@ const checkAuthBlocked = (key) => {
 app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
   const phoneData = req.body;
   const userId = req.user.id;
+
+  // تسجيل الهاتف لا يحتاج بيانات شخصية؛ تجاهلها قبل أي معالجة أو إدراج.
+  [
+    'owner_name', 'ownerName',
+    'phone_number', 'phoneNumber',
+    'country_code', 'countryCode',
+    'email',
+    'id_last6', 'idLast6'
+  ].forEach((field) => delete phoneData[field]);
+
   const limitCheck = await checkRegisterLimit(req.user.id);
 
   if (!limitCheck.canRegister) {
@@ -6021,85 +6031,6 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
       iv: encryptedImei.iv,
       authTag: encryptedImei.authTag
     });
-  }
-
-  // تشفير رقم الهاتف باستخدام AES
-  if (phoneData.phone_number) {
-    const encryptedPhone = encryptAES(phoneData.phone_number);
-    if (!encryptedPhone) {
-      return res.status(400).json({ error: 'فشل تشفير رقم الهاتف' });
-    }
-    phoneData.phone_number = JSON.stringify({
-      encryptedData: encryptedPhone.encryptedData,
-      iv: encryptedPhone.iv,
-      authTag: encryptedPhone.authTag
-    });
-  }
-
-  // تشفير آخر 6 أرقام من البطاقة باستخدام AES
-  if (phoneData.id_last6) {
-    const encryptedId = encryptAES(phoneData.id_last6);
-    if (!encryptedId) {
-      return res.status(400).json({ error: 'فشل تشفير رقم الهوية' });
-    }
-    phoneData.id_last6 = JSON.stringify({
-      encryptedData: encryptedId.encryptedData,
-      iv: encryptedId.iv,
-      authTag: encryptedId.authTag
-    });
-  }
-
-  // تشفير البريد الإلكتروني باستخدام AES
-  if (phoneData.email) {
-    const encryptedEmail = encryptAES(phoneData.email);
-    if (!encryptedEmail) {
-      return res.status(400).json({ error: 'فشل تشفير البريد الإلكتروني' });
-    }
-    phoneData.email = JSON.stringify({
-      encryptedData: encryptedEmail.encryptedData,
-      iv: encryptedEmail.iv,
-      authTag: encryptedEmail.authTag
-    });
-  }
-
-  // Normalize and encrypt owner name (accept ownerName or owner_name)
-  if (typeof phoneData.ownerName !== 'undefined') {
-    // prefer explicit camelCase input but normalize to snake_case
-    phoneData.owner_name = phoneData.ownerName;
-    delete phoneData.ownerName;
-  }
-
-  if (typeof phoneData.owner_name !== 'undefined' && phoneData.owner_name !== null && phoneData.owner_name !== '') {
-    let rawOwner = phoneData.owner_name;
-    try {
-      // If it's a JSON string containing encrypted fields, keep it as-is (stringify canonical form)
-      if (typeof rawOwner === 'string') {
-        try {
-          const parsed = JSON.parse(rawOwner);
-          if (parsed && parsed.encryptedData && parsed.iv && parsed.authTag) {
-            phoneData.owner_name = JSON.stringify({ encryptedData: parsed.encryptedData, iv: parsed.iv, authTag: parsed.authTag });
-          } else {
-            const encOwner = encryptAES(String(rawOwner));
-            if (!encOwner) return res.status(400).json({ error: 'فشل تشفير اسم المالك' });
-            phoneData.owner_name = JSON.stringify({ encryptedData: encOwner.encryptedData, iv: encOwner.iv, authTag: encOwner.authTag });
-          }
-        } catch (e) {
-          const encOwner = encryptAES(String(rawOwner));
-          if (!encOwner) return res.status(400).json({ error: 'فشل تشفير اسم المالك' });
-          phoneData.owner_name = JSON.stringify({ encryptedData: encOwner.encryptedData, iv: encOwner.iv, authTag: encOwner.authTag });
-        }
-      } else if (typeof rawOwner === 'object' && rawOwner.encryptedData && rawOwner.iv && rawOwner.authTag) {
-        phoneData.owner_name = JSON.stringify({ encryptedData: rawOwner.encryptedData, iv: rawOwner.iv, authTag: rawOwner.authTag });
-      } else {
-        const encOwner = encryptAES(String(rawOwner));
-        if (!encOwner) return res.status(400).json({ error: 'فشل تشفير اسم المالك' });
-        phoneData.owner_name = JSON.stringify({ encryptedData: encOwner.encryptedData, iv: encOwner.iv, authTag: encOwner.authTag });
-      }
-    } catch (e) {
-      const encOwner = encryptAES(String(rawOwner));
-      if (!encOwner) return res.status(400).json({ error: 'فشل تشفير اسم المالك' });
-      phoneData.owner_name = JSON.stringify({ encryptedData: encOwner.encryptedData, iv: encOwner.iv, authTag: encOwner.authTag });
-    }
   }
 
   try {

@@ -1,11 +1,3 @@
-// Helper to mask last 6 digits (show only last 2)
-const maskIdLast6 = (id: string): string => {
-  const digits = cleanDigits(id);
-  if (!digits) return '';
-  if (digits.length <= 2) return '*'.repeat(digits.length);
-  return '*'.repeat(digits.length - 2) + digits.slice(-2);
-};
-
 import React, { useState, useCallback, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -14,7 +6,7 @@ import AdsOfferSlider from '@/components/AdsOfferSlider';
 import axiosInstance from '@/services/axiosInterceptor';
 import imageCompression from 'browser-image-compression';
 import { Button } from '@/components/ui/button';
-import { Camera, Upload, CreditCard, User, FileText, CheckCircle, AlertTriangle, Smartphone, Phone, Mail, KeyRound, Hash } from 'lucide-react';
+import { Camera, Upload, FileText, CheckCircle, AlertTriangle, Smartphone, KeyRound, Hash } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Camera as CapacitorCamera, CameraResultType, CameraSource, CameraDirection } from '@capacitor/camera';
 import { Filesystem, Directory } from '@capacitor/filesystem';
@@ -25,43 +17,33 @@ import PageAdvertisement from '@/components/advertisements/PageAdvertisement';
 import { supabase } from '@/lib/supabase';
 import { useScrollToTop } from '../hooks/useScrollToTop';
 import { useAuth } from '@/contexts/AuthContext';
-import CountryCodeSelector from '../components/CountryCodeSelector';
 
 type ReviewStatus = 'تمت المراجعة' | 'بيانات خاطئة';
 type Status = 'approved' | 'rejected' | 'pending';
 
 interface PhoneData {
-  owner_name: string;
-  phone_number: string;
   imei: string;
   phone_type: string;
   password: string;
-  id_last6: string;
   phone_image_url: string | null;
   receipt_image_url: string | null;
   registration_date: string;
   review_status: ReviewStatus;
   review_date: string | null;
   status: Status;
-  email: string | null;
   user_id: string | null;
 }
 
 interface FormData {
-  ownerName: string;
-  phoneNumber: string;
   imei: string;
   phoneType: string;
   password: string;
   confirmPassword: string;
-  id_last6: string;
   phoneImage: File | null;
   receiptImage: File | null;
   review_status?: ReviewStatus;
   review_date?: string | null;
   status?: Status;
-  registerType: 'mine' | 'other';
-  email: string;
 }
 
 type ImageType = keyof Pick<FormData, 'phoneImage' | 'receiptImage'>;
@@ -88,64 +70,6 @@ const cleanDisplay = (s: string) => stripSurroundingQuotes(decodeHtmlEntities(St
 function cleanText(s: unknown): string {
   return cleanDisplay(String(s ?? ''));
 }
-
-function cleanPhoneNumber(phone: string): string {
-  return cleanDisplay(String(phone || '')).replace(/\D/g, '');
-}
-
-function cleanDigits(s: unknown): string {
-  return cleanText(s).replace(/\D/g, '');
-}
-
-function cleanEmailValue(s: unknown): string {
-  return cleanText(s).replace(/\s+/g, '');
-}
-
-// دوال مساعدة لتنسيق عرض البيانات
-const maskName = (name: string): string => {
-  if (!name) return '';
-  const cleanedName = cleanDisplay(name);
-  const names = cleanedName.split(/\s+/);
-  return names.map(part => {
-    if (!part) return part;
-    const core = part.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
-    if (!core) return part;
-    const graphemes = Array.from(core);
-    const firstIdx = graphemes.findIndex(g => /\p{L}|\p{N}/u.test(g));
-    if (firstIdx === -1) return core;
-    const lettersCount = graphemes.reduce((n, g) => n + (/\p{L}|\p{N}/u.test(g) ? 1 : 0), 0);
-    if (lettersCount <= 1) return core;
-    let shown = '';
-    for (let i = 0; i < graphemes.length; i++) {
-      const g = graphemes[i];
-      if (i === firstIdx) {
-        shown += g;
-      } else if (/\p{L}|\p{N}/u.test(g)) {
-        shown += '*';
-      } else {
-        shown += g;
-      }
-    }
-    return shown.replace(/[\u0022\u201C\u201D\u00AB\u00BB'`]/g, '');
-  }).join(' ');
-};
-
-const maskPhoneNumber = (phone: string): string => {
-  const digits = cleanPhoneNumber(phone);
-  if (!digits) return '';
-  if (digits.length <= 2) return '*'.repeat(digits.length);
-  return '*'.repeat(digits.length - 2) + digits.slice(-2);
-};
-
-// Helper to mask email for privacy
-const maskEmail = (email: string): string => {
-  const cleaned = cleanEmailValue(email);
-  if (!cleaned) return '';
-  const [name, domain] = cleaned.split('@');
-  if (!domain) return email;
-  const maskedName = name.length > 2 ? name[0] + '*'.repeat(name.length - 2) + name.slice(-1) : name;
-  return maskedName + '@' + domain;
-};
 
 // دالة مساعدة لتشفير كلمة المرور (SHA-256)
 async function sha256(message: string) {
@@ -215,11 +139,6 @@ function cleanImei(imei: string): string {
 }
 
 // دالة مساعدة لتنظيف آخر 6 أرقام من البطاقة
-function cleanIdLast6(idLast6: string): string {
-  // إزالة أي مسافات أو أحرف غير رقمية
-  return idLast6.trim().replace(/\D/g, '');
-}
-
 // Generate a random opaque id for filenames to avoid leaking IMEI in storage paths
 function generateRandomId(): string {
   try {
@@ -242,13 +161,10 @@ const RegisterPhone: React.FC = () => {
   const location = useLocation();
   const fromPurchase = location.state?.fromPurchase;
   const passedImei = location.state?.imei || '';
-  const [countryCode, setCountryCode] = useState('+20');
   const [currentStep, setCurrentStep] = useState(1);
-  const [showOtherButton, setShowOtherButton] = useState(false); // للتحكم في ظهور الزر
 
   const stepItems = [
     { title: t('step_device_info_title'), description: t('step_device_info_desc') },
-    { title: t('step_personal_info_title'), description: t('step_personal_info_desc') },
     { title: t('step_password_info_title'), description: t('step_password_info_desc') },
     { title: t('step_attachments_title'), description: t('step_attachments_desc') },
   ];
@@ -316,20 +232,15 @@ const RegisterPhone: React.FC = () => {
   }, [toast]);
 
   const [formData, setFormData] = useState<FormData>({
-    ownerName: '',
-    phoneNumber: '',
     imei: passedImei,
     phoneType: '',
     password: '',
     confirmPassword: '',
-    id_last6: '',
     phoneImage: null,
     receiptImage: null,
     review_status: 'pending' as ReviewStatus,
     review_date: null,
-    status: 'active' as Status,
-    registerType: 'mine',
-    email: user?.email || ''
+    status: 'active' as Status
   });
 
   const [previews, setPreviews] = useState<Record<ImageType, string>>({
@@ -381,95 +292,6 @@ const RegisterPhone: React.FC = () => {
     return '';
   };
 
-  useEffect(() => {
-    const fetchUserData = async () => {
-      if (!user || fromPurchase) return;
-      setIsLoading(true);
-      try {
-        if (formData.registerType === 'mine') {
-          // استدعاء API الجديد للحصول على البيانات المفكوكة من الخادم
-          const { data: { session } } = await supabase.auth.getSession();
-          const token = session?.access_token;
-
-          // تحقق من وجود token قبل الاستدعاء
-          if (!token) {
-            console.warn('No authentication token available');
-            return;
-          }
-
-          const response = await axiosInstance.get('/api/decrypted-user', {
-            headers: {
-              'Authorization': `Bearer ${token}`
-            }
-          });
-
-          const result = response.data;
-
-          // result: { user: {...} | null, business: {...} | null }
-          const userData = result?.user || null;
-          const businessData = result?.business || null;
-
-          if (user.role === 'business' && businessData) {
-            // 1. تحديث رمز الدولة من البيانات المباشرة
-            if (businessData.country_code) {
-              setCountryCode(businessData.country_code);
-            } else {
-              // fallback: إذا لم يوجد رمز، استخدم الافتراضي
-              setCountryCode('+20');
-            }
-
-            // 2. تحديث باقي البيانات
-            setFormData(prev => ({
-              ...prev,
-              ownerName: cleanText(businessData.owner_name || prev.ownerName || ''),
-              phoneNumber: cleanPhoneNumber(businessData.phone || prev.phoneNumber || ''),
-              email: cleanEmailValue(user?.email || prev.email || ''),
-              id_last6: cleanDigits(businessData.id_last6 || prev.id_last6 || '')
-            }));
-            toast({ title: t('store_data_filled'), description: t('store_data_filled_description') });
-          } else if (userData) {
-            // 1. تحديث رمز الدولة من البيانات المباشرة
-            if (userData.country_code) {
-              setCountryCode(userData.country_code);
-            } else {
-              // fallback: إذا لم يوجد رمز، استخدم الافتراضي
-              setCountryCode('+20');
-            }
-
-            // 2. تحديث باقي البيانات
-            setFormData(prev => ({
-              ...prev,
-              ownerName: cleanText(userData.full_name || prev.ownerName || ''),
-              phoneNumber: cleanPhoneNumber(userData.phone || prev.phoneNumber || ''),
-              email: cleanEmailValue(user?.email || userData.email || prev.email || ''),
-              id_last6: cleanDigits(userData.id_last6 || prev.id_last6 || '')
-            }));
-            toast({ title: t('user_data_filled'), description: t('user_data_filled_description') });
-          }
-        } else {
-          // If registerType is 'other', clear the fields for manual entry
-          setFormData(prev => ({
-            ...prev,
-            ownerName: '',
-            phoneNumber: '',
-            email: '',
-            id_last6: ''
-          }));
-          // إعادة تعيين رمز الدولة للقيمة الافتراضية عند التسجيل لشخص آخر
-          setCountryCode('+20');
-        }
-      } catch (error) {
-        console.error('Error fetching user data:', error);
-        // لا نعرض رسالة خطأ إذا لم تكن هناك بيانات للملء
-        // toast({ title: 'خطأ', description: 'فشل تحميل بيانات المستخدم.', variant: 'destructive' });
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchUserData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, fromPurchase, t, toast, formData.registerType]);
-  // ...existing code...
   // Restore checkImeiExists definition here if missing
   const checkImeiExists = useCallback(async (imei: string): Promise<{
     exists: boolean; phoneDetails: Partial<PhoneData> | null; isOtherUser?: boolean; isSold?: boolean;
@@ -504,19 +326,8 @@ const RegisterPhone: React.FC = () => {
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    if (name === 'id_last6') {
-      const numericValue = value.replace(/\D/g, '');
-      setFormData(prev => ({ ...prev, [name]: numericValue }));
-    } else if (name === 'phoneNumber') {
-      let numericValue = value.replace(/\D/g, '');
-      if (numericValue.startsWith('0')) {
-        numericValue = numericValue.replace(/^0+/, '');
-      }
-      setFormData(prev => ({ ...prev, [name]: numericValue }));
-    } else {
-      setFormData(prev => ({ ...prev, [name]: value }));
-    }
-  }, [countryCode]);
+    setFormData(prev => ({ ...prev, [name]: value }));
+  }, []);
 
   const handleImeiChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value.replace(/\D/g, '');
@@ -539,8 +350,6 @@ const RegisterPhone: React.FC = () => {
           setImeiError('');
           setFormData(prev => ({
             ...prev,
-            ownerName: (prev.registerType === 'mine' || user?.role === 'business') ? prev.ownerName : '',
-            phoneNumber: (prev.registerType === 'mine' || user?.role === 'business') ? prev.phoneNumber : '',
             phoneType: '',
             phoneImage: null,
           }));
@@ -566,8 +375,6 @@ const RegisterPhone: React.FC = () => {
             setImeiError('imei_stolen');
             setFormData(prev => ({
               ...prev,
-              ownerName: user?.role === 'business' ? prev.ownerName : '',
-              phoneNumber: user?.role === 'business' ? prev.phoneNumber : '',
               phoneType: '',
               phoneImage: null,
             }));
@@ -598,8 +405,6 @@ const RegisterPhone: React.FC = () => {
             }
             setFormData(prev => ({
               ...prev,
-              ownerName: user?.role === 'business' ? prev.ownerName : '',
-              phoneNumber: user?.role === 'business' ? prev.phoneNumber : '',
               phoneType: '',
               phoneImage: null,
             }));
@@ -629,8 +434,6 @@ const RegisterPhone: React.FC = () => {
             } else {
               setFormData(prev => ({
                 ...prev,
-                ownerName: user?.role === 'business' ? prev.ownerName : cleanText(phoneDetails.owner_name || ''),
-                phoneNumber: user?.role === 'business' ? prev.phoneNumber : cleanPhoneNumber(phoneDetails.phone_number || ''),
                 phoneType: cleanText(phoneDetails.phone_type || ''),
                 phoneImage: null,
               }));
@@ -651,8 +454,6 @@ const RegisterPhone: React.FC = () => {
           setIsImeiValid(true);
           setFormData(prev => ({
             ...prev,
-            ownerName: (prev.registerType === 'mine' || user?.role === 'business') ? prev.ownerName : '',
-            phoneNumber: (prev.registerType === 'mine' || user?.role === 'business') ? prev.phoneNumber : '',
             phoneType: '',
             phoneImage: null,
           }));
@@ -664,8 +465,6 @@ const RegisterPhone: React.FC = () => {
         showToast('error', (error instanceof Error) ? error.message : t('error_checking_imei'));
         setFormData(prev => ({
           ...prev,
-          ownerName: (prev.registerType === 'mine' || user?.role === 'business') ? prev.ownerName : '',
-          phoneNumber: (prev.registerType === 'mine' || user?.role === 'business') ? prev.phoneNumber : '',
           phoneType: '',
           phoneImage: null
         }));
@@ -745,18 +544,11 @@ const RegisterPhone: React.FC = () => {
   }, [updateImage, showToast]);
 
   const validateForm = useCallback(async (): Promise<boolean> => {
-    const needsIdLast6 = formData.registerType === 'other';
-
     const validations = [
       {
-        // If registering for another person, require id_last6; when registering for self,
-        // id_last6 may be supplied from decrypted backend data and the field is disabled,
-        // so do not force it here.
-        condition: !formData.ownerName || !formData.phoneNumber || !formData.imei || !formData.phoneType || !formData.password || !formData.confirmPassword || (needsIdLast6 && !formData.id_last6),
+        condition: !formData.imei || !formData.phoneType || !formData.password || !formData.confirmPassword,
         message: 'fill_all_fields'
       },
-      // Validate id_last6 length only when it's required (registering for other)
-      ...(needsIdLast6 ? [{ condition: formData.id_last6.length !== 6, message: 'id_last6_invalid' }] : []),
       {
         condition: formData.password.length < 8,
         message: 'password_too_short'
@@ -837,11 +629,6 @@ const RegisterPhone: React.FC = () => {
 
       const now = new Date().toISOString();
 
-      // تحديد user_id حسب نوع التسجيل
-      let userIdToSave = user?.id || null;
-      if (formData.registerType === 'other') {
-        userIdToSave = null;
-      }
       const phoneData = {
         imei: cleanImei(formData.imei),
         phone_type: formData.phoneType,
@@ -852,49 +639,8 @@ const RegisterPhone: React.FC = () => {
         review_status: null,
         review_date: null,
         status: 'pending',
-        user_id: userIdToSave,
-        owner_name: '',
-        phone_number: '', // سيتم تعبئته لاحقاً
-        country_code: '', // إضافة حقل رمز الدولة
-        id_last6: '',
-        email: '',
+        user_id: user?.id || null,
       };
-
-      if (formData.registerType === 'other') {
-        phoneData.owner_name = formData.ownerName;
-
-        // التعديل 1: حفظ رمز الدولة منفصلاً (كما هو +20)
-        phoneData.country_code = countryCode;
-
-        // التعديل 2: حفظ رقم الهاتف فقط (بدون رمز الدولة) بعد تنظيفه من أي مسافات أو رموز
-        phoneData.phone_number = cleanPhoneNumber(formData.phoneNumber);
-
-        phoneData.id_last6 = cleanIdLast6(formData.id_last6);
-        phoneData.email = formData.email;
-      } else {
-        const currentUser = user as any;
-        phoneData.owner_name = formData.ownerName || currentUser?.user_metadata?.full_name || '';
-
-        // التعديل 3: حفظ رمز الدولة منفصلاً
-        // إذا كان المستخدم قد أدخل رقماً جديداً، نستخدم الرمز المختار حالياً
-        // وإلا نحاول جلبه من بيانات المستخدم المسجلة (إذا كانت متوفرة ومفصولة)
-        if (formData.phoneNumber) {
-          phoneData.country_code = countryCode;
-          // حفظ الرقم فقط
-          phoneData.phone_number = cleanPhoneNumber(formData.phoneNumber);
-        } else {
-          // ملاحظة: هنا نحتاج للتأكد من شكل البيانات في currentUser.phone
-          // إذا كانت مخزنة مدمجة (مثلاً +20...)، سيحتاج الكود لمنطق لفصلها
-          // ولكن بما أننا نعدل للفصل، سنفترض هنا أننا نعتمد على المدخلات الحالية
-          // أو أن currentUser.phone يحتوي على الرقم فقط
-          phoneData.phone_number = currentUser?.phone || '';
-          // قد تحتاج لاسترجاع country_code من مكان آخر إذا لم يكن في currentUser
-          phoneData.country_code = currentUser?.country_code || countryCode;
-        }
-
-        phoneData.id_last6 = formData.id_last6 || currentUser?.user_metadata?.id_last6 || '';
-        phoneData.email = formData.email || user?.email || '';
-      }
 
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
@@ -939,35 +685,7 @@ const RegisterPhone: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [formData, previews, showToast, navigate, user, countryCode]);
-
-  const validateOtherUserData = useCallback(async (): Promise<boolean> => {
-    if (formData.registerType !== 'other') return true;
-
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      if (!token) return false;
-
-      const response = await axiosInstance.post('/api/validate-other-registration-data',
-        {
-          ownerName: cleanText(formData.ownerName),
-          phoneNumber: cleanPhoneNumber(`${countryCode}${formData.phoneNumber}`),
-          id_last6: cleanDigits(formData.id_last6)
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        }
-      );
-
-      return response.status === 200 && !!response.data?.valid;
-    } catch (error) {
-      console.error('Error validating other user data:', error);
-      return false;
-    }
-  }, [formData.registerType, formData.ownerName, formData.phoneNumber, formData.id_last6, countryCode]);
+  }, [formData, previews, showToast, navigate, user]);
 
   useEffect(() => {
     if (hasReachedRegisterLimit) {
@@ -977,8 +695,8 @@ const RegisterPhone: React.FC = () => {
 
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
-    if (currentStep < 4) {
-      setCurrentStep(prev => Math.min(prev + 1, 4));
+    if (currentStep < 3) {
+      setCurrentStep(prev => Math.min(prev + 1, 3));
       return;
     }
     if (isSubmitting) return;
@@ -1003,16 +721,6 @@ const RegisterPhone: React.FC = () => {
 
       const isValid = await validateForm();
       if (isValid) {
-        if (formData.registerType === 'other') {
-          const isOtherDataValid = await validateOtherUserData();
-          if (!isOtherDataValid) {
-            toast({ title: t('error'), description: t('other_registration_data_invalid'), variant: 'destructive' });
-            setIsLoading(false);
-            setIsSubmitting(false);
-            return;
-          }
-        }
-
         await savePhoneData();
       }
     } catch (error) {
@@ -1022,7 +730,7 @@ const RegisterPhone: React.FC = () => {
       setIsLoading(false);
       setIsSubmitting(false);
     }
-  }, [isSubmitting, validateForm, savePhoneData, showToast, user, checkRegisterLimit, toast, formData.registerType, validateOtherUserData, t]);
+  }, [isSubmitting, validateForm, savePhoneData, showToast, user, checkRegisterLimit, toast, t]);
 
   useEffect(() => {
     return () => {
@@ -1125,31 +833,6 @@ const RegisterPhone: React.FC = () => {
         <Card className="max-w-6xl p-0 bg-transparent shadow-none border-none" style={{ backgroundColor: 'transparent' }}>
           <CardContent className="p-0">
             <form onSubmit={handleSubmit} className="space-y-6">
-              {/* أزرار نوع التسجيل */}
-              <div className="flex gap-4 mb-4">
-                {showOtherButton && (
-
-                  <button
-                    type="button"
-                    className={`flex-1 py-2 rounded-lg font-bold border-2 transition-all duration-200 ${formData.registerType === 'mine' ? 'bg-green-600 text-white border-green-700 shadow-lg' : 'bg-white text-green-700 border-green-400 hover:bg-green-50'}`}
-                    onClick={() => setFormData(prev => ({ ...prev, registerType: 'mine' }))}
-                  >
-                    {t('register_for_me')}
-                  </button>
-                )}
-                {showOtherButton && (
-
-                  <button
-                    type="button"
-                    className={`flex-1 py-2 rounded-lg font-bold border-2 transition-all duration-200 ${formData.registerType === 'other' ? 'bg-orange-600 text-white border-orange-700 shadow-lg' : 'bg-white text-orange-700 border-orange-400 hover:bg-orange-50'}`}
-                    onClick={() => setFormData(prev => ({ ...prev, registerType: 'other' }))}
-                  >
-                    {t('register_for_other')}
-
-                  </button>
-                )}
-
-              </div>
               <div className="w-full px-0 mb-4">
                 <div className="relative w-full py-4">
                   <div className="absolute inset-x-0 top-1/2 h-[2px] -translate-y-1/2 bg-slate-200" />
@@ -1264,114 +947,6 @@ const RegisterPhone: React.FC = () => {
                   {currentStep === 2 && (
                     <div className="space-y-5">
                       <div>
-                        <label htmlFor="ownerName" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
-                          <User className="w-4 h-4 text-[#0a4d8c]" />
-                          {t('owner_name')}
-                        </label>
-                        <div className="relative">
-                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <User className="h-4 w-4 text-gray-500" />
-                          </div>
-                          <input
-                            type="text"
-                            id="ownerName"
-                            name="ownerName"
-                            value={formData.registerType === 'mine' ? maskName(formData.ownerName) : formData.ownerName}
-                            onChange={handleChange}
-                            className="input-field w-full text-gray-800 !pl-12"
-                            style={{ direction: 'ltr', textAlign: 'left' }}
-                            disabled={formData.registerType === 'mine' || isLoading}
-                            required
-                            placeholder={t('owner_name_placeholder')}
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label htmlFor="phoneNumber" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
-                          <Phone className="w-4 h-4 text-[#0a4d8c]" />
-                          {t('phone_label')}
-                        </label>
-                        <div className="flex gap-2 items-center">
-                          <CountryCodeSelector
-                            value={countryCode}
-                            onChange={setCountryCode}
-                            disabled={formData.registerType === 'mine' || isLoading}
-                          />
-                          <div className="relative w-full">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                              <Phone className="h-4 w-4 text-gray-500" />
-                            </div>
-                            <input
-                              type="tel"
-                              id="phoneNumber"
-                              name="phoneNumber"
-                              value={formData.registerType === 'mine' ? maskPhoneNumber(formData.phoneNumber) : formData.phoneNumber}
-                              onChange={handleChange}
-                              className="input-field w-full text-gray-800 !pl-12"
-                              disabled={formData.registerType === 'mine' || isLoading}
-                              required
-                              placeholder={t('phone_placeholder')}
-                              dir="ltr"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                      {/* حقل الإيميل */}
-                      <div>
-                        <label htmlFor="email" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
-                          <Mail className="w-4 h-4 text-[#0a4d8c]" />
-                          {t('email')}
-                        </label>
-                        <div className="relative">
-                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <Mail className="h-4 w-4 text-gray-500" />
-                          </div>
-                          <input
-                            type="email"
-                            id="email"
-                            name="email"
-                            value={formData.registerType === 'mine' ? maskEmail(formData.email) : formData.email}
-                            onChange={e => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                            className="input-field w-full text-gray-800 !pl-12"
-                            style={{ direction: 'ltr', textAlign: 'left' }}
-                            disabled={formData.registerType === 'mine' || isLoading}
-                            required
-                            placeholder={t('email_placeholder')}
-                          />
-                        </div>
-                      </div>
-                      {/* حقل آخر 6 أرقام من البطاقة الشخصية */}
-                      <div>
-                        <label htmlFor="id_last6" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
-                          <CreditCard className="w-4 h-4 text-[#0a4d8c]" />
-                          {t('id_last_6_digits')}
-                        </label>
-                        <div className="relative">
-                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <CreditCard className="h-4 w-4 text-gray-500" />
-                          </div>
-                          <input
-                            type="text"
-                            id="id_last6"
-                            name="id_last6"
-                            value={formData.registerType === 'mine' ? maskIdLast6(formData.id_last6) : formData.id_last6}
-                            onChange={handleChange}
-                            className="input-field w-full text-gray-800 !pl-12"
-                            maxLength={6}
-                            pattern="[0-9]*"
-                            inputMode="numeric"
-                            disabled={formData.registerType === 'mine' || isLoading}
-                            required
-                            placeholder={t('id_last_6_digits_placeholder')}
-                            style={{ direction: 'ltr', textAlign: 'left' }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                  {currentStep === 3 && (
-                    <div className="space-y-5">
-                      <div>
                         <label htmlFor="password" className="flex items-center gap-2 text-gray-800 text-sm font-medium mb-1">
                           <KeyRound className="w-4 h-4 text-[#0a4d8c]" />
                           {t('password')}
@@ -1415,7 +990,7 @@ const RegisterPhone: React.FC = () => {
                       </div>
                     </div>
                   )}
-                  {currentStep === 4 && (
+                  {currentStep === 3 && (
                     <div className="space-y-4">
                       <h3 className="text-gray-800 text-lg font-semibold">{t('upload_images')}</h3>
                       {imageTypesData.map(renderImageUpload)}
