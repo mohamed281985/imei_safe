@@ -5941,6 +5941,13 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
     'id_last6', 'idLast6'
   ].forEach((field) => delete phoneData[field]);
 
+  // الأعمدة القديمة مطلوبة في قاعدة البيانات؛ القيم الفارغة لا تحتوي بيانات شخصية.
+  phoneData.owner_name = '';
+  phoneData.phone_number = '';
+  phoneData.country_code = '';
+  phoneData.email = '';
+  phoneData.id_last6 = '';
+
   const limitCheck = await checkRegisterLimit(req.user.id);
 
   if (!limitCheck.canRegister) {
