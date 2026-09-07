@@ -314,7 +314,7 @@ app.get('/api/found/:token', async (req, res) => {
 
       const { data: owner, error: ownerError } = await supabase
         .from('users')
-        .select('id, fcm_token, language')
+        .select('id, fcm_token, language, role')
         .eq('id', phone.user_id)
         .maybeSingle();
 
@@ -323,22 +323,42 @@ app.get('/api/found/:token', async (req, res) => {
 
       const language = (owner.language || 'ar').toString().slice(0, 2).toLowerCase();
       const message = language === 'en'
-        ? 'Someone scanned your IMEI SAFE recovery card and wants to notify you.'
-        : 'قام شخص بمسح بطاقة استرداد IMEI SAFE ويريد إعلامك.';
-      const title = language === 'en' ? 'Phone Recovery Alert' : 'تنبيه استرداد الهاتف';
+        ? 'Your lost phone recovery card was scanned. Someone found your phone.'
+        : 'تم مسح بطاقة استرداد هاتفك المفقود. يبدو أن شخصًا عثر على هاتفك.';
+      const title = language === 'en' ? 'Your Phone Was Found' : 'تم العثور على هاتفك';
 
-      if (owner.fcm_token) {
+      let notifyInApp = true;
+      let notifyPush = Boolean(owner.fcm_token);
+      try {
+        const { data: plan } = await supabase
+          .from('plans')
+          .select('notify_in_app, notify_push')
+          .eq('type', owner.role)
+          .maybeSingle();
+        if (plan) {
+          notifyInApp = plan.notify_in_app !== false;
+          notifyPush = plan.notify_push === true && Boolean(owner.fcm_token);
+        }
+      } catch (planError) {
+        console.warn('/api/found/:qrToken/notify-owner plan lookup failed:', planError?.message || planError);
+      }
+
+      if (notifyPush && owner.fcm_token) {
         await sendFCMNotificationV1({ token: owner.fcm_token, title, body: message });
       }
 
-      await supabase.from('notifications').insert({
-        user_id: owner.id,
-        title,
-        body: message,
-        type: 'qr_found_notification',
-        is_read: false,
-        created_at: new Date().toISOString()
-      });
+      if (notifyInApp) {
+        const { error: notificationError } = await supabase.from('notifications').insert({
+          user_id: owner.id,
+          title,
+          body: message,
+          type: 'phone_found',
+          is_read: false,
+          created_at: new Date().toISOString(),
+          metadata: { source: 'qr_scan', registered_phone_id: phone.id }
+        });
+        if (notificationError) throw notificationError;
+      }
 
       await logAudit({
         userId: null,
