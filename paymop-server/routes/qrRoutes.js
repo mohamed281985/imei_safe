@@ -194,7 +194,7 @@ app.get('/api/found/:token', async (req, res) => {
     // Query only required fields from registered_phones
     const { data: phone, error: phoneErr } = await supabase
       .from('registered_phones')
-      .select('id, imei_hash, owner_name, phone_number, device_code, status')
+      .select('id, imei_hash, owner_name, phone_number, device_code, status, phone_type, phone_image_url')
       .eq('qr_token', token)
       .maybeSingle();
 
@@ -209,8 +209,9 @@ app.get('/api/found/:token', async (req, res) => {
 
     const statusLower = String(phone.status || '').trim().toLowerCase();
     
-    // استبعاد الهواتف المرفوضة والمنقولة والمباعة
-    if (['rejected', 'transferred', 'sold'].includes(statusLower)) {
+    // الباركود الجديد للمشتري يبقى صالحًا بعد النقل (status=sold).
+    // أما الباركودات القديمة المنقولة أو المرفوضة فتبقى غير صالحة.
+    if (['rejected', 'transferred'].includes(statusLower)) {
       return res.status(404).json({ success: false, message: 'Invalid QR Code' });
     }
 
@@ -256,6 +257,10 @@ app.get('/api/found/:token', async (req, res) => {
       return res.json({
         success: true,
         reported: false,
+        has_active_report: false,
+        phone_type: phone.phone_type || null,
+        status: phone.status || null,
+        phone_image_url: phone.phone_image_url || null,
         message: 'هذا الهاتف غير مسجل به إخطار فقد حتى الآن.'
       });
     }
@@ -280,6 +285,10 @@ app.get('/api/found/:token', async (req, res) => {
     return res.json({
       success: true,
       reported: true,
+      has_active_report: true,
+      phone_type: phone.phone_type || null,
+      status: phone.status || null,
+      phone_image_url: phone.phone_image_url || null,
       owner_name: ownerName,
       phone: ownerPhone,
       device_code: phone.device_code || '',
