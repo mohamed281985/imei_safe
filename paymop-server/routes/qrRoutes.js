@@ -194,7 +194,7 @@ app.get('/api/found/:token', async (req, res) => {
     // Query only required fields from registered_phones
     const { data: phone, error: phoneErr } = await supabase
       .from('registered_phones')
-      .select('id, imei_hash, owner_name, phone_number, device_code, status, phone_type, phone_image_url')
+      .select('id, imei, imei_hash, owner_name, phone_number, device_code, status, phone_type, phone_image_url')
       .eq('qr_token', token)
       .maybeSingle();
 
@@ -215,16 +215,17 @@ app.get('/api/found/:token', async (req, res) => {
       return res.status(404).json({ success: false, message: 'Invalid QR Code' });
     }
 
-    // Look for active report by imei_hash (do NOT use imei)
+    // ابحث بالهاش أولًا، ثم استخدم فك تشفير IMEI كحل للبلاغات القديمة التي لا تحتوي هاش.
     let reported = false;
     let whatsapp_enabled = false;
     let whatsapp_number = null;
 
     try {
+      let repRows = [];
       if (phone.imei_hash) {
-        const { data: repRows, error: repErr } = await supabase
+        const { data, error: repErr } = await supabase
           .from('phone_reports')
-          .select('whatsapp, anther_number')
+          .select('imei, imei_hash, whatsapp, anther_number')
           .eq('imei_hash', phone.imei_hash)
           .eq('status', 'active')
           .limit(1);
@@ -234,7 +235,24 @@ app.get('/api/found/:token', async (req, res) => {
           return sendError(res, 500, 'Server error', repErr);
         }
 
-        if (repRows && repRows.length > 0) {
+        repRows = data || [];
+      }
+
+      if (repRows.length === 0) {
+        const { data, error: legacyError } = await supabase
+          .from('phone_reports')
+          .select('imei, imei_hash, whatsapp, anther_number')
+          .eq('status', 'active');
+        if (legacyError) throw legacyError;
+
+        const phoneImei = normalizeDigitsOnly(decryptField(phone.imei || ''));
+        repRows = (data || []).filter((row) => {
+          if (phone.imei_hash && row.imei_hash === phone.imei_hash) return true;
+          return phoneImei && normalizeDigitsOnly(decryptField(row.imei)) === phoneImei;
+        }).slice(0, 1);
+      }
+
+      if (repRows.length > 0) {
           reported = true;
           const r = repRows[0];
           whatsapp_enabled = !!r.whatsapp;
@@ -247,7 +265,6 @@ app.get('/api/found/:token', async (req, res) => {
             }
           }
         }
-      }
     } catch (err) {
       console.error('/api/found phone_reports lookup failed:', err);
       return sendError(res, 500, 'Server error', err);
