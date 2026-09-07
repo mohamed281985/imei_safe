@@ -94,7 +94,7 @@ export function registerReportRoutes({
         'country_code', 'countryCode',
         'id_last6', 'idLast6',
         'email',
-          'whatsapp_number', 'whatsapp_country_code', 'anther_number'
+        'whatsapp_country_code', 'anther_number'
       ].forEach((field) => delete data[field]);
       data.owner_name = '';
       data.phone_number = '';
