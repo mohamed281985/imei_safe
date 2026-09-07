@@ -44,10 +44,20 @@ const FoundByQrToken: React.FC = () => {
         const phoneData = result.data || result;
         setPhoneType(phoneData.phone_type || null);
         setStatus(phoneData.status || null);
-        setHasReport(Boolean(phoneData.has_active_report || phoneData.reported));
+        setHasReport(Boolean(
+          result.reported ||
+          result.has_active_report ||
+          phoneData.reported ||
+          phoneData.has_active_report ||
+          /مفقود|مبلغ عنه|lost|missing/i.test(String(phoneData.status || result.status || ''))
+        ));
         setPhoneImageUrl(phoneData.phone_image_url || null);
-        setOwnerPhone(String(phoneData.phone || '').replace(/\D/g, ''));
-        setWhatsappNumber(phoneData.whatsapp_enabled ? String(phoneData.whatsapp_number || '').replace(/\D/g, '') : '');
+        setOwnerPhone(String(phoneData.phone || result.phone || '').replace(/\D/g, ''));
+        setWhatsappNumber(
+          (phoneData.whatsapp_enabled || result.whatsapp_enabled)
+            ? String(phoneData.whatsapp_number || result.whatsapp_number || '').replace(/\D/g, '')
+            : ''
+        );
       } catch (err) {
         console.error('FoundByQrToken fetch error:', err);
         setError('حدث خطأ أثناء تحميل حالة الهاتف.');
