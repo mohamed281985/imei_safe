@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useLanguage } from '../contexts/LanguageContext';
 import PageContainer from '../components/PageContainer';
 import AppNavbar from '../components/AppNavbar';
-import { MapPin, Link2, ShieldCheck, ArrowLeft, MessageCircle, Navigation2 } from 'lucide-react';
+import { MapPin, Link2, ShieldCheck, ArrowLeft, MessageCircle, Navigation2, Phone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const FoundByQrToken: React.FC = () => {
@@ -16,6 +16,8 @@ const FoundByQrToken: React.FC = () => {
   const [status, setStatus] = useState<string | null>(null);
   const [hasReport, setHasReport] = useState<boolean>(false);
   const [phoneImageUrl, setPhoneImageUrl] = useState<string | null>(null);
+  const [ownerPhone, setOwnerPhone] = useState<string>('');
+  const [whatsappNumber, setWhatsappNumber] = useState<string>('');
   const [notifyState, setNotifyState] = useState<'idle' | 'sending' | 'done'>('idle');
   const [locationState, setLocationState] = useState<'idle' | 'sending' | 'done'>('idle');
 
@@ -39,10 +41,13 @@ const FoundByQrToken: React.FC = () => {
           return;
         }
 
-        setPhoneType(result.data.phone_type || null);
-        setStatus(result.data.status || null);
-        setHasReport(Boolean(result.data.has_active_report));
-        setPhoneImageUrl(result.data.phone_image_url || null);
+        const phoneData = result.data || result;
+        setPhoneType(phoneData.phone_type || null);
+        setStatus(phoneData.status || null);
+        setHasReport(Boolean(phoneData.has_active_report || phoneData.reported));
+        setPhoneImageUrl(phoneData.phone_image_url || null);
+        setOwnerPhone(String(phoneData.phone || '').replace(/\D/g, ''));
+        setWhatsappNumber(phoneData.whatsapp_enabled ? String(phoneData.whatsapp_number || '').replace(/\D/g, '') : '');
       } catch (err) {
         console.error('FoundByQrToken fetch error:', err);
         setError('حدث خطأ أثناء تحميل حالة الهاتف.');
@@ -147,9 +152,25 @@ const FoundByQrToken: React.FC = () => {
               <div className="rounded-3xl border border-imei-cyan/20 bg-white/5 p-6 shadow-lg">
                 <h2 className="text-xl font-semibold text-white mb-4">ماذا يمكنك أن تفعل الآن</h2>
                 <div className="space-y-4">
-                  <Button className="w-full" onClick={notifyOwner} disabled={notifyState === 'sending'}>
-                    <MessageCircle size={18} /> {notifyState === 'done' ? 'تم إعلام المالك' : 'أخبر المالك'}
-                  </Button>
+                  {hasReport && ownerPhone && (
+                    <Button className="w-full" asChild>
+                      <a href={`tel:${ownerPhone}`}>
+                        <Phone size={18} /> الاتصال الهاتفي
+                      </a>
+                    </Button>
+                  )}
+                  {hasReport && whatsappNumber && (
+                    <Button className="w-full bg-green-600 hover:bg-green-700" asChild>
+                      <a href={`https://wa.me/${whatsappNumber}`} target="_blank" rel="noreferrer">
+                        <MessageCircle size={18} /> التواصل عبر WhatsApp
+                      </a>
+                    </Button>
+                  )}
+                  {hasReport && !ownerPhone && !whatsappNumber && (
+                    <Button className="w-full" onClick={notifyOwner} disabled={notifyState === 'sending' || notifyState === 'done'}>
+                      <MessageCircle size={18} /> {notifyState === 'done' ? 'تم إعلام المالك' : 'إشعار المالك داخل التطبيق'}
+                    </Button>
+                  )}
                   <Button className="w-full" variant="secondary" onClick={sendLocation} disabled={locationState === 'sending'}>
                     <Navigation2 size={18} /> {locationState === 'done' ? 'تم إرسال الموقع' : 'أرسل الموقع الحالي'}
                   </Button>

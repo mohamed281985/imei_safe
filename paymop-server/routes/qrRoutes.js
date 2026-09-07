@@ -291,6 +291,7 @@ app.get('/api/found/:token', async (req, res) => {
       phone_image_url: phone.phone_image_url || null,
       owner_name: ownerName,
       phone: ownerPhone,
+        owner_contact_available: Boolean(ownerPhone),
       device_code: phone.device_code || '',
       whatsapp_enabled,
       whatsapp_number
