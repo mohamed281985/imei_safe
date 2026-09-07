@@ -20,32 +20,9 @@ import { useScrollToTop } from '@/hooks/useScrollToTop';
 import CountryCodeSelector from '../components/CountryCodeSelector';
 import imageCompression from 'browser-image-compression';
 import axiosInstance from '@/services/axiosInterceptor';
-import { countries } from '@/data/countries';
-import { decryptPhoneNumber } from '../lib/imeiCrypto';
 
 // Helper function to check business roles
 const isBusinessRole = (role?: string) => ['business', 'free_business', 'gold_business', 'silver_business'].includes(role || '');
-
-// Helper function to decrypt phone number
-const decryptPhoneIfEncrypted = (phone: any): string => {
-  if (!phone) return '';
-  try {
-    let phoneStr = typeof phone === 'object' ? JSON.stringify(phone) : String(phone);
-
-    if (phoneStr.includes('encryptedData') ||
-      (/^[A-Za-z0-9+/=]+$/.test(phoneStr) && phoneStr.length > 20)) {
-
-      const decrypted = decryptPhoneNumber(phoneStr);
-
-      if (decrypted && decrypted !== phoneStr && !decrypted.includes('encryptedData')) {
-        return decrypted;
-      }
-    }
-    return phoneStr;
-  } catch (e) {
-    return typeof phone === 'string' ? phone : (typeof phone === 'object' ? JSON.stringify(phone) : '');
-  }
-};
 
 // Helper function to pick values from objects with multiple possible key names
 const pick = (obj: any, keys: string[]) => {
@@ -247,16 +224,7 @@ const BusinessTransfer: React.FC = () => {
   const [phoneType, setPhoneType] = useState('');
   const [phoneImage, setPhoneImage] = useState<string>('');
   const [originalReceiptImage, setOriginalReceiptImage] = useState<string>('');
-  const [sellerName, setSellerName] = useState('');
-  const [sellerIdLast6, setSellerIdLast6] = useState('');
-  const [sellerPhone, setSellerPhone] = useState('');
-  // NEW: Add seller country code state
-  const [sellerCountryCode, setSellerCountryCode] = useState('+20');
-  const [buyerName, setBuyerName] = useState('');
-  const [buyerPhone, setBuyerPhone] = useState('');
-  const [buyerCountryCode, setBuyerCountryCode] = useState('+20');
   const [buyerEmail, setBuyerEmail] = useState('');
-  const [buyerIdLast6, setBuyerIdLast6] = useState('');
   const [paid, setPaid] = useState(false);
   const [success, setSuccess] = useState(false);
   const [isPhoneReported, setIsPhoneReported] = useState<boolean | null>(null);
@@ -285,19 +253,6 @@ const BusinessTransfer: React.FC = () => {
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [currentRegisteredPhone, setCurrentRegisteredPhone] = useState<any>(null);
-
-  // Debug: log changes to seller phone and country code
-  useEffect(() => {
-    try {
-      console.log('STATE UPDATE: sellerCountryCode ->', sellerCountryCode);
-    } catch (e) {}
-  }, [sellerCountryCode]);
-
-  useEffect(() => {
-    try {
-      console.log('STATE UPDATE: sellerPhone ->', sellerPhone);
-    } catch (e) {}
-  }, [sellerPhone]);
 
   const resolveImageUrl = async (path: string | null | undefined) => {
     if (!path || typeof path !== 'string') return '';
@@ -397,11 +352,6 @@ const BusinessTransfer: React.FC = () => {
     setIsFormLocked(false);
     setImeiNotice('');
     if (!isBusinessRole(user?.role)) {
-      setSellerName('');
-      setSellerIdLast6('');
-      setSellerPhone('');
-      // Reset country code when IMEI changes
-      setSellerCountryCode('+20');
     }
     setPhoneType('');
     setPhoneImage('');
@@ -426,27 +376,6 @@ const BusinessTransfer: React.FC = () => {
     }
     const fetchData = async () => {
       setIsLoading(true);
-      // Helper: parse a phone string into country code and local part using known country codes
-      const parsePhoneAndCountry = (phoneRaw: string, fallbackCountry = '+20') => {
-        let cc = fallbackCountry || '+20';
-        let local = phoneRaw || '';
-        if (typeof local !== 'string') local = String(local);
-        if (local.startsWith('+')) {
-          // find the longest matching country code from our `countries` list
-          // sort codes by length desc to match the longest first
-          const codes = (countries || []).map(c => c.code).sort((a, b) => b.length - a.length);
-          for (const code of codes) {
-            if (local.startsWith(code)) {
-              cc = code;
-              local = local.slice(code.length);
-              break;
-            }
-          }
-        }
-        // normalize local by removing leading zeros
-        local = local.replace(/^0+/, '');
-        return { cc, local };
-      };
       try {
         console.log('🔍 جاري البحث عن بلاغات للـ IMEI:', debouncedImei);
         const { count: reportCount, error: reportError } = await supabase
@@ -501,9 +430,6 @@ const BusinessTransfer: React.FC = () => {
         }
 
         if (registeredPhone?.isOtherUser && !registeredPhone?.phoneDetails) {
-          setSellerName('');
-          setSellerPhone('');
-          setSellerIdLast6('');
           setPhoneType('');
           setPhoneImage('');
           setOriginalReceiptImage('');
@@ -529,9 +455,6 @@ const BusinessTransfer: React.FC = () => {
           });
           
           if (registeredPhone.isOtherUser || (registeredPhone.isTransferred && !(details && details.user_id && user && details.user_id === user.id))) {
-            setSellerName('');
-            setSellerPhone('');
-            setSellerIdLast6('');
             setPhoneType('');
             setPhoneImage('');
             setOriginalReceiptImage('');
@@ -545,60 +468,6 @@ const BusinessTransfer: React.FC = () => {
           const isOwnedByCurrentUser = Boolean(details && details.user_id && user && details.user_id === user.id);
           if (isOwnedByCurrentUser) {
             setImeiNotice('');
-            setSellerName(pick(details, ['owner_name', 'ownerName', 'maskedOwnerName', 'owner', 'name']) || (user?.username || user?.email || ''));
-            
-            // Get country code from API response
-            const countryCode = pick(details, ['country_code', 'countryKey', 'country_key']) || '+20';
-            console.log('🌍 كود الدولة من السيرفر (owned):', countryCode);
-            setSellerCountryCode(countryCode);
-            
-            let resolvedPhone = pick(details, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber', 'phone', 'owner_phone_number', 'phone_number']) || (user as any)?.phone || '';
-            const userMetaPhone = (user as any)?.user_metadata?.phone || (user as any)?.user_metadata?.phone_number || '';
-            if ((!resolvedPhone || String(resolvedPhone).trim() === '') && userMetaPhone) {
-              resolvedPhone = userMetaPhone;
-            }
-
-            if ((!resolvedPhone || String(resolvedPhone).trim() === '') && user?.id) {
-              try {
-                const { data: { session } } = await supabase.auth.getSession();
-                const token = session?.access_token;
-                if (token) {
-                  const response = await axiosInstance.get('/api/decrypted-user', {
-                    headers: {
-                      'Authorization': `Bearer ${token}`
-                    }
-                  });
-                  if (response.data?.business?.phone) {
-                    resolvedPhone = response.data.business.phone || resolvedPhone;
-                  } else if (response.data?.user?.phone) {
-                    resolvedPhone = response.data.user.phone || resolvedPhone;
-                  }
-                }
-              } catch (e) {
-                console.error('Error fetching decrypted phone number:', e);
-              }
-            }
-
-            if ((!resolvedPhone || String(resolvedPhone).trim() === '') && user?.id) {
-              try {
-                const response = await axiosInstance.get('/api/decrypted-user');
-                if (response.data?.business?.phone) {
-                  resolvedPhone = response.data.business.phone || resolvedPhone;
-                } else if (response.data?.user?.phone) {
-                  resolvedPhone = response.data.user.phone || resolvedPhone;
-                }
-              } catch (e) {
-                console.error('Unexpected error fetching decrypted user data:', e);
-              }
-            }
-
-            // Parse and normalize phone+country deterministically, then set both states together
-            const { cc: parsedCC, local: parsedLocal } = parsePhoneAndCountry(resolvedPhone, countryCode);
-            setSellerCountryCode(parsedCC);
-            setSellerPhone(decryptPhoneIfEncrypted(parsedLocal));
-            console.log('🔎 debug - parsed result (owned):', { resolvedPhone, parsedCC, parsedLocal });
-
-            setSellerIdLast6(pick(details, ['owner_id_last6', 'ownerIdLast6', 'maskedIdLast6', 'id_last6']) || '');
             setPhoneType(pick(details, ['phone_type', 'phoneType', 'model']) || '');
             {
               const imgPath = pick(details, ['phone_image_url', 'phoneImageUrl', 'phone_image']);
@@ -623,22 +492,6 @@ const BusinessTransfer: React.FC = () => {
           }
 
           setImeiNotice('');
-          setSellerName(pick(details, ['owner_name', 'ownerName', 'maskedOwnerName', 'owner', 'name']));
-          
-          // Get country code from API response
-          const countryCode = pick(details, ['country_code', 'countryKey', 'country_key']) || '+20';
-          console.log('🌍 كود الدولة من السيرفر:', countryCode);
-          setSellerCountryCode(countryCode);
-          
-          let phoneToDecrypt = pick(details, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber', 'phone', 'owner_phone_number', 'phone_number']);
-          // Parse phoneToDecrypt and set states together
-          const { cc: parsedCC, local: parsedLocal } = parsePhoneAndCountry(phoneToDecrypt, countryCode);
-          setSellerCountryCode(parsedCC);
-          const decrypted = decryptPhoneIfEncrypted(parsedLocal);
-          setSellerPhone(decrypted);
-          console.log('🔎 debug - parsed phoneToDecrypt:', { phoneToDecrypt, parsedCC, parsedLocal, decrypted });
-          
-          setSellerIdLast6(pick(details, ['owner_id_last6', 'ownerIdLast6', 'maskedIdLast6', 'id_last6']));
           setPhoneType(pick(details, ['phone_type', 'phoneType', 'model']));
           {
             const imgPath = pick(details, ['phone_image_url', 'phoneImageUrl', 'phone_image']);
@@ -652,20 +505,6 @@ const BusinessTransfer: React.FC = () => {
           }
         } else if (registeredPhone && registeredPhone.exists) {
           setImeiNotice('');
-          setSellerName(pick(registeredPhone, ['owner_name', 'ownerName', 'maskedOwnerName']));
-          
-          // Get country code from API response
-          const countryCode = pick(registeredPhone, ['country_code', 'countryKey', 'country_key']) || '+20';
-          console.log('🌍 كود الدولة من السيرفر:', countryCode);
-          setSellerCountryCode(countryCode);
-          
-          let phoneToDecrypt = pick(registeredPhone, ['owner_phone', 'ownerPhone', 'maskedPhoneNumber']);
-          // Parse phoneToDecrypt and set states together
-          const { cc: parsedCC, local: parsedLocal } = parsePhoneAndCountry(phoneToDecrypt, countryCode);
-          setSellerCountryCode(parsedCC);
-          setSellerPhone(decryptPhoneIfEncrypted(parsedLocal));
-          
-          setSellerIdLast6(pick(registeredPhone, ['owner_id_last6', 'maskedIdLast6']));
           setPhoneType(pick(registeredPhone, ['phone_type', 'phoneType']));
           {
             const imgPath = pick(registeredPhone, ['phone_image_url', 'phoneImageUrl']);
@@ -695,8 +534,8 @@ const BusinessTransfer: React.FC = () => {
     setIsLoading(true);
 
     try {
-      if (!imei || !buyerName || !buyerPhone || !sellerName || !buyerIdLast6 || !buyerEmail) {
-        toast({ title: 'خطأ', description: 'يرجى ملء جميع الحقول المطلوبة', variant: 'destructive' });
+      if (!imei || !buyerEmail) {
+        toast({ title: 'خطأ', description: 'يرجى إدخال IMEI وبريد المشتري', variant: 'destructive' });
         setIsLoading(false);
         return;
       }
@@ -704,12 +543,6 @@ const BusinessTransfer: React.FC = () => {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(buyerEmail)) {
         toast({ title: 'خطأ', description: 'يرجى إدخال بريد إلكتروني صحيح', variant: 'destructive' });
-        setIsLoading(false);
-        return;
-      }
-
-      if (buyerIdLast6.length !== 6) {
-        toast({ title: 'خطأ', description: 'يجب أن يتكون رقم البطاقة من 6 أرقام', variant: 'destructive' });
         setIsLoading(false);
         return;
       }
@@ -744,9 +577,6 @@ const BusinessTransfer: React.FC = () => {
         const validateResp = await axiosInstance.post('/api/validate-buyer-data',
           {
             buyerEmail: buyerEmail.trim().toLowerCase(),
-            buyerName,
-            buyerPhone: `${buyerCountryCode}${buyerPhone}`,
-            buyerCountryCode
           },
           { validateStatus: () => true }
         );
@@ -832,7 +662,7 @@ const BusinessTransfer: React.FC = () => {
 
       if (!(user && user.role === 'business')) {
         const verifyResp = await axiosInstance.post('/api/verify-seller-password',
-          { imei, password: sellerPassword, sellerIdLast6 },
+          { imei, password: sellerPassword },
           { validateStatus: () => true }
         );
 
@@ -863,13 +693,7 @@ const BusinessTransfer: React.FC = () => {
         imei: String(imei).trim(),
         sellerPassword,
         receiptImage,
-        sellerCountryCode, // Include seller country code in the transfer payload
         newOwner: {
-          owner_name: buyerName,
-          // Send phone number separate from country code
-          phone_number: buyerPhone,
-          country_code: buyerCountryCode,
-          id_last6: buyerIdLast6 || null,
           email: buyerEmail || null,
           password: newPassword,
           phone_type: phoneType || null,
@@ -938,84 +762,6 @@ const BusinessTransfer: React.FC = () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [navigate]);
-
-  useEffect(() => {
-    const fetchBusinessData = async () => {
-      console.log('تشغيل useEffect لجلب بيانات المتجر. بيانات user:', user);
-      if (user && isBusinessRole(user.role)) {
-        setIsLoading(true);
-        try {
-          const response = await axiosInstance.get('/api/decrypted-user');
-          const decryptedData = response.data;
-
-          if (!decryptedData || (!decryptedData.user && !decryptedData.business)) {
-            throw new Error('No data returned from decrypted-user endpoint');
-          }
-
-          const businessData = decryptedData.business;
-          const userData = decryptedData.user;
-
-          if (businessData) {
-            console.log('نتيجة استعلام businesses (مفك التشفير):', businessData);
-
-            const nameFromBusiness = businessData.owner_name?.trim() || businessData.store_name?.trim();
-            let phoneFromBusiness = businessData.phone?.trim();
-            const emailFromBusiness = businessData.email?.trim();
-
-            // Get country code from API response
-            const countryCode = pick(businessData, ['country_code', 'countryKey', 'country_key']) || '+20';
-            console.log('🌍 كود الدولة من بيانات المتجر:', countryCode);
-            setSellerCountryCode(countryCode);
-            
-            // Extract country code from phone number if available (as fallback)
-            if (phoneFromBusiness && phoneFromBusiness.startsWith('+')) {
-              const match = phoneFromBusiness.match(/^\+(\d{1,3})(.*)$/);
-              if (match) {
-                setSellerCountryCode(`+${match[1]}`);
-                phoneFromBusiness = match[2] || '';
-              }
-            }
-
-            const sellerNameValue = nameFromBusiness || user?.username || user?.email || 'اسم غير متوفر';
-            setSellerName(sellerNameValue);
-            console.log('تعبئة اسم البائع:', sellerNameValue);
-            setSellerPhone(phoneFromBusiness || (user as any)?.phone || '');
-
-            const idLast6Value = businessData.id_last6 || userData?.id_last6 || '';
-            setSellerIdLast6(idLast6Value);
-          } else if (userData) {
-            let phoneFromUser = userData.phone?.trim();
-            
-            // Get country code from API response
-            const countryCode = pick(userData, ['country_code', 'countryKey', 'country_key']) || '+20';
-            console.log('🌍 كود الدولة من بيانات المستخدم:', countryCode);
-            setSellerCountryCode(countryCode);
-            
-            // Extract country code from phone number if available (as fallback)
-            if (phoneFromUser && phoneFromUser.startsWith('+')) {
-              const match = phoneFromUser.match(/^\+(\d{1,3})(.*)$/);
-              if (match) {
-                setSellerCountryCode(`+${match[1]}`);
-                phoneFromUser = match[2] || '';
-              }
-            }
-            
-            const sellerNameValue = userData.full_name?.trim() || user?.username || user?.email || 'اسم غير متوفر';
-            setSellerName(sellerNameValue);
-            setSellerPhone(phoneFromUser || '');
-            setSellerIdLast6(userData.id_last6 || '');
-          }
-        } catch (error) {
-          console.error('Error fetching decrypted user data:', error);
-          toast({ title: 'خطأ', description: 'فشل تحميل بيانات المتجر.', variant: 'destructive' });
-        } finally {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    fetchBusinessData();
-  }, [user, t, toast]);
 
   return (
     <PageContainer>
@@ -1138,48 +884,6 @@ const BusinessTransfer: React.FC = () => {
                   <h3 className="text-black font-bold text-xl border-b border-imei-cyan pb-2">
                     {t('seller_info')}
                   </h3>
-                  <div>
-                    <label className="block text-black mb-1">{t('seller_name')}</label>
-                    <input
-                      type="text"
-                      value={sellerName}
-                      onChange={e => setSellerName(e.target.value)}
-                      className="input-field w-full"
-                      dir="ltr"
-                      required
-                      placeholder="اسم البائع سيظهر هنا تلقائياً"
-                      disabled={isLoading || isBusinessRole(user?.role) || isFormLocked}
-                      readOnly
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-black mb-1">{t('seller_phone')}</label>
-                    {typeof sellerPhone === 'string' && sellerPhone.includes('encryptedData') && (
-                      <div className="mb-2 p-2 bg-yellow-100 border border-yellow-400 rounded text-yellow-800 text-sm">
-                        ⚠️ البيانات مشفرة. يرجى تحديث الصفحة.
-                      </div>
-                    )}
-                    {/* NEW: Modified seller phone input to include country code selector */}
-                    <div className="flex gap-2 items-center">
-                      <CountryCodeSelector
-                        value={sellerCountryCode}
-                        onChange={setSellerCountryCode}
-                        disabled={isLoading || user?.role === 'business' || isFormLocked}
-                      />
-                      <input
-                        type="text"
-                        value={sellerPhone}
-                        onChange={e => setSellerPhone(e.target.value.replace(/\D/g, ''))}
-                        className="input-field w-full"
-                        dir="ltr"
-                        inputMode="tel"
-                        maxLength={15}
-                        required
-                        disabled={isLoading || user?.role === 'business' || isFormLocked}
-                        readOnly
-                      />
-                    </div>
-                  </div>
                   {phoneImage && (
                     <div className="space-y-2">
                       <label className="block text-black mb-1">{t('phone_image')}</label>
@@ -1225,40 +929,6 @@ const BusinessTransfer: React.FC = () => {
                     {t('buyer_info')}
                   </h3>
                   <div>
-                    <label className="block text-black mb-1">{t('buyer_name')}</label>
-                    <input
-                      type="text"
-                      value={buyerName}
-                      onChange={e => setBuyerName(e.target.value)}
-                      className="input-field w-full"
-                      required
-                      disabled={isLoading || isFormLocked}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-black mb-1">{t('buyer_phone')}</label>
-                    <div className="flex gap-2 items-center">
-                      <CountryCodeSelector
-                        value={buyerCountryCode}
-                        onChange={setBuyerCountryCode}
-                        disabled={isLoading || isFormLocked}
-                      />
-                      <input
-                        type="text"
-                        value={buyerPhone}
-                        onChange={e => {
-                          let val = e.target.value.replace(/\D/g, '');
-                          if (val.startsWith('0')) val = val.replace(/^0+/, '');
-                          setBuyerPhone(val);
-                        }}
-                        className="input-field w-full"
-                        maxLength={15}
-                        required
-                        disabled={isLoading || isFormLocked}
-                      />
-                    </div>
-                  </div>
-                  <div>
                     <label className="block text-black mb-1">{t('buyer_email') || 'إيميل المشتري'}</label>
                     <input
                       type="email"
@@ -1268,21 +938,6 @@ const BusinessTransfer: React.FC = () => {
                       required
                       disabled={isLoading || isFormLocked}
                       placeholder="example@email.com"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-black mb-1">آخر 6 أرقام من البطاقة الشخصية</label>
-                    <input
-                      type="text"
-                      value={buyerIdLast6}
-                      onChange={e => setBuyerIdLast6(e.target.value.replace(/\D/g, ''))}
-                      className="input-field w-full"
-                      maxLength={6}
-                      pattern="[0-9]*"
-                      inputMode="numeric"
-                      placeholder="******"
-                      required
-                      disabled={isLoading || isFormLocked}
                     />
                   </div>
                 </div>

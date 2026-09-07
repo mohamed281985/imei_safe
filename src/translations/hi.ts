@@ -280,7 +280,7 @@ export default {
   "owner_will_be_notified": "मालिक को सूचित किया जाएगा",
   "reach_your_phone": "अपने फ़ोन तक पहुँचें",
   "my_rewards": "मेरे पुरस्कार",
-  "barcode_my_phones": "मेरा फोन बारकोड",
+  "barcode_my_phones": "मेरे डिवाइस प्रबंधित करें",
   "manage_recovery_cards": "रिकवरी कार्ड प्रबंधित करें",
 
   // Register New Phone

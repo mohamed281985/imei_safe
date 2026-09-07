@@ -288,7 +288,7 @@ export default {
   "owner_will_be_notified": "Le propriétaire sera notifié",
   "reach_your_phone": "Accéder à votre téléphone",
   "my_rewards": "Mes récompenses",
-  "barcode_my_phones": "Mon code-barres de téléphone",
+  "barcode_my_phones": "Gérer mes appareils",
   "manage_recovery_cards": "Gérer les cartes de récupération",
 
   // Register New Phone

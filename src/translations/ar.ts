@@ -291,7 +291,7 @@ export default {
   "owner_will_be_notified": "سيتم إبلاغ صاحب الهاتف الحقيقي",
   "reach_your_phone": "للوصول إلى هاتفك",
   "my_rewards": "مكافآتي",
-  "barcode_my_phones": "باركود هواتفي",
+  "barcode_my_phones": "إدارة أجهزتي",
   "manage_recovery_cards": "إدارة بطاقات الاسترداد",
   
   // Register New Phone

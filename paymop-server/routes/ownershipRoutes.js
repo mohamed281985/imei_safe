@@ -636,10 +636,6 @@ const getImeiHash = (imei) => {
 
       console.log('[transfer-ownership] registeredPhone (raw) for imei=', imei, {
         id: registeredPhone?.id,
-        owner_name_raw: registeredPhone?.owner_name,
-        maskedOwnerName: registeredPhone?.maskedOwnerName,
-        phone_number_raw: registeredPhone?.phone_number,
-        id_last6_raw: registeredPhone?.id_last6,
         status: registeredPhone?.status,
         user_id: registeredPhone?.user_id
       });
@@ -709,89 +705,14 @@ const getImeiHash = (imei) => {
       }
       clearAuthFailures(userKey);
 
-      const previousOwnerIdLast6 = decryptField(registeredPhone.id_last6);
-      const previousOwnerName = decryptField(registeredPhone.owner_name) || registeredPhone.owner_name || '';
-      const previousOwnerPhone = decryptField(registeredPhone.phone_number) || registeredPhone.phone_number || '';
-
-      // Build merged seller phone: combine stored country code with phone number
-      const previousOwnerCountryRaw = decryptField(registeredPhone.country_key) || registeredPhone.country_key || registeredPhone.country_code || registeredPhone.countryKey || '';
-      let sellerMergedPhone = null;
-      try {
-        const rawCode = previousOwnerCountryRaw ? String(previousOwnerCountryRaw).trim() : '';
-        const normalizedCode = rawCode ? (rawCode.startsWith('+') ? rawCode : `+${rawCode.replace(/^\+/, '')}`) : '';
-        let phonePart = previousOwnerPhone ? String(previousOwnerPhone).trim() : '';
-
-        if (!phonePart && normalizedCode) {
-          sellerMergedPhone = normalizedCode;
-        } else if (phonePart.startsWith('+')) {
-          sellerMergedPhone = phonePart;
-        } else {
-          const numericCode = normalizedCode.replace(/^\+/, '');
-          if (numericCode && phonePart.startsWith(numericCode)) {
-            sellerMergedPhone = `+${phonePart}`;
-          } else if (normalizedCode) {
-            sellerMergedPhone = `${normalizedCode}${phonePart}`;
-          } else {
-            sellerMergedPhone = phonePart;
-          }
-        }
-      } catch (e) {
-        sellerMergedPhone = (previousOwnerCountryRaw || '') + (previousOwnerPhone || '');
-      }
-
-      const updateData = {};
-      if (typeof newOwner.owner_name !== 'undefined') {
-        if (newOwner.owner_name === null || newOwner.owner_name === '') {
-          updateData.owner_name = null;
-        } else {
-          const encOwner = encryptAES(newOwner.owner_name);
-          console.log('[transfer-ownership] incoming newOwner.owner_name:', newOwner.owner_name);
-          console.log('[transfer-ownership] encryptAES result for owner_name:', encOwner);
-          if (encOwner) {
-            updateData.owner_name = JSON.stringify({
-              encryptedData: encOwner.encryptedData,
-              iv: encOwner.iv,
-              authTag: encOwner.authTag
-            });
-          }
-        }
-      }
-
-      if (typeof newOwner.phone_number !== 'undefined') {
-        if (newOwner.phone_number === null || newOwner.phone_number === '') {
-          updateData.phone_number = null;
-        } else {
-          const enc = encryptAES(newOwner.phone_number);
-          if (enc) updateData.phone_number = JSON.stringify({ encryptedData: enc.encryptedData, iv: enc.iv, authTag: enc.authTag });
-        }
-      }
-
-      // Store buyer country code in `country_code` column (no country_key column exists)
-      if (typeof newOwner.country_code !== 'undefined') {
-        if (newOwner.country_code === null || newOwner.country_code === '') {
-          updateData.country_code = null;
-        } else {
-          updateData.country_code = newOwner.country_code;
-        }
-      }
-
-      if (typeof newOwner.id_last6 !== 'undefined') {
-        if (newOwner.id_last6 === null || newOwner.id_last6 === '') {
-          updateData.id_last6 = null;
-        } else {
-          const enc = encryptAES(newOwner.id_last6);
-          if (enc) updateData.id_last6 = JSON.stringify({ encryptedData: enc.encryptedData, iv: enc.iv, authTag: enc.authTag });
-        }
-      }
-
-      if (typeof newOwner.email !== 'undefined') {
-        if (newOwner.email === null || newOwner.email === '') {
-          updateData.email = null;
-        } else {
-          const enc = encryptAES(newOwner.email);
-          if (enc) updateData.email = JSON.stringify({ encryptedData: enc.encryptedData, iv: enc.iv, authTag: enc.authTag });
-        }
-      }
+      // نقل الملكية لا يحتفظ ببيانات شخصية للبائع أو المشتري.
+      const updateData = {
+        owner_name: '',
+        phone_number: '',
+        country_code: '',
+        id_last6: '',
+        email: ''
+      };
 
       if (typeof newOwner.phone_type !== 'undefined') updateData.phone_type = newOwner.phone_type;
       if (typeof newOwner.password !== 'undefined' && newOwner.password) {
@@ -817,16 +738,8 @@ const getImeiHash = (imei) => {
       updateData.user_id = buyerUserId;
       updateData.status = 'sold';
 
-      if ((typeof newOwner.email === 'undefined' || newOwner.email === null || newOwner.email === '') && buyerUserId) {
-        try {
-          const { data: userById, error: userByIdErr } = await supabase.from('users').select('email').eq('id', buyerUserId).maybeSingle();
-          if (!userByIdErr && userById && userById.email) {
-            const enc = encryptAES(userById.email);
-            if (enc) updateData.email = JSON.stringify({ encryptedData: enc.encryptedData, iv: enc.iv, authTag: enc.authTag });
-          }
-        } catch (e) {
-          console.error('transfer-ownership: failed to fetch buyer email from users table', e);
-        }
+      if (!buyerUserId) {
+        return res.status(400).json({ error: 'لم يتم العثور على حساب المستخدم الجديد عبر البريد الإلكتروني' });
       }
 
       console.log('[transfer-ownership] updateData prepared:', updateData);
@@ -842,11 +755,13 @@ const getImeiHash = (imei) => {
       }
 
       const updatedPhoneRow = Array.isArray(updated) ? updated[0] : updated;
+      let recoveryCard = null;
       if (updatedPhoneRow) {
         try {
-          await createOrRefreshRecoveryCard(supabase, updatedPhoneRow, { forceRefresh: true });
+          recoveryCard = await createOrRefreshRecoveryCard(supabase, updatedPhoneRow, { forceRefresh: true });
         } catch (cardErr) {
           console.error('transfer-ownership: failed to refresh QR recovery card:', cardErr);
+          return res.status(500).json({ error: 'فشل إنشاء باركود المستخدم الجديد' });
         }
       }
 
@@ -946,57 +861,16 @@ const getImeiHash = (imei) => {
       }
       console.log('[transfer-ownership] registered_phones updated result:', updated);
 
-      const encryptToJson = (value) => {
-        if (value === null || value === undefined || String(value).trim() === '') return null;
-        const enc = encryptAES(value);
-        if (!enc) return null;
-        return JSON.stringify({ encryptedData: enc.encryptedData, iv: enc.iv, authTag: enc.authTag });
-      };
-
-      const buyerMergedPhone = (() => {
-        try {
-          const rawCode = (newOwner.country_code || '').toString();
-          const rawPhone = (newOwner.phone_number || '').toString();
-          if (!rawCode && !rawPhone) return null;
-
-          // Normalize
-          const code = rawCode.trim();
-          let phone = rawPhone.trim();
-
-          // If phone already starts with + keep as-is
-          if (phone.startsWith('+')) return phone;
-
-          // Ensure code starts with + when prefixing
-          const plusCode = code ? (code.startsWith('+') ? code : `+${code}`) : '';
-
-          // If phone already begins with the numeric code (without +), avoid duplicating
-          const numericCode = code.replace(/^\+/, '');
-          if (numericCode && phone.startsWith(numericCode)) {
-            return `+${phone}`;
-          }
-
-          // Otherwise prefix code (if available)
-          if (plusCode) return `${plusCode}${phone}`;
-          return phone;
-        } catch (e) {
-          return (newOwner.country_code || '') + (newOwner.phone_number || '');
-        }
-      })();
-
-     const transferRecord = {
+      const transferRecord = {
   date: new Date().toISOString(),
-  imei: encryptToJson(imei),
+  imei: JSON.stringify(encryptAES(imei)),
   phone_type: newOwner.phone_type || registeredPhone.phone_type || null,
-
-  seller_name: encryptToJson(previousOwnerName),
-  seller_phone: encryptToJson(sellerMergedPhone),
-  seller_id_last6: encryptToJson(previousOwnerIdLast6),
-
-  buyer_name: encryptToJson(newOwner.owner_name || ''),
-  buyer_phone: encryptToJson(
-    buyerMergedPhone || (newOwner.phone_number || '')
-  ),
-  buyer_id_last6: encryptToJson(newOwner.id_last6 || null),
+  seller_name: '',
+  seller_phone: '',
+  seller_id_last6: '',
+  buyer_name: '',
+  buyer_phone: '',
+  buyer_id_last6: '',
 
   // أضف هذا السطر
   seller_receipt_image_url: registeredPhone.receipt_image_url || null,
@@ -1026,8 +900,8 @@ const getImeiHash = (imei) => {
         action: 'transfer_ownership',
         resourceType: 'phone',
         resourceId: registeredPhone.id,
-        oldValues: { owner_masked: maskName(previousOwnerName || 'Unknown') },
-        newValues: { owner_masked: maskName(newOwner.owner_name || 'Unknown') },
+        oldValues: { owner_masked: 'hidden' },
+        newValues: { owner_masked: 'hidden' },
         details: { imei_last_4: imei.slice(-4), transferId: transferInserted?.[0]?.id },
         ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
         userAgent: req.headers['user-agent'] || null,
@@ -1037,8 +911,14 @@ const getImeiHash = (imei) => {
       return res.json({
         success: true,
         data: updated,
-        previousOwnerIdLast6,
-        transferRecordId: transferInserted?.[0]?.id || null
+        transferRecordId: transferInserted?.[0]?.id || null,
+        recoveryCard: recoveryCard ? {
+          phoneId: recoveryCard.id,
+          userId: recoveryCard.user_id,
+          qrToken: recoveryCard.qr_token,
+          deviceCode: recoveryCard.device_code,
+          qrCardUrl: recoveryCard.qr_card_url
+        } : null
       });
     } catch (err) {
       console.error('transfer-ownership error:', err);

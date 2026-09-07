@@ -276,7 +276,7 @@ export default {
   "owner_will_be_notified": "The phone owner will be notified",
   "reach_your_phone": "To reach your phone",
   "my_rewards": "My Rewards",
-  "barcode_my_phones": "My Phone Barcode",
+  "barcode_my_phones": "Manage My Devices",
   "manage_recovery_cards": "Manage Recovery Cards",
   
   // Register New Phone
