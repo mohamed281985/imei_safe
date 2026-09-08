@@ -18,6 +18,7 @@ const FoundByQrToken: React.FC = () => {
   const [phoneImageUrl, setPhoneImageUrl] = useState<string | null>(null);
   const [ownerPhone, setOwnerPhone] = useState<string>('');
   const [whatsappNumber, setWhatsappNumber] = useState<string>('');
+  const [antherNumberAvailable, setAntherNumberAvailable] = useState(false);
   const [notifyState, setNotifyState] = useState<'idle' | 'sending' | 'done'>('idle');
   const [locationState, setLocationState] = useState<'idle' | 'sending' | 'done'>('idle');
 
@@ -53,11 +54,13 @@ const FoundByQrToken: React.FC = () => {
         ));
         setPhoneImageUrl(phoneData.phone_image_url || null);
         setOwnerPhone(String(phoneData.phone || result.phone || '').replace(/\D/g, ''));
-        setWhatsappNumber(
-          (phoneData.whatsapp_enabled || result.whatsapp_enabled)
-            ? String(phoneData.whatsapp_number || result.whatsapp_number || '').replace(/\D/g, '')
-            : ''
-        );
+        const storedWhatsapp = String(phoneData.whatsapp_number || result.whatsapp_number || '').replace(/\D/g, '');
+        setWhatsappNumber(storedWhatsapp);
+        setAntherNumberAvailable(Boolean(
+          phoneData.anther_number_available ||
+          result.anther_number_available ||
+          storedWhatsapp
+        ));
       } catch (err) {
         console.error('FoundByQrToken fetch error:', err);
         setError('حدث خطأ أثناء تحميل حالة الهاتف.');
@@ -176,7 +179,7 @@ const FoundByQrToken: React.FC = () => {
                       </a>
                     </Button>
                   )}
-                  {hasReport && !whatsappNumber && (
+                  {hasReport && !antherNumberAvailable && (
                     <Button className="w-full" onClick={notifyOwner} disabled={notifyState === 'sending' || notifyState === 'done'}>
                       <MessageCircle size={18} /> {notifyState === 'done' ? 'تم إعلام المالك' : 'إشعار العثور على الهاتف'}
                     </Button>

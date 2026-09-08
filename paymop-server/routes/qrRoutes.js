@@ -256,7 +256,7 @@ app.get('/api/found/:token', async (req, res) => {
           reported = true;
           const r = repRows[0];
           whatsapp_enabled = !!r.whatsapp;
-          if (whatsapp_enabled && r.anther_number) {
+            if (r.anther_number) {
             try {
               whatsapp_number = decryptField(r.anther_number) || r.anther_number;
             } catch (decErr) {
@@ -311,6 +311,7 @@ app.get('/api/found/:token', async (req, res) => {
         owner_contact_available: Boolean(ownerPhone),
       device_code: phone.device_code || '',
       whatsapp_enabled,
+      anther_number_available: Boolean(whatsapp_number),
       whatsapp_number
     });
   } catch (err) {
