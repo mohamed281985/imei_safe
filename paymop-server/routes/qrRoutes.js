@@ -487,7 +487,7 @@ app.get('/api/found/:token', async (req, res) => {
       const { error: notificationError } = await supabase.from('notifications').insert({
         user_id: report.user_id,
         title: 'تم العثور على هاتفك',
-        body: 'تم العثور على هاتفك. يوجد رقم للتواصل مع الشخص الذي وجده.',
+        body: `تم العثور على هاتفك. للتواصل مع الشخص الذي وجده، اتصل على الرقم: ${finderPhone}`,
         type: 'phone_found',
         notification_type: 'phone_found',
         is_read: false,
