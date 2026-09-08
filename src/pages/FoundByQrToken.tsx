@@ -21,6 +21,7 @@ const FoundByQrToken: React.FC = () => {
   const [antherNumberAvailable, setAntherNumberAvailable] = useState(false);
   const [notifyState, setNotifyState] = useState<'idle' | 'sending' | 'done'>('idle');
   const [locationState, setLocationState] = useState<'idle' | 'sending' | 'done'>('idle');
+  const shouldNotifyOwner = hasReport && !antherNumberAvailable;
 
   useEffect(() => {
     const fetchData = async () => {
@@ -179,7 +180,7 @@ const FoundByQrToken: React.FC = () => {
                       </a>
                     </Button>
                   )}
-                  {hasReport && !antherNumberAvailable && (
+                  {shouldNotifyOwner && (
                     <Button className="w-full" onClick={notifyOwner} disabled={notifyState === 'sending' || notifyState === 'done'}>
                       <MessageCircle size={18} /> {notifyState === 'done' ? 'تم إعلام المالك' : 'إشعار العثور على الهاتف'}
                     </Button>
