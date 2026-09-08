@@ -180,7 +180,7 @@ const FoundByQrToken: React.FC = () => {
                       </a>
                     </Button>
                   )}
-                  {shouldNotifyOwner && (
+                  {(shouldNotifyOwner || (hasReport && !ownerPhone && !whatsappNumber)) && (
                     <Button className="w-full" onClick={notifyOwner} disabled={notifyState === 'sending' || notifyState === 'done'}>
                       <MessageCircle size={18} /> {notifyState === 'done' ? 'تم إعلام المالك' : 'إشعار العثور على الهاتف'}
                     </Button>
