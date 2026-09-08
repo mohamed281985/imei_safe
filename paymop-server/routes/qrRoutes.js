@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'url';
 import path from 'path';
+import rateLimit from 'express-rate-limit';
 import { normalizeStoragePath, signStorageUrl, createOrRefreshRecoveryCard } from '../utils/qrCardUtils.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -129,7 +130,16 @@ const isPhoneOwnerForUser = async (supabase, phoneRow, userId, decryptField) => 
   }
 };
 
-export function registerQrRoutes({ app, supabase, verifyJwtToken, sendError, decryptField, normalizeDigitsOnly, logAudit, sendFCMNotificationV1 }) {
+export function registerQrRoutes({ app, supabase, verifyJwtToken, sendError, decryptField, normalizeDigitsOnly, encryptAES, logAudit, sendFCMNotificationV1 }) {
+  const foundContactLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 3,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => `${req.ip}:${String(req.params.token || '').slice(0, 128)}`,
+    handler: (_req, res) => res.status(429).json({ success: false, message: 'محاولات كثيرة، حاول لاحقًا' })
+  });
+
   app.get('/api/recovery-card/:phoneId', verifyJwtToken, async (req, res) => {
     try {
       const phoneId = req.params.phoneId;
@@ -256,7 +266,7 @@ app.get('/api/found/:token', async (req, res) => {
           reported = true;
           const r = repRows[0];
           whatsapp_enabled = !!r.whatsapp;
-            if (r.anther_number) {
+          if (whatsapp_enabled && r.anther_number) {
             try {
               whatsapp_number = decryptField(r.anther_number) || r.anther_number;
             } catch (decErr) {
@@ -311,7 +321,6 @@ app.get('/api/found/:token', async (req, res) => {
         owner_contact_available: Boolean(ownerPhone),
       device_code: phone.device_code || '',
       whatsapp_enabled,
-      anther_number_available: Boolean(whatsapp_number),
       whatsapp_number
     });
   } catch (err) {
@@ -393,6 +402,104 @@ app.get('/api/found/:token', async (req, res) => {
     } catch (err) {
       console.error('/api/found/:qrToken/notify-owner error:', err);
       return sendError(res, 500, 'Server error', err);
+    }
+  });
+
+  app.post('/api/found/:token/contact', foundContactLimiter, async (req, res) => {
+    try {
+      const token = String(req.params.token || '').trim();
+      const finderPhone = String(req.body?.finderPhone || '').replace(/\D/g, '');
+      const captchaToken = String(req.body?.captchaToken || '').trim();
+      const turnstileSecret = String(process.env.TURNSTILE_SECRET_KEY || '').trim();
+
+      if (!token || !/^\d{7,15}$/.test(finderPhone) || !captchaToken) {
+        return res.status(400).json({ success: false, message: 'البيانات المطلوبة غير صحيحة' });
+      }
+      if (!turnstileSecret) {
+        console.error('/api/found/:token/contact: TURNSTILE_SECRET_KEY is not configured');
+        return res.status(503).json({ success: false, message: 'الخدمة غير متاحة حاليًا' });
+      }
+
+      const turnstileResponse = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ secret: turnstileSecret, response: captchaToken, remoteip: req.ip })
+      });
+      const turnstileResult = await turnstileResponse.json();
+      if (!turnstileResponse.ok || !turnstileResult?.success) {
+        return res.status(400).json({ success: false, message: 'فشل التحقق الأمني' });
+      }
+
+      const { data: phone, error: phoneError } = await supabase
+        .from('registered_phones')
+        .select('id, imei, imei_hash, user_id, qr_token')
+        .eq('qr_token', token)
+        .maybeSingle();
+      if (phoneError) throw phoneError;
+      if (!phone) return res.status(404).json({ success: false, message: 'رمز QR غير صالح' });
+
+      let report = null;
+      if (phone.imei_hash) {
+        const { data: hashedReports, error: reportError } = await supabase
+          .from('phone_reports')
+          .select('id, user_id, imei, imei_hash, status, anther_number, finder_phone')
+          .eq('imei_hash', phone.imei_hash)
+          .eq('status', 'active')
+          .limit(1);
+        if (reportError) throw reportError;
+        report = hashedReports?.[0] || null;
+      }
+
+      if (!report && phone.imei) {
+        const { data: reports, error: legacyError } = await supabase
+          .from('phone_reports')
+          .select('id, user_id, imei, imei_hash, status, anther_number, finder_phone')
+          .eq('status', 'active');
+        if (legacyError) throw legacyError;
+        const phoneImei = normalizeDigitsOnly(decryptField(phone.imei));
+        report = (reports || []).find((candidate) => (
+          phoneImei && normalizeDigitsOnly(decryptField(candidate.imei)) === phoneImei
+        )) || null;
+      }
+
+      if (!report || !report.user_id || report.anther_number || report.finder_phone) {
+        return res.status(409).json({ success: false, message: 'لا يمكن إرسال الإشعار لهذا الهاتف' });
+      }
+
+      const encryptedFinderPhone = encryptAES(finderPhone);
+      const finderPhoneValue = JSON.stringify({
+        encryptedData: encryptedFinderPhone.encryptedData,
+        iv: encryptedFinderPhone.iv,
+        authTag: encryptedFinderPhone.authTag
+      });
+      const { data: updatedReport, error: updateError } = await supabase
+        .from('phone_reports')
+        .update({ finder_phone: finderPhoneValue })
+        .eq('id', report.id)
+        .is('finder_phone', null)
+        .select('id')
+        .maybeSingle();
+      if (updateError) throw updateError;
+      if (!updatedReport) {
+        return res.status(409).json({ success: false, message: 'تم إرسال الإشعار مسبقًا' });
+      }
+
+      const { error: notificationError } = await supabase.from('notifications').insert({
+        user_id: report.user_id,
+        title: 'تم العثور على هاتفك',
+        body: 'تم العثور على هاتفك. يوجد رقم للتواصل مع الشخص الذي وجده.',
+        type: 'phone_found',
+        notification_type: 'phone_found',
+        is_read: false,
+        created_at: new Date().toISOString(),
+        metadata: { source: 'qr_contact', registered_phone_id: phone.id }
+      });
+      if (notificationError) throw notificationError;
+
+      return res.json({ success: true, message: 'تم إرسال الإشعار' });
+    } catch (err) {
+      console.error('/api/found/:token/contact error:', err);
+      return sendError(res, 500, 'حدث خطأ في الخادم', err, { success: false });
     }
   });
 

@@ -6645,6 +6645,7 @@ registerQrRoutes({
   sendError,
   decryptField,
   normalizeDigitsOnly,
+  encryptAES,
   logAudit,
   sendFCMNotificationV1
 });

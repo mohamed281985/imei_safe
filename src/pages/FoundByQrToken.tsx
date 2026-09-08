@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useLanguage } from '../contexts/LanguageContext';
 import PageContainer from '../components/PageContainer';
@@ -18,10 +18,12 @@ const FoundByQrToken: React.FC = () => {
   const [phoneImageUrl, setPhoneImageUrl] = useState<string | null>(null);
   const [ownerPhone, setOwnerPhone] = useState<string>('');
   const [whatsappNumber, setWhatsappNumber] = useState<string>('');
-  const [antherNumberAvailable, setAntherNumberAvailable] = useState(false);
   const [notifyState, setNotifyState] = useState<'idle' | 'sending' | 'done'>('idle');
   const [locationState, setLocationState] = useState<'idle' | 'sending' | 'done'>('idle');
-  const shouldNotifyOwner = hasReport && !antherNumberAvailable;
+  const [finderPhone, setFinderPhone] = useState('');
+  const [captchaToken, setCaptchaToken] = useState('');
+  const [contactState, setContactState] = useState<'idle' | 'sending' | 'done'>('idle');
+  const turnstileRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -55,13 +57,11 @@ const FoundByQrToken: React.FC = () => {
         ));
         setPhoneImageUrl(phoneData.phone_image_url || null);
         setOwnerPhone(String(phoneData.phone || result.phone || '').replace(/\D/g, ''));
-        const storedWhatsapp = String(phoneData.whatsapp_number || result.whatsapp_number || '').replace(/\D/g, '');
-        setWhatsappNumber(storedWhatsapp);
-        setAntherNumberAvailable(Boolean(
-          phoneData.anther_number_available ||
-          result.anther_number_available ||
-          storedWhatsapp
-        ));
+        setWhatsappNumber(
+          (phoneData.whatsapp_enabled || result.whatsapp_enabled)
+            ? String(phoneData.whatsapp_number || result.whatsapp_number || '').replace(/\D/g, '')
+            : ''
+        );
       } catch (err) {
         console.error('FoundByQrToken fetch error:', err);
         setError('حدث خطأ أثناء تحميل حالة الهاتف.');
@@ -72,6 +72,70 @@ const FoundByQrToken: React.FC = () => {
 
     fetchData();
   }, [qrToken]);
+
+  useEffect(() => {
+    if (!hasReport || !turnstileRef.current) return;
+
+    const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
+    if (!siteKey) return;
+
+    const renderWidget = () => {
+      const turnstile = (window as any).turnstile;
+      if (!turnstile || !turnstileRef.current || turnstileRef.current.dataset.rendered) return;
+      turnstile.render(turnstileRef.current, {
+        sitekey: siteKey,
+        callback: (token: string) => setCaptchaToken(token),
+        'expired-callback': () => setCaptchaToken(''),
+        'error-callback': () => setCaptchaToken('')
+      });
+      turnstileRef.current.dataset.rendered = 'true';
+    };
+
+    if ((window as any).turnstile) {
+      renderWidget();
+      return;
+    }
+
+    const existingScript = document.querySelector('script[data-turnstile-script]');
+    if (existingScript) {
+      existingScript.addEventListener('load', renderWidget, { once: true });
+      return () => existingScript.removeEventListener('load', renderWidget);
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+    script.async = true;
+    script.defer = true;
+    script.dataset.turnstileScript = 'true';
+    script.addEventListener('load', renderWidget, { once: true });
+    document.head.appendChild(script);
+    return () => script.removeEventListener('load', renderWidget);
+  }, [hasReport]);
+
+  const contactOwner = async () => {
+    if (!qrToken || !/^\d{7,15}$/.test(finderPhone.replace(/\D/g, '')) || !captchaToken) {
+      setError('أدخل رقم هاتف صحيحًا وأكمل التحقق الأمني.');
+      return;
+    }
+
+    setContactState('sending');
+    try {
+      const response = await fetch(`/api/found/${encodeURIComponent(qrToken)}/contact`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ finderPhone, captchaToken })
+      });
+      const result = await response.json();
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.message || 'تعذر إرسال الإشعار');
+      }
+      setContactState('done');
+    } catch (err) {
+      console.error('contactOwner error:', err);
+      setError('تعذر إرسال رقم التواصل إلى مالك الهاتف.');
+      setContactState('idle');
+    }
+  };
 
   const notifyOwner = async () => {
     if (!qrToken) return;
@@ -166,6 +230,28 @@ const FoundByQrToken: React.FC = () => {
               <div className="rounded-3xl border border-imei-cyan/20 bg-white/5 p-6 shadow-lg">
                 <h2 className="text-xl font-semibold text-white mb-4">ماذا يمكنك أن تفعل الآن</h2>
                 <div className="space-y-4">
+                  {hasReport && (
+                    <div className="rounded-3xl border border-imei-cyan/20 bg-imei-darker/80 p-5">
+                      <h3 className="text-base font-semibold text-white mb-3">إرسال رقم التواصل للمالك</h3>
+                      <input
+                        type="tel"
+                        inputMode="tel"
+                        value={finderPhone}
+                        onChange={(event) => setFinderPhone(event.target.value)}
+                        placeholder="رقم هاتفك"
+                        className="w-full rounded-xl border border-white/10 bg-white/10 px-4 py-3 text-white placeholder:text-gray-400"
+                        disabled={contactState !== 'idle'}
+                      />
+                      <div ref={turnstileRef} className="mt-4 min-h-[65px]" />
+                      <Button
+                        className="w-full mt-3"
+                        onClick={contactOwner}
+                        disabled={contactState !== 'idle'}
+                      >
+                        {contactState === 'done' ? 'تم إرسال الإشعار' : contactState === 'sending' ? 'جاري الإرسال...' : 'إرسال رقم التواصل'}
+                      </Button>
+                    </div>
+                  )}
                   {hasReport && ownerPhone && (
                     <Button className="w-full" asChild>
                       <a href={`tel:${ownerPhone}`}>
@@ -180,9 +266,9 @@ const FoundByQrToken: React.FC = () => {
                       </a>
                     </Button>
                   )}
-                  {(shouldNotifyOwner || (hasReport && !ownerPhone && !whatsappNumber)) && (
+                  {hasReport && !ownerPhone && !whatsappNumber && (
                     <Button className="w-full" onClick={notifyOwner} disabled={notifyState === 'sending' || notifyState === 'done'}>
-                      <MessageCircle size={18} /> {notifyState === 'done' ? 'تم إعلام المالك' : 'إشعار العثور على الهاتف'}
+                      <MessageCircle size={18} /> {notifyState === 'done' ? 'تم إعلام المالك' : 'إشعار المالك داخل التطبيق'}
                     </Button>
                   )}
                   <Button className="w-full" variant="secondary" onClick={sendLocation} disabled={locationState === 'sending'}>
