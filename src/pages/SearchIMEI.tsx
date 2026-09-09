@@ -46,6 +46,21 @@ const WelcomeSearch: React.FC = () => {
   const [isCheckingWhatsApp, setIsCheckingWhatsApp] = useState(false);
   const [hasNotifiedOwner, setHasNotifiedOwner] = useState<boolean>(false);
 
+  // إعادة عرض نتيجة البحث من أعلى الصفحة على الهاتف بعد انتهاء تحديث الواجهة.
+  useEffect(() => {
+    if (searchResult === null || typeof window === 'undefined') return;
+
+    const scrollToResults = () => {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+      document.scrollingElement?.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    };
+
+    const frame = window.requestAnimationFrame(scrollToResults);
+    return () => window.cancelAnimationFrame(frame);
+  }, [searchResult]);
+
   // التحقق من حد البحث للمستخدم بناءً على أحدث دفع في ads_payment
   const checkSearchLimit = async (userId: string) => {
     try {
@@ -486,12 +501,12 @@ const WelcomeSearch: React.FC = () => {
   };
 
   return (
-    <PageContainer>
+    <PageContainer fullWidth={searchResult !== null}>
       <AppNavbar />
-      <PageAdvertisement pageName="welcomesearch" />
+      {searchResult === null && <PageAdvertisement pageName="welcomesearch" />}
 
-      <div className="min-h-screen bg-slate-50 pb-6">
-        <div className="container mx-auto px-2 py-6 max-w-4xl">
+      <div className={`min-h-screen bg-slate-50 pb-6 ${searchResult !== null ? 'w-full' : ''}`}>
+        <div className={`container mx-auto px-2 py-6 ${searchResult !== null ? 'max-w-none' : 'max-w-4xl'}`}>
           {/* Header Section */}
           <div className="bg-white rounded-2xl shadow-sm p-4 mb-6 border border-slate-200">
             <div className="flex items-center justify-between">

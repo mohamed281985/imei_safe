@@ -10,6 +10,7 @@ import { markNotificationAsRead, markAllNotificationsAsRead } from '../lib/notif
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { decryptIMEI, encryptIMEI } from '@/lib/imeiCrypto';
+import { renderNotificationBody } from '@/lib/notificationDisplay';
 
 interface Notification {
   id: string;
@@ -46,6 +47,7 @@ const NotificationBell: React.FC = () => {
         .select('*')
         .eq('email', encryptedEmail)
         .eq('is_read', false)
+        .or('is_deleted.is.null,is_deleted.neq.deleted')
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -269,7 +271,7 @@ const NotificationBell: React.FC = () => {
                       )}>
                         {notification.title}
                       </h4>
-                      <p className="text-sm text-gray-700 leading-relaxed">{notification.body}</p>
+                      <p className="text-sm text-gray-700 leading-relaxed">{renderNotificationBody(notification.body, notification.notification_type)}</p>
                       <div className="flex items-center mt-3 text-xs text-gray-500">
                         <Clock className="h-3 w-3 ml-1" />
                         <span>{new Date(notification.created_at).toLocaleDateString('ar-SA')}</span>

@@ -65,6 +65,7 @@ const AddAccessoriesForm = lazy(() => import('@/pages/AddaccessoriesForm'));
 const AccessoriesForSalePage = lazy(() => import('@/pages/AccessoriesForSalePage'));
 const ChallengeGamePage = lazy(() => import('./pages/ChallengeGamePage'));
 const ProfileMenuPage = lazy(() => import('./pages/ProfileMenuPage'));
+const NotificationsPage = lazy(() => import('./pages/NotificationsPage'));
 const RewardsPage = lazy(() => import('./pages/RewardsPage'));
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
 const TermsOfUse = lazy(() => import('./pages/TermsOfUse'));
@@ -422,6 +423,7 @@ const AppCore = () => {
             <Route path="/favorites" element={<Favorites />} />
             <Route path="*" element={<NotFound />} />
             <Route path="/profile-menu" element={<AuthGuard><ProfileMenuPage /></AuthGuard>} />
+            <Route path="/notifications" element={<AuthGuard><NotificationsPage /></AuthGuard>} />
             <Route path="/rewards" element={<AuthGuard><RewardsPage /></AuthGuard>} />
           </Routes>
         </Suspense>

@@ -30,9 +30,7 @@ import { Pagination, Navigation } from 'swiper/modules';
 import { MapContainer, TileLayer, Marker } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import 'swiper/css';
-import 'swiper/css/pagination';
-import 'swiper/css/navigation';
+import 'swiper/swiper.css';
 
 // Fix for Leaflet marker icons in React
 // @ts-ignore

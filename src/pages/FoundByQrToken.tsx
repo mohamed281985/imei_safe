@@ -18,6 +18,7 @@ const FoundByQrToken: React.FC = () => {
   const [phoneImageUrl, setPhoneImageUrl] = useState<string | null>(null);
   const [ownerPhone, setOwnerPhone] = useState<string>('');
   const [whatsappNumber, setWhatsappNumber] = useState<string>('');
+  const [showContactOptions, setShowContactOptions] = useState(false);
   const [notifyState, setNotifyState] = useState<'idle' | 'sending' | 'done'>('idle');
   const [locationState, setLocationState] = useState<'idle' | 'sending' | 'done'>('idle');
   const [finderPhone, setFinderPhone] = useState('');
@@ -252,19 +253,33 @@ const FoundByQrToken: React.FC = () => {
                       </Button>
                     </div>
                   )}
-                  {hasReport && ownerPhone && (
-                    <Button className="w-full" asChild>
-                      <a href={`tel:${ownerPhone}`}>
-                        <Phone size={18} /> الاتصال الهاتفي
-                      </a>
-                    </Button>
-                  )}
-                  {hasReport && whatsappNumber && (
-                    <Button className="w-full bg-green-600 hover:bg-green-700" asChild>
-                      <a href={`https://wa.me/${whatsappNumber}`} target="_blank" rel="noreferrer">
-                        <MessageCircle size={18} /> التواصل عبر WhatsApp
-                      </a>
-                    </Button>
+                  {hasReport && (ownerPhone || whatsappNumber) && (
+                    <div className="space-y-3">
+                      <Button
+                        className="w-full"
+                        onClick={() => setShowContactOptions((current) => !current)}
+                      >
+                        <Phone size={18} /> الاتصال بالمالك
+                      </Button>
+                      {showContactOptions && (
+                        <div className="space-y-2 rounded-2xl border border-imei-cyan/20 bg-imei-darker/60 p-3">
+                          {ownerPhone && (
+                            <Button className="w-full" asChild>
+                              <a href={`tel:${ownerPhone}`}>
+                                <Phone size={18} /> الاتصال الهاتفي
+                              </a>
+                            </Button>
+                          )}
+                          {whatsappNumber && (
+                            <Button className="w-full bg-green-600 hover:bg-green-700" asChild>
+                              <a href={`https://wa.me/${whatsappNumber}`} target="_blank" rel="noreferrer">
+                                <MessageCircle size={18} /> التواصل عبر WhatsApp
+                              </a>
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   )}
                   {hasReport && !ownerPhone && !whatsappNumber && (
                     <Button className="w-full" onClick={notifyOwner} disabled={notifyState === 'sending' || notifyState === 'done'}>

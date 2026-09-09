@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Notifications from '../components/Notifications';
+import { renderNotificationBody } from '../lib/notificationDisplay';
 
 interface Notification {
   id: string;
@@ -281,7 +282,7 @@ const BottomNavbar: React.FC<BottomNavbarProps> = ({ isVisible = true }) => {
                         <h4 className={cn("font-semibold mb-1", !notification.is_read ? "text-orange-400" : "text-orange-300")}>
                           {notification.title}
                         </h4>
-                        <p className="text-sm text-white font-medium leading-relaxed drop-shadow-md">{notification.body}</p>
+                        <p className="text-sm text-white font-medium leading-relaxed drop-shadow-md">{renderNotificationBody(notification.body, notification.notification_type)}</p>
                         <div className="flex items-center mt-2 text-xs text-gray-500">
                           <Clock className="w-3 h-3 ml-1" />
                           <span>{new Date(notification.created_at).toLocaleString()}</span>

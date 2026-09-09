@@ -462,7 +462,9 @@ app.get('/api/found/:token', async (req, res) => {
         )) || null;
       }
 
-      if (!report || !report.user_id || report.anther_number || report.finder_phone) {
+      // يمكن لواجد جديد تحديث رقم الواجد السابق؛ لا نوقف الإشعار إذا كان
+      // هناك رقم محفوظ مسبقاً في anther_number أو finder_phone.
+      if (!report || !report.user_id) {
         return res.status(409).json({ success: false, message: 'لا يمكن إرسال الإشعار لهذا الهاتف' });
       }
 
@@ -476,12 +478,11 @@ app.get('/api/found/:token', async (req, res) => {
         .from('phone_reports')
         .update({ finder_phone: finderPhoneValue })
         .eq('id', report.id)
-        .is('finder_phone', null)
-        .select('id')
+        .select('id, finder_phone')
         .maybeSingle();
       if (updateError) throw updateError;
       if (!updatedReport) {
-        return res.status(409).json({ success: false, message: 'تم إرسال الإشعار مسبقًا' });
+        return res.status(409).json({ success: false, message: 'تعذر تحديث رقم الواجد' });
       }
 
       const { error: notificationError } = await supabase.from('notifications').insert({

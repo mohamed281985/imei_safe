@@ -1,6 +1,6 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { User, PlusSquare, Search, Sparkles, LogOut, MessageSquare, Key, Globe, Fingerprint, Gift, Phone, Award, Crown, ChevronLeft, Shield, FileText } from 'lucide-react';
+import { User, PlusSquare, Search, Sparkles, LogOut, MessageSquare, Key, Globe, Fingerprint, Gift, Phone, Award, Crown, ChevronLeft, Shield, FileText, Bell } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -697,6 +697,22 @@ toast({ title: t('success'), description: t('biometric_enabled_success') });
                                 </button>
 
                                 {/* Language */}
+                                <button
+                                    onClick={() => navigate('/notifications')}
+                                    className="w-full flex items-center justify-between p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full bg-[#00E5FF]/15 flex items-center justify-center">
+                                            <Bell className="w-5 h-5 text-[#008b9a]" />
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="font-medium text-gray-800">{t('my_notifications')}</div>
+                                            <div className="text-xs text-gray-500">{t('notifications_page_description')}</div>
+                                        </div>
+                                    </div>
+                                    <ChevronLeft className="w-5 h-5 text-gray-400" />
+                                </button>
+
                                 <button
                                     onClick={() => setShowLanguageModal(true)}
                                     className="w-full flex items-center justify-between p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors"

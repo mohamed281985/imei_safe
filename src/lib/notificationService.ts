@@ -87,7 +87,8 @@ export const getUnreadNotificationCount = async (email: string) => {
       .from('notifications')
       .select('*', { count: 'exact', head: true })
       .ilike('email', normalizedEmail)
-      .eq('is_read', false);
+      .eq('is_read', false)
+      .or('is_deleted.is.null,is_deleted.neq.deleted');
 
     console.log('Unread count result:', count);
 
@@ -117,6 +118,7 @@ export const getUnreadNotifications = async (email: string) => {
       .select('*')
       .ilike('email', normalizedEmail)
       .eq('is_read', false)
+      .or('is_deleted.is.null,is_deleted.neq.deleted')
       .order('created_at', { ascending: false });
 
     console.log('Unread notifications result:', data);

@@ -9,8 +9,7 @@ import Logo from '../components/Logo';
 import AppNavbar from '@/components/AppNavbar';
 import { Search, Plus, Smartphone, X, Crown, Eye, AlertTriangle, User, PlusCircle, MapPin, Users, Star } from 'lucide-react';
 import { Swiper, SwiperSlide } from 'swiper/react';
-import 'swiper/css';
-import 'swiper/css/navigation';
+import 'swiper/swiper.css';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Link } from 'react-router-dom';
 import { useGeolocated } from 'react-geolocated';
@@ -85,11 +84,11 @@ const getAccessoryMainImage = (accessory: any): string | null => {
 };
 
 const getTransformedAccessoryImageUrl = (originalUrl: string | null | undefined): string => {
-  return getTransformedImageUrl(originalUrl);
+  return getTransformedImageUrl(originalUrl, 'accessory-images');
 };
 
 // دالة مساعدة لإنشاء رابط صورة محسن باستخدام Supabase Storage
-const getTransformedImageUrl = (originalUrl: string | null | undefined): string => {
+const getTransformedImageUrl = (originalUrl: string | null | undefined, bucket = 'phone-images'): string => {
   if (!originalUrl) {
     return '/placeholder-phone.png';
   }
@@ -106,7 +105,7 @@ const getTransformedImageUrl = (originalUrl: string | null | undefined): string 
     }
 
     // بناء الرابط الكامل للصورة
-    const finalUrl = `${supabaseUrl}/storage/v1/object/public/phone-images/${originalUrl}`;
+    const finalUrl = `${supabaseUrl}/storage/v1/object/public/${bucket}/${originalUrl}`;
     console.debug('Final image URL resolved');
     return finalUrl;
   } catch (e) {
@@ -443,11 +442,11 @@ const Dashboard: React.FC = () => {
       setLoadingListings(true);
       setLoadingAccessories(true);
 
-      // --- جلب عملة المستخدم (يتم تشغيله عند تغيير user.id أو coords) ---
-      let detectedCurrency = defaultCurrency;
-
-      if (user?.id) {
-        try {
+      // تحديث العملة بشكل مستقل حتى لا يؤخر ظهور منتجات البيع.
+      void (async () => {
+        let detectedCurrency = defaultCurrency;
+        if (user?.id) {
+          try {
           const { data: userData, error: userError } = await supabase
             .from('users')
             .select('countries')
@@ -499,26 +498,22 @@ const Dashboard: React.FC = () => {
           } else {
             setUserCurrencySymbol(defaultCurrency);
           }
-        } catch (err) {
+          } catch (err) {
+            setUserCurrencySymbol(defaultCurrency);
+            console.error('Error in fetching user currency:', err);
+          }
+        } else {
           setUserCurrencySymbol(defaultCurrency);
-          console.error('Error in fetching user currency:', err);
         }
-      } else {
-        setUserCurrencySymbol(defaultCurrency);
-      }
-      // --- نهاية جلب عملة المستخدم ---
+      })();
 
       try {
         // جلب الهواتف المفقودة عن طريق API خادم يُفك التشفير ويعيد فقط الحقول المطلوبة
-        let responseData: any[] = [];
-        try {
-          const response = await axiosInstance.get<any[]>('/api/lost-phones');
-          responseData = response?.data || [];
-        } catch (err: any) {
-          console.warn('[Lost Phones] Network or server error, skipping lost-phones fetch:', err?.message || err);
-          responseData = [];
-        }
-        setDisplayedPhones(responseData);
+        void axiosInstance.get<any[]>('/api/lost-phones')
+          .then(response => setDisplayedPhones(response?.data || []))
+          .catch((err: any) => {
+            console.warn('[Lost Phones] Network or server error, skipping lost-phones fetch:', err?.message || err);
+          });
 
         // --- جلب اسم دولة المستخدم للفلترة ---
         let userCountryName: string | null = null;
@@ -1103,7 +1098,8 @@ const Dashboard: React.FC = () => {
                                         src={imageUrl}
                                         alt={phone.title || 'صورة الهاتف'}
                                         className="absolute inset-0 w-full h-full object-cover opacity-0 transition-opacity duration-300"
-                                        loading="lazy"
+                                        loading={phoneIndex === 0 ? 'eager' : 'lazy'}
+                                        fetchPriority={phoneIndex === 0 ? 'high' : 'auto'}
                                         onLoad={(e) => {
                                           const target = e.target as HTMLImageElement;
                                           target.classList.remove('opacity-0');
@@ -1262,7 +1258,8 @@ const Dashboard: React.FC = () => {
                                   src={getTransformedAccessoryImageUrl(getAccessoryMainImage(acc))}
                                   alt={acc.title || 'صورة الإكسسوار'}
                                   className="absolute inset-0 w-full h-full object-cover"
-                                  loading="lazy"
+                                  loading="eager"
+                                  fetchPriority="high"
                                 />
                               ) : (
                                 <div className="w-full h-full flex items-center justify-center bg-gray-100">
