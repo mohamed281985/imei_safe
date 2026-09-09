@@ -229,6 +229,7 @@ app.get('/api/found/:token', async (req, res) => {
     let reported = false;
     let whatsapp_enabled = false;
     let whatsapp_number = null;
+    let reportOwnerPhone = null;
 
     try {
       let repRows = [];
@@ -266,12 +267,14 @@ app.get('/api/found/:token', async (req, res) => {
           reported = true;
           const r = repRows[0];
           whatsapp_enabled = !!r.whatsapp;
-          if (whatsapp_enabled && r.anther_number) {
+          if (r.anther_number) {
             try {
-              whatsapp_number = decryptField(r.anther_number) || r.anther_number;
+              reportOwnerPhone = decryptField(r.anther_number) || r.anther_number;
+              if (whatsapp_enabled) whatsapp_number = reportOwnerPhone;
             } catch (decErr) {
               console.error('/api/found decrypt phone_reports.anther_number error:', decErr);
-              whatsapp_number = r.anther_number;
+              reportOwnerPhone = r.anther_number;
+              if (whatsapp_enabled) whatsapp_number = reportOwnerPhone;
             }
           }
         }
@@ -317,8 +320,9 @@ app.get('/api/found/:token', async (req, res) => {
       status: phone.status || null,
       phone_image_url: phone.phone_image_url || null,
       owner_name: ownerName,
-      phone: ownerPhone,
-        owner_contact_available: Boolean(ownerPhone),
+      phone: ownerPhone || reportOwnerPhone,
+      owner_phone: ownerPhone || reportOwnerPhone,
+        owner_contact_available: Boolean(ownerPhone || reportOwnerPhone),
       device_code: phone.device_code || '',
       whatsapp_enabled,
       whatsapp_number

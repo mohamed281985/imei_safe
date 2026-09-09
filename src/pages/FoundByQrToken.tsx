@@ -57,7 +57,15 @@ const FoundByQrToken: React.FC = () => {
           /مفقود|مبلغ عنه|lost|missing/i.test(String(phoneData.status || result.status || ''))
         ));
         setPhoneImageUrl(phoneData.phone_image_url || null);
-        setOwnerPhone(String(phoneData.phone || result.phone || '').replace(/\D/g, ''));
+        setOwnerPhone(String(
+          phoneData.owner_phone ||
+          phoneData.phone ||
+          result.owner_phone ||
+          result.phone ||
+          phoneData.whatsapp_number ||
+          result.whatsapp_number ||
+          ''
+        ).replace(/\D/g, ''));
         setWhatsappNumber(
           (phoneData.whatsapp_enabled || result.whatsapp_enabled)
             ? String(phoneData.whatsapp_number || result.whatsapp_number || '').replace(/\D/g, '')
