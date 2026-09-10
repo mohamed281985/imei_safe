@@ -103,6 +103,36 @@ export function registerReportRoutes({
       data.email = '';
       const PLACEHOLDER_REGISTERED = 'مسجل بالنظام';
       let registeredPhoneForReport = null;
+      const isQuickReport = data.report_mode === 'quick';
+
+      // لا يسمح بأكثر من بلاغ سريع واحد للمستخدم أو لنفس IMEI.
+      // انتهاء صلاحية البلاغ بعد 48 ساعة لا يعيد فتح إمكانية إنشاء بلاغ سريع آخر.
+      // البلاغ العادي لا يدخل هذا الفحص ويمكن إنشاؤه في أي وقت.
+      if (isQuickReport) {
+        const quickReportQuery = supabase
+          .from('phone_reports')
+          .select('id, user_id, imei_hash')
+          .eq('report_mode', 'quick');
+
+        const { data: quickReports, error: quickReportsError } = await quickReportQuery;
+        if (quickReportsError) {
+          console.error('Error checking active quick reports:', quickReportsError);
+          return sendError(res, 500, 'حدث خطأ في التحقق من إخطار الفقد السريع', quickReportsError, { success: false });
+        }
+
+        const incomingImeiHash = data.imei ? getImeiHash(data.imei) : null;
+        const duplicateQuickReport = (quickReports || []).some((report) => (
+          report.user_id === req.user.id ||
+          Boolean(incomingImeiHash && report.imei_hash === incomingImeiHash)
+        ));
+
+        if (duplicateQuickReport) {
+          return res.status(409).json({
+            success: false,
+            error: 'لا يمكن إنشاء إخطار فقد سريع آخر بعد استخدام البلاغ السريع. يمكنك إنشاء إخطار فقد عادي.'
+          });
+        }
+      }
 
       // Diagnostic: log presence/format of image URLs to help debug 400 errors
       try {
@@ -199,44 +229,42 @@ console.log("typeof:", typeof data.receipt_image_url);
 console.log("exists:", "receipt_image_url" in data);
 console.log("isValid:", isValidImageUrl(data.receipt_image_url));
 console.log("================================");
-      // الآن بعد تعبئة الحقول من registered_phones، نفّذ تحقق روابط الصور النهائي
-      if (
-        !('receipt_image_url' in data) ||
-        !data.receipt_image_url ||
-        !isValidImageUrl(data.receipt_image_url)
-      ) {
-        return res.status(400).json({
-          success: false,
-          error: 'يجب رفع صورة الفاتورة بشكل صحيح'
-        });
-      }
-
-      if (
-        'report_image_url' in data &&
-        data.report_image_url &&
-        !isValidImageUrl(data.report_image_url)
-      ) {
-        return res.status(400).json({
-          success: false,
-          error: 'صورة المحضر غير صالحة أو لم يتم رفعها بشكل صحيح'
-        });
-      }
-      else {
-        // quick mode: allow missing images, but ensure expiry is set (default to 48 hours)
+      if (isQuickReport) {
+        // البلاغ السريع صالح لمدة يومين ولا يحتاج إلى صور أو روابط صور.
         try {
-          if (!data.expiry) {
-            data.expiry = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
-          }
+          data.expiry = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
         } catch (e) {
           // ignore
         }
 
-        // If no images are provided in quick mode, do not include empty image fields in the insert payload.
-        if (!data.receipt_image_url) {
-          delete data.receipt_image_url;
+        delete data.receipt_image_url;
+        delete data.report_image_url;
+      } else {
+        // البلاغ العادي ليس مؤقتاً حتى لو أرسل العميل قيمة قديمة بالخطأ.
+        delete data.expiry;
+        delete data.report_mode;
+
+        // البلاغ العادي يتطلب صورة فاتورة، وصورة المحضر إن أُرسلت يجب أن تكون صالحة.
+        if (
+          !('receipt_image_url' in data) ||
+          !data.receipt_image_url ||
+          !isValidImageUrl(data.receipt_image_url)
+        ) {
+          return res.status(400).json({
+            success: false,
+            error: 'يجب رفع صورة الفاتورة بشكل صحيح'
+          });
         }
-        if (!data.report_image_url) {
-          delete data.report_image_url;
+
+        if (
+          'report_image_url' in data &&
+          data.report_image_url &&
+          !isValidImageUrl(data.report_image_url)
+        ) {
+          return res.status(400).json({
+            success: false,
+            error: 'صورة المحضر غير صالحة أو لم يتم رفعها بشكل صحيح'
+          });
         }
       }
       // تشفير كلمة المرور قبل الحفظ (bcrypt)

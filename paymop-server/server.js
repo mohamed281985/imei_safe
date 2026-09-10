@@ -5660,14 +5660,14 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
     if (imeiHash) {
       const { data: matchingReports, error: matchErr } = await supabase
         .from('phone_reports')
-        .select('id, user_id')
+        .select('id, user_id, report_mode')
         .eq('status', 'active')
         .eq('imei_hash', imeiHash);
 
       if (matchErr) {
         console.error('Error fetching phone_reports by imei_hash:', matchErr);
-      } else if (matchingReports && matchingReports.length > 0) {
-        const matchingReport = matchingReports[0];
+      } else if (matchingReports && matchingReports.some((report) => report.report_mode !== 'quick')) {
+        const matchingReport = matchingReports.find((report) => report.report_mode !== 'quick');
         if (requesterId && matchingReport.user_id === requesterId) {
           return res.json({ exists: true, phoneDetails: null, isOtherUser: false, hasActiveReport: true, isOwnReport: true, isStolen: true });
         }
@@ -5676,7 +5676,7 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
     } else {
       const { data: allReports, error: reportsFetchError } = await supabase
         .from('phone_reports')
-        .select('id, user_id, imei')
+        .select('id, user_id, imei, report_mode')
         .eq('status', 'active');
 
       if (reportsFetchError) {
@@ -5685,7 +5685,7 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
         const matchingReport = allReports.find(report => {
           const decryptedImei = decryptField(report.imei);
           if (process.env.NODE_ENV !== 'production') console.log('[check-imei] report decrypted IMEI:', decryptedImei, 'normalized:', normalizeDigitsOnly(decryptedImei));
-          return normalizeDigitsOnly(decryptedImei) === normalizeDigitsOnly(imei);
+          return report.report_mode !== 'quick' && normalizeDigitsOnly(decryptedImei) === normalizeDigitsOnly(imei);
         });
 
         if (matchingReport) {

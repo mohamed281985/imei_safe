@@ -793,25 +793,30 @@ const BusinessTransfer: React.FC = () => {
             </div>
           </div>
         )}
-        <div className="w-full max-w-2xl p-4 sm:p-8 py-12">
-          <div className="flex items-center justify-between mb-6">
-            <button
-              onClick={() => navigate(-1)}
-              className="flex items-center gap-2 text-imei-cyan hover:text-cyan-700 transition-colors"
-            >
-              <ArrowLeft className="w-5 h-5" />
-              <span>{t('back')}</span>
-            </button>
-            <Logo size="md" />
-          </div>
-          <h2 className="text-2xl font-bold text-orange-500 mb-6 text-center">{t('transfer_ownership')}</h2>
-          {isLoading && <p className="text-center text-white my-4">{t('loading')}...</p>}
-          {success ? (
-            <div className="text-green-500 text-center text-lg font-semibold py-8">
-              {t('ownership_transferred')}
+        <div className="flex justify-center mb-4">
+          <Logo size="lg" />
+        </div>
+
+        <div className="w-full max-w-2xl">
+          <div className="rounded-[28px] border-2 border-blue-300 bg-gradient-to-br from-blue-100 via-white to-cyan-100 p-4 sm:p-6 shadow-lg">
+            <div className="flex items-center justify-center mb-6 pt-3 gap-4" style={{ background: 'linear-gradient(to top, rgb(5, 48, 96) 0%, rgb(10, 77, 140) 100%)', padding: '1rem', borderRadius: '1rem', marginTop: '1rem' }}>
+              <button
+                onClick={() => navigate(-1)}
+                className="flex items-center justify-center p-2 rounded-full transition-all hover:scale-110"
+                style={{ background: '#ff8c00', width: '44px', height: '44px' }}
+              >
+                <ArrowLeft className="w-5 h-5 text-white" />
+              </button>
+              <h2 className="text-2xl font-bold flex-1 text-center" style={{ color: '#ffffff' }}>{t('transfer_ownership')}</h2>
+              <div style={{ width: '44px' }} />
             </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-8">
+            {isLoading && <p className="text-center text-slate-700 my-4">{t('loading')}...</p>}
+            {success ? (
+              <div className="text-green-600 text-center text-lg font-semibold py-8">
+                {t('ownership_transferred')}
+              </div>
+            ) : (
+              <form onSubmit={handleSubmit} className="space-y-8">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-black mb-1">IMEI</label>
@@ -948,10 +953,10 @@ const BusinessTransfer: React.FC = () => {
                   {t('receipt_info')}
                 </h3>
 
-                <div className="mb-4 bg-gradient-to-br from-imei-darker via-imei-dark to-imei-darker p-4 rounded-xl border border-imei-cyan/30 hover:border-imei-cyan/60 transition-all duration-300 shadow-lg hover:shadow-xl w-full">
+                <div className="mb-4 bg-gradient-to-br from-blue-100 via-white to-cyan-100 p-4 sm:p-5 rounded-xl border-2 border-blue-300 hover:border-blue-400 transition-all duration-300 shadow-lg hover:shadow-xl w-full">
                   <div className="flex items-center mb-2">
                     <FileText className="w-6 h-6 mr-2 text-imei-cyan" />
-                    <label className="text-lg font-bold bg-gradient-to-r from-black to-imei-cyan bg-clip-text text-transparent">
+                    <label className="text-lg font-bold text-blue-900">
                       {t('receipt_image')}
                     </label>
                   </div>
@@ -981,9 +986,9 @@ const BusinessTransfer: React.FC = () => {
                       </>
                     ) : (
                       <div className="h-40 border-2 border-dashed border-imei-cyan/20 rounded-lg flex flex-col items-center justify-center bg-gradient-to-b from-imei-dark/30 to-imei-darker/30 group hover:border-imei-cyan/40 transition-all duration-300">
-                        <FileText className="w-16 h-16 text-imei-cyan/60 group-hover:text-imei-cyan/80 transition-colors duration-300" strokeWidth={1} />
-                        <p className="text-center text-sm text-imei-cyan/60 mt-2">{t('no_receipt_preview')}</p>
-                        <p className="text-xs mt-1 text-imei-cyan/40">{t('image_will_be_displayed_here')}</p>
+                        <FileText className="w-16 h-16 text-black/60 group-hover:text-black/80 transition-colors duration-300" strokeWidth={1} />
+                        <p className="text-center text-sm text-black/60 mt-2">{t('no_receipt_preview')}</p>
+                        <p className="text-xs mt-1 text-black/40">{t('image_will_be_displayed_here')}</p>
                       </div>
                     )}
 
@@ -1014,8 +1019,9 @@ const BusinessTransfer: React.FC = () => {
                   </Button>
                 </div>
               </div>
-            </form>
-          )}
+              </form>
+            )}
+          </div>
 
           <Dialog open={showRegisterDialog} onOpenChange={setShowRegisterDialog}>
             <DialogContent className="bg-imei-darker text-white border-2 border-imei-cyan shadow-lg shadow-imei-cyan/20">

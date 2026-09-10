@@ -840,7 +840,7 @@ const RegisterPhone: React.FC = () => {
                     className="absolute left-0 top-1/2 h-[2px] -translate-y-1/2 bg-emerald-500 transition-all duration-300"
                     style={{ width: `${((currentStep - 1) / (stepItems.length - 1)) * 100}%` }}
                   />
-                  <div className="relative grid w-full grid-cols-4 gap-2 px-2">
+                  <div className="relative grid w-full grid-cols-3 gap-2 px-2">
                     {stepItems.map((item, index) => {
                       const stepIndex = index + 1;
                       const isCompleted = stepIndex < currentStep;

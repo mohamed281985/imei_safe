@@ -120,7 +120,7 @@ const downloadImage = async (url: string | null, phoneId: string) => {
   return (
     <PageContainer>
       <AppNavbar />
-      <div className="w-full px-4 py-8 mx-[1rem]">
+      <div className="mx-auto w-full max-w-7xl overflow-x-hidden px-4 py-8">
         <div className="mb-6 text-center">
           <h1 className="text-4xl font-bold text-slate-800 mb-2">بطاقات الاسترداد</h1>
           <p className="text-slate-600">إدارة بطاقات استرداد أجهزتك وحمايتها</p>

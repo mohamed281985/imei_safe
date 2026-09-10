@@ -43,14 +43,18 @@ const getImeiHash = (imei) => {
 
       const { data: reports, error: reportError } = await supabase
         .from('phone_reports')
-        .select('imei')
+        .select('imei, report_mode, expiry')
         .eq('status', 'active');
 
       if (reportError) throw reportError;
 
       const normalizedIncoming = normalizeDigitsOnly(imei);
       const activeReport = reports
-        ? reports.find((r) => normalizeDigitsOnly(decryptField(r.imei)) === normalizedIncoming)
+        ? reports.find((r) => {
+          // البلاغ السريع لا يمنع إنشاء بلاغ عادي لنفس الهاتف.
+          if (r.report_mode === 'quick') return false;
+          return normalizeDigitsOnly(decryptField(r.imei)) === normalizedIncoming;
+        })
         : null;
 
       // ✅ PERFORMANCE: Fetch only the lightweight columns needed to locate the

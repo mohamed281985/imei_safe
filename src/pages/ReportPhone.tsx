@@ -1206,7 +1206,7 @@ const ReportPhone: React.FC = () => {
               </div>
             )}
 
-            <div className="rounded-[28px] border border-slate-200 bg-white/95 px-2 py-6 shadow-sm">
+            <div className="rounded-[28px] border-2 border-blue-300 bg-gradient-to-br from-blue-100 via-white to-cyan-100 p-4 sm:p-5 shadow-lg">
               {currentStep === 1 && (
                 <div className="space-y-5">
                   <div className="flex items-center mb-6 px-2">
@@ -1230,7 +1230,7 @@ const ReportPhone: React.FC = () => {
                         name="imei"
                         value={formData.imei}
                         onChange={handleChange}
-                        placeholder={t('enter_imei')}
+                        placeholder={t('imei_hint')}
                         disabled={isReadOnly || isSubmitting}
                         className={`input-field w-full bg-[#c0dee5] text-gray-800 !pl-12 ${isImeiValid ? '!pr-12 border-green-500' : ''}`}
                         maxLength={15}
@@ -1244,7 +1244,6 @@ const ReportPhone: React.FC = () => {
                         </div>
                       )}
                     </div>
-                    <p className="text-sm text-slate-600">{t('imei_hint')}</p>
                   </div>
 
                   <div className="space-y-3">
