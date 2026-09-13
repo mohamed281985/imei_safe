@@ -6607,6 +6607,79 @@ app.post('/api/create-accessory', verifyJwtToken, async (req, res) => {
   }
 });
 
+// Add an accessory image after the accessory has been created.
+app.post('/api/insert-accessory-image', verifyJwtToken, async (req, res) => {
+  const userId = req.user?.id;
+  const { accessoryId, imageUrl, main_image, order } = req.body || {};
+
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  if (!accessoryId || !imageUrl) {
+    return res.status(400).json({ error: 'accessoryId and imageUrl are required' });
+  }
+
+  try {
+    const { data: accessory, error: accessoryError } = await supabase
+      .from('accessories')
+      .select('id, seller_id')
+      .eq('id', accessoryId)
+      .maybeSingle();
+
+    if (accessoryError) throw accessoryError;
+    if (!accessory) return res.status(404).json({ error: 'Accessory not found' });
+    if (accessory.seller_id !== userId) return res.status(403).json({ error: 'Not authorized' });
+
+    const { data, error } = await supabase
+      .from('accessory_images')
+      .insert({
+        accessory_id: accessoryId,
+        image_path: String(imageUrl).trim(),
+        main_image: Boolean(main_image),
+        order: Number.isFinite(Number(order)) ? Number(order) : 0
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return res.json({ success: true, image: data });
+  } catch (error) {
+    console.error('/api/insert-accessory-image error:', error);
+    return sendError(res, 500, 'Failed to insert accessory image', error);
+  }
+});
+
+// Remove a partially-created accessory when its image upload fails.
+app.post('/api/delete-accessory-if-failed', verifyJwtToken, async (req, res) => {
+  const userId = req.user?.id;
+  const { accessoryId } = req.body || {};
+
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  if (!accessoryId) return res.status(400).json({ error: 'accessoryId is required' });
+
+  try {
+    const { data: accessory, error: accessoryError } = await supabase
+      .from('accessories')
+      .select('id, seller_id')
+      .eq('id', accessoryId)
+      .maybeSingle();
+
+    if (accessoryError) throw accessoryError;
+    if (!accessory) return res.status(404).json({ error: 'Accessory not found' });
+    if (accessory.seller_id !== userId) return res.status(403).json({ error: 'Not authorized' });
+
+    const { error: deleteError } = await supabase
+      .from('accessories')
+      .delete()
+      .eq('id', accessoryId)
+      .eq('seller_id', userId);
+
+    if (deleteError) throw deleteError;
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('/api/delete-accessory-if-failed error:', error);
+    return sendError(res, 500, 'Failed to delete accessory', error);
+  }
+});
+
 registerAdRoutes({
   app,
   supabase,

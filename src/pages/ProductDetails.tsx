@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -83,6 +83,7 @@ const ProductDetails = () => {
     const [loading, setLoading] = useState(true);
     const [loadingPhone, setLoadingPhone] = useState(false);
     const [isFavorite, setIsFavorite] = useState(false);
+    const mainSwiperRef = useRef<import('swiper').Swiper | null>(null);
     
     // حالة رمز العملة
     const [userCurrencySymbol, setUserCurrencySymbol] = useState(t('currency_short') || 'EGP');
@@ -416,56 +417,46 @@ const ProductDetails = () => {
         <div className="absolute bottom-[10%] left-[5%] h-[35%] w-[35%] rounded-full bg-[#12B76A] opacity-[0.04] blur-[110px]"></div>
       </div>
 
-      <div className="relative mx-auto w-full max-w-[500px]">
-        {/* Top Header */}
-        <div className="flex items-center justify-between p-6">
+      <div className="relative w-full max-w-none">
+        {/* Top Header - Sticky */}
+        <div className="absolute inset-x-0 top-0 z-40 flex items-center justify-between px-4 py-4 sm:px-6">
           <button 
             onClick={() => navigate(-1)}
-            className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/60 bg-white/40 backdrop-blur-xl shadow-sm"
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-white/95 shadow-lg transition-transform duration-200 hover:scale-105"
           >
             <ChevronRight className="h-6 w-6 text-gray-800" />
           </button>
-          <h1 className="text-lg font-bold text-gray-800">تفاصيل المنتج</h1>
+          <h1 className="sr-only">تفاصيل المنتج</h1>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => navigate('/favorites')}
-              className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/60 bg-white/40 backdrop-blur-xl shadow-sm"
+              onClick={toggleFavorite}
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-white/95 shadow-lg transition-transform duration-200 hover:scale-105"
               aria-label="المفضلة"
             >
-              <Heart className="h-6 w-6 text-gray-800" />
+              <Heart className={`h-5 w-5 ${isFavorite ? 'fill-red-500 text-red-500' : 'text-gray-800'}`} />
+            </button>
+            <button
+              onClick={shareProduct}
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-white/95 shadow-lg transition-transform duration-200 hover:scale-105"
+              aria-label="مشاركة"
+            >
+              <Share2 className="h-5 w-5 text-gray-800" />
             </button>
           </div>
         </div>
 
         {/* Hero Image Section */}
-        <div className="px-6 mb-8">
-          <div className="relative overflow-hidden rounded-[32px] bg-gradient-to-b from-white to-[#DFF4FF]/30 p-2 shadow-[0_20px_50px_rgba(10,132,255,0.08)]">
-            {/* Floating Buttons inside Hero */}
-            <div className="absolute top-6 left-6 z-10">
-              <button 
-                  onClick={toggleFavorite}
-                  className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/80 backdrop-blur-md shadow-sm transition-transform active:scale-90"
-                >
-                  <Heart className={`h-6 w-6 ${isFavorite ? 'fill-red-500 text-red-500' : 'text-[#0A84FF]'}`} />
-                </button>
-            </div>
-
-            <div className="absolute top-6 right-6 z-10">
-              <button 
-                onClick={shareProduct}
-                className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/80 backdrop-blur-md shadow-sm transition-transform active:scale-90"
-                aria-label="مشاركة"
-              >
-                <Share2 className="h-5 w-5 text-gray-800" />
-              </button>
-            </div>
-            
+        <div className="mb-4 w-full px-0 sm:px-4">
+          <div className="relative overflow-hidden bg-white shadow-[0_12px_30px_rgba(10,132,255,0.08)] sm:rounded-b-[28px] sm:rounded-t-[28px]">
             <Swiper
               modules={[Pagination, Navigation]}
               spaceBetween={0}
               slidesPerView={1}
-              pagination={{ clickable: true, bulletActiveClass: 'swiper-pagination-bullet-active !bg-[#0A84FF] !w-6' }}
-              className="h-[320px] w-full"
+              onSwiper={(swiper) => {
+                mainSwiperRef.current = swiper;
+              }}
+              pagination={{ clickable: true, bulletActiveClass: 'swiper-pagination-bullet-active !bg-blue-600 !w-6' }}
+              className="aspect-[4/3] w-full overflow-hidden sm:rounded-[24px]"
             >
               {sortedImages.length > 0 ? (
                 sortedImages.map((img, index) => (
@@ -479,125 +470,146 @@ const ProductDetails = () => {
                 ))
               ) : (
                 <SwiperSlide className="flex items-center justify-center">
-                   <div className="h-full w-full bg-gray-100/50 flex items-center justify-center">
-                      <Zap className="h-12 w-12 text-gray-300" />
+                   <div className="h-full w-full bg-gradient-to-br from-blue-100 to-cyan-100 flex items-center justify-center">
+                      <Zap className="h-12 w-12 text-blue-300" />
                    </div>
                 </SwiperSlide>
               )}
             </Swiper>
-            
-            <div className="absolute bottom-4 left-1/2 h-4 w-4/5 -translate-x-1/2 rounded-[100%] bg-[#0A84FF]/10 blur-xl"></div>
           </div>
+
+          {sortedImages.length > 1 && (
+            <div className="flex gap-2 overflow-x-auto px-4 pt-3 pb-1 sm:px-0" aria-label="معرض صور المنتج">
+              {sortedImages.slice(0, 5).map((img, index) => (
+                <button
+                  key={`${img.image_path}-${index}`}
+                  type="button"
+                  onClick={() => mainSwiperRef.current?.slideTo(index)}
+                  aria-label={`عرض صورة ${index + 1}`}
+                  className="h-[68px] w-[68px] flex-shrink-0 overflow-hidden rounded-xl border-2 border-white bg-white shadow-sm transition-transform active:scale-95 sm:h-20 sm:w-20"
+                >
+                  <img src={img.image_path} alt={`${product.title} ${index + 1}`} className="h-full w-full object-cover" />
+                </button>
+              ))}
+              {sortedImages.length > 5 && (
+                <div className="flex h-[68px] w-[68px] flex-shrink-0 items-center justify-center rounded-xl bg-slate-100 text-lg font-bold text-slate-600 sm:h-20 sm:w-20">
+                  +{sortedImages.length - 5}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Product Info Section */}
-        <div className="px-6 space-y-6">
-          <div className="space-y-3 text-right">
-            <div className="flex flex-wrap gap-2">
-              <span className="inline-flex items-center rounded-full bg-[#12B76A]/10 px-4 py-1 text-sm font-bold text-[#12B76A]">
-                <Star className="ml-1 h-4 w-4 fill-[#12B76A]" />
-                {product.condition === 'used' ? 'مستعمل - ممتاز' : 'جديد'}
-              </span>
-              <span className="inline-flex items-center rounded-full bg-[#FF8C00]/10 px-4 py-1 text-sm font-bold text-[#FF8C00]">
-                قابل للتفاوض
-              </span>
-            </div>
-            
-            <h2 className="text-3xl font-black text-gray-900 leading-tight">{product.title}</h2>
-            
-            {(product.phone_type || product.model) && (
-              <div className="flex items-center gap-2 text-2xl font-large text-black">
-                {product.phone_type && product.model && (
-                  <span className="text-black">•</span>
-                )}
-                {product.model && product.model !== 'unknown_model' && (
-                  <span>{product.model}</span>
-                )}
-                {product.phone_type && product.phone_type !== 'unknown_brand' && (
-                  <span className="text-black font-bold">{product.phone_type}</span>
+        <div className="w-full space-y-4 px-4 py-2 sm:px-6 sm:py-4">
+          <div className="rounded-[22px] bg-white px-4 py-4 shadow-[0_8px_24px_rgba(15,23,42,0.06)] sm:px-6">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0 text-right">
+                <h2 className="text-2xl font-black leading-tight text-gray-900 sm:text-3xl">{product.title}</h2>
+                {(product.phone_type || product.model) && (
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-base font-semibold text-gray-600 sm:text-lg">
+                    {product.phone_type && product.model && <span className="text-gray-400">•</span>}
+                    {product.model && product.model !== 'unknown_model' && <span>{product.model}</span>}
+                    {product.phone_type && product.phone_type !== 'unknown_brand' && <span className="font-bold text-gray-800">{product.phone_type}</span>}
+                  </div>
                 )}
               </div>
-            )}
-
-            <div className="flex items-end gap-2 pt-2">
-              <span className="text-4xl font-black text-[#0A84FF]">
-                {product.price?.toLocaleString('en-US')}
+              <span className="inline-flex flex-shrink-0 items-center gap-1 rounded-full bg-[#12B76A]/10 px-3 py-1 text-xs font-bold text-[#12B76A]">
+                <Star className="h-3.5 w-3.5 fill-[#12B76A]" />
+                {product.condition === 'used' ? 'مستعمل' : 'جديد'}
               </span>
-              <span className="mb-1 text-2xl font-bold text-black">{userCurrencySymbol}</span>
             </div>
+
+            <div className="mt-4 flex items-end justify-between gap-3 border-t border-slate-100 pt-3">
+              <span className="rounded-full bg-[#12B76A]/10 px-3 py-1 text-xs font-bold text-[#12B76A]">معروض للبيع</span>
+              <div className="flex items-end gap-2">
+                <span className="text-4xl font-black leading-none text-[#0A84FF] sm:text-5xl">{product.price?.toLocaleString('en-US')}</span>
+                <span className="mb-1 text-base font-bold text-gray-700 sm:text-xl">{userCurrencySymbol}</span>
+              </div>
+            </div>
+            <p className="mt-2 text-left text-xs font-medium text-gray-500">السعر قابل للتفاوض</p>
           </div>
 
           {/* Specifications Card */}
-          <div className="rounded-[30px] border border-white bg-white/70 p-2 backdrop-blur-xl shadow-[0_15px_35px_rgba(0,0,0,0.03)]">
-            <div className="grid grid-cols-2 gap-y-6">
-              <div className="flex items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#0A84FF]/10 text-[#0A84FF]">
-                  <HardDrive className="h-6 w-6" />
+          <div className="rounded-[20px] border border-blue-100 bg-white p-3 shadow-[0_6px_18px_rgba(15,23,42,0.04)] sm:p-4">
+            <h3 className="mb-3 text-base font-bold text-gray-900">{t('specifications') || 'المواصفات'}</h3>
+            <div className="grid grid-cols-4 gap-1.5 sm:gap-3">
+              <div className="flex min-w-0 flex-col items-center gap-1.5 rounded-xl bg-blue-50/60 px-1.5 py-2 text-center">
+                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
+                  <HardDrive className="h-4 w-4" />
                 </div>
                 <div>
-                  <p className="text-sm font-bold text-gray-500">التخزين</p>
-                  <p className="text-xl font-black text-gray-800">{product.specs?.storage || '--'}</p>
+                  <p className="mb-0.5 text-[11px] font-bold text-gray-500">التخزين</p>
+                  <p className="text-xs font-black text-gray-800 sm:text-sm">{product.specs?.storage || '--'}</p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#0A84FF]/10 text-[#0A84FF]">
-                  <Cpu className="h-6 w-6" />
+              <div className="flex min-w-0 flex-col items-center gap-1.5 rounded-xl bg-blue-50/60 px-1.5 py-2 text-center">
+                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
+                  <Cpu className="h-4 w-4" />
                 </div>
                 <div>
-                  <p className="text-sm font-bold text-gray-500">الرام</p>
-                  <p className="text-xl font-black text-gray-800">{product.specs?.ram || '--'}</p>
+                  <p className="mb-0.5 text-[11px] font-bold text-gray-500">الرام</p>
+                  <p className="text-xs font-black text-gray-800 sm:text-sm">{product.specs?.ram || '--'}</p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#0A84FF]/10 text-[#0A84FF]">
-                  <ShieldCheck className="h-6 w-6" />
+              <div className="flex min-w-0 flex-col items-center gap-1.5 rounded-xl bg-blue-50/60 px-1.5 py-2 text-center">
+                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
+                  <ShieldCheck className="h-4 w-4" />
                 </div>
                 <div>
-                  <p className="text-sm font-bold text-gray-500">الضمان</p>
-                  <p className="text-xl font-black text-gray-800">{product.warranty_months && product.warranty_months > 0 ? `${product.warranty_months} شهر` : 'بدون ضمان'}</p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#0A84FF]/10 text-[#0A84FF]">
-                  <MapPin className="h-6 w-6" />
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-gray-500">الموقع</p>
-                  <p className="text-xl font-black text-gray-800">{product.city || '--'}</p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#0A84FF]/10 text-[#0A84FF]">
-                  <Calendar className="h-6 w-6" />
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-gray-500">تاريخ النشر</p>
-                  <p className="text-xl font-black text-gray-800">{formatDate(product.created_at)}</p>
+                  <p className="mb-0.5 text-[11px] font-bold text-gray-500">الضمان</p>
+                  <p className="text-xs font-black text-gray-800 sm:text-sm">{product.warranty_months && product.warranty_months > 0 ? `${product.warranty_months} شهر` : 'بدون ضمان'}</p>
                 </div>
               </div>
 
               {product.is_verified && (
-              <div className="flex items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#12B76A]/10 text-[#12B76A]">
-                  <CheckCircle2 className="h-6 w-6" />
+              <div className="flex min-w-0 flex-col items-center gap-1.5 rounded-xl bg-green-50/70 px-1.5 py-2 text-center">
+                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-green-100 text-green-600">
+                  <CheckCircle2 className="h-4 w-4" />
                 </div>
                 <div>
-                  <p className="text-sm font-bold text-gray-500">التوثيق</p>
-                  <p className="text-xl font-black text-gray-800">الهاتف موثق ✓</p>
+                  <p className="mb-0.5 text-[11px] font-bold text-gray-500">التوثيق</p>
+                  <p className="text-xs font-black text-green-600 sm:text-sm">موثق ✓</p>
                 </div>
               </div>
               )}
+            </div>
+          </div>
+
+          {/* Seller and listing metadata */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between rounded-[22px] bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)] sm:p-5">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                  <ShieldCheck className="h-6 w-6" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-gray-500">البائع</p>
+                  <p className="truncate text-base font-bold text-gray-900">{product.store_name || '--'}</p>
+                  {product.city && <p className="mt-0.5 flex items-center gap-1 text-xs text-gray-500"><MapPin className="h-3.5 w-3.5" />{product.city}</p>}
+                </div>
+              </div>
+              <span className="rounded-full bg-blue-50 px-3 py-2 text-xs font-bold text-blue-600">الملف الشخصي</span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex items-center gap-3 rounded-[18px] bg-white p-3 shadow-[0_6px_18px_rgba(15,23,42,0.04)]">
+                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600"><Calendar className="h-5 w-5" /></div>
+                <div className="min-w-0"><p className="text-xs text-gray-500">تاريخ النشر</p><p className="truncate text-sm font-bold text-gray-800">{formatDate(product.created_at)}</p></div>
+              </div>
+              <div className="flex items-center gap-3 rounded-[18px] bg-white p-3 shadow-[0_6px_18px_rgba(15,23,42,0.04)]">
+                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600"><MapPin className="h-5 w-5" /></div>
+                <div className="min-w-0"><p className="text-xs text-gray-500">الموقع</p><p className="truncate text-sm font-bold text-gray-800">{product.city || '--'}</p></div>
+              </div>
             </div>
           </div>
 
           {/* Additional Details */}
           <div className="space-y-4">
-            <h3 className="text-xl font-black text-gray-900">تفاصيل إضافية</h3>
-            <div className="rounded-[24px] border border-[#0A84FF]/10 bg-[#0A84FF]/[0.02]  p-4  leading-relaxed text-gray-700 shadow-inner">
+            <h3 className="text-lg sm:text-xl font-bold text-gray-900">التفاصيل الإضافية</h3>
+            <div className="rounded-[24px] border-2 border-blue-200 bg-gradient-to-br from-blue-50 via-white to-cyan-50 p-4 sm:p-6 leading-relaxed text-gray-700 shadow-sm">
               {product.description || 'لا توجد تفاصيل إضافية'}
             </div>
           </div>
@@ -605,8 +617,8 @@ const ProductDetails = () => {
           {/* Map Section */}
           {product.latitude && product.longitude && (
             <div className="space-y-4">
-              <h3 className="text-xl font-black text-gray-900">موقع المنتج</h3>
-              <div className="overflow-hidden rounded-[24px] border border-white bg-white shadow-sm h-[200px] w-full z-0">
+              <h3 className="text-lg sm:text-xl font-bold text-gray-900">📍 موقع المنتج</h3>
+              <div className="overflow-hidden rounded-[24px] border-2 border-blue-200 bg-white shadow-md h-[250px] w-full z-0">
                 <MapContainer
                   center={[product.latitude, product.longitude]}
                   zoom={13}
@@ -626,23 +638,24 @@ const ProductDetails = () => {
       </div>
 
       {/* Fixed Bottom Actions */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-center px-6 pb-8 pt-4 bg-gradient-to-t from-[#F5F9FF] via-[#F5F9FF]/95 to-transparent backdrop-blur-sm">
-        <div className="flex w-full max-w-[450px] gap-4">
+      <div className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-center px-4 sm:px-6 py-6 bg-gradient-to-t from-[#F5F9FF] via-[#F5F9FF]/98 to-transparent backdrop-blur-md shadow-2xl">
+        <div className="flex w-full max-w-[500px] gap-3">
           <button
             onClick={handleContactNow}
             disabled={loadingPhone}
-            className="flex flex-[2] items-center justify-center gap-3 rounded-[20px] bg-gradient-to-r from-[#0A84FF] to-[#005BFF] py-4 text-lg font-black text-white shadow-[0_10px_25px_rgba(10,132,255,0.3)] transition-transform active:scale-95 disabled:opacity-50"
+            className="flex flex-[2.5] items-center justify-center gap-2 sm:gap-3 rounded-[18px] bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 py-3 sm:py-4 px-4 text-base sm:text-lg font-bold text-white shadow-lg hover:shadow-xl transition-all duration-300 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            <FaWhatsapp className="h-6 w-6" />
-            {loadingPhone ? 'جاري التحميل...' : 'تواصل الآن'}
+            <FaWhatsapp className="h-5 w-5 sm:h-6 sm:w-6 flex-shrink-0" />
+            <span className="hidden sm:inline">{loadingPhone ? 'جاري التحميل...' : 'تواصل الآن'}</span>
+            <span className="sm:hidden">{loadingPhone ? 'جاري...' : 'تواصل'}</span>
           </button>
           
           <button
             onClick={shareProduct}
-            className="flex flex-1 items-center justify-center gap-2 rounded-[20px] border border-[#0A84FF]/20 bg-white py-4 text-sm font-black text-[#0A84FF] shadow-sm transition-transform active:scale-95"
+            className="flex flex-1 items-center justify-center gap-2 rounded-[18px] border-2 border-blue-600 bg-white hover:bg-blue-50 py-3 sm:py-4 px-3 sm:px-4 text-base font-bold text-blue-600 shadow-md hover:shadow-lg transition-all duration-300 active:scale-95"
           >
             <Share2 className="h-5 w-5" />
-            مشاركة
+            <span className="hidden sm:inline">مشاركة</span>
           </button>
         </div>
       </div>

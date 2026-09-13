@@ -98,8 +98,6 @@ const getTransformedImageUrl = (originalUrl: string | null | undefined, bucket =
       console.error('Supabase URL not found in environment variables. Please ensure VITE_SUPABASE_URL is set in your .env file.');
       return '/placeholder-phone.png';
     }
-
-    // إذا كان الرابط يبدأ بـ http، فهو رابط كامل بالفعل
     if (originalUrl.startsWith('http://') || originalUrl.startsWith('https://')) {
       return originalUrl;
     }
@@ -113,6 +111,72 @@ const getTransformedImageUrl = (originalUrl: string | null | undefined, bucket =
     return '/placeholder-phone.png';
   }
 };
+
+function getBrandLogoUrl(brand: string): string | null {
+  const brandSlugs: Record<string, string> = {
+    apple: 'apple',
+    samsung: 'samsung',
+    oppo: 'oppo',
+    xiaomi: 'xiaomi',
+    redmi: 'xiaomi',
+    huawei: 'huawei',
+    honor: 'honor',
+    vivo: 'vivo',
+    realme: 'realme',
+    oneplus: 'oneplus',
+    nokia: 'nokia',
+    sony: 'sony',
+    sonyxperia: 'sony',
+    سوني: 'sony',
+    google: 'google',
+    infinix: 'infinix',
+    انفنكس: 'infinix',
+    انفينيكس: 'infinix',
+    انفنكي: 'infinix',
+    tecno: 'tecno',
+    tecnomobile: 'tecno',
+    تكنو: 'tecno',
+    motorola: 'motorola',
+    asus: 'asus',
+    lenovo: 'lenovo',
+    zte: 'zte',
+    nothing: 'nothing',
+  };
+
+  const normalizedBrand = brand.toLowerCase().replace(/[\s_-]+/g, '');
+  const slug = brandSlugs[normalizedBrand];
+  if (slug === 'infinix') {
+    return '/brand-logos/infinix.svg';
+  }
+  if (slug === 'tecno') {
+    return '/brand-logos/tecno.svg';
+  }
+  if (slug === 'sony') {
+    return '/brand-logos/sony.svg';
+  }
+  return slug ? `https://cdn.simpleicons.org/${slug}` : null;
+}
+const PHONE_BRANDS = [
+  'Samsung',
+  'Xiaomi',
+  'Redmi',
+  'Oppo',
+  'Vivo',
+  'Huawei',
+  'Honor',
+  'Realme',
+  'OnePlus',
+  'Nokia',
+  'Sony',
+  'Google Pixel',
+  'Motorola',
+  'Infinix',
+  'Tecno',
+  'Asus',
+  'Lenovo',
+  'ZTE',
+  'Nothing',
+];
 
 // دالة مساعدة لتحويل الدرجات إلى راديان
 function deg2rad(deg: number) {
@@ -154,6 +218,7 @@ const Dashboard: React.FC = () => {
   // حالات جديدة للإكسسوارات
   const [accessoryListings, setAccessoryListings] = useState<Accessory[]>([]);
   const [loadingAccessories, setLoadingAccessories] = useState(true);
+  const [hiddenBrandLogos, setHiddenBrandLogos] = useState<string[]>([]);
 
   // ⭐ إضافة تبديل تلقائي للكروت
   useEffect(() => {
@@ -940,47 +1005,47 @@ const Dashboard: React.FC = () => {
         <div className="w-full mx-auto px-4">
           <div className="mb-1">
 
-            <div className="grid grid-cols-4 gap-2 text-center mt-6 mb-6">
+            <div className="grid grid-cols-4 gap-2 text-center mt-4 mb-4">
 
               {/* Icon 1: Report Lost Phone */}
               <Link
                 to="/report"
-                className="flex flex-col items-center space-y-2 group w-20"
+                className="flex min-w-0 flex-col items-center gap-1 rounded-xl border border-slate-200 bg-white/95 p-1.5 shadow-md transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-xl"
               >
-                <div className="relative w-16 h-16 bg-blue-900 rounded-full shadow-lg border-2 border-cyan-400 flex items-center justify-center transition-transform duration-300 group-hover:scale-105 group-hover:shadow-xl p-2">
-                  <Smartphone className="w-12 h-12 text-cyan-300 drop-shadow-lg" strokeWidth={1.5} />
-                  <AlertTriangle className="absolute w-5 h-5 text-cyan-300" style={{ transform: 'translate(0, -2px)' }} />
+                <div className="relative flex h-11 w-full items-center justify-center rounded-lg bg-blue-900 p-1">
+                  <Smartphone className="h-8 w-8 text-cyan-300 drop-shadow-lg" strokeWidth={1.5} />
+                  <AlertTriangle className="absolute h-5 w-5 text-cyan-300" style={{ transform: 'translate(0, -2px)' }} />
                 </div>
-                <span className="text-black font-bold text-sm leading-tight px-1 whitespace-pre-line text-center w-full">{t('report_lost_phone')}</span>
+                <span className="w-full px-1 text-center text-sm font-black leading-tight text-black">{t('report_lost_phone')}</span>
               </Link>
 
               {/* Icon 2: Register New Phone */}
               <Link
                 to="/register-phone"
-                className="flex flex-col items-center space-y-2 group w-20"
+                className="flex min-w-0 flex-col items-center gap-1 rounded-xl border border-slate-200 bg-white/95 p-1.5 shadow-md transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-xl"
               >
-                <div className="relative w-16 h-16 bg-blue-900 rounded-full shadow-lg border-2 border-orange-400 flex items-center justify-center transition-transform duration-300 group-hover:scale-105 group-hover:shadow-xl p-2 bg-gradient-to-br from-blue-800 to-blue-900">
-                  <Smartphone className="w-12 h-12 text-orange-400 drop-shadow-lg" strokeWidth={1.5} />
-                  <PlusCircle className="absolute w-5 h-5 text-orange-300" style={{ transform: 'translate(0, -2px)' }} />
+                <div className="relative flex h-11 w-full items-center justify-center rounded-lg bg-gradient-to-br from-blue-800 to-blue-900 p-1">
+                  <Smartphone className="h-8 w-8 text-orange-400 drop-shadow-lg" strokeWidth={1.5} />
+                  <PlusCircle className="absolute h-5 w-5 text-orange-300" style={{ transform: 'translate(0, -2px)' }} />
                 </div>
-                <span className="text-black font-bold text-sm leading-tight px-1 whitespace-pre-line text-center w-full">{t('register_new_phone')}</span>
+                <span className="w-full px-1 text-center text-sm font-black leading-tight text-black">{t('register_new_phone')}</span>
               </Link>
 
               {/* Icon 3: Search Phone */}
               <Link
                 to="/search"
-                className="flex flex-col items-center space-y-2 group w-20"
+                className="flex min-w-0 flex-col items-center gap-1 rounded-xl border border-slate-200 bg-white/95 p-1.5 shadow-md transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-xl"
               >
-                <div className="relative w-16 h-16 bg-blue-900 rounded-full shadow-lg border-2 border-cyan-400 flex items-center justify-center transition-transform duration-300 group-hover:scale-105 group-hover:shadow-xl p-2">
-                  <Smartphone className="w-12 h-12 text-cyan-300 drop-shadow-lg" strokeWidth={1.5} />
-                  <Search className="absolute w-5 h-5 text-cyan-300" style={{ transform: 'translate(0, -2px)' }} />
+                <div className="relative flex h-11 w-full items-center justify-center rounded-lg bg-blue-900 p-1">
+                  <Smartphone className="h-8 w-8 text-cyan-300 drop-shadow-lg" strokeWidth={1.5} />
+                  <Search className="absolute h-5 w-5 text-cyan-300" style={{ transform: 'translate(0, -2px)' }} />
                 </div>
-                <span className="text-black font-bold text-sm leading-tight px-1 whitespace-pre-line text-center w-full">{t('search_imei')}</span>
+                <span className="w-full px-1 text-center text-sm font-black leading-tight text-black">{t('search_imei')}</span>
               </Link>
 
               {/* Icon 4: Ownership Transfer */}
               <div
-                className="flex flex-col items-center space-y-2 group cursor-pointer w-20"
+                className="flex min-w-0 cursor-pointer flex-col items-center gap-1 rounded-xl border border-slate-200 bg-white/95 p-1.5 shadow-md transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-xl"
                 onClick={() => {
                   if (user?.role && ['free_business', 'business', 'gold_business', 'silver_business'].includes(user.role)) {
                     navigate('/businesstransfer');
@@ -989,11 +1054,11 @@ const Dashboard: React.FC = () => {
                   }
                 }}
               >
-                <div className="relative w-16 h-16 bg-blue-900 rounded-full shadow-lg border-2 border-orange-400 flex items-center justify-center transition-transform duration-300 group-hover:scale-105 group-hover:shadow-xl p-1 bg-gradient-to-br from-blue-800 to-blue-900">
-                  <Smartphone className="w-12 h-12 text-orange-400 drop-shadow-lg" strokeWidth={1.5} />
-                  <Users className="absolute w-5 h-5 text-orange-300" style={{ transform: 'translate(0, -2px)' }} />
+                <div className="relative flex h-11 w-full items-center justify-center rounded-lg bg-gradient-to-br from-blue-800 to-blue-900 p-1">
+                  <Smartphone className="h-8 w-8 text-orange-400 drop-shadow-lg" strokeWidth={1.5} />
+                  <Users className="absolute h-5 w-5 text-orange-300" style={{ transform: 'translate(0, -2px)' }} />
                 </div>
-                <span className="text-black font-bold text-sm leading-tight px-1 whitespace-pre-line text-center w-full">{t('transfer_ownership')}</span>
+                <span className="w-full px-1 text-center text-sm font-black leading-tight text-black">{t('transfer_ownership')}</span>
               </div>
 
             </div>
@@ -1011,12 +1076,59 @@ const Dashboard: React.FC = () => {
 
 
           {/* شريط صور إعلانات العروض */}
-          <AdsOfferSlider containerClassName="mt-2 mb-2" />
+          <div className="pt-4">
+            <AdsOfferSlider containerClassName="mt-2 mb-2" showHeader={false} />
+          </div>
+
+          {/* قسم براندات الهواتف */}
+          <>
+            <div className="mb-5 mt-5">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-xl font-bold text-black">العلامات التجارية</h2>
+                <Link to="/phones-for-sale" className="text-sm font-bold text-black hover:text-blue-700">
+                  عرض الكل
+                </Link>
+              </div>
+              <div className="flex flex-nowrap gap-3 overflow-x-auto pb-2">
+                {Array.from(
+                  new Map(
+                    [
+                      ...PHONE_BRANDS,
+                      ...phoneListings
+                        .map((phone) => String(phone.phone_type || phone.brand || '').trim())
+                        .filter(Boolean),
+                    ].map((brand) => [getBrandLogoUrl(brand), brand] as const)
+                  ).values()
+                ).map((brand) => {
+                  const logoUrl = getBrandLogoUrl(brand);
+                  if (!logoUrl || hiddenBrandLogos.includes(logoUrl)) return null;
+
+                  return (
+                    <Link
+                      key={brand}
+                      to={`/phones-for-sale?brand=${encodeURIComponent(brand)}`}
+                      className="flex h-14 w-20 min-w-20 items-center justify-center rounded-lg border border-slate-200 bg-white shadow-sm p-0"
+                    >
+                      <span className="flex h-[42px] w-[72px] items-center justify-center rounded-md bg-transparent p-0">
+                        <img
+                          src={logoUrl}
+                          alt={`شعار ${brand}`}
+                          className="h-full w-full object-contain"
+                          loading="lazy"
+                          onError={() => setHiddenBrandLogos((current) => [...current, logoUrl])}
+                        />
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          </>
 
 
           {/* قسم الهواتف المعروضة للبيع */}
           <div className="mb-5">
-            <div className="flex justify-between items-center mb-3 pt-5">
+            <div className="flex justify-between items-center mb-3">
               <h2 className="text-black text-xl font-bold">{t('Phones')}</h2>
               <Link to="/phones-for-sale" className="text-black hover:text-imei-cyan/80 text-sm font-bold leading-none">
                 {t('view_all')}
@@ -1076,13 +1188,13 @@ const Dashboard: React.FC = () => {
                         <Link
                           to={`/product/${phone.id}`}
                           onClick={() => incrementPhoneViews(phone.id)}
-                          className={`relative bg-white rounded-2xl overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300 group flex flex-col h-[280px] sm:h-[300px] md:h-[320px] lg:h-[280px] border-2 ${style.borderColor} ${phone.type === 'promotions' ? 'shadow-xl' : ''}`}
+                          className={`relative z-10 bg-white rounded-2xl overflow-hidden shadow-[0_6px_20px_rgba(15,23,42,0.3)] hover:shadow-[0_12px_30px_rgba(15,23,42,0.36)] transition-all duration-300 group flex flex-col h-[240px] sm:h-[260px] md:h-[280px] lg:h-[240px] border-2 border-slate-200 ring-2 ring-slate-300/70 ${style.borderColor} ${phone.type === 'promotions' ? 'shadow-xl' : ''}`}
                         >
 
 
                           {/* الشريط العلوي للإعلانات المميزة */}
                           {style.topBar}
-                          <div className="relative w-full h-[180px] sm:h-[200px] md:h-[220px] lg:h-[180px] bg-gray-50">
+                          <div className="relative w-full h-[150px] sm:h-[170px] md:h-[190px] lg:h-[150px] bg-gray-50">
                             {phone.phone_images?.[0]?.image_path ? (
                               <>
 
@@ -1166,18 +1278,18 @@ const Dashboard: React.FC = () => {
                             )}
                           </div>
 
-                          <div className="p-2 sm:p-2.5 flex flex-col gap-1.5 sm:gap-2">
+                          <div className="p-1.5 sm:p-2 flex flex-col gap-1 sm:gap-1.5">
                             {/* Title */}
-                            <h3 className="text-xl font-bold text-gray-800 truncate leading-tight mb-0.5 px-2">
+                            <h3 className="text-lg font-bold text-black truncate leading-tight px-1">
                               {phone.phone_type}
                             </h3>
 
-                            <h4 className="text-md font-bold text-gray-700 truncate leading-tight mb-1 px-2">
+                            <h4 className="text-sm font-bold text-black truncate leading-tight px-1">
                               {phone.model}
                             </h4>
 
                             {/* Specs Line */}
-                            <div className="flex items-center gap-1.5 sm:gap-4 text-md sm:text-md text-gray-500 truncate font-bold">
+                            <div className="flex items-center gap-2 text-base text-black truncate font-bold px-1">
                               {phone.specs?.ram && <span>{phone.specs.ram}GB</span>}
                               {phone.specs?.storage && (
                                 <>
@@ -1243,7 +1355,7 @@ const Dashboard: React.FC = () => {
                         onClick={() => navigate(`/product/${acc.id}`)}
                         className="cursor-pointer"
                       >
-                        <div className={`relative bg-blue-100 rounded-2xl overflow-hidden shadow-md hover:shadow-lg transition-all duration-300 group flex flex-col h-[280px] ring-1 ring-gray-300/50 border-2 ${style.borderColor} ${acc.type === 'promotions' ? 'shadow-lg' : ''}`}>
+                        <div className={`relative z-10 bg-white rounded-2xl overflow-hidden shadow-[0_6px_20px_rgba(15,23,42,0.3)] hover:shadow-[0_12px_30px_rgba(15,23,42,0.36)] transition-all duration-300 group flex flex-col h-[240px] ring-2 ring-slate-300/70 border-2 border-slate-200 ${style.borderColor} ${acc.type === 'promotions' ? 'shadow-xl' : ''}`}>
 
                           {/* ⭐ FIX 1: Render topBar immediately inside the main card container */}
                           {style.topBar}
@@ -1252,7 +1364,7 @@ const Dashboard: React.FC = () => {
                             to={`/product/${acc.id}`}
                             className="flex flex-col h-full"
                           >
-                            <div className="relative w-full h-[200px] bg-gray-50">
+                            <div className="relative w-full h-[160px] bg-gray-50">
                               {acc.accessory_images?.[0]?.image_path ? (
                                 <img
                                   src={getTransformedAccessoryImageUrl(getAccessoryMainImage(acc))}
@@ -1286,14 +1398,14 @@ const Dashboard: React.FC = () => {
                             )}
                             </div>
 
-                            <div className="p-2.5 flex flex-col gap-2 bg-white">
+                            <div className="p-1.5 sm:p-2 flex flex-col gap-1 sm:gap-1.5 bg-white">
                               {/* Title */}
-                              <h3 className="text-xl font-bold text-gray-800 truncate leading-tight mb-0.5">
+                              <h3 className="text-lg font-bold text-black truncate leading-tight">
                                 {acc.title}
                               </h3>
 
                               {/* Category and Brand */}
-                              <div className="flex items-center gap-2 text-xl text-gray-500 truncate font-medium">
+                              <div className="flex items-center gap-2 text-base text-black truncate font-bold">
                                 {acc.category && <span>{acc.category}</span>}
                                 {acc.category && acc.brand && <span className="w-0.5 h-0.5 rounded-full bg-gray-400"></span>}
                                 {acc.brand && <span>{acc.brand}</span>}

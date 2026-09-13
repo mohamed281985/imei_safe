@@ -175,9 +175,9 @@ export default {
   "secure_storage_init_failed_desc": "Failed to initialize secure storage. Biometrics cannot be used at this time.",
   "dashboard": "Dashboard",
   "lost_phones": "Lost Phones",
-  "report_lost_phone": "Loss\nNotification",
-  "search_imei": "Search IMEI",
-  "register_new_phone": "Register New Phone",
+  "report_lost_phone": "Report",
+  "search_imei": "Search",
+  "register_new_phone": "Register",
   "welcome": "Hello",
   "view_all": "View All",
   
@@ -323,7 +323,7 @@ export default {
   "Thank you for the phone registration. The data will be reviewed within 3 business days.": "Thank you for the phone registration. The data will be reviewed within 3 business days.",
 
   // Transfer Ownership
-  "transfer_ownership": "Transfer Ownership",
+  "transfer_ownership": "Transfer",
   "transfer_title": "Transfer Phone Ownership",
   "current_owner": "Current Owner",
   "new_owner": "New Owner",

@@ -186,9 +186,9 @@ export default {
   "secure_storage_init_failed_desc": "Échec de l'initialisation du stockage sécurisé. La biométrie est indisponible.",
   "dashboard": "Tableau de bord",
   "lost_phones": "Téléphones perdus",
-  "report_lost_phone": "Avis de\nPerte",
-  "search_imei": "Rechercher\nIMEI",
-  "register_new_phone": "Enregistrer\nun nouveau téléphone",
+  "report_lost_phone": "Signaler",
+  "search_imei": "Recherche",
+  "register_new_phone": "Inscrire",
   "welcome": "Bienvenue",
   "view_all": "Voir tout",
 
@@ -335,7 +335,7 @@ export default {
   "Thank you for the phone registration. The data will be reviewed within 3 business days.": "Merci pour l'enregistrement du téléphone. Les données seront examinées sous 3 jours ouvrables.",
 
   // Transfer Ownership
-  "transfer_ownership": "Transférer la propriété",
+  "transfer_ownership": "Transfert",
   "transfer_title": "Transfert de propriété du téléphone",
   "current_owner": "Propriétaire actuel",
   "new_owner": "Nouveau propriétaire",

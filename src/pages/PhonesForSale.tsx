@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useTranslation } from 'react-i18next';
@@ -65,9 +65,11 @@ const getTransformedImageUrl = (originalUrl: string | null | undefined): string 
 const PhonesForSale: React.FC = () => {
   const { t, language } = useLanguage();
   const { i18n } = useTranslation();
+  const location = useLocation();
+  const brandFilter = new URLSearchParams(location.search).get('brand')?.trim() || '';
   const [phoneListings, setPhoneListings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(brandFilter);
   const [selectedCondition, setSelectedCondition] = useState('all');
   const [priceRange, setPriceRange] = useState({ min: '', max: '' });
   const [sortBy, setSortBy] = useState('newest');
@@ -165,6 +167,7 @@ const PhonesForSale: React.FC = () => {
           .eq('status', 'active');
 
         if (userCountryName) phoneQuery = phoneQuery.ilike('countries', `%${userCountryName}%`);
+        if (brandFilter) phoneQuery = phoneQuery.ilike('phone_type', `%${brandFilter}%`);
 
         const { data, error, count } = await phoneQuery.range((page - 1) * itemsPerPage, page * itemsPerPage - 1); // Fetch items for the current page
 
@@ -180,7 +183,12 @@ const PhonesForSale: React.FC = () => {
     };
 
     fetchPhoneListings();
-  }, [page]); // Fetch data when page changes
+  }, [page, brandFilter]); // Fetch data when page or brand filter changes
+
+  useEffect(() => {
+    setSearchTerm(brandFilter);
+    setPage(1);
+  }, [brandFilter]);
 
   // تحسين دالة الفلترة
   const getFilteredPhones = () => {
@@ -188,7 +196,9 @@ const PhonesForSale: React.FC = () => {
       const searchString = searchTerm.toLowerCase();
       const matchesSearch = !searchTerm || 
         (phone.brand && phone.brand.toLowerCase().includes(searchString)) ||
-        (phone.model && phone.model.toLowerCase().includes(searchString));
+        (phone.phone_type && phone.phone_type.toLowerCase().includes(searchString)) ||
+        (phone.model && phone.model.toLowerCase().includes(searchString)) ||
+        (phone.title && phone.title.toLowerCase().includes(searchString));
         
       const matchesCondition = selectedCondition === 'all' || phone.condition === selectedCondition;
       const matchesPrice = (!priceRange.min || phone.price >= Number(priceRange.min)) &&

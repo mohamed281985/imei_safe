@@ -190,9 +190,9 @@ export default {
   "secure_storage_init_failed_desc": "فشل تهيئة وحدة التخزين الآمنة. لا يمكن استخدام البصمة حالياً.",
   "dashboard": "لوحة التحكم",
   "lost_phones": "الهواتف المفقودة",
-  "report_lost_phone": "اخطار\nفقد",
-  "search_imei": "بحث\nIMEI",
-  "register_new_phone": "تسجيل\nهاتف جديد",
+  "report_lost_phone": "إخطار",
+  "search_imei": "بحث",
+  "register_new_phone": "تسجيل",
   "welcome": "مرحباً",
   "view_all": "عرض الكل",
   
@@ -343,7 +343,7 @@ export default {
   "Thank you for the phone registration. The data will be reviewed within 3 business days.": "شكراً على تسجيل الهاتف. سيتم مراجعة البيانات خلال 3 أيام عمل",
 
   // Transfer Ownership
-  "transfer_ownership": "نقل الملكية",
+  "transfer_ownership": "نقل",
   "transfer_title": "نقل ملكية الهاتف",
   "current_owner": "المالك الحالي",
   "new_owner": "المالك الجديد",

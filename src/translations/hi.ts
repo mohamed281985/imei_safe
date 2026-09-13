@@ -178,9 +178,9 @@ export default {
   "secure_storage_init_failed_desc": "सुरक्षित संग्रहण प्रारंभ करने में विफल। बायोमेट्रिक अनुपलब्ध है।",
   "dashboard": "डैशबोर्ड",
   "lost_phones": "खोए हुए फ़ोन",
-  "report_lost_phone": "हानि\nसूचना",
-  "search_imei": "IMEI\nखोजें",
-  "register_new_phone": "नया फ़ोन\nपंजीकृत करें",
+  "report_lost_phone": "रिपोर्ट",
+  "search_imei": "खोज",
+  "register_new_phone": "पंजीकरण",
   "welcome": "स्वागत है",
   "view_all": "सभी देखें",
 
@@ -327,7 +327,7 @@ export default {
   "Thank you for the phone registration. The data will be reviewed within 3 business days.": "फ़ोन पंजीकरण के लिए धन्यवाद। डेटा की समीक्षा 3 व्यावसायिक दिनों के भीतर की जाएगी।",
 
   // Transfer Ownership
-  "transfer_ownership": "स्वामित्व हस्तांतरण",
+  "transfer_ownership": "स्थानांतरण",
   "transfer_title": "फ़ोन का स्वामित्व हस्तांतरण",
   "current_owner": "वर्तमान मालिक",
   "new_owner": "नया मालिक",
