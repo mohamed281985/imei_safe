@@ -1279,6 +1279,51 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 const OWNERSHIP_CONFIRMATION_MONTHS = 3;
 const OWNERSHIP_EXPIRY_MONTHS = 4;
 
+const deleteUserRowsFallback = async (userId) => {
+  const { data: ownedPhones, error: phonesLookupError } = await supabase
+    .from('phones')
+    .select('id')
+    .eq('seller_id', userId);
+
+  if (phonesLookupError && !['42P01', '42703', 'PGRST204'].includes(phonesLookupError.code)) {
+    throw new Error(`phones lookup: ${phonesLookupError.message}`);
+  }
+
+  for (const phone of ownedPhones || []) {
+    const { error: imageDeleteError } = await supabase.from('phone_images').delete().eq('phone_id', phone.id);
+    if (imageDeleteError && !['42P01', '42703', 'PGRST204'].includes(imageDeleteError.code)) {
+      throw new Error(`phone_images.phone_id: ${imageDeleteError.message}`);
+    }
+  }
+
+  const targets = [
+    ['seller_reviews', 'reviewer_id'],
+    ['seller_reviews', 'seller_id'],
+    ['phones', 'seller_id'],
+    ['businesses', 'user_id'],
+    ['registered_phones', 'user_id'],
+    ['phone_reports', 'finder_user_id'],
+    ['phone_reports', 'user_id'],
+    ['transfer_records', 'user_id'],
+    ['notifications', 'user_id'],
+    ['user_rewards', 'user_id'],
+    ['users_plans', 'user_id'],
+    ['users_plans', 'id'],
+    ['ads_payment', 'user_id'],
+    ['publish_ad', 'user_id'],
+    ['audit_logs', 'user_id'],
+    ['profiles', 'id'],
+    ['users', 'id']
+  ];
+
+  for (const [table, column] of targets) {
+    const { error } = await supabase.from(table).delete().eq(column, userId);
+    if (error && !['42P01', '42703', 'PGRST204'].includes(error.code)) {
+      throw new Error(`${table}.${column}: ${error.message}`);
+    }
+  }
+};
+
 // Permanently delete the authenticated user's application data, then remove the Auth user.
 app.delete('/api/account', verifyJwtToken, csrfProtection, async (req, res) => {
   const userId = req.user?.id;
@@ -1293,8 +1338,13 @@ app.delete('/api/account', verifyJwtToken, csrfProtection, async (req, res) => {
     });
 
     if (cleanupError) {
-      console.error('[account-delete] application data cleanup failed:', cleanupError);
-      return res.status(500).json({ error: 'فشل حذف بيانات الحساب' });
+      if (cleanupError.code === 'PGRST202') {
+        console.warn('[account-delete] RPC is not deployed; using server cleanup fallback');
+        await deleteUserRowsFallback(userId);
+      } else {
+        console.error('[account-delete] application data cleanup failed:', cleanupError);
+        return res.status(500).json({ error: 'فشل حذف بيانات الحساب' });
+      }
     }
 
     const { error: authDeleteError } = await supabase.auth.admin.deleteUser(userId);
