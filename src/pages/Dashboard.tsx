@@ -7,7 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import PageContainer from '../components/PageContainer';
 import Logo from '../components/Logo';
 import AppNavbar from '@/components/AppNavbar';
-import { Search, Plus, Smartphone, X, Crown, Eye, AlertTriangle, User, PlusCircle, MapPin, Users, Star } from 'lucide-react';
+import { Search, Plus, Smartphone, X, Crown, Eye, AlertTriangle, User, PlusCircle, MapPin, Users, Star, ShieldAlert, SearchCheck, ArrowRightLeft, ShieldCheck, BellRing, FileText, Lightbulb } from 'lucide-react';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import 'swiper/swiper.css';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
@@ -246,6 +246,7 @@ const Dashboard: React.FC = () => {
   // حالات للهواتف غير المطالب بها (التي تم العثور عليها بالبريد الإلكتروني)
   const [unclaimedPhones, setUnclaimedPhones] = useState<any[]>([]);
   const [showClaimModal, setShowClaimModal] = useState(false);
+  const [deviceStatus, setDeviceStatus] = useState<'protected' | 'unprotected' | 'lost'>('unprotected');
 
   const [isNavbarVisible, setIsNavbarVisible] = useState(true);
   const [showLocationRequest, setShowLocationRequest] = useState(false);
@@ -352,20 +353,11 @@ const Dashboard: React.FC = () => {
         return status !== 'transferred' && status !== 'sold';
       });
 
+      const hasActiveReport = ownedPhones.some((phone: any) => phone.hasActiveReport === true);
+      setDeviceStatus(ownedPhones.length === 0 ? 'unprotected' : hasActiveReport ? 'lost' : 'protected');
+
       const phonesToConfirm = ownedPhones.filter((phone: any) => {
-        const hasConfirmedAt = phone.last_confirmed_at || phone.registration_date;
-        const oneDayInMilliseconds = 24 * 60 * 60 * 1000;
-
-        if (!hasConfirmedAt) {
-          return true;
-        }
-
-        const baseDate = phone.last_confirmed_at ? new Date(phone.last_confirmed_at) : new Date(phone.registration_date);
-        if (Number.isNaN(baseDate.getTime())) {
-          return true;
-        }
-
-        return (Date.now() - baseDate.getTime()) > oneDayInMilliseconds;
+        return phone.needsConfirmation === true;
       });
 
       // الهواتف المنقولة (transferred) تم التخلي عنها ولا يجب عرضها مرة أخرى
@@ -1012,9 +1004,8 @@ const Dashboard: React.FC = () => {
                 to="/report"
                 className="flex min-w-0 flex-col items-center gap-1 rounded-xl border border-slate-200 bg-white/95 p-1.5 shadow-md transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-xl"
               >
-                <div className="relative flex h-11 w-full items-center justify-center rounded-lg bg-blue-900 p-1">
-                  <Smartphone className="h-8 w-8 text-cyan-300 drop-shadow-lg" strokeWidth={1.5} />
-                  <AlertTriangle className="absolute h-5 w-5 text-cyan-300" style={{ transform: 'translate(0, -2px)' }} />
+                <div className="flex h-11 w-full items-center justify-center rounded-lg bg-blue-950 p-1">
+                  <ShieldAlert className="h-8 w-8 text-orange-400 drop-shadow-lg" strokeWidth={1.8} />
                 </div>
                 <span className="w-full px-1 text-center text-sm font-black leading-tight text-black">{t('report_lost_phone')}</span>
               </Link>
@@ -1024,9 +1015,9 @@ const Dashboard: React.FC = () => {
                 to="/register-phone"
                 className="flex min-w-0 flex-col items-center gap-1 rounded-xl border border-slate-200 bg-white/95 p-1.5 shadow-md transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-xl"
               >
-                <div className="relative flex h-11 w-full items-center justify-center rounded-lg bg-gradient-to-br from-blue-800 to-blue-900 p-1">
-                  <Smartphone className="h-8 w-8 text-orange-400 drop-shadow-lg" strokeWidth={1.5} />
-                  <PlusCircle className="absolute h-5 w-5 text-orange-300" style={{ transform: 'translate(0, -2px)' }} />
+                <div className="flex h-11 w-full items-center justify-center rounded-lg bg-blue-950 p-1">
+                  <Smartphone className="h-8 w-8 text-sky-300 drop-shadow-lg" strokeWidth={1.8} />
+                  <PlusCircle className="absolute h-5 w-5 text-sky-200" strokeWidth={2.5} />
                 </div>
                 <span className="w-full px-1 text-center text-sm font-black leading-tight text-black">{t('register_new_phone')}</span>
               </Link>
@@ -1036,9 +1027,8 @@ const Dashboard: React.FC = () => {
                 to="/search"
                 className="flex min-w-0 flex-col items-center gap-1 rounded-xl border border-slate-200 bg-white/95 p-1.5 shadow-md transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-xl"
               >
-                <div className="relative flex h-11 w-full items-center justify-center rounded-lg bg-blue-900 p-1">
-                  <Smartphone className="h-8 w-8 text-cyan-300 drop-shadow-lg" strokeWidth={1.5} />
-                  <Search className="absolute h-5 w-5 text-cyan-300" style={{ transform: 'translate(0, -2px)' }} />
+                <div className="flex h-11 w-full items-center justify-center rounded-lg bg-blue-950 p-1">
+                  <SearchCheck className="h-8 w-8 text-orange-400 drop-shadow-lg" strokeWidth={1.8} />
                 </div>
                 <span className="w-full px-1 text-center text-sm font-black leading-tight text-black">{t('search_imei')}</span>
               </Link>
@@ -1054,22 +1044,47 @@ const Dashboard: React.FC = () => {
                   }
                 }}
               >
-                <div className="relative flex h-11 w-full items-center justify-center rounded-lg bg-gradient-to-br from-blue-800 to-blue-900 p-1">
-                  <Smartphone className="h-8 w-8 text-orange-400 drop-shadow-lg" strokeWidth={1.5} />
-                  <Users className="absolute h-5 w-5 text-orange-300" style={{ transform: 'translate(0, -2px)' }} />
+                <div className="flex h-11 w-full items-center justify-center rounded-lg bg-blue-950 p-1">
+                  <ArrowRightLeft className="h-8 w-8 text-sky-300 drop-shadow-lg" strokeWidth={1.8} />
                 </div>
                 <span className="w-full px-1 text-center text-sm font-black leading-tight text-black">{t('transfer_ownership')}</span>
               </div>
 
             </div>
-            {/* Quick Lost Report button (إخطار فقد سريع) placed below the four icons */}
-            <div className="flex justify-center mt-3">
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <div
+                className={`flex min-h-[56px] items-center gap-2 rounded-lg border p-2 text-right shadow-sm ${deviceStatus === 'lost'
+                  ? 'border-red-100 bg-red-50/80'
+                  : deviceStatus === 'unprotected'
+                    ? 'border-red-100 bg-red-50/60'
+                    : 'border-emerald-100 bg-emerald-50/70'
+                  }`}
+              >
+                <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${deviceStatus === 'protected' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+                  }`}>
+                  <ShieldCheck className="h-5 w-5" strokeWidth={2} />
+                </div>
+                <div className="min-w-0">
+                  <p className={`text-xs font-bold ${deviceStatus === 'protected' ? 'text-emerald-900' : 'text-red-900'}`}>
+                    {deviceStatus === 'lost' ? 'جهازك مفقود' : deviceStatus === 'unprotected' ? 'جهازك غير محمي' : 'جهازك محمي'}
+                  </p>
+                  <p className="mt-0.5 text-[10px] font-bold leading-4 text-slate-600">
+                    {deviceStatus === 'lost' ? 'يوجد بلاغ نشط' : deviceStatus === 'unprotected' ? 'سجّل هاتفك للحماية' : 'IMEI مسجل ومتابع'}
+                  </p>
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={() => navigate('/report', { state: { quick: true } })}
-                className="px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white font-bold rounded-full shadow-lg hover:shadow-xl transition-colors"
+                className="flex min-h-[56px] items-center gap-2 rounded-lg border border-red-100 bg-red-50/70 p-2 text-right shadow-sm transition-shadow hover:shadow-md"
               >
-                إخطار فقد سريع
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-700">
+                  <BellRing className="h-5 w-5" strokeWidth={2} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-red-900">فقد هاتفك الآن؟</p>
+                  <p className="mt-0.5 text-[10px] font-bold leading-4 text-slate-600">أبلغ عنه في ثواني</p>
+                </div>
               </button>
             </div>
           </div>
@@ -1430,6 +1445,31 @@ const Dashboard: React.FC = () => {
                   {t('no_accessories_for_sale')}
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* قسم اكتشف أكثر */}
+          <div className="mb-5">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-black">اكتشف أكثر</h2>
+              <span className="text-sm font-bold leading-none text-black">عرض الكل</span>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="flex min-h-[72px] flex-col items-center justify-center rounded-xl border border-slate-200 bg-white p-1.5 text-center shadow-sm">
+                <FileText className="mb-0.5 h-6 w-6 text-blue-700" strokeWidth={1.8} />
+                <p className="text-xs font-bold leading-tight text-slate-900">فحص IMEI</p>
+                <p className="mt-1 text-[10px] font-bold leading-tight text-slate-500">خطوات التأكد</p>
+              </div>
+              <Link to="/original-phone-guide" className="flex min-h-[72px] flex-col items-center justify-center rounded-xl border border-slate-200 bg-white p-1.5 text-center shadow-sm">
+                <ShieldCheck className="mb-0.5 h-6 w-6 text-emerald-700" strokeWidth={1.8} />
+                <p className="text-xs font-bold leading-tight text-slate-900">كيف تعرف الهاتف الأصلي؟</p>
+                <p className="mt-1 text-[10px] font-bold leading-tight text-slate-500">دليل سريع</p>
+              </Link>
+              <Link to="/phone-safety-tips" className="flex min-h-[72px] flex-col items-center justify-center rounded-xl border border-slate-200 bg-white p-1.5 text-center shadow-sm">
+                <Lightbulb className="mb-0.5 h-6 w-6 text-amber-500" strokeWidth={1.8} />
+                <p className="text-xs font-bold leading-tight text-slate-900">نصائح مهمة لهاتفك</p>
+                <p className="mt-1 text-[10px] font-bold leading-tight text-slate-500">حافظ على هاتفك</p>
+              </Link>
             </div>
           </div>
 

@@ -4,7 +4,6 @@ import { useLanguage } from '../contexts/LanguageContext';
 import PageContainer from '../components/PageContainer';
 import BackButton from '../components/BackButton';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import Logo from '../components/Logo';
 import LoginForm from '../components/auth/LoginForm';
 import AuthLinks from '../components/auth/AuthLinks';
 import { Button } from '@/components/ui/button';
@@ -24,14 +23,19 @@ const Login: React.FC = () => {
   }, []);
   return (
     <PageContainer>
-      <div className="flex flex-col items-center justify-center min-h-screen p-2">
-        <div className="w-full flex items-center justify-center mb-6 mt-4">
-          <div className="flex-1 flex justify-center">
-            <Logo size="lg" className="mb-6" />
-          </div>
-        </div>
-        <div className="w-full max-w-md mt-2">
-          <Card className="shadow-md border-t-4 border-t-orange-500 glass-bg" style={{background: 'rgba(255,255,255,0.18)'}}>
+      <div
+        className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden rounded-3xl p-2"
+        style={{
+          backgroundImage: "url('/login-background.jpeg')",
+          backgroundSize: '110% auto',
+          backgroundPosition: 'center top',
+          backgroundRepeat: 'no-repeat',
+        }}
+      >
+        <div className="absolute inset-0 bg-white/10" />
+        <div className="relative z-10 flex w-full flex-col items-center justify-center">
+        <div className="w-[calc(100%-1rem)] max-w-lg mt-24">
+          <Card className="border-t-4 border-t-orange-500 border-x-2 border-x-orange-500 shadow-[0_12px_35px_rgba(0,0,0,0.35)] glass-bg" style={{background: 'rgba(255,255,255,0.18)'}}>
             <CardHeader className="pb-2">
             <div className="relative flex items-center justify-center">
               <BackButton to="/welcome" className="!right-0 !left-auto absolute" />
@@ -50,6 +54,7 @@ const Login: React.FC = () => {
               </div>
             </CardContent>
           </Card>
+        </div>
         </div>
       </div>
     </PageContainer>

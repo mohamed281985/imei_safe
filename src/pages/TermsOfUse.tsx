@@ -1,96 +1,85 @@
 ﻿import React from 'react';
-import { useLanguage } from '../contexts/LanguageContext';
 import PageContainer from '../components/PageContainer';
 
 const TermsOfUse: React.FC = () => {
-  const { t } = useLanguage();
+  const sections = [
+    {
+      title: '1. شروط إنشاء الحساب والأهلية',
+      paragraphs: [
+        'يشترط لاستخدام التطبيق أن تقوم بإنشاء حساب حقيقي ببيانات صحيحة ودقيقة، بما في ذلك البريد الإلكتروني.',
+        'أنت مسؤول مسؤولية كاملة عن الحفاظ على سرية بيانات حسابك وكلمة المرور الخاصة بك، وعن أي أنشطة تتم من خلال حسابك.',
+        'يتعهد المستخدم بأن الهاتف الذي يقوم بتسجيله في التطبيق هو ملكيته الشخصية القانونية، أو يمتلك تفويضًا رسميًا بإدارته وتأمينه.',
+      ],
+    },
+    {
+      title: '2. الاستخدام العادل ومنع البلاغات الكاذبة',
+      paragraphs: [
+        'وفقًا لقانون مكافحة جرائم تقنية المعلومات المصري رقم 175 لسنة 2018، يحظر تمامًا استخدام التطبيق للإدلاء ببلاغات كاذبة أو محاولة حظر أو تشويه سمعة هواتف لا تخصك.',
+        'يُعد تعمد الإبلاغ عن هاتف كمفقود أو مسروق وهو ليس كذلك، أو محاولة اختراق حسابات مستخدمين آخرين، مخالفة قانونية، ويحق لإدارة التطبيق إيقاف حسابك نهائيًا وتقديم بياناتك للجهات الأمنية المعنية وفقًا للقانون.',
+      ],
+    },
+    {
+      title: '3. نظام الباقات والخدمات (Free & Gold)',
+      paragraphs: [
+        'يوفر التطبيق باقة مجانية وباقات مدفوعة، بما في ذلك الباقات الفضية والذهبية. تختلف الميزات المتاحة لكل باقة بناءً على خطة الاشتراك الموضحة داخل التطبيق.',
+        'في الباقات المدفوعة، يوافق المستخدم بإرادته الكاملة ومن خلال مربع اختيار صريح على إظهار رقم هاتفه أو رابط الواتساب الخاص به على صفحة الويب لتسهيل العثور على جهازه، ويحق له إلغاء هذا الإذن في أي وقت.',
+        'الرسوم المدفوعة للاشتراكات تخضع لسياسة الدفع الإلكتروني المعتمدة، ولا يتم ردها إلا في الحالات التقنية التي تحددها إدارة التطبيق.',
+      ],
+    },
+    {
+      title: '4. نقل الملكية وفض النزاعات',
+      paragraphs: [
+        'يجب أن تتم عمليات نقل الملكية داخل التطبيق بالتراضي بين الطرفين، البائع والمشتري، وبالمصادقة الرقمية المعتمدة.',
+        'في حال البيع خارج التطبيق ونسيان نقل الملكية، يحق للمشتري الجديد تقديم طلب إثبات ملكية يدوي يرفق فيه صورة العلبة الأصلية والفاتورة.',
+        'تملك إدارة التطبيق الصلاحية الكاملة لنقل الملكية قسريًا بعد انقضاء المهلة المقررة للمالك القديم، وثبوت صحة المستندات، وذلك وفقًا للإجراءات المعتمدة داخل التطبيق ولحماية مستخدمي سوق الهواتف المستعملة.',
+      ],
+    },
+    {
+      title: '5. إخلاء المسؤولية القانونية',
+      paragraphs: [
+        'تطبيق IMEI Safe هو أداة تقنية مساعدة لحماية الهواتف وتسهيل التواصل لاسترجاعها، ولا يعتبر بديلًا عن الإجراءات القانونية الرسمية، مثل تحرير محضر سرقة في قسم الشرطة أو تتبع الهاتف عبر النيابة العامة وشركات الاتصالات.',
+        'لا تتحمل إدارة التطبيق أي مسؤولية عن أي أضرار مباشرة أو غير مباشرة تنتج عن تعاملات المستخدمين المالية أو الواقعية أثناء بيع الهواتف أو استلامها من أشخاص عثروا عليها. ننصح دائمًا بلقاء الطرف الآخر في أماكن عامة ومؤمنة.',
+        'تبذل إدارة التطبيق أقصى جهد لتأمين قاعدة البيانات وتدقيق البلاغات باستخدام Cloudflare Turnstile، لكنها لا تتحمل مسؤولية أي اختراق تقني خارج عن إرادتها، مع التزامها بالمعايير القياسية للتشفير وحماية البيانات.',
+      ],
+    },
+    {
+      title: '6. إنهاء الخدمة',
+      paragraphs: [
+        'يحق لإدارة IMEI Safe تعديل أو إيقاف أي جزء من الخدمة، أو إلغاء حساب أي مستخدم يثبت انتهاكه لهذه الشروط والأحكام، وفقًا للقانون ودون إشعار مسبق عند الحاجة.',
+      ],
+    },
+    {
+      title: '7. القانون الواجب التطبيق',
+      paragraphs: [
+        'تخضع هذه الشروط والأحكام وتُفسر وفقًا للقوانين السارية في جمهورية مصر العربية، وتختص المحاكم المصرية بالفصل في أي نزاع ينشأ عنها.',
+      ],
+    },
+  ];
 
   return (
     <PageContainer>
-      <div className="px-4 py-6 max-w-5xl mx-auto">
+      <div className="mx-auto max-w-5xl px-4 py-6" dir="rtl">
         <div className="rounded-[36px] border border-imei-cyan/20 bg-gradient-to-r from-imei-cyan/20 via-blue-100 to-orange-100 p-8 shadow-2xl">
-          <span className="inline-flex items-center rounded-full bg-imei-cyan/10 px-3 py-1 text-sm font-semibold text-imei-cyan">
-            {t('legal_info')}
-          </span>
-          <h1 className="mt-4 text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900">
-            {t('terms_of_use')}
-          </h1>
-          <p className="mt-4 max-w-3xl text-slate-700 leading-8">
-            {t('terms_of_use_intro')}
+          <span className="inline-flex items-center rounded-full bg-imei-cyan/10 px-3 py-1 text-sm font-semibold text-imei-cyan">معلومات قانونية</span>
+          <h1 className="mt-4 text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">شروط وأحكام استخدام تطبيق IMEI Safe</h1>
+          <p className="mt-4 max-w-3xl leading-8 text-slate-700">
+            مرحبًا بك في تطبيق IMEI Safe. باستخدامك لهذا التطبيق أو تصفحك للموقع الإلكتروني التابع له، فإنك توافق تمامًا على الالتزام بالشروط والأحكام التالية. إذا كنت لا توافق على هذه الشروط، يرجى عدم استخدام التطبيق أو الخدمات المرتبطة به.
           </p>
         </div>
 
         <div className="mt-8 space-y-6">
-          <section className="rounded-3xl border border-imei-cyan/10 bg-white/95 p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-imei-cyan">{t('terms_acceptance_title')}</h2>
-            <p className="mt-3 text-slate-700 leading-7">{t('terms_acceptance_desc')}</p>
-          </section>
+          {sections.map((section) => (
+            <section key={section.title} className="rounded-3xl border border-imei-cyan/10 bg-white/95 p-6 shadow-sm">
+              <h2 className="text-xl font-semibold text-imei-cyan">{section.title}</h2>
+              {section.paragraphs.map((paragraph) => (
+                <p key={paragraph} className="mt-3 leading-7 text-slate-700">{paragraph}</p>
+              ))}
+            </section>
+          ))}
 
           <section className="rounded-3xl border border-imei-cyan/10 bg-white/95 p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-imei-cyan">{t('terms_disclaimer_title')}</h2>
-            <p className="mt-3 text-slate-700 leading-7">{t('terms_disclaimer_desc')}</p>
-          </section>
-
-          <section className="rounded-3xl border border-imei-cyan/10 bg-white/95 p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-imei-cyan">{t('terms_user_responsibility_title')}</h2>
-            <p className="mt-3 text-slate-700 leading-7">{t('terms_user_responsibility_desc_1')}</p>
-            <p className="mt-3 text-slate-700 leading-7">{t('terms_user_responsibility_desc_2')}</p>
-          </section>
-
-          <section className="rounded-3xl border border-imei-cyan/10 bg-white/95 p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-imei-cyan">{t('terms_false_reports_title')}</h2>
-            <p className="mt-3 text-slate-700 leading-7">{t('terms_false_reports_desc')}</p>
-          </section>
-
-          <section className="rounded-3xl border border-imei-cyan/10 bg-white/95 p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-imei-cyan">{t('terms_warranty_title')}</h2>
-            <p className="mt-3 text-slate-700 leading-7">{t('terms_warranty_desc')}</p>
-          </section>
-
-          <section className="rounded-3xl border border-imei-cyan/10 bg-white/95 p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-imei-cyan">{t('terms_liability_title')}</h2>
-            <p className="mt-3 text-slate-700 leading-7">{t('terms_liability_desc_1')}</p>
-            <p className="mt-3 text-slate-700 leading-7">{t('terms_liability_desc_2')}</p>
-          </section>
-
-          <section className="rounded-3xl border border-imei-cyan/10 bg-white/95 p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-imei-cyan">{t('terms_buy_sell_title')}</h2>
-            <p className="mt-3 text-slate-700 leading-7">{t('terms_buy_sell_desc')}</p>
-          </section>
-
-          <section className="rounded-3xl border border-imei-cyan/10 bg-white/95 p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-imei-cyan">{t('terms_limits_title')}</h2>
-            <p className="mt-3 text-slate-700 leading-7">{t('terms_limits_desc')}</p>
-          </section>
-
-          <section className="rounded-3xl border border-imei-cyan/10 bg-white/95 p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-imei-cyan">{t('terms_ip_title')}</h2>
-            <p className="mt-3 text-slate-700 leading-7">{t('terms_ip_desc')}</p>
-          </section>
-
-          <section className="rounded-3xl border border-imei-cyan/10 bg-white/95 p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-imei-cyan">{t('terms_misuse_title')}</h2>
-            <p className="mt-3 text-slate-700 leading-7">{t('terms_misuse_desc')}</p>
-          </section>
-
-          <section className="rounded-3xl border border-imei-cyan/10 bg-white/95 p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-imei-cyan">{t('terms_governing_law_title')}</h2>
-            <p className="mt-3 text-slate-700 leading-7">{t('terms_governing_law_desc')}</p>
-          </section>
-
-          <section className="rounded-3xl border border-imei-cyan/10 bg-white/95 p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-imei-cyan">{t('terms_allowed_use_title')}</h2>
-            <p className="mt-3 text-slate-700 leading-7">{t('terms_allowed_use_desc')}</p>
-          </section>
-
-          <section className="rounded-3xl border border-imei-cyan/10 bg-white/95 p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-imei-cyan">{t('terms_changes_title')}</h2>
-            <p className="mt-3 text-slate-700 leading-7">{t('terms_changes_desc')}</p>
-          </section>
-
-          <section className="rounded-3xl border border-imei-cyan/10 bg-white/95 p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-imei-cyan">{t('terms_contact')}</h2>
-            <p className="mt-3 text-slate-700 leading-7">{t('terms_contact')}</p>
+            <h2 className="text-xl font-semibold text-imei-cyan">التواصل مع الدعم</h2>
+            <p className="mt-3 leading-7 text-slate-700" dir="ltr">imeisafe@gmail.com</p>
           </section>
         </div>
       </div>

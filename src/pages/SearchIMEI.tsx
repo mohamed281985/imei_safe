@@ -5,9 +5,10 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle, Search, ArrowLeft, ArrowRight, Smartphone, FileText, CheckCircle, XCircle, ShieldCheck, MapPin, Clock, Calendar, Hash, ScanLine, Lock, Zap, Database, Target, MessageCircle } from 'lucide-react';
+import { AlertTriangle, Search, Smartphone, FileText, CheckCircle, XCircle, ShieldCheck, MapPin, Clock, Calendar, Hash, ScanLine, Lock, Zap, Database, Target, MessageCircle } from 'lucide-react';
 import PageContainer from '@/components/PageContainer';
 import AppNavbar from '@/components/AppNavbar';
+import BackButton from '@/components/BackButton';
 import PageAdvertisement from '@/components/advertisements/PageAdvertisement';
 import { useScrollToTop } from '../hooks/useScrollToTop';
 import { supabase } from '../lib/supabase';
@@ -508,29 +509,26 @@ const WelcomeSearch: React.FC = () => {
       <div className={`min-h-screen bg-slate-50 pb-6 ${searchResult !== null ? 'w-full' : ''}`}>
         <div className={`container mx-auto px-2 py-6 ${searchResult !== null ? 'max-w-none' : 'max-w-4xl'}`}>
           {/* Header Section */}
-          <div className="bg-white rounded-2xl shadow-sm p-4 mb-6 border border-slate-200">
-            <div className="flex items-center justify-between">
-              <button
-                onClick={() => navigate('/dashboard')}
-                className="text-slate-600 hover:text-slate-900 transition-colors"
-              >
-                <ArrowRight size={20} className="rtl:rotate-180" />
-              </button>
-              <div className="flex items-center">
-                <div className="bg-gradient-to-br from-orange-500 to-orange-600 p-2 rounded-lg ml-4 shadow-md">
-                  <ShieldCheck size={20} className="text-white" />
-                </div>
-                <h1 className="text-xl font-bold text-blue-600">
-                  {t('search_imei')}
-                </h1>
-              </div>
-              <div className="w-5"></div> {/* Spacer for balance */}
+          <div
+            className="mb-4 flex items-center pt-3"
+            style={{
+              background: 'linear-gradient(to top, #053060 0%, #0a4d8c 100%)',
+              padding: '0.3rem',
+              borderRadius: '1rem',
+              marginTop: '1rem',
+            }}
+          >
+            <BackButton to="/dashboard" className="mr-4" />
+            <div className="flex-1 text-center">
+              <h1 className="text-2xl font-bold text-white">
+                {t('search_imei')}
+              </h1>
             </div>
           </div>
 
           {/* Search Card */}
           {searchResult !== 'found' && (
-            <div className="bg-white rounded-3xl shadow-lg p-5 8 mb-8 border border-slate-100">
+            <div className="rounded-[28px] border-2 border-blue-300 bg-gradient-to-br from-blue-100 via-white to-cyan-100 p-5 shadow-lg mb-8">
               <div className="mb-6 text-center">
                 <h2 className="text-2xl font-bold text-blue-600 mb-2">
                   {t('search_imei_title')}
@@ -568,10 +566,11 @@ const WelcomeSearch: React.FC = () => {
                 </div>
 
                 <Button
-                 type="submit"
-className="w-full h-14 bg-orange-500 text-white font-bold text-lg rounded-xl shadow-lg shadow-orange-500/30  flex items-center justify-center gap-2"
-disabled={isSearching || !imei}
->
+                  type="submit"
+                  className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#f97316] text-lg font-bold text-white shadow-lg shadow-orange-500/30 transition-colors hover:bg-[#ea580c] active:bg-[#c2410c] disabled:bg-[#f97316] disabled:opacity-100"
+                  disabled={isSearching || !imei}
+                  aria-busy={isSearching}
+                >
 
                   {isSearching ? (
                     <>

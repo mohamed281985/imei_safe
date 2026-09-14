@@ -783,7 +783,7 @@ const TransferHistory: React.FC = () => {
   return (
     <PageContainer>
       <AppNavbar />
-      <div className="container mx-auto p-4 pt-6">
+      <div className="container mx-auto rounded-[28px] border-2 border-blue-300 bg-gradient-to-br from-blue-100 via-white to-cyan-100 p-4 pt-6 shadow-lg">
         <div className="flex justify-between items-center mb-4">
           <h1 className="text-3xl font-bold text-black">{t('transfer_history')}</h1>
           <BackButton />

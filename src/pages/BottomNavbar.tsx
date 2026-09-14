@@ -47,10 +47,32 @@ const BottomNavbar: React.FC<BottomNavbarProps> = ({ isVisible = true }) => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [showAllNotifications, setShowAllNotifications] = useState(false);
+  const [isNavbarExpanded, setIsNavbarExpanded] = useState(false);
 
   const navbarRef = useRef<HTMLDivElement>(null);
   const notificationsRef = useRef<HTMLDivElement>(null);
   const myReportsRef = useRef<HTMLDivElement>(null);
+  const collapseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const resetCollapseTimer = () => {
+    if (collapseTimerRef.current) clearTimeout(collapseTimerRef.current);
+    if (isNavbarExpanded) {
+      collapseTimerRef.current = setTimeout(() => {
+        setIsNavbarExpanded(false);
+        setShowCreateAdModal(false);
+        setShowMyReports(false);
+        setShowNotifications(false);
+      }, 10000);
+    }
+  };
+
+  useEffect(() => () => {
+    if (collapseTimerRef.current) clearTimeout(collapseTimerRef.current);
+  }, []);
+
+  useEffect(() => {
+    resetCollapseTimer();
+  }, [isNavbarExpanded]);
 
   // التحقق مما إذا كان المستخدم تجاريًا لعرض زر إنشاء الإعلان
   // تعديل الشرط ليشمل جميع أنواع الحسابات التجارية
@@ -205,15 +227,34 @@ const BottomNavbar: React.FC<BottomNavbarProps> = ({ isVisible = true }) => {
   return (
     <div
       ref={navbarRef}
-      className={`fixed bottom-0 left-0 right-0 bg-transparent print:hidden transition-transform duration-300 ease-in-out ${isVisible ? 'translate-y-0' : 'translate-y-full'} border-t-2 border-orange-500 rounded-t-2xl`}
+      onMouseEnter={resetCollapseTimer}
+      onTouchStart={resetCollapseTimer}
+      className={`fixed print:hidden transition-all duration-300 ease-in-out ${isVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'} ${isNavbarExpanded ? 'bottom-0 left-0 right-0' : 'bottom-[calc(env(safe-area-inset-bottom)+1rem)] right-4'}`}
       style={{
-        paddingBottom: 'env(safe-area-inset-bottom)',
-        paddingLeft: 'env(safe-area-inset-left)',
-        paddingRight: 'env(safe-area-inset-right)',
         zIndex: 50,
         willChange: 'transform',
       }}
     >
+      {!isNavbarExpanded && (
+        <button
+          type="button"
+          aria-label="فتح شريط التنقل"
+          onClick={() => setIsNavbarExpanded(true)}
+          className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-orange-400 to-orange-600 text-white shadow-xl ring-2 ring-white/70 transition-transform duration-300 hover:scale-105"
+        >
+          <Plus className="h-7 w-7" />
+        </button>
+      )}
+
+      {isNavbarExpanded && (
+      <div
+        className="border-t-2 border-orange-500 bg-transparent rounded-t-2xl"
+        style={{
+          paddingBottom: 'env(safe-area-inset-bottom)',
+          paddingLeft: 'env(safe-area-inset-left)',
+          paddingRight: 'env(safe-area-inset-right)',
+        }}
+      >
       {showMyReports && (
         <div
           ref={myReportsRef}
@@ -420,6 +461,8 @@ const BottomNavbar: React.FC<BottomNavbarProps> = ({ isVisible = true }) => {
           );
         })}
       </div>
+      </div>
+      )}
     </div>
   );
 };

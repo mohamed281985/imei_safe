@@ -830,7 +830,7 @@ const RegisterPhone: React.FC = () => {
         {showUpgradeModal && user && (
           <AdsOfferSlider onClose={() => setShowUpgradeModal(false)} userId={user.id} isUpgradePrompt={true} />
         )}
-        <Card className="max-w-6xl p-0 bg-transparent shadow-none border-none" style={{ backgroundColor: 'transparent' }}>
+        <Card className="max-w-6xl rounded-[28px] border-2 border-blue-300 bg-gradient-to-br from-blue-100 via-white to-cyan-100 p-4 shadow-lg sm:p-5">
           <CardContent className="p-0">
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="w-full px-0 mb-4">

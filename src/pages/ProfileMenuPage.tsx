@@ -1,6 +1,6 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { User, PlusSquare, Search, Sparkles, LogOut, MessageSquare, Key, Globe, Fingerprint, Gift, Phone, Award, Crown, ChevronLeft, Shield, FileText, Bell } from 'lucide-react';
+import { User, PlusSquare, Search, Sparkles, LogOut, MessageSquare, Key, Globe, Fingerprint, Gift, Phone, Award, Crown, ChevronLeft, Shield, FileText, Bell, Trash2 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -55,6 +55,7 @@ const ProfileMenuPage: React.FC = () => {
     const [isProcessing, setIsProcessing] = useState(false);
     const [showLanguageModal, setShowLanguageModal] = useState(false);
     const [showChangePhoneModal, setShowChangePhoneModal] = useState(false);
+    const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
     const [newPhone, setNewPhone] = useState('');
     const [countryCode, setCountryCode] = useState('+');
     const [verificationLast6, setVerificationLast6] = useState('');
@@ -299,6 +300,58 @@ const ProfileMenuPage: React.FC = () => {
     const handleLogout = () => {
         logout();
         navigate('/login');
+    };
+
+    // Delete the account through the server so both app data and Supabase Auth are removed.
+    const handleDeleteAccount = async () => {
+        setIsProcessing(true);
+
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const token = session?.access_token;
+
+            if (!token) {
+                throw new Error('انتهت جلسة الدخول، يرجى تسجيل الدخول مرة أخرى');
+            }
+
+            const csrfResp = await fetch(`${API_BASE_URL}/api/csrf-token`, {
+                method: 'GET',
+                credentials: 'include'
+            });
+            const csrfPayload = await csrfResp.json().catch(() => ({}));
+            const csrfToken = csrfPayload?.csrfToken;
+
+            if (!csrfResp.ok || !csrfToken) {
+                throw new Error('تعذر التحقق من الطلب');
+            }
+
+            const response = await fetch(`${API_BASE_URL}/api/account`, {
+                method: 'DELETE',
+                credentials: 'include',
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    'X-CSRF-Token': csrfToken
+                }
+            });
+            const payload = await response.json().catch(() => ({}));
+
+            if (!response.ok) {
+                throw new Error(payload?.error || 'فشل حذف الحساب');
+            }
+
+            setShowDeleteAccountModal(false);
+            await logout();
+            navigate('/login', { replace: true });
+        } catch (error) {
+            console.error('Error deleting account:', error);
+            toast({
+                title: t('error'),
+                description: (error as Error)?.message || 'حدث خطأ أثناء حذف الحساب',
+                variant: 'destructive'
+            });
+        } finally {
+            setIsProcessing(false);
+        }
     };
 
     // Handle support click
@@ -809,6 +862,23 @@ toast({ title: t('success'), description: t('biometric_enabled_success') });
                                     <ChevronLeft className="w-5 h-5 text-gray-400" />
                                 </button>
 
+                                {/* Delete Account */}
+                                <button
+                                    onClick={() => setShowDeleteAccountModal(true)}
+                                    className="w-full flex items-center justify-between p-4 border-b border-gray-100 hover:bg-red-50 transition-colors"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                                            <Trash2 className="w-5 h-5 text-red-600" />
+                                        </div>
+                                        <div className="text-right">
+                                            <div className="font-medium text-red-700">حذف الحساب</div>
+                                            <div className="text-xs text-red-500">حذف بياناتك نهائياً من التطبيق</div>
+                                        </div>
+                                    </div>
+                                    <ChevronLeft className="w-5 h-5 text-red-400" />
+                                </button>
+
                                 {/* Logout */}
                                 <button
                                     onClick={handleLogout}
@@ -935,6 +1005,39 @@ toast({ title: t('success'), description: t('biometric_enabled_success') });
                                 </Button>
                                 <Button onClick={handleForgotPassword} disabled={isProcessing} className="flex-1 bg-[#289c8e] hover:bg-[#1a7468] rounded-lg">
                                     {isProcessing ? t('processing') : t('update_password')}
+                                </Button>
+                            </DialogFooter>
+                        </DialogContent>
+                    </Dialog>
+
+                    {/* Delete Account Modal */}
+                    <Dialog open={showDeleteAccountModal} onOpenChange={setShowDeleteAccountModal}>
+                        <DialogContent className="bg-white rounded-2xl shadow-xl p-6 max-w-md mx-auto">
+                            <DialogHeader className="text-center mb-4">
+                                <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-3">
+                                    <Trash2 className="w-7 h-7 text-red-600" />
+                                </div>
+                                <DialogTitle className="text-xl font-bold text-gray-900">تأكيد حذف الحساب</DialogTitle>
+                                <DialogDescription className="text-gray-600 mt-2 leading-6">
+                                    سيتم حذف حسابك وجميع بياناتك وأجهزتك المسجلة نهائياً. لا يمكن التراجع عن هذا الإجراء.
+                                </DialogDescription>
+                            </DialogHeader>
+
+                            <DialogFooter className="gap-3 mt-6">
+                                <Button
+                                    onClick={() => setShowDeleteAccountModal(false)}
+                                    variant="outline"
+                                    className="flex-1 rounded-lg"
+                                    disabled={isProcessing}
+                                >
+                                    إلغاء
+                                </Button>
+                                <Button
+                                    onClick={handleDeleteAccount}
+                                    disabled={isProcessing}
+                                    className="flex-1 rounded-lg bg-red-600 hover:bg-red-700 text-white"
+                                >
+                                    {isProcessing ? 'جارٍ الحذف...' : 'حذف الحساب'}
                                 </Button>
                             </DialogFooter>
                         </DialogContent>

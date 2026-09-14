@@ -1275,6 +1275,85 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 // Prefer the explicit service-role key if provided; fall back to legacy name
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const OWNERSHIP_CONFIRMATION_MONTHS = 3;
+const OWNERSHIP_EXPIRY_MONTHS = 4;
+
+// Permanently delete the authenticated user's application data, then remove the Auth user.
+app.delete('/api/account', verifyJwtToken, csrfProtection, async (req, res) => {
+  const userId = req.user?.id;
+
+  if (!userId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    const { error: cleanupError } = await supabase.rpc('delete_user_account', {
+      p_user_id: userId
+    });
+
+    if (cleanupError) {
+      console.error('[account-delete] application data cleanup failed:', cleanupError);
+      return res.status(500).json({ error: 'فشل حذف بيانات الحساب' });
+    }
+
+    const { error: authDeleteError } = await supabase.auth.admin.deleteUser(userId);
+
+    if (authDeleteError) {
+      console.error('[account-delete] auth user deletion failed:', authDeleteError);
+      return res.status(500).json({ error: 'فشل حذف حساب المصادقة' });
+    }
+
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error('[account-delete] unexpected error:', error);
+    return res.status(500).json({ error: 'حدث خطأ أثناء حذف الحساب' });
+  }
+});
+
+const addCalendarMonths = (value, months) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const day = date.getDate();
+  date.setDate(1);
+  date.setMonth(date.getMonth() + months);
+  const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  date.setDate(Math.min(day, lastDay));
+  return date;
+};
+
+const getOwnershipSchedule = (phone) => {
+  const baseDate = phone.last_confirmed_at || phone.registration_date;
+  const confirmationDueAt = addCalendarMonths(baseDate, OWNERSHIP_CONFIRMATION_MONTHS);
+  const ownershipExpiresAt = addCalendarMonths(baseDate, OWNERSHIP_EXPIRY_MONTHS);
+  const now = Date.now();
+
+  return {
+    confirmationDueAt,
+    ownershipExpiresAt,
+    needsConfirmation: Boolean(confirmationDueAt && now >= confirmationDueAt.getTime()),
+    expired: Boolean(ownershipExpiresAt && now >= ownershipExpiresAt.getTime())
+  };
+};
+
+const expireUnconfirmedPhone = async (phone) => {
+  const schedule = getOwnershipSchedule(phone);
+  if (!schedule.expired || ['transferred', 'sold', 'rejected'].includes(String(phone.status || '').toLowerCase())) {
+    return { phone, schedule };
+  }
+
+  const { data: updated, error } = await supabase
+    .from('registered_phones')
+    .update({ status: 'transferred' })
+    .eq('id', phone.id)
+    .eq('user_id', phone.user_id)
+    .not('status', 'in', '(transferred,sold,rejected)')
+    .select('id, status, last_confirmed_at, registration_date, user_id')
+    .maybeSingle();
+
+  if (error) throw error;
+  return { phone: updated || { ...phone, status: 'transferred' }, schedule };
+};
 const logAudit = (config) => rawLogAudit({ supabase, ...config });
 // Debug/logging helpers for Supabase usage
 try {
@@ -4946,8 +5025,11 @@ app.get('/api/user-phones', verifyJwtToken, async (req, res) => {
       }
     }
 
+    // تطبيق دورة التأكيد على السيرفر قبل إرسال القائمة للواجهة.
+    const lifecyclePhones = await Promise.all((phones || []).map(expireUnconfirmedPhone));
+
     // معالجة البيانات: فك التشفير مرة واحدة فقط لكل هاتف
-    const processedPhones = phones.map(phone => {
+    const processedPhones = lifecyclePhones.map(({ phone, schedule }) => {
       const decryptedImei = safeDecryptImei(phone.imei);
       const maskedImei = decryptedImei
         ? decryptedImei.substring(0, 4) + '*******' + decryptedImei.slice(-4)
@@ -4964,6 +5046,9 @@ app.get('/api/user-phones', verifyJwtToken, async (req, res) => {
         registration_date: phone.registration_date,
         last_confirmed_at: phone.last_confirmed_at,
         status: phone.status,
+        needsConfirmation: schedule.needsConfirmation && !schedule.expired,
+        confirmationDueAt: schedule.confirmationDueAt?.toISOString() || null,
+        ownershipExpiresAt: schedule.ownershipExpiresAt?.toISOString() || null,
         // هذا endpoint محمي ويعيد هواتف المستخدم الحالي فقط.
         imei: decryptedImei,
         imei_encrypted: encryptedImei,
@@ -5961,7 +6046,7 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
   [
     'owner_name', 'ownerName',
     'phone_number', 'phoneNumber',
-    'country_code', 'countryCode',
+    'countryCode',
     'email',
     'id_last6', 'idLast6'
   ].forEach((field) => delete phoneData[field]);
@@ -5969,7 +6054,7 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
   // الأعمدة القديمة مطلوبة في قاعدة البيانات؛ القيم الفارغة لا تحتوي بيانات شخصية.
   phoneData.owner_name = '';
   phoneData.phone_number = '';
-  phoneData.country_code = '';
+  phoneData.country_code = String(phoneData.country_code || '').trim();
   phoneData.email = '';
   phoneData.id_last6 = '';
 
@@ -6082,6 +6167,26 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
 
     // أولاً: التحقق من عدم وجود بلاغ نشط لهذا الـ IMEI
     if (rawImei) {
+      const imeiHash = crypto.createHash('sha256').update(String(normalizeDigitsOnly(rawImei))).digest('hex');
+      const { data: existingPhones, error: existingPhonesError } = await supabase
+        .from('registered_phones')
+        .select('id, user_id, status, registration_date, last_confirmed_at')
+        .eq('imei_hash', imeiHash);
+
+      if (existingPhonesError) throw existingPhonesError;
+
+      for (const existingPhone of existingPhones || []) {
+        const { phone: currentPhone } = await expireUnconfirmedPhone(existingPhone);
+        const currentStatus = String(currentPhone.status || '').toLowerCase();
+        if (!['transferred', 'sold', 'rejected'].includes(currentStatus)) {
+          return res.status(409).json({
+            success: false,
+            error: 'هذا الهاتف مسجل بالفعل ولا يمكن تسجيله مرة أخرى قبل انتهاء ملكيته الحالية',
+            alreadyRegistered: true
+          });
+        }
+      }
+
       // جلب جميع السجلات للتحقق منها
       const { data: allReports, error: reportsFetchError } = await supabase
         .from('phone_reports')
@@ -6260,6 +6365,16 @@ app.post('/api/create-phone', verifyJwtToken, async (req, res) => {
   try {
     // Ensure contact_methods is an object
     if (!phoneData.contact_methods || typeof phoneData.contact_methods !== 'object') phoneData.contact_methods = {};
+
+    const countryCodeDigits = normalizeDigitsOnly(phoneData.country_code || '');
+    const contactPhoneDigits = normalizeDigitsOnly(phoneData.contact_methods.phone || '');
+    if (countryCodeDigits && contactPhoneDigits) {
+      const localPhone = contactPhoneDigits.replace(/^0+/, '');
+      phoneData.contact_methods.phone = contactPhoneDigits.startsWith(countryCodeDigits)
+        ? contactPhoneDigits
+        : `${countryCodeDigits}${localPhone}`;
+      phoneData.country_code = `+${countryCodeDigits}`;
+    }
 
     // Normalize phone in contact_methods (digits only)
     if (phoneData.contact_methods.phone) {
@@ -6501,6 +6616,16 @@ app.post('/api/create-accessory', verifyJwtToken, async (req, res) => {
   try {
     // Ensure contact_methods is an object
     if (!accessoryData.contact_methods || typeof accessoryData.contact_methods !== 'object') accessoryData.contact_methods = {};
+
+    const countryCodeDigits = normalizeDigitsOnly(accessoryData.country_code || '');
+    const contactPhoneDigits = normalizeDigitsOnly(accessoryData.contact_methods.phone || '');
+    if (countryCodeDigits && contactPhoneDigits) {
+      const localPhone = contactPhoneDigits.replace(/^0+/, '');
+      accessoryData.contact_methods.phone = contactPhoneDigits.startsWith(countryCodeDigits)
+        ? contactPhoneDigits
+        : `${countryCodeDigits}${localPhone}`;
+      accessoryData.country_code = `+${countryCodeDigits}`;
+    }
 
     // Normalize contact phone (digits only)
     if (accessoryData.contact_methods.phone) {

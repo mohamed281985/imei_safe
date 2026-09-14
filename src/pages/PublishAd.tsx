@@ -830,8 +830,8 @@ const PublishAd: React.FC = () => {
 
   return (
     <PageContainer>
-      <div dir="rtl" className="min-h-screen flex justify-center items-start py-6 px-4">
-        <div className="w-full max-w-md">
+      <div dir="rtl" className="min-h-screen flex justify-center items-start">
+        <div className="w-full max-w-md rounded-[28px] border border-white/80 bg-white/75 p-4 shadow-[0_12px_35px_rgba(15,23,42,0.12)] backdrop-blur-xl sm:p-5">
 
           <div className="flex items-center justify-between mb-6 gap-4 mt-2">
             <div className="p-2 rounded-full bg-orange-400 text-white shadow-md">

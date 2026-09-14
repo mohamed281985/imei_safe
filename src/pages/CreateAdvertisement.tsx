@@ -13,7 +13,7 @@ const CreateAdvertisement: React.FC = () => {
 
   return (
     <PageContainer>
-      <div className="container mx-auto px-4 py-8 glass-bg" style={{ background: 'rgba(255, 255, 255, 0.18)' }}>
+      <div className="container mx-auto rounded-[28px] border-2 border-blue-300 bg-gradient-to-br from-blue-100 via-white to-cyan-100 px-4 py-8 shadow-lg">
         <div className="flex justify-between items-center mb-8 mt-[50px]">
           <h1 className="text-2xl font-bold text-center" style={{ color: '#000000' }}>
             {t('create_advertisement')}

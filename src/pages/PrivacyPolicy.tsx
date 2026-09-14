@@ -1,106 +1,78 @@
-﻿import React from 'react';
+import React from 'react';
 import { useScrollToTop } from '../hooks/useScrollToTop';
-import { useLanguage } from '../contexts/LanguageContext';
 import PageContainer from '../components/PageContainer';
+
+const privacySections = [
+  {
+    title: '1. البيانات التي نجمعها وكيفية معالجتها',
+    paragraphs: [
+      'بيانات الحساب الشخصي: نجمع البريد الإلكتروني وكلمة المرور المشفرة فقط لغرض إنشاء الحساب وتوثيق الهوية وإدارة الاشتراكات داخل التطبيق.',
+      'معرّفات الأجهزة (المهمة لجوجل): تطبيقنا لا يقوم بجمع أو تخزين أو نقل أرقام IMEI الصريحة الخاصة بهاتفك إلى الخوادم. يتم تحويل رقم IMEI محليًا داخل جهازك إلى رمز مشفر غير قابل للتراجع (SHA-256 Hash) قبل إرساله، لضمان السرية وعدم ربط عتاد الهاتف بهويتك الشخصية برمجيًا [1.1.3، 1.3.1].',
+      'بيانات التواصل (اختيارية): في الخطط المتقدمة (الفضية والذهبية)، نتيح لك خيارًا اختياريًا بالكامل لمشاركة رقم هاتفك أو رابط الواتساب لتسهيل التواصل معك عند العثور على جهازك المفقود [1.1.3، 1.3.1].',
+    ],
+  },
+  {
+    title: '2. آلية عمل الباقات وحماية الهوية (Data Sharing)',
+    paragraphs: [
+      'الباقة المجانية (Free): عند مسح الباركود لهاتف مفقود على الباقة المجانية، لا تظهر أي بيانات تواصل أو معلومات شخصية للمالك على الويب. يتم تفعيل نظام صندوق البريد الآمن المحمي بـ Cloudflare Turnstile وRate Limiting لمنع الإغراق، حيث يترك واجد الهاتف رقم تواصله طواعية، ليرسله الخادم كإشعار داخلي وآمن إلى حساب المالك دون تسريب بيانات أي طرف.',
+      'الباقات المدفوعة (Silver / Gold): تمنح المستخدم مربع اختيار صريحًا (Checkbox). إذا قام المستخدم بتفعيله برغبته الكاملة وموافقته الصريحة عند الإبلاغ عن الفقدان، يسمح النظام بظهور رقم هاتفه أو زر الواتساب الخاص به على صفحة الويب لتمكين المكتشف من الاتصال به مباشرة. يحق للمستخدم إلغاء هذا الإذن فورًا في أي وقت [1.1.3، 1.3.1].',
+    ],
+  },
+  {
+    title: '3. أمن وحفظ البيانات',
+    paragraphs: [
+      'يتم نقل كافة البيانات بين التطبيق والخادم عبر بروتوكول اتصال آمن ومشفر بالكامل (HTTPS / SSL).',
+      'يتم تخزين البيانات وإدارة سياسات الوصول إليها عبر خوادم مشفرة وقواعد بيانات آمنة مدعومة بسياسات حماية صارمة على مستوى الصفوف (Row Level Security - RLS)، مما يضمن عدم وصول أي مستخدم غير مصرح له إلى بيانات جهاز آخر.',
+    ],
+  },
+  {
+    title: '4. نقل ملكية الأجهزة',
+    paragraphs: [
+      'تتم عمليات نقل ملكية الهواتف بين المستخدمين من خلال عمليات مصادقة رقمية مشفرة تعتمد على الحسابات النشطة وUser ID المعمى وكلمات المرور المؤقتة، دون الحاجة إلى تداول أو حفظ نصوص صريحة لبيانات IMEI أو البيانات الشخصية للبائع والمشتري معًا على واجهة واحدة، امتثالًا لسياسات المتجر لحظر ربط المعرفات الدائمة بالهوية [1.1.3، 1.3.1].',
+    ],
+  },
+  {
+    title: '5. التعديلات على سياسة الخصوصية',
+    paragraphs: [
+      'نحتفظ بالحق في تحديث سياسة الخصوصية هذه لمواكبة أي تحديثات تقنية أو قانونية. سيتم إشعار المستخدمين بأي تغييرات جوهرية من خلال التطبيق، ويُعد استمرار استخدامك للتطبيق بعد التحديث موافقة صريحة منك عليها.',
+    ],
+  },
+  {
+    title: '6. حقوق المستخدم والتواصل',
+    paragraphs: [
+      'بموجب القوانين المعمول بها، يحق لك في أي وقت مراجعة بياناتك، أو تعديلها، أو طلب حذف حسابك وأجهزتك المسجلة نهائيًا من قاعدة بياناتنا.',
+      'لأي استفسارات، يمكنك التواصل مع الدعم الفني عبر بريدنا الرسمي: imeisafe@gmail.com',
+    ],
+  },
+];
 
 const PrivacyPolicy: React.FC = () => {
   useScrollToTop();
-  const { t } = useLanguage();
 
   return (
     <PageContainer>
-      <div className="px-4 py-6 max-w-5xl mx-auto">
+      <div className="mx-auto max-w-5xl px-4 py-6" dir="rtl">
         <div className="rounded-[36px] border border-imei-cyan/20 bg-gradient-to-r from-imei-cyan/20 via-blue-100 to-orange-100 p-8 shadow-2xl">
           <span className="inline-flex items-center rounded-full bg-imei-cyan/10 px-3 py-1 text-sm font-semibold text-imei-cyan">
-            {t('legal_info')}
+            معلومات قانونية
           </span>
-          <h1 className="mt-4 text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900">
-            {t('privacy_policy')}
+          <h1 className="mt-4 text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">
+            سياسة الخصوصية وأمان البيانات لتطبيق IMEI Safe
           </h1>
-          <p className="mt-4 max-w-3xl text-slate-700 leading-8">
-            {t('privacy_policy_intro')}
+          <p className="mt-4 max-w-3xl leading-8 text-slate-700">
+            مرحبًا بك في تطبيق IMEI Safe؛ منصتك الموثوقة لحماية الهواتف من السرقة والفقدان. نحن ملتزمون بحماية خصوصيتك وتأمين بياناتك وفقًا لأعلى المعايير التقنية العالمية، وبما يتوافق مع قانون حماية البيانات الشخصية المصري رقم 151 لسنة 2020 ومعايير متجر Google Play [1.1.3، 1.3.1].
           </p>
         </div>
 
         <div className="mt-8 space-y-6">
-          <section className="rounded-3xl border border-imei-cyan/10 bg-white/95 p-6 shadow-sm">
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="text-xl font-semibold text-imei-cyan">{t('privacy_collection_title')}</h2>
-                <p className="mt-2 text-slate-600 leading-7">{t('privacy_collection_desc')}</p>
-              </div>
-              <span className="inline-flex rounded-full bg-orange-50 px-3 py-1 text-sm font-semibold text-orange-600">
-                {t('privacy_collection_title')}
-              </span>
-            </div>
-            <ul className="list-disc space-y-3 pl-5 text-slate-700">
-              <li>{t('privacy_collection_item_account')}</li>
-              <li>{t('privacy_collection_item_device')}</li>
-              <li>{t('privacy_collection_item_ads')}</li>
-              <li>{t('privacy_collection_item_payments')}</li>
-              <li>{t('privacy_collection_item_support')}</li>
-            </ul>
-          </section>
-
-          <section className="rounded-3xl border border-imei-cyan/10 bg-white/95 p-6 shadow-sm">
-            <div className="mb-4">
-              <h2 className="text-xl font-semibold text-imei-cyan">{t('privacy_usage_title')}</h2>
-              <p className="mt-2 text-slate-600 leading-7">{t('privacy_usage_desc')}</p>
-            </div>
-            <ul className="list-disc space-y-3 pl-5 text-slate-700">
-              <li>{t('privacy_usage_item_personalize')}</li>
-              <li>{t('privacy_usage_item_service')}</li>
-              <li>{t('privacy_usage_item_communication')}</li>
-              <li>{t('privacy_usage_item_improvement')}</li>
-            </ul>
-          </section>
-
-          <section className="rounded-3xl border border-imei-cyan/10 bg-white/95 p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-imei-cyan">{t('privacy_responsibility_title')}</h2>
-            <p className="mt-3 text-slate-700 leading-7">{t('privacy_responsibility_desc_1')}</p>
-            <p className="mt-3 text-slate-700 leading-7">{t('privacy_responsibility_desc_2')}</p>
-          </section>
-
-          <section className="rounded-3xl border border-imei-cyan/10 bg-white/95 p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-imei-cyan">{t('privacy_security_title')}</h2>
-            <p className="mt-3 text-slate-700 leading-7">{t('privacy_security_desc')}</p>
-          </section>
-
-          <section className="rounded-3xl border border-imei-cyan/10 bg-white/95 p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-imei-cyan">{t('privacy_data_protection_title')}</h2>
-            <p className="mt-3 text-slate-700 leading-7">{t('privacy_data_protection_desc')}</p>
-            <p className="mt-3 text-slate-700 leading-7">{t('privacy_encryption_desc')}</p>
-            <p className="mt-3 text-slate-700 leading-7">{t('privacy_https_desc')}</p>
-            <p className="mt-3 text-slate-700 leading-7">{t('privacy_security_measures_desc')}</p>
-          </section>
-
-          <section className="rounded-3xl border border-imei-cyan/10 bg-white/95 p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-imei-cyan">{t('privacy_sharing_title')}</h2>
-            <p className="mt-3 text-slate-700 leading-7">{t('privacy_sharing_desc_1')}</p>
-            <p className="mt-3 text-slate-700 leading-7">{t('privacy_sharing_desc_2')}</p>
-            <p className="mt-3 text-slate-700 leading-7">{t('privacy_sharing_policy_desc')}</p>
-          </section>
-
-          <section className="rounded-3xl border border-imei-cyan/10 bg-white/95 p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-imei-cyan">{t('privacy_updates_title')}</h2>
-            <p className="mt-3 text-slate-700 leading-7">{t('privacy_updates_desc_1')}</p>
-            <p className="mt-3 text-slate-700 leading-7">{t('privacy_updates_desc_2')}</p>
-          </section>
-
-          <section className="rounded-3xl border border-imei-cyan/10 bg-white/95 p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-imei-cyan">{t('privacy_deletion_title')}</h2>
-            <p className="mt-3 text-slate-700 leading-7">{t('privacy_deletion_desc')}</p>
-          </section>
-
-          <section className="rounded-3xl border border-imei-cyan/10 bg-white/95 p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-imei-cyan">{t('privacy_user_rights_title')}</h2>
-            <p className="mt-3 text-slate-700 leading-7">{t('privacy_user_rights_desc')}</p>
-          </section>
-
-          <section className="rounded-3xl border border-imei-cyan/10 bg-white/95 p-6 shadow-sm">
-            <h2 className="text-xl font-semibold text-imei-cyan">{t('privacy_contact')}</h2>
-            <p className="mt-3 text-slate-700 leading-7">{t('privacy_contact')}</p>
-          </section>
+          {privacySections.map((section) => (
+            <section key={section.title} className="rounded-3xl border border-imei-cyan/10 bg-white/95 p-6 shadow-sm">
+              <h2 className="text-xl font-semibold text-imei-cyan">{section.title}</h2>
+              {section.paragraphs.map((paragraph) => (
+                <p key={paragraph} className="mt-3 leading-7 text-slate-700">{paragraph}</p>
+              ))}
+            </section>
+          ))}
         </div>
       </div>
     </PageContainer>

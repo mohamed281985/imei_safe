@@ -34,6 +34,8 @@ const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const ReportPhone = lazy(() => import("./pages/ReportPhone"));
 const SearchIMEI = lazy(() => import("./pages/SearchIMEI"));
+const OriginalPhoneGuide = lazy(() => import("./pages/OriginalPhoneGuide"));
+const PhoneSafetyTips = lazy(() => import("./pages/PhoneSafetyTips"));
 const PhoneDetails = lazy(() => import("./pages/PhoneDetails"));
 const OwnershipTransfer = lazy(() => import('./pages/OwnershipTransfer.tsx'));
 const PayToUnlock = lazy(() => import('./pages/OwnershipTransfer.tsx'));
@@ -380,6 +382,8 @@ const AppCore = () => {
             <Route path="/dashboard" element={<AuthGuard><Dashboard /></AuthGuard>} />
             <Route path="/report" element={<AuthGuard><ReportPhone /></AuthGuard>} />
             <Route path="/search" element={<AuthGuard><SearchIMEI /></AuthGuard>} />
+            <Route path="/original-phone-guide" element={<AuthGuard><OriginalPhoneGuide /></AuthGuard>} />
+            <Route path="/phone-safety-tips" element={<AuthGuard><PhoneSafetyTips /></AuthGuard>} />
             <Route path="/phone/:id" element={<PhoneDetails />} />
             <Route path="/ownership-transfer" element={<OwnershipTransfer />} />
 

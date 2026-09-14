@@ -1289,14 +1289,54 @@ const getImeiHash = (imei) => {
       if (!ids || !Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids required' });
       if (!status && !confirmOnly) return res.status(400).json({ error: 'status or confirmOnly required' });
 
-      // Build update payload.
-      // Always update last_confirmed_at with any status change.
-      // If confirmOnly is true, only update last_confirmed_at without changing status.
+      const isOwnershipConfirmation = Boolean(confirmOnly || status === 'approved');
+      if (isOwnershipConfirmation) {
+        const { data: phones, error: phonesError } = await supabase
+          .from('registered_phones')
+          .select('id, user_id, status, registration_date, last_confirmed_at')
+          .in('id', ids)
+          .eq('user_id', userId);
+
+        if (phonesError) throw phonesError;
+
+        for (const phone of phones || []) {
+          const baseDate = phone.last_confirmed_at || phone.registration_date;
+          const dueAt = new Date(baseDate);
+          dueAt.setMonth(dueAt.getMonth() + 3);
+          const expiryAt = new Date(baseDate);
+          expiryAt.setMonth(expiryAt.getMonth() + 4);
+          const now = Date.now();
+
+          if (Number.isNaN(dueAt.getTime()) || now < dueAt.getTime()) {
+            return res.status(409).json({
+              success: false,
+              error: 'لا يمكن تأكيد الملكية قبل مرور ثلاثة أشهر من آخر تأكيد',
+              confirmationDueAt: Number.isNaN(dueAt.getTime()) ? null : dueAt.toISOString()
+            });
+          }
+
+          if (!Number.isNaN(expiryAt.getTime()) && now >= expiryAt.getTime()) {
+            await supabase
+              .from('registered_phones')
+              .update({ status: 'transferred' })
+              .eq('id', phone.id)
+              .eq('user_id', userId);
+            return res.status(409).json({
+              success: false,
+              error: 'انتهت مهلة تأكيد الملكية وأصبح الهاتف متاحًا للتسجيل من جديد',
+              ownershipExpired: true
+            });
+          }
+        }
+      }
+
+      // Build update payload. Only an ownership confirmation refreshes the
+      // confirmation clock; unrelated status changes must not extend it.
       const updatePayload = {};
-      updatePayload.last_confirmed_at = new Date().toISOString();
-      if (confirmOnly) {
-        // no status change
-      } else {
+      if (isOwnershipConfirmation) {
+        updatePayload.last_confirmed_at = new Date().toISOString();
+      }
+      if (!confirmOnly) {
         updatePayload.status = status;
       }
 

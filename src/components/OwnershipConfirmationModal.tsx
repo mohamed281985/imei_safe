@@ -57,18 +57,27 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
     setLocalPhones(filtered);
   }, [phones, removedPhoneIds]);
 
+  React.useEffect(() => {
+    if (!cameraStream || !videoRef.current) return;
+    videoRef.current.srcObject = cameraStream;
+    void videoRef.current.play().catch(() => undefined);
+  }, [cameraStream]);
+
 
   const startCamera = async (phoneId: string) => {
     try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error('camera_not_supported');
+      }
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
       setCameraStream(stream);
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
       setExpandedPhoneId(phoneId);
     } catch (err) {
       console.error('Failed to start camera:', err);
-      toast({ title: t('error'), description: 'فشل تشغيل الكاميرا', variant: 'destructive' });
+      const description = err instanceof DOMException && err.name === 'NotAllowedError'
+        ? 'اسمح للتطبيق باستخدام الكاميرا من إعدادات الهاتف ثم حاول مرة أخرى'
+        : 'فشل تشغيل الكاميرا';
+      toast({ title: t('error'), description, variant: 'destructive' });
     }
   };
 
@@ -430,7 +439,7 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
                         <Button
                           type="button"
                           onClick={() => startCamera(phone.id)}
-                          className="w-full bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2"
+                          className="!flex w-full items-center gap-2 !bg-blue-600 !text-white hover:!bg-blue-700"
                         >
                           <Camera className="w-4 h-4" />
                           تشغيل الكاميرا
@@ -494,7 +503,7 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
                     <Button
                       onClick={() => submitVerification(phone.id)}
                       disabled={!boxImage || isSubmitting}
-                      className="w-full bg-orange-600 hover:bg-orange-700 text-white"
+                      className="!w-full !bg-orange-600 !font-bold !text-white hover:!bg-orange-700 disabled:!bg-slate-300 disabled:!text-slate-700"
                     >
                       {isSubmitting ? 'جاري الإرسال...' : 'تأكيد الملكية'}
                     </Button>

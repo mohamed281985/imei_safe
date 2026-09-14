@@ -47,6 +47,7 @@ interface PhoneFormData {
   };
   city: string;
   country?: string;
+  country_code?: string;
   contact_methods: {
     phone?: string;
     whatsapp?: string;
@@ -236,6 +237,7 @@ const AddPhoneForm: React.FC = () => {
             store_name: data.store_name || '',
             city: data.address || '',
             country: country || '',
+            country_code: data.country_code || '',
             contact_methods: { ...prev.contact_methods, phone: data.phone || '' }
           }));
         } catch (err) {
@@ -266,6 +268,7 @@ const AddPhoneForm: React.FC = () => {
             store_name: data?.full_name || '',
             city: '',
             country: country || '',
+            country_code: data?.country_code || '',
             contact_methods: { ...prev.contact_methods, phone: data?.phone || '' }
           }));
         } catch (err) {
@@ -287,6 +290,7 @@ const AddPhoneForm: React.FC = () => {
     specs: {},
     city: '',
     country: '',
+    country_code: '',
     contact_methods: {},
     imei: '',
     store_name: ''
@@ -307,6 +311,7 @@ const AddPhoneForm: React.FC = () => {
             store_name: parsed.formData.store_name || '',
             city: parsed.formData.city || '',
             country: parsed.formData.country || '',
+            country_code: parsed.formData.country_code || '',
             contact_methods: { ...(parsed.formData.contact_methods || {}) },
           }
         : {};
@@ -419,6 +424,7 @@ const AddPhoneForm: React.FC = () => {
           specs: formData.specs,
           city: formData.city,
           countries: formData.country,
+          country_code: formData.country_code,
           contact_methods: formData.contact_methods,
           imei: formData.imei, // send raw IMEI to server for encryption/storage
           store_name: formData.store_name,
@@ -580,6 +586,7 @@ const AddPhoneForm: React.FC = () => {
           specs: formData.specs,
           city: formData.city,
           countries: formData.country,
+          country_code: formData.country_code,
           contact_methods: formData.contact_methods,
           imei: formData.imei,
           store_name: formData.store_name,
@@ -825,7 +832,7 @@ const AddPhoneForm: React.FC = () => {
             <p className="mt-1 text-sm text-blue-100">{t('add_phone_subtitle')}</p>
           </div>
 
-          <div className="mb-5 rounded-3xl border border-white/70 bg-white/70 p-4 backdrop-blur-xl shadow-[0_8px_24px rgba(15,23,42,0.07)]">
+          <div className="mb-5 rounded-[28px] border-2 border-blue-300 bg-gradient-to-br from-blue-100 via-white to-cyan-100 p-4 shadow-lg sm:p-5">
             <div className="mb-3 h-1.5 rounded-full bg-slate-200">
               <div
                 className="h-1.5 rounded-full bg-blue-600 transition-all duration-500"
@@ -884,6 +891,21 @@ const AddPhoneForm: React.FC = () => {
                     <Store className={`pointer-events-none absolute ${iconSidePos} top-3.5 h-4 w-4 text-orange-500`} />
                     <input name="store_name" value={formData.store_name} readOnly className={`${fieldClass} ${iconSidePad}`} placeholder={t('auto_filled')} />
                   </div>
+                </div>
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-sm font-bold text-slate-700">
+                    <Phone className="h-4 w-4 text-orange-500" />
+                    كود الدولة
+                  </label>
+                  <input
+                    name="country_code"
+                    value={formData.country_code || ''}
+                    onChange={handleInputChange}
+                    dir="ltr"
+                    className={fieldClass}
+                    placeholder="+20"
+                    inputMode="tel"
+                  />
                 </div>
                 <div>
                   {/* ⭐ تم تغيير font-semibold إلى font-bold */}

@@ -799,16 +799,16 @@ const BusinessTransfer: React.FC = () => {
 
         <div className="w-full max-w-2xl">
           <div className="rounded-[28px] border-2 border-blue-300 bg-gradient-to-br from-blue-100 via-white to-cyan-100 p-4 sm:p-6 shadow-lg">
-            <div className="flex items-center justify-center mb-6 pt-3 gap-4" style={{ background: 'linear-gradient(to top, rgb(5, 48, 96) 0%, rgb(10, 77, 140) 100%)', padding: '1rem', borderRadius: '1rem', marginTop: '1rem' }}>
+            <div className="flex items-center justify-center mb-6 pt-2 gap-3" style={{ background: 'linear-gradient(to top, rgb(5, 48, 96) 0%, rgb(10, 77, 140) 100%)', padding: '0.5rem', borderRadius: '1rem', marginTop: '1rem' }}>
               <button
                 onClick={() => navigate(-1)}
                 className="flex items-center justify-center p-2 rounded-full transition-all hover:scale-110"
-                style={{ background: '#ff8c00', width: '44px', height: '44px' }}
+                style={{ background: '#ff8c00', width: '38px', height: '38px' }}
               >
                 <ArrowLeft className="w-5 h-5 text-white" />
               </button>
               <h2 className="text-2xl font-bold flex-1 text-center" style={{ color: '#ffffff' }}>{t('transfer_ownership')}</h2>
-              <div style={{ width: '44px' }} />
+              <div style={{ width: '38px' }} />
             </div>
             {isLoading && <p className="text-center text-slate-700 my-4">{t('loading')}...</p>}
             {success ? (

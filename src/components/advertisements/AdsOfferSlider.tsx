@@ -203,7 +203,6 @@ const AdsOfferSlider = ({ containerClassName = '', onClose, isUpgradePrompt, sho
                     style={{ width: '100%', height: '150px', display: 'block' }}
                     loading="eager"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent p-0 m-0" />
                 </div>
               </SwiperSlide>
             ))}
@@ -277,7 +276,6 @@ const AdsOfferSlider = ({ containerClassName = '', onClose, isUpgradePrompt, sho
                   style={{ width: '100%', height: '120px', display: 'block' }}
                   loading="eager"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
               </div>
             </SwiperSlide>
           ))}
