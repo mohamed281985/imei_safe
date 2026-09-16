@@ -7,7 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import PageContainer from '../components/PageContainer';
 import Logo from '../components/Logo';
 import AppNavbar from '@/components/AppNavbar';
-import { Search, Plus, Smartphone, X, Crown, Eye, AlertTriangle, User, PlusCircle, MapPin, Users, Star, ShieldAlert, SearchCheck, ArrowRightLeft, ShieldCheck, BellRing, FileText, Lightbulb } from 'lucide-react';
+import { Search, Plus, Smartphone, X, Crown, Eye, AlertTriangle, User, PlusCircle, MapPin, Users, Star, ShieldAlert, SearchCheck, ArrowRightLeft, ShieldCheck, BellRing, FileText, Lightbulb, Loader2 } from 'lucide-react';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import 'swiper/swiper.css';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
@@ -247,6 +247,7 @@ const Dashboard: React.FC = () => {
   const [unclaimedPhones, setUnclaimedPhones] = useState<any[]>([]);
   const [showClaimModal, setShowClaimModal] = useState(false);
   const [deviceStatus, setDeviceStatus] = useState<'protected' | 'unprotected' | 'lost'>('unprotected');
+  const [isCheckingDeviceStatus, setIsCheckingDeviceStatus] = useState(true);
 
   const [isNavbarVisible, setIsNavbarVisible] = useState(true);
   const [showLocationRequest, setShowLocationRequest] = useState(false);
@@ -325,7 +326,10 @@ const Dashboard: React.FC = () => {
 
   // التأثير الخاص بالتحقق من ملكية الهواتف
   const checkPhoneOwnership = async () => {
-    if (!user) return;
+    if (!user) {
+      setIsCheckingDeviceStatus(false);
+      return;
+    }
 
     try {
       // استخدام axiosInstance لجلب الهواتف
@@ -382,6 +386,8 @@ const Dashboard: React.FC = () => {
 
     } catch (err) {
       console.error("Unexpected error in checkPhoneOwnership:", err);
+    } finally {
+      setIsCheckingDeviceStatus(false);
     }
   };
 
@@ -1053,37 +1059,50 @@ const Dashboard: React.FC = () => {
             </div>
             <div className="mt-3 grid grid-cols-2 gap-3">
               <div
-                className={`flex min-h-[56px] items-center gap-2 rounded-lg border p-2 text-right shadow-sm ${deviceStatus === 'lost'
-                  ? 'border-red-100 bg-red-50/80'
-                  : deviceStatus === 'unprotected'
-                    ? 'border-red-100 bg-red-50/60'
-                    : 'border-emerald-100 bg-emerald-50/70'
+                className={`flex min-h-[40px] items-center gap-1 rounded-lg border-2 p-1 text-right shadow-sm ${isCheckingDeviceStatus
+                  ? 'border-blue-300 bg-blue-50'
+                  : deviceStatus === 'lost'
+                    ? 'border-red-300 bg-red-100'
+                    : deviceStatus === 'unprotected'
+                      ? 'border-red-300 bg-red-100'
+                      : 'border-emerald-300 bg-emerald-100'
                   }`}
               >
-                <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${deviceStatus === 'protected' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+                <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${isCheckingDeviceStatus
+                  ? 'bg-blue-100 text-blue-700'
+                  : deviceStatus === 'protected'
+                    ? 'bg-emerald-200 text-emerald-800'
+                    : 'bg-red-200 text-red-800'
                   }`}>
-                  <ShieldCheck className="h-5 w-5" strokeWidth={2} />
+                  {isCheckingDeviceStatus ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2.5} />
+                  ) : (
+                    <ShieldCheck className="h-3.5 w-3.5" strokeWidth={2.2} />
+                  )}
                 </div>
                 <div className="min-w-0">
-                  <p className={`text-xs font-bold ${deviceStatus === 'protected' ? 'text-emerald-900' : 'text-red-900'}`}>
-                    {deviceStatus === 'lost' ? 'جهازك مفقود' : deviceStatus === 'unprotected' ? 'جهازك غير محمي' : 'جهازك محمي'}
+                  <p className={`text-sm leading-tight font-bold ${isCheckingDeviceStatus
+                    ? 'text-blue-900'
+                    : deviceStatus === 'protected' ? 'text-emerald-950' : 'text-red-950'
+                    }`}>
+                    {isCheckingDeviceStatus ? 'جاري الفحص' : deviceStatus === 'lost' ? 'جهازك مفقود' : deviceStatus === 'unprotected' ? 'جهازك غير محمي' : 'جهازك محمي'}
                   </p>
-                  <p className="mt-0.5 text-[10px] font-bold leading-4 text-slate-600">
-                    {deviceStatus === 'lost' ? 'يوجد بلاغ نشط' : deviceStatus === 'unprotected' ? 'سجّل هاتفك للحماية' : 'IMEI مسجل ومتابع'}
+                  <p className={`mt-0.5 text-xs font-bold leading-tight ${isCheckingDeviceStatus ? 'text-blue-700' : deviceStatus === 'protected' ? 'text-emerald-800' : 'text-red-800'}`}>
+                    {isCheckingDeviceStatus ? 'نتحقق من حالة هاتفك' : deviceStatus === 'lost' ? 'يوجد بلاغ نشط' : deviceStatus === 'unprotected' ? 'سجّل هاتفك للحماية' : 'IMEI مسجل ومتابع'}
                   </p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => navigate('/report', { state: { quick: true } })}
-                className="flex min-h-[56px] items-center gap-2 rounded-lg border border-red-100 bg-red-50/70 p-2 text-right shadow-sm transition-shadow hover:shadow-md"
+                className="flex min-h-[45px] items-center gap-1 rounded-lg border-2 border-red-700 bg-red-600 p-1 text-right shadow-sm transition-all hover:border-red-800 hover:bg-red-700 hover:shadow-md"
               >
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-700">
-                  <BellRing className="h-5 w-5" strokeWidth={2} />
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-red-700 text-white">
+                  <BellRing className="h-3.5 w-3.5" strokeWidth={2} />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs font-bold text-red-900">فقد هاتفك الآن؟</p>
-                  <p className="mt-0.5 text-[10px] font-bold leading-4 text-slate-600">أبلغ عنه في ثواني</p>
+                  <p className="text-sm leading-tight font-black text-white">فقد هاتفك الآن؟</p>
+                  <p className="mt-0.5 text-xs font-bold leading-tight text-white/90">أبلغ عنه في ثواني</p>
                 </div>
               </button>
             </div>

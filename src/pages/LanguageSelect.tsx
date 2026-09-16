@@ -90,14 +90,17 @@ const LanguageSelect: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 glass-bg">
-      <div className="max-w-2xl w-full bg-imei-darker/40 backdrop-blur-lg rounded-2xl p-8 shadow-2xl border border-imei-cyan/20">
+    <div
+      className="min-h-screen flex items-center justify-center p-4 bg-cover bg-center bg-no-repeat"
+      style={{ backgroundImage: "url('/login-background.jpeg')" }}
+    >
+      <div className="max-w-2xl w-full bg-white/70 backdrop-blur-xl rounded-2xl p-8 shadow-[0_16px_42px_rgba(0,0,0,0.32)] border border-white/70">
         <div className="flex flex-col items-center mb-8">
           <div className="w-16 h-16 bg-imei-cyan/10 rounded-full flex items-center justify-center mb-4">
             <Globe className="w-20 h-20 text-imei-cyan" />
           </div>
-          <h1 className="text-white text-3xl font-bold text-center mb-2">{t('select_language')}</h1>
-          <p className="text-white font-semibold text-center">Choose your preferred language</p>
+          <h1 className="text-black text-3xl font-bold text-center mb-2">{t('select_language')}</h1>
+          <p className="text-black font-semibold text-center">Choose your preferred language</p>
         </div>
          
         <div className="grid grid-cols-2 gap-4">
@@ -145,23 +148,26 @@ const LanguageSelect: React.FC = () => {
 
       {/* Security Warning Dialog */}
       <Dialog open={showWarning} onOpenChange={setShowWarning}>
-        <DialogContent className="bg-imei-darker border border-imei-cyan/30">
-          <DialogHeader>
-            <DialogTitle className="text-white flex items-center gap-2">
-              <AlertTriangle className="text-yellow-500" />
+        <DialogContent className="w-[calc(100%-2rem)] max-w-sm rounded-2xl border-2 border-orange-400/70 bg-gradient-to-br from-white via-orange-50 to-blue-50 p-5 text-slate-900 shadow-[0_20px_60px_rgba(0,0,0,0.3)] shadow-blue-900/15">
+          <DialogHeader className="text-right" dir="rtl">
+            <DialogTitle className="flex items-center justify-start gap-3 text-xl font-bold text-blue-900">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-orange-400/60 bg-orange-100">
+                <AlertTriangle className="h-5 w-5 text-orange-500" />
+              </span>
               {getWarningMessage(selectedLang).title}
             </DialogTitle>
-            <DialogDescription className="text-gray-400 mt-4 text-right" dir={selectedLang === 'ar' ? 'rtl' : 'ltr'}>
+            <div className="mt-4 h-px bg-gradient-to-l from-transparent via-orange-400/60 to-transparent" />
+            <DialogDescription className="mt-4 text-right text-sm leading-7 text-slate-700" dir={selectedLang === 'ar' ? 'rtl' : 'ltr'}>
               {getWarningMessage(selectedLang).message}
             </DialogDescription>
           </DialogHeader>
-          <div className="mt-4">
+          <div className="mt-2">
             <Button
               onClick={() => {
                 setShowWarning(false);
                 navigate('/welcome');
               }}
-              className="w-full bg-imei-cyan hover:bg-imei-cyan/90 text-white"
+              className="h-11 w-full rounded-xl bg-blue-600 font-bold text-white shadow-lg shadow-blue-900/25 transition-all hover:bg-blue-700 hover:shadow-blue-900/30"
             >
               {t('i_understand')}
             </Button>

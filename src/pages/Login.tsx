@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '../contexts/LanguageContext';
 import PageContainer from '../components/PageContainer';
 import BackButton from '../components/BackButton';
@@ -22,21 +22,20 @@ const Login: React.FC = () => {
     });
   }, []);
   return (
-    <PageContainer>
+    <PageContainer clearBackground edgeToEdge>
       <div
-        className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden rounded-3xl p-2"
+        className="relative z-0 flex min-h-[100dvh] w-full flex-col items-center justify-start overflow-x-hidden rounded-3xl px-3 pb-10 pt-[24vh] sm:px-4 sm:pb-16 sm:pt-[33vh]"
         style={{
           backgroundImage: "url('/login-background.jpeg')",
-          backgroundSize: '110% auto',
-          backgroundPosition: 'center top',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center center',
           backgroundRepeat: 'no-repeat',
         }}
       >
-        <div className="absolute inset-0 bg-white/10" />
-        <div className="relative z-10 flex w-full flex-col items-center justify-center">
-        <div className="w-[calc(100%-1rem)] max-w-lg mt-24">
-          <Card className="border-t-4 border-t-orange-500 border-x-2 border-x-orange-500 shadow-[0_12px_35px_rgba(0,0,0,0.35)] glass-bg" style={{background: 'rgba(255,255,255,0.18)'}}>
-            <CardHeader className="pb-2">
+        <div className="relative z-10 flex w-full flex-col items-center">
+        <div className="w-full max-w-lg">
+          <Card className="rounded-xl border-t-4 border-t-orange-500 border-b-4 border-b-orange-500 shadow-[0_12px_35px_rgba(0,0,0,0.35)] glass-bg backdrop-blur-[28px] backdrop-saturate-150" style={{background: 'rgba(255,255,255,0.65)'}}>
+            <CardHeader className="p-4 pb-1">
             <div className="relative flex items-center justify-center">
               <BackButton to="/welcome" className="!right-0 !left-auto absolute" />
               <CardTitle className="w-full text-2xl md:text-3xl font-bold text-orange-600 text-center tracking-tight">
@@ -44,14 +43,9 @@ const Login: React.FC = () => {
               </CardTitle>
             </div>
           </CardHeader>
-            <CardContent className="space-y-4 p-2">
+            <CardContent className="space-y-3 p-3 sm:p-4">
               <LoginForm hidePhoneField biometricButton={<BiometricButton />} />
               <AuthLinks />
-              <div className="text-center text-base md:text-lg font-bold mt-2">
-                <Link to="/forgot-password" className="text-orange-500 hover:underline">
-                  {t('forgot_password')}
-                </Link>
-              </div>
             </CardContent>
           </Card>
         </div>

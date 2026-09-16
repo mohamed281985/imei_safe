@@ -95,6 +95,7 @@ export default {
   "success_title": "Success",
   "note_title": "Note",
   "forgot_password": "Forgot Password?",
+  "remember_me": "Remember me",
   "signin_google": "Sign in with Google",
   "dont_have_account": "Don't have an account?",
   "already_have_account": "Already have an account?",

@@ -98,6 +98,7 @@ export default {
   "success_title": "सफलता",
   "note_title": "ध्यान दें",
   "forgot_password": "पासवर्ड भूल गए?",
+  "remember_me": "मुझे याद रखें",
   "signin_google": "Google से साइन इन करें",
   "dont_have_account": "क्या आपका कोई खाता नहीं है?",
   "already_have_account": "क्या आपका पहले से ही एक खाता है?",

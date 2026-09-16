@@ -100,6 +100,7 @@ export default {
   "success_title": "نجاح",
   "note_title": "ملاحظة",
   "forgot_password": "نسيت كلمة المرور؟",
+  "remember_me": "تذكرني",
   "signin_google": "تسجيل الدخول بواسطة جوجل",
   "dont_have_account": "ليس لديك حساب؟",
   "already_have_account": "لديك حساب بالفعل؟",

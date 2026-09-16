@@ -25,12 +25,12 @@ const Welcome: React.FC = () => {
   };
 
   return (
-    <PageContainer>   
-      <div className="my-8 pb-5">
-      <div className="w-full flex justify-between items-center mb-6 mt-4">
+    <PageContainer clearBackground>
+      <div className="min-h-screen bg-transparent px-3 pb-8 pt-4 sm:px-6">
+      <div className="mx-auto flex w-full max-w-lg items-center justify-between mb-5">
         <button
           onClick={handleBackClick}
-          className="bg-imei-darker p-2 rounded-full hover:bg-imei-dark transition-colors"
+          className="flex h-10 w-10 items-center justify-center rounded-full border border-imei-cyan/30 bg-white text-imei-cyan shadow-sm hover:bg-imei-cyan/10 transition-colors"
         >
           <ArrowLeft size={20} className="text-imei-cyan" />
         </button>
@@ -42,19 +42,19 @@ const Welcome: React.FC = () => {
       <PageAdvertisement pageName="welcome" />
 
       {/* تعريف احترافي للتطبيق */}
-      <div className="mt-8 bg-imei-darker/50 bg-opacity-80 rounded-xl p-6 border border-imei-cyan border-opacity-30 shadow-lg text-white">
-        <h1 className="text-2xl md:text-3xl font-bold text-imei-cyan mb-4 flex items-center gap-2">
-          <span role="img" aria-label="IMEI">🔷</span> {t('welcome_title')}
+      <div className="mx-auto mt-5 w-full max-w-lg rounded-[24px] border border-[#8bcbd8] bg-white/75 p-5 text-slate-900 shadow-[0_10px_30px_rgba(24,125,156,0.18)] backdrop-blur-sm sm:p-6">
+        <h1 className="mb-4 text-2xl font-extrabold leading-tight text-[#159bb0] md:text-3xl">
+          <span className="text-[#ff7700]">◆</span> {t('welcome_title')}
         </h1>
-        <p className="mb-6 text-base md:text-lg leading-relaxed">
+        <p className="mb-6 text-base leading-7 text-slate-800 md:text-lg">
           {t('welcome_description')}
         </p>
         <div className="space-y-4">
           <div>
-            <h2 className="text-lg font-semibold text-imei-cyan mb-2 flex items-center gap-2">
-              <span role="img" aria-label="features">🔹</span> {t('welcome_what_is_imei')}
+            <h2 className="mb-2 flex items-center gap-2 text-lg font-bold text-[#159bb0]">
+              <span className="text-[#ff7700]">•</span> {t('welcome_what_is_imei')}
             </h2>
-            <ul className="list-disc list-inside space-y-1 text-base">
+            <ul className="list-inside list-disc space-y-2 text-base leading-6 text-slate-900">
               <li><span role="img" aria-label="search">🔍</span> {t('welcome_feature_1')}</li>
               <li><span role="img" aria-label="report">📤</span> {t('welcome_feature_2')}</li>
               <li><span role="img" aria-label="register">🧾</span> {t('welcome_feature_3')}</li>
@@ -65,10 +65,10 @@ const Welcome: React.FC = () => {
             </ul>
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-imei-cyan mb-2 flex items-center gap-2">
-              <span role="img" aria-label="why">🔸</span> {t('welcome_why_imei')}
+            <h2 className="mb-2 flex items-center gap-2 text-lg font-bold text-[#159bb0]">
+              <span className="text-[#ff7700]">•</span> {t('welcome_why_imei')}
             </h2>
-            <p className="text-base">
+            <p className="text-base leading-6 text-slate-900">
               {t('welcome_why_imei_desc')}
             </p>
           </div>
@@ -76,10 +76,10 @@ const Welcome: React.FC = () => {
       </div>
       {/* نهاية التعريف الاحترافي */}
 
-      <div className="mt-8 space-y-4">
+      <div className="mx-auto mt-6 w-full max-w-lg space-y-4">
         <button
           onClick={handleLoginClick}
-          className="w-full bg-orange-500 hover:bg-orange-600 text-white py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all duration-300 shadow-lg shadow-black/30 hover:shadow-xl hover:shadow-black/50"
+          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-[#ff7700] px-4 py-4 text-lg font-bold text-white shadow-[0_8px_18px_rgba(255,119,0,0.35)] transition-all duration-300 hover:bg-[#e86a00]"
         >
           <LogIn size={18} />
           {t('login')}

@@ -1139,6 +1139,22 @@ const ReportPhone: React.FC = () => {
           </h1>
         </div>
 
+        {isQuickMode && (
+          <div className="mx-1 mb-5 rounded-2xl border-2 border-orange-300 bg-gradient-to-r from-orange-50 via-white to-blue-50 p-4 shadow-md" dir="rtl">
+            <div className="flex items-start gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600">
+                <AlertTriangle className="h-5 w-5" strokeWidth={2.3} />
+              </div>
+              <div className="text-right">
+                <h2 className="text-base font-extrabold text-blue-950">تنبيه مهم بشأن البلاغ السريع</h2>
+                <p className="mt-1 text-sm font-semibold leading-6 text-slate-700">
+                  هذا بلاغ فقد سريع ومؤقت مدته 48 ساعة فقط لحين استكمال محضر الشرطة. يرجى استكمال محضر الشرطة خلال هذه المدة لتحويل البلاغ إلى بلاغ فقد دائم واستمرار حماية الهاتف.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-6 px-1 pb-10 pt-0">
           <div className="max-w-5xl mx-auto space-y-6">
             <div className="mb-8 px-2 sticky top-0 z-0 bg-white/95 backdrop-blur-sm py-2 rounded-xl">

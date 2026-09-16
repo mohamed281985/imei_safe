@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { Eye, EyeOff, Mail, Lock, Phone, Fingerprint } from 'lucide-react'; // Added Fingerprint
@@ -110,7 +110,7 @@ export function LoginForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-3">
       {loginError && (
         <Alert variant="destructive" className="mb-4">
           <AlertDescription>{loginError}</AlertDescription>
@@ -171,13 +171,14 @@ export function LoginForm({
             type={showPassword ? 'text' : 'password'}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="input-field pl-10 pr-10 w-full"
+            className="input-field w-full pl-12 pr-16"
             placeholder="••••••••"
             required
           />
           <button
             type="button"
-            className="absolute inset-y-0 right-0 pr-3 flex items-center"
+            aria-label={showPassword ? 'Hide password' : 'Show password'}
+            className="absolute inset-y-0 right-3 flex h-full w-10 items-center justify-center rounded-md"
             onClick={() => setShowPassword(!showPassword)}
           >
             {showPassword ? (
@@ -195,8 +196,8 @@ export function LoginForm({
         </div>
       )}
       
-      <div className="flex items-center justify-between">
-        <div className="flex items-center">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 pt-1">
+        <div className="flex items-center gap-2">
           <input
             id="remember-me"
             name="remember-me"
@@ -205,10 +206,13 @@ export function LoginForm({
             onChange={(e) => setRememberMe(e.target.checked)}
             className="h-4 w-4 rounded border-imei-cyan focus:ring-imei-cyan"
           />
-          <label htmlFor="remember-me" className="mr-2 block text-sm text-black">
+          <label htmlFor="remember-me" className="block text-sm text-black">
             {t('remember_me')}
           </label>
         </div>
+        <Link to="/forgot-password" className="text-sm font-medium text-orange-600 hover:text-orange-700 hover:underline">
+          {t('forgot_password')}
+        </Link>
       </div>
 
       <div className="flex items-center gap-2">

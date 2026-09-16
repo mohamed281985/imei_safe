@@ -106,6 +106,7 @@ export default {
   "success_title": "Succès",
   "note_title": "Remarque",
   "forgot_password": "Mot de passe oublié ?",
+  "remember_me": "Se souvenir de moi",
   "signin_google": "Se connecter avec Google",
   "dont_have_account": "Vous n'avez pas de compte ?",
   "already_have_account": "Vous avez déjà un compte ?",
