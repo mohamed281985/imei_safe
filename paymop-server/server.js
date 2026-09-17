@@ -6748,6 +6748,14 @@ app.post('/api/create-accessory', verifyJwtToken, async (req, res) => {
     // Ensure seller_id is set to token user
     accessoryData.seller_id = userId;
 
+    // Use the authoritative package role from the users table instead of a stale client value.
+    const { data: ownerData, error: ownerError } = await supabase
+      .from('users')
+      .select('role')
+      .eq('id', userId)
+      .maybeSingle();
+    if (!ownerError && ownerData?.role) accessoryData.role = ownerData.role;
+
     // Insert
     let inserted;
     try {

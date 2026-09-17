@@ -17,6 +17,7 @@ interface Accessory {
     store_name?: string;
     accessory_images: { image_path: string; main_image: boolean }[];
     role?: string;
+    seller_id?: string;
     latitude?: number;
     longitude?: number;
     distance?: number;
@@ -122,7 +123,25 @@ const AccessoriesForSalePage: React.FC = () => {
                 console.debug('Error fetching accessories:', error);
                 setAccessories([]);
             } else {
-                setAccessories(data || []);
+                const fetchedAccessories = data || [];
+                const sellerIds = [...new Set(fetchedAccessories.map((accessory: Accessory) => accessory.seller_id).filter(Boolean))];
+                let rolesBySeller: Record<string, string> = {};
+
+                if (sellerIds.length > 0) {
+                    const { data: sellers } = await supabase
+                        .from('users')
+                        .select('id, role')
+                        .in('id', sellerIds);
+                    rolesBySeller = (sellers || []).reduce((roles: Record<string, string>, seller: { id: string; role?: string }) => {
+                        if (seller.role) roles[seller.id] = seller.role;
+                        return roles;
+                    }, {});
+                }
+
+                setAccessories(fetchedAccessories.map((accessory: Accessory) => ({
+                    ...accessory,
+                    role: accessory.role || (accessory.seller_id ? rolesBySeller[accessory.seller_id] : undefined),
+                })));
             }
             setLoading(false);
         };
@@ -180,24 +199,24 @@ const AccessoriesForSalePage: React.FC = () => {
         });
 
         return filtered.sort((a, b) => {
-            const isAPromoted = a.type === 'promotions';
-            const isBPromoted = b.type === 'promotions';
-
-            // 1. الإعلانات المميزة أولاً
-            if (isAPromoted && !isBPromoted) return -1;
-            if (isBPromoted && !isAPromoted) return 1;
-
-            // 2. الترتيب حسب أولوية الدور (الأولوية الأعلى أولاً)
-            const rolePriority: { [key: string]: number } = {
-                'gold_business': 1,
-                'silver_business': 2,
-                'free_business': 3,
+            // 1. ترتيب الباقة: Gold ثم Silver ثم باقي الإعلانات
+            const getRolePriority = (role: string | undefined) => {
+                const normalizedRole = String(role || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+                if (normalizedRole.startsWith('gold')) return 1;
+                if (normalizedRole.startsWith('silver')) return 2;
+                return 3;
             };
-            const priorityA = rolePriority[a.role as keyof typeof rolePriority] || 99;
-            const priorityB = rolePriority[b.role as keyof typeof rolePriority] || 99;
+            const priorityA = getRolePriority(a.role);
+            const priorityB = getRolePriority(b.role);
             if (priorityA !== priorityB) {
                 return priorityA - priorityB;
             }
+
+            // 2. داخل نفس الباقة، الإعلانات المميزة أولاً
+            const isAPromoted = a.type === 'promotions';
+            const isBPromoted = b.type === 'promotions';
+            if (isAPromoted && !isBPromoted) return -1;
+            if (isBPromoted && !isAPromoted) return 1;
 
             // 3. بعد ذلك، تطبيق الترتيب المطلوب من قبل المستخدم
             if (sortBy === 'price-asc') return a.price - b.price;
@@ -216,7 +235,9 @@ const AccessoriesForSalePage: React.FC = () => {
         let badge = null;
 
         // الجولد
-        if (role === 'gold_business') {
+        const normalizedRole = String(role || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+
+        if (normalizedRole.startsWith('gold')) {
             borderColor = 'border-yellow-400 shadow-yellow-100';
             if (type === 'promotions') {
                 topBar = <div className="h-1.5 bg-gradient-to-r from-yellow-400 to-amber-500"></div>;
@@ -228,7 +249,7 @@ const AccessoriesForSalePage: React.FC = () => {
             }
         } 
         // الفضي (التعديل المطلوب)
-        else if (role === 'silver_business') {
+        else if (normalizedRole.startsWith('silver')) {
             borderColor = 'border-gray-400 shadow-gray-200';
             if (type === 'promotions') {
                 topBar = <div className="h-1.5 bg-gradient-to-r from-gray-300 to-gray-500"></div>;

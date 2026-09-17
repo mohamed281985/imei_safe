@@ -646,8 +646,9 @@ const Dashboard: React.FC = () => {
 
           // ⭐ دالة مساعدة لتحديد أولوية العضوية
           const getMembershipPriority = (role: string | undefined): number => {
-            if (role === 'gold_business') return 1; // الجولد له أعلى أولوية
-            if (role === 'silver_business') return 2; // الفضي يأتي ثانياً
+            const normalizedRole = String(role || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+            if (normalizedRole.startsWith('gold')) return 1; // الجولد له أعلى أولوية
+            if (normalizedRole.startsWith('silver')) return 2; // الفضي يأتي ثانياً
             return 3; // الباقي (المجاني) يأتي أخيراً
           };
 
@@ -696,7 +697,25 @@ const Dashboard: React.FC = () => {
           console.error('خطأ في جلب بيانات الإكسسوارات:', accessoriesError?.message || accessoriesError);
           setAccessoryListings([]);
         } else {
-          let sortedAccessories = accessories || [];
+          const fetchedAccessories = accessories || [];
+          const sellerIds = [...new Set(fetchedAccessories.map((accessory: any) => accessory.seller_id).filter(Boolean))];
+          let rolesBySeller: Record<string, string> = {};
+
+          if (sellerIds.length > 0) {
+            const { data: sellers } = await supabase
+              .from('users')
+              .select('id, role')
+              .in('id', sellerIds);
+            rolesBySeller = (sellers || []).reduce((roles: Record<string, string>, seller: { id: string; role?: string }) => {
+              if (seller.role) roles[seller.id] = seller.role;
+              return roles;
+            }, {});
+          }
+
+          let sortedAccessories = fetchedAccessories.map((accessory: any) => ({
+            ...accessory,
+            role: accessory.role || (accessory.seller_id ? rolesBySeller[accessory.seller_id] : undefined),
+          }));
           if (coords?.latitude && coords?.longitude) {
             sortedAccessories.forEach(acc => {
               if (acc.latitude && acc.longitude) {
@@ -709,8 +728,9 @@ const Dashboard: React.FC = () => {
 
           // ⭐ دالة مساعدة لتحديد أولوية العضوية (نفسها المستخدمة للهواتف)
           const getMembershipPriority = (role: string | undefined): number => {
-            if (role === 'gold_business') return 1;
-            if (role === 'silver_business') return 2;
+            const normalizedRole = String(role || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+            if (normalizedRole.startsWith('gold')) return 1;
+            if (normalizedRole.startsWith('silver')) return 2;
             return 3;
           };
 
@@ -945,7 +965,9 @@ const Dashboard: React.FC = () => {
     const isPromotion = type && ['promotions', 'promotion', 'special', 'featured'].includes(type.toLowerCase());
 
     // الجولد
-    if (role === 'gold_business') {
+    const normalizedRole = String(role || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+
+    if (normalizedRole.startsWith('gold')) {
       borderColor = 'border-yellow-400 shadow-yellow-100';
       if (isPromotion) {
         topBar = <div className="h-1.5 bg-gradient-to-r from-yellow-400 to-amber-500"></div>;
@@ -957,7 +979,7 @@ const Dashboard: React.FC = () => {
       }
     }
     // الفضي
-    else if (role === 'silver_business') {
+    else if (normalizedRole.startsWith('silver')) {
       borderColor = 'border-gray-400 shadow-gray-200';
       if (isPromotion) {
         topBar = <div className="h-1.5 bg-gradient-to-r from-gray-300 to-gray-500"></div>;
@@ -1389,7 +1411,7 @@ const Dashboard: React.FC = () => {
                         onClick={() => navigate(`/product/${acc.id}`)}
                         className="cursor-pointer"
                       >
-                        <div className={`relative z-10 bg-white rounded-2xl overflow-hidden shadow-[0_6px_20px_rgba(15,23,42,0.3)] hover:shadow-[0_12px_30px_rgba(15,23,42,0.36)] transition-all duration-300 group flex flex-col h-[240px] ring-2 ring-slate-300/70 border-2 border-slate-200 ${style.borderColor} ${acc.type === 'promotions' ? 'shadow-xl' : ''}`}>
+                        <div className={`relative z-10 bg-white rounded-2xl overflow-hidden shadow-[0_6px_20px_rgba(15,23,42,0.3)] hover:shadow-[0_12px_30px_rgba(15,23,42,0.36)] transition-all duration-300 group flex flex-col h-[240px] ring-2 ring-slate-300/70 border-2 ${style.borderColor} ${acc.type === 'promotions' ? 'shadow-xl' : ''}`}>
 
                           {/* ⭐ FIX 1: Render topBar immediately inside the main card container */}
                           {style.topBar}

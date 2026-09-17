@@ -209,31 +209,26 @@ const PhonesForSale: React.FC = () => {
 
     // الترتيب
     return filtered.sort((a, b) => {
-      const isAPromoted = a.type === 'promotions';
-      const isBPromoted = b.type === 'promotions';
-
-      // 1. الإعلانات المميزة أولاً
-      if (isAPromoted && !isBPromoted) return -1;
-      if (isBPromoted && !isAPromoted) return 1;
-
-      // 2. الترتيب حسب أولوية الدور (الأولوية الأعلى أولاً)
-      const rolePriority: { [key: string]: number } = {
-        'gold_business': 1,
-        'silver_business': 2,
-        'free_business': 3,
+      // 1. ترتيب الباقة: Gold ثم Silver ثم باقي الإعلانات
+      const getRolePriority = (role: string | undefined) => {
+        const normalizedRole = String(role || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+        if (normalizedRole.startsWith('gold')) return 1;
+        if (normalizedRole.startsWith('silver')) return 2;
+        return 3;
       };
-      
-      const hasRoleA = !!a.role && a.role.trim() !== '';
-      const hasRoleB = !!b.role && b.role.trim() !== '';
-      if (!hasRoleA && hasRoleB) return 1;
-      if (hasRoleA && !hasRoleB) return -1;
-      
-      const priorityA = rolePriority[a.role as keyof typeof rolePriority] || 99;
-      const priorityB = rolePriority[b.role as keyof typeof rolePriority] || 99;
+
+      const priorityA = getRolePriority(a.role);
+      const priorityB = getRolePriority(b.role);
       if (priorityA !== priorityB) {
         return priorityA - priorityB;
       }
       
+      // 2. داخل نفس الباقة، الإعلانات المميزة أولاً
+      const isAPromoted = a.type === 'promotions';
+      const isBPromoted = b.type === 'promotions';
+      if (isAPromoted && !isBPromoted) return -1;
+      if (isBPromoted && !isAPromoted) return 1;
+
       // 3. بعد ذلك، تطبيق الترتيب المطلوب من قبل المستخدم
       if (sortBy === 'price-asc') return a.price - b.price;
       if (sortBy === 'price-desc') return b.price - a.price;
@@ -258,7 +253,9 @@ const PhonesForSale: React.FC = () => {
     let badge = null;
 
     // الجولد
-    if (role === 'gold_business') {
+    const normalizedRole = String(role || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+
+    if (normalizedRole.startsWith('gold')) {
       borderColor = 'border-yellow-400 shadow-yellow-100';
       if (type === 'promotions') {
         topBar = <div className="h-1.5 bg-gradient-to-r from-yellow-400 to-amber-500"></div>;
@@ -270,7 +267,7 @@ const PhonesForSale: React.FC = () => {
       }
     } 
     // الفضي (التعديل المطلوب)
-    else if (role === 'silver_business') {
+    else if (normalizedRole.startsWith('silver')) {
       borderColor = 'border-gray-400 shadow-gray-200';
       if (type === 'promotions') {
         topBar = <div className="h-1.5 bg-gradient-to-r from-gray-300 to-gray-500"></div>;

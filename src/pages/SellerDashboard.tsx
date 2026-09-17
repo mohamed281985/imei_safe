@@ -355,12 +355,12 @@ console.log("phonesData", JSON.stringify(phonesData, null, 2));
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {products.map((product) => (
-                <tr key={product.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center">
-                      <div className="h-10 w-10 flex-shrink-0">
+                <tr key={product.id} className="transition-colors duration-200 hover:bg-slate-50/80">
+                  <td className="px-4 py-4 sm:px-5">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="h-14 w-14 flex-shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100 shadow-sm">
                         <img
-                          className="h-10 w-10 rounded-lg object-cover border border-red-500"
+                          className="h-full w-full object-cover"
                           src={product.images?.[0]?.image_path}
                           alt={product.title}
                           onLoad={() => console.log("Loaded", product.title)}
@@ -371,41 +371,48 @@ console.log("phonesData", JSON.stringify(phonesData, null, 2));
                           }}
                         />
                       </div>
-                      <div className="mr-4">
-                        <div className="text-sm font-medium text-gray-900">{product.title}</div>
+                      <div className="min-w-0 flex-1">
+                        <div className="line-clamp-2 text-sm font-semibold leading-6 text-slate-800 sm:text-[15px]">
+                          {product.title}
+                        </div>
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-md font-bold text-gray-900">{(product.price || 0).toLocaleString()} {userCurrencySymbol}</div>
+                  <td className="px-4 py-4 text-right align-middle sm:px-5">
+                    <div className="text-base font-extrabold text-slate-900 sm:text-lg">
+                      {(product.price || 0).toLocaleString()} {userCurrencySymbol}
+                    </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(product.status)}`}>
+                  <td className="px-4 py-4 text-right align-middle sm:px-5">
+                    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold leading-5 tracking-wide ${getStatusColor(product.status)}`}>
                       {getStatusText(product.status)}
                     </span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td className="px-4 py-4 text-right align-middle text-sm text-slate-500 sm:px-5">
                     {new Date(product.created_at).toLocaleDateString(i18n.language === 'ar' ? 'ar-EG' : 'en-US')}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    <div className="flex items-center justify-end space-x-3 gap-4">
+                  <td className="px-4 py-4 text-right align-middle sm:px-5">
+                    <div className="flex items-center justify-end gap-3">
                       <Link
-                        to={`/product/${product.id}`} // الرابط صحيح بالفعل
-                        className="text-blue-600 hover:text-blue-900"
+                        to={`/product/${product.id}`}
+                        className="flex h-9 w-9 items-center justify-center rounded-full border border-blue-100 bg-blue-50 text-blue-600 transition hover:border-blue-200 hover:bg-blue-100 hover:text-blue-800"
+                        aria-label={t('view') || 'عرض'}
                       >
-                        <Eye className="h-5 w-5" />
+                        <Eye className="h-4 w-4" />
                       </Link>
                       <Link
                         to={product.type === 'phone' ? `/edit-phone/${product.id}` : `/edit-accessory/${product.id}`}
-                        className="text-indigo-600 hover:text-indigo-900"
+                        className="flex h-9 w-9 items-center justify-center rounded-full border border-indigo-100 bg-indigo-50 text-indigo-600 transition hover:border-indigo-200 hover:bg-indigo-100 hover:text-indigo-800"
+                        aria-label={t('edit') || 'تعديل'}
                       >
-                        <Edit className="h-5 w-5" />
+                        <Edit className="h-4 w-4" />
                       </Link>
                       <button
                         onClick={() => deleteProduct(product.id, product.type)}
-                        className="text-red-600 hover:text-red-900"
+                        className="flex h-9 w-9 items-center justify-center rounded-full border border-red-100 bg-red-50 text-red-600 transition hover:border-red-200 hover:bg-red-100 hover:text-red-700"
+                        aria-label={t('delete') || 'حذف'}
                       >
-                        <Trash2 className="h-5 w-5" />
+                        <Trash2 className="h-4 w-4" />
                       </button>
                     </div>
                   </td>

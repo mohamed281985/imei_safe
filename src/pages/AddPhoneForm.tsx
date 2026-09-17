@@ -88,6 +88,7 @@ const AddPhoneForm: React.FC = () => {
   });
   const [imeiStatus, setImeiStatus] = useState<'' | 'verified' | 'reported' | 'not_registered' | 'already_advertised'>('');
   const [existingAdId, setExistingAdId] = useState<string | null>(null);
+  const [countryAutoFilled, setCountryAutoFilled] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const DRAFT_KEY = 'add-phone-form-draft-v2';
 
@@ -232,13 +233,18 @@ const AddPhoneForm: React.FC = () => {
             }
           }
 
+          const safeCity = (data?.address || '').toString().trim();
+          const safeCountry = (country || '').toString().trim();
+          const safeCountryCode = (data?.country_code || '').toString().trim();
+
+          setCountryAutoFilled(Boolean(safeCountry));
           setFormData(prev => ({
             ...prev,
-            store_name: data.store_name || '',
-            city: data.address || '',
-            country: country || '',
-            country_code: data.country_code || '',
-            contact_methods: { ...prev.contact_methods, phone: data.phone || '' }
+            store_name: data?.store_name || '',
+            city: safeCity,
+            country: safeCountry,
+            country_code: safeCountryCode,
+            contact_methods: { ...prev.contact_methods, phone: data?.phone || '' }
           }));
         } catch (err) {
           console.error('Error fetching business data:', err);
@@ -263,12 +269,16 @@ const AddPhoneForm: React.FC = () => {
             }
           }
 
+          const safeCountry = (country || '').toString().trim();
+          const safeCountryCode = (data?.country_code || '').toString().trim();
+
+          setCountryAutoFilled(Boolean(safeCountry));
           setFormData(prev => ({
             ...prev,
             store_name: data?.full_name || '',
             city: '',
-            country: country || '',
-            country_code: data?.country_code || '',
+            country: safeCountry,
+            country_code: safeCountryCode,
             contact_methods: { ...prev.contact_methods, phone: data?.phone || '' }
           }));
         } catch (err) {
@@ -733,12 +743,14 @@ const AddPhoneForm: React.FC = () => {
           return;
         }
 
+        const registeredToAnotherUser = info.isRegistered === true && info.isOwner === false;
+
         if (info.hasActiveReport === true) {
           setImeiStatus('reported');
           setError(t('reported_phone_cannot_sell_detail'));
-        } else if (info.isRegistered === false) {
+        } else if (info.isRegistered === false || registeredToAnotherUser) {
           setImeiStatus('reported');
-          setError(t('reported_phone_cannot_sell_detail'));
+          setError(t('phone_not_registered_to_you'));
         } else {
           const ownerVisible = info.isOwner === true || info.masked === false;
           if (ownerVisible) {
@@ -895,15 +907,16 @@ const AddPhoneForm: React.FC = () => {
                 <div>
                   <label className="mb-1 flex items-center gap-1 text-sm font-bold text-slate-700">
                     <Phone className="h-4 w-4 text-orange-500" />
-                    كود الدولة
+                    {t('country_code')}
                   </label>
                   <input
                     name="country_code"
                     value={formData.country_code || ''}
                     onChange={handleInputChange}
                     dir="ltr"
+                    readOnly={Boolean(formData.country_code)}
                     className={fieldClass}
-                    placeholder="+20"
+                    placeholder={formData.country_code ? '' : '+20'}
                     inputMode="tel"
                   />
                 </div>
@@ -922,7 +935,7 @@ const AddPhoneForm: React.FC = () => {
                   {/* ⭐ تم تغيير font-semibold إلى font-bold */}
                   <label className="mb-1 flex items-center gap-1 text-sm font-bold text-slate-700">
                     <MapPin className="h-4 w-4 text-orange-500" />
-                    {t('city')}
+                    {t('region')}
                   </label>
                   <div className="relative">
                     <MapPin className={`pointer-events-none absolute ${iconSidePos} top-3.5 h-4 w-4 text-orange-500`} />
@@ -931,7 +944,7 @@ const AddPhoneForm: React.FC = () => {
                       value={formData.city}
                       onChange={(e) => setFormData(prev => ({ ...prev, city: e.target.value }))}
                       className={`${fieldClass} ${iconSidePad}`}
-                      placeholder={t('auto_filled')}
+                      placeholder=""
                     />
                   </div>
                 </div>
@@ -943,7 +956,14 @@ const AddPhoneForm: React.FC = () => {
                   </label>
                   <div className="relative">
                     <MapPin className={`pointer-events-none absolute ${iconSidePos} top-3.5 h-4 w-4 text-orange-500`} />
-                    <input name="country" value={formData.country || ''} readOnly className={`${fieldClass} ${iconSidePad}`} placeholder={t('auto_filled')} />
+                    <input
+                      name="country"
+                      value={formData.country || ''}
+                      onChange={handleInputChange}
+                      readOnly={countryAutoFilled}
+                      className={`${fieldClass} ${iconSidePad}`}
+                      placeholder=""
+                    />
                   </div>
                 </div>
                 <div className="sm:col-span-2">
@@ -1029,9 +1049,18 @@ const AddPhoneForm: React.FC = () => {
                       </div>
                     )}
                   </div>
-                  {imeiStatus === 'verified' && <p className="mt-1 text-xs text-orange-600">{t('verified_phone_safe_to_sell')}</p>}
-                  {imeiStatus === 'reported' && <p className="mt-1 text-xs text-red-600">{t('reported_phone_cannot_sell')}</p>}
-                  {imeiStatus === 'already_advertised' && <p className="mt-1 text-xs text-red-600">{t('phone_already_advertised_detail')}</p>}
+                  {imeiStatus === 'verified' && (
+                    <div className="mt-2 flex items-start gap-2 rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 text-xs text-orange-700">
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                      <span className="leading-5">{t('verified_phone_safe_to_sell')}</span>
+                    </div>
+                  )}
+                  {imeiStatus === 'already_advertised' && (
+                    <div className="mt-2 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                      <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
+                      <span className="leading-5">{t('phone_already_advertised_detail')}</span>
+                    </div>
+                  )}
                 </div>
                 <div>
                   {/* ⭐ تم تغيير font-semibold إلى font-bold */}

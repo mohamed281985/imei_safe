@@ -82,6 +82,7 @@ const AddAccessoriesForm: React.FC = () => {
     userDecisionTimeout: 5000,
   });
   const [currentStep, setCurrentStep] = useState(0);
+  const [countryAutoFilled, setCountryAutoFilled] = useState(false);
   const DRAFT_KEY = 'add-accessory-form-draft-v2';
 
   // ⭐ جلب دور المستخدم من قاعدة البيانات عند تحميل الصفحة
@@ -331,12 +332,17 @@ const AddAccessoriesForm: React.FC = () => {
             }
           }
 
+          const safeCity = (data?.address || '').toString().trim();
+          const safeCountry = (country || '').toString().trim();
+          const safeCountryCode = (data?.country_code || '').toString().trim();
+
+          setCountryAutoFilled(Boolean(safeCountry));
           setFormData(prev => ({
             ...prev,
             store_name: data?.store_name || '',
-            city: data?.address || '',
-            country: country || '',
-            country_code: data?.country_code || '',
+            city: safeCity,
+            country: safeCountry,
+            country_code: safeCountryCode,
             contact_methods: { ...prev.contact_methods, phone: data?.phone || '' }
           }));
         } catch (err) {
@@ -362,12 +368,16 @@ const AddAccessoriesForm: React.FC = () => {
             }
           }
 
+          const safeCountry = (country || '').toString().trim();
+          const safeCountryCode = (data?.country_code || '').toString().trim();
+
+          setCountryAutoFilled(Boolean(safeCountry));
           setFormData(prev => ({
             ...prev,
             store_name: data?.full_name || '',
             city: '',
-            country: country || '',
-            country_code: data?.country_code || '',
+            country: safeCountry,
+            country_code: safeCountryCode,
             contact_methods: { ...prev.contact_methods, phone: data?.phone || '' }
           }));
         } catch (err) {
@@ -513,7 +523,7 @@ const AddAccessoriesForm: React.FC = () => {
         store_name: formData.store_name,
         latitude: coords?.latitude,
         longitude: coords?.longitude,
-        role: user?.role,
+        role: currentUserRole || user?.role,
         status: 'pending',
         duration_days: selectedSellDuration,
       };
@@ -656,7 +666,7 @@ const AddAccessoriesForm: React.FC = () => {
         status: 'pending',
         latitude: coords?.latitude,
         longitude: coords?.longitude,
-        role: user?.role,
+        role: currentUserRole || user?.role,
         duration_days: selectedSellDuration,
       };
 
@@ -860,29 +870,30 @@ const AddAccessoriesForm: React.FC = () => {
                 <div>
                   <label className="mb-1 flex items-center gap-1 text-base font-bold text-slate-700">
                     <Phone className="h-4 w-4 text-orange-500" />
-                    كود الدولة
+                    {t('country_code')}
                   </label>
                   <input
                     name="country_code"
                     value={formData.country_code || ''}
                     onChange={handleInputChange}
                     dir="ltr"
+                    readOnly={Boolean(formData.country_code)}
                     className={fieldClass}
-                    placeholder="+20"
+                    placeholder={formData.country_code ? '' : '+20'}
                     inputMode="tel"
                   />
                 </div>
                 <div>
                   <label className="mb-1 flex items-center gap-1 text-base font-bold text-slate-700">
                     <MapPin className="h-4 w-4 text-orange-500" />
-                    {t('city')}
+                    {t('region')}
                   </label>
                   <input
                     name="city"
                     value={formData.city}
                     onChange={(e) => setFormData(prev => ({ ...prev, city: e.target.value }))}
                     className={fieldClass}
-                    placeholder={t('fetched_automatically')}
+                    placeholder=""
                   />
                 </div>
                 <div>
@@ -890,7 +901,14 @@ const AddAccessoriesForm: React.FC = () => {
                     <MapPin className="h-4 w-4 text-orange-500" />
                     {t('country')}
                   </label>
-                  <input name="country" value={formData.country || ''} readOnly className={fieldClass} placeholder={t('fetched_automatically')} />
+                  <input
+                    name="country"
+                    value={formData.country || ''}
+                    onChange={handleInputChange}
+                    readOnly={countryAutoFilled}
+                    className={fieldClass}
+                    placeholder=""
+                  />
                 </div>
                 <div className="sm:col-span-2">
                   <label className="mb-1 flex items-center gap-1 text-base font-bold text-slate-700">
