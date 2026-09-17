@@ -256,7 +256,7 @@ const PhonesForSale: React.FC = () => {
     const normalizedRole = String(role || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
 
     if (normalizedRole.startsWith('gold')) {
-      borderColor = 'border-yellow-400 shadow-yellow-100';
+      borderColor = '!border-yellow-400 !shadow-yellow-100';
       if (type === 'promotions') {
         topBar = <div className="h-1.5 bg-gradient-to-r from-yellow-400 to-amber-500"></div>;
         badge = (
@@ -268,7 +268,7 @@ const PhonesForSale: React.FC = () => {
     } 
     // الفضي (التعديل المطلوب)
     else if (normalizedRole.startsWith('silver')) {
-      borderColor = 'border-gray-400 shadow-gray-200';
+      borderColor = '!border-slate-400 !shadow-slate-200';
       if (type === 'promotions') {
         topBar = <div className="h-1.5 bg-gradient-to-r from-gray-300 to-gray-500"></div>;
         badge = (

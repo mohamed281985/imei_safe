@@ -18,6 +18,7 @@ interface Accessory {
     accessory_images: { image_path: string; main_image: boolean }[];
     role?: string;
     seller_id?: string;
+    user_id?: string;
     latitude?: number;
     longitude?: number;
     distance?: number;
@@ -84,10 +85,11 @@ const AccessoriesForSalePage: React.FC = () => {
 
             // --- جلب عملة المستخدم ---
             let userCountryName: string | null = null;
+            let currentUserRole: string | undefined;
             if (user?.id) {
                 const { data: userData } = await supabase
                     .from('users')
-                    .select('countries')
+                    .select('countries, role')
                     .eq('id', user.id)
                     .maybeSingle();
 
@@ -107,6 +109,7 @@ const AccessoriesForSalePage: React.FC = () => {
                     // set the local variable for filtering below
                     userCountryName = countryName;
                 }
+                currentUserRole = userData?.role || user?.role;
             }
 
             // build query and apply country filter if available
@@ -124,7 +127,7 @@ const AccessoriesForSalePage: React.FC = () => {
                 setAccessories([]);
             } else {
                 const fetchedAccessories = data || [];
-                const sellerIds = [...new Set(fetchedAccessories.map((accessory: Accessory) => accessory.seller_id).filter(Boolean))];
+                const sellerIds = [...new Set(fetchedAccessories.map((accessory: Accessory) => accessory.seller_id || accessory.user_id).filter(Boolean))];
                 let rolesBySeller: Record<string, string> = {};
 
                 if (sellerIds.length > 0) {
@@ -140,7 +143,9 @@ const AccessoriesForSalePage: React.FC = () => {
 
                 setAccessories(fetchedAccessories.map((accessory: Accessory) => ({
                     ...accessory,
-                    role: accessory.role || (accessory.seller_id ? rolesBySeller[accessory.seller_id] : undefined),
+                    role: accessory.role
+                        || rolesBySeller[accessory.seller_id || accessory.user_id || '']
+                        || ((accessory.seller_id || accessory.user_id) === user?.id ? currentUserRole : undefined),
                 })));
             }
             setLoading(false);
@@ -238,7 +243,7 @@ const AccessoriesForSalePage: React.FC = () => {
         const normalizedRole = String(role || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
 
         if (normalizedRole.startsWith('gold')) {
-            borderColor = 'border-yellow-400 shadow-yellow-100';
+            borderColor = '!border-yellow-400 !shadow-yellow-100';
             if (type === 'promotions') {
                 topBar = <div className="h-1.5 bg-gradient-to-r from-yellow-400 to-amber-500"></div>;
                 badge = (
@@ -250,7 +255,7 @@ const AccessoriesForSalePage: React.FC = () => {
         } 
         // الفضي (التعديل المطلوب)
         else if (normalizedRole.startsWith('silver')) {
-            borderColor = 'border-gray-400 shadow-gray-200';
+            borderColor = '!border-slate-400 !shadow-slate-200';
             if (type === 'promotions') {
                 topBar = <div className="h-1.5 bg-gradient-to-r from-gray-300 to-gray-500"></div>;
                 badge = (

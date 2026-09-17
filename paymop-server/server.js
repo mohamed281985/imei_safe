@@ -6748,13 +6748,12 @@ app.post('/api/create-accessory', verifyJwtToken, async (req, res) => {
     // Ensure seller_id is set to token user
     accessoryData.seller_id = userId;
 
-    // Use the authoritative package role from the users table instead of a stale client value.
-    const { data: ownerData, error: ownerError } = await supabase
-      .from('users')
-      .select('role')
-      .eq('id', userId)
-      .maybeSingle();
-    if (!ownerError && ownerData?.role) accessoryData.role = ownerData.role;
+    // Keep accessory role/type consistent with phone listings and never trust a client role.
+    const userRole = req.user?.role || 'free_user';
+    accessoryData.role = userRole;
+    accessoryData.type = ['silver_business', 'gold_business', 'silver_user', 'gold_user'].includes(userRole)
+      ? 'promotions'
+      : 'normal';
 
     // Insert
     let inserted;
