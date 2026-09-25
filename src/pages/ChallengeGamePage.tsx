@@ -367,18 +367,18 @@ const ChallengeGamePage: React.FC = () => {
             <PageAdvertisement pageName="challenge-game" />
           </div>
           <div className="px-4 py-8">
-            <h1 className="text-3xl font-bold text-black text-center mb-2">{t('play_and_win')}</h1>
-            <p className="text-black text-center font-bold text-2xl mb-6">{t('win_prizes_by_playing')}</p>
-            <div className="flex justify-center gap-4 mb-4">
-              <Button 
+            <div className="mx-auto flex max-w-lg flex-col items-center rounded-2xl border border-imei-cyan/30 bg-imei-darker p-8 text-center shadow-lg shadow-black/30">
+              <Gift className="mb-4 h-16 w-16 text-imei-cyan" />
+              <h1 className="mb-3 text-3xl font-bold text-white">{t('games_and_rewards_coming_soon')}</h1>
+              <p className="text-lg font-semibold text-white/80">{t('games_and_rewards_coming_soon_description')}</p>
+              <Button
                 onClick={() => navigate('/rewards')}
-                className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white"
+                className="mt-6 flex items-center gap-2 bg-purple-600 text-white hover:bg-purple-700"
               >
-                <Gift className="w-5 h-5" />
+                <Gift className="h-5 w-5" />
                 {t('my_rewards')}
               </Button>
             </div>
-            <ChallengeGame onComplete={handleGameComplete} />
           </div>
         </div>
       </PageContainer>

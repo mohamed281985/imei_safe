@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import PageContainer from '@/components/PageContainer';
 import AppNavbar from '@/components/AppNavbar';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useTranslation } from 'react-i18next';
-import { Crown, Smartphone, Search, Star } from 'lucide-react';
+import { Crown, Heart, Smartphone, Search, Star } from 'lucide-react';
 import { useGeolocated } from 'react-geolocated';
+import { ACCESSORY_CATEGORIES } from '@/constants/accessoryCategories';
 
 interface Accessory {
     id: string;
@@ -65,10 +66,22 @@ function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon
     return R * c;
 }
 
+const normalizeAccessoryCategory = (category: string | undefined) => {
+    const normalized = String(category || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+
+    if (['smartwatch', 'smart_watch', 'smartwatches', 'smart_watches', 'ساعات_ذكية', 'ساعة_ذكية'].includes(normalized)) {
+        return 'smartwatches';
+    }
+
+    return normalized;
+};
+
 const AccessoriesForSalePage: React.FC = () => {
     const { t } = useLanguage();
     const { i18n } = useTranslation();
+    const location = useLocation();
     const { user } = useAuth();
+    const categoryFilter = normalizeAccessoryCategory(new URLSearchParams(location.search).get('category') || '');
     const [userCurrencySymbol, setUserCurrencySymbol] = useState(t('currency_short') || 'EGP');
     const [accessories, setAccessories] = useState<Accessory[]>([]);
     const [loading, setLoading] = useState(true);
@@ -76,8 +89,30 @@ const AccessoriesForSalePage: React.FC = () => {
     const [selectedCondition, setSelectedCondition] = useState('all');
     const [priceRange, setPriceRange] = useState({ min: '', max: '' });
     const [sortBy, setSortBy] = useState('newest');
+    const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
     const [userCity, setUserCity] = useState<string>(''); // إضافة حالة لحقل المدينة
     const { coords } = useGeolocated({ positionOptions: { enableHighAccuracy: true } });
+
+    useEffect(() => {
+        try {
+            const raw = localStorage.getItem('favorites');
+            setFavoriteIds(raw ? JSON.parse(raw) : []);
+        } catch {
+            setFavoriteIds([]);
+        }
+    }, []);
+
+    const toggleFavorite = (event: React.MouseEvent, id: string) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const next = favoriteIds.includes(id)
+            ? favoriteIds.filter(favoriteId => favoriteId !== id)
+            : [id, ...favoriteIds];
+
+        localStorage.setItem('favorites', JSON.stringify(next));
+        setFavoriteIds(next);
+    };
 
     useEffect(() => {
         const fetchAccessories = async () => {
@@ -118,7 +153,17 @@ const AccessoriesForSalePage: React.FC = () => {
                 .select(`*, accessory_images(image_path, main_image)`)
                 .eq('status', 'active');
 
-            if (userCountryName) query = query.ilike('countries', `%${userCountryName}%`);
+            if (userCountryName) {
+                const { data: countryNames } = await supabase
+                    .from('countries')
+                    .select('name_ar, name_en')
+                    .or(`name_ar.ilike.${userCountryName},name_en.ilike.${userCountryName}`)
+                    .maybeSingle();
+                const names = [countryNames?.name_ar, countryNames?.name_en, userCountryName]
+                    .filter(Boolean)
+                    .map(name => String(name).replace(/,/g, ''));
+                query = query.or(names.map(name => `countries.ilike.%${name}%`).join(','));
+            }
 
             const { data, error } = await query.order('created_at', { ascending: false });
 
@@ -141,12 +186,21 @@ const AccessoriesForSalePage: React.FC = () => {
                     }, {});
                 }
 
-                setAccessories(fetchedAccessories.map((accessory: Accessory) => ({
-                    ...accessory,
-                    role: accessory.role
+                setAccessories(fetchedAccessories.map((accessory: Accessory) => {
+                    // استخدم الدور المحفوظ داخل سجل الإكسسوار كمصدر أساسي للألوان.
+                    const role = accessory.role
                         || rolesBySeller[accessory.seller_id || accessory.user_id || '']
-                        || ((accessory.seller_id || accessory.user_id) === user?.id ? currentUserRole : undefined),
-                })));
+                        || ((accessory.seller_id || accessory.user_id) === user?.id ? currentUserRole : undefined);
+                    const normalizedRole = String(role || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+                    const isPackageRole = ['gold_business', 'silver_business', 'gold_user', 'silver_user'].includes(normalizedRole);
+
+                    return {
+                        ...accessory,
+                        role,
+                        // حافظ على شكل بطاقات الهواتف للإعلانات القديمة أيضًا.
+                        type: accessory.type === 'promotions' || isPackageRole ? 'promotions' : accessory.type,
+                    };
+                }));
             }
             setLoading(false);
         };
@@ -197,10 +251,11 @@ const AccessoriesForSalePage: React.FC = () => {
                 (acc.category && acc.category.toLowerCase().includes(searchString));
 
             const matchesCondition = selectedCondition === 'all' || acc.condition === selectedCondition;
+            const matchesCategory = !categoryFilter || normalizeAccessoryCategory(acc.category) === categoryFilter;
             const matchesPrice = (!priceRange.min || acc.price >= Number(priceRange.min)) &&
                 (!priceRange.max || acc.price <= Number(priceRange.max));
 
-            return matchesSearch && matchesCondition && matchesPrice;
+            return matchesSearch && matchesCondition && matchesCategory && matchesPrice;
         });
 
         return filtered.sort((a, b) => {
@@ -241,8 +296,9 @@ const AccessoriesForSalePage: React.FC = () => {
 
         // الجولد
         const normalizedRole = String(role || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+        const colorRole = normalizedRole === 'customer' ? 'free_user' : normalizedRole;
 
-        if (normalizedRole.startsWith('gold')) {
+        if (colorRole.startsWith('gold')) {
             borderColor = '!border-yellow-400 !shadow-yellow-100';
             if (type === 'promotions') {
                 topBar = <div className="h-1.5 bg-gradient-to-r from-yellow-400 to-amber-500"></div>;
@@ -254,7 +310,7 @@ const AccessoriesForSalePage: React.FC = () => {
             }
         } 
         // الفضي (التعديل المطلوب)
-        else if (normalizedRole.startsWith('silver')) {
+        else if (colorRole.startsWith('silver')) {
             borderColor = '!border-slate-400 !shadow-slate-200';
             if (type === 'promotions') {
                 topBar = <div className="h-1.5 bg-gradient-to-r from-gray-300 to-gray-500"></div>;
@@ -282,11 +338,33 @@ const AccessoriesForSalePage: React.FC = () => {
         <PageContainer>
             <AppNavbar />
             <div className="p-4 mb-10">
+                <div className="mb-4 flex items-center justify-between">
+                    <h1 className="text-xl font-bold text-black">{t('accessories')}</h1>
+                    <Link
+                        to="/favorites"
+                        className="flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-bold text-red-500 shadow-sm transition-colors hover:bg-red-50"
+                    >
+                        <Heart className="h-5 w-5" />
+                        {t('favorites')}
+                    </Link>
+                </div>
                 {/* إضافة حقل إدخال المدينة */}
                 <div className="bg-white/80 backdrop-blur-lg rounded-xl p-3 mb-4 shadow-lg">
-                    <label htmlFor="user-city" className="block text-sm font-medium text-gray-700">
-                        {t('city')}
-                    </label>
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <label htmlFor="user-city" className="text-sm font-medium text-gray-700">
+                            {t('city')}
+                        </label>
+                        {categoryFilter && (
+                            <div className="flex min-w-0 max-w-full items-center gap-2 rounded-lg bg-blue-50 px-3 py-1.5">
+                                <span className="truncate text-sm font-bold text-slate-800">
+                                    {t('accessory_category_filter')}: {t(ACCESSORY_CATEGORIES.find(category => category.value === categoryFilter)?.labelKey || 'accessories')}
+                                </span>
+                                <Link to="/accessories-for-sale" className="shrink-0 text-xs font-bold text-blue-600">
+                                    {t('clear_filter')}
+                                </Link>
+                            </div>
+                        )}
+                    </div>
                     <input
                         id="user-city"
                         type="text"
@@ -392,10 +470,19 @@ const AccessoriesForSalePage: React.FC = () => {
                                 <Link
                                     key={acc.id}
                                     to={`/product/${acc.id}`}
-                                    className={`relative bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 group flex flex-col h-[280px] border-2 ${style.borderColor} ${acc.type === 'promotions' ? 'shadow-lg' : ''}`}
+                                    className={`relative bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 group flex flex-col h-[280px] border-2 ${style.borderColor} ${acc.type === 'promotions' ? 'shadow-xl' : ''}`}
                                 >
                                     {/* الشريط العلوي للإعلانات المميزة */}
                                     {style.topBar}
+
+                                    <button
+                                        type="button"
+                                        onClick={(event) => toggleFavorite(event, acc.id)}
+                                        aria-label={favoriteIds.includes(acc.id) ? t('remove_from_favorites') : t('add_to_favorites')}
+                                        className="absolute left-2 top-2 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-white/95 shadow-md transition-transform hover:scale-105"
+                                    >
+                                        <Heart className={`h-5 w-5 ${favoriteIds.includes(acc.id) ? 'fill-red-500 text-red-500' : 'text-gray-700'}`} />
+                                    </button>
 
                                     <div className="relative w-full h-[200px] bg-gray-50">
                                         {getAccessoryMainImage(acc) ? (
@@ -439,7 +526,11 @@ const AccessoriesForSalePage: React.FC = () => {
 
                                         {/* Category and Brand */}
                                         <div className="flex items-center gap-1.5 text-xs text-gray-500 truncate font-medium">
-                                            {acc.category && <span>{acc.category}</span>}
+                                            {acc.category && (
+                                                <span>
+                                                    {t(ACCESSORY_CATEGORIES.find(category => category.value === normalizeAccessoryCategory(acc.category))?.labelKey || acc.category)}
+                                                </span>
+                                            )}
                                             {acc.category && acc.brand && <span className="w-0.5 h-0.5 rounded-full bg-gray-400"></span>}
                                             {acc.brand && <span>{acc.brand}</span>}
                                         </div>

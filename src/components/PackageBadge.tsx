@@ -17,15 +17,15 @@ const PlanCard: React.FC<{
 }> = ({ id, title, arabic, Icon, gradientClass, glow }) => {
   return (
     <div
-      className="flex items-center gap-2 p-1.5 sm:p-2 rounded-full bg-white/70 backdrop-blur-md border border-transparent transition-transform duration-300 ease-in-out"
+      className="flex h-12 items-center gap-2 rounded-full border border-transparent bg-white/70 p-1.5 backdrop-blur-md transition-transform duration-300 ease-in-out"
       style={{ boxShadow: glow || '0 6px 16px rgba(2,6,23,0.12)' }}
     >
-      <div className={`flex items-center justify-center w-8 h-8 rounded-full ${gradientClass} flex-shrink-0`} style={{ boxShadow: 'inset 0 -3px 8px rgba(255,255,255,0.26)' }}>
+      <div className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full ${gradientClass}`} style={{ boxShadow: 'inset 0 -3px 8px rgba(255,255,255,0.26)' }}>
         <Icon className="w-4 h-4 text-white drop-shadow-md" />
       </div>
 
       <div className="min-w-0">
-        <div className="text-sm sm:text-xs font-extrabold text-slate-900 tracking-wide">{title}</div>
+        <div className="text-xs font-extrabold tracking-wide text-slate-900">{title}</div>
       </div>
     </div>
   );
@@ -114,7 +114,7 @@ const PackageBadge: React.FC<Props> = ({ user = null, className = '' }) => {
   // عرض حالة التحميل
   if (isLoading) {
     return (
-      <div className={`flex items-center gap-2 p-1.5 sm:p-2 rounded-full bg-white/70 backdrop-blur-md border border-transparent ${className}`}>
+      <div className={`flex h-12 items-center gap-2 rounded-full border border-transparent bg-white/70 p-1.5 backdrop-blur-md ${className}`}>
         <div className="w-8 h-8 rounded-full bg-gray-200 animate-pulse"></div>
         <div className="min-w-0">
           <div className="h-3 bg-gray-200 rounded w-16 animate-pulse"></div>

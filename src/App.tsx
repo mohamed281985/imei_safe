@@ -69,6 +69,13 @@ const ChallengeGamePage = lazy(() => import('./pages/ChallengeGamePage'));
 const ProfileMenuPage = lazy(() => import('./pages/ProfileMenuPage'));
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage'));
 const RewardsPage = lazy(() => import('./pages/RewardsPage'));
+const RewardDailyPage = lazy(() => import('./pages/RewardsFlow').then((module) => ({ default: module.RewardDailyPage })));
+const RewardCategoriesPage = lazy(() => import('./pages/RewardsFlow').then((module) => ({ default: module.RewardCategoriesPage })));
+const RewardShopsPage = lazy(() => import('./pages/RewardsFlow').then((module) => ({ default: module.RewardShopsPage })));
+const RewardOfferDetailsPage = lazy(() => import('./pages/RewardsFlow').then((module) => ({ default: module.RewardOfferDetailsPage })));
+const RewardConfirmationPage = lazy(() => import('./pages/RewardsFlow').then((module) => ({ default: module.RewardConfirmationPage })));
+const RewardSuccessPage = lazy(() => import('./pages/RewardsFlow').then((module) => ({ default: module.RewardSuccessPage })));
+const RewardHistoryPage = lazy(() => import('./pages/RewardsFlow').then((module) => ({ default: module.RewardHistoryPage })));
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
 const TermsOfUse = lazy(() => import('./pages/TermsOfUse'));
 const EditPhoneListing = lazy(() => import('./pages/EditPhoneListing'));
@@ -264,9 +271,6 @@ const AppCore = () => {
           return;
         }
 
-        // تسجيل الجهاز لتلقي الإشعارات
-        await PushNotifications.register();
-
         // --- إضافة المستمعات (Listeners) ---
 
         // أ. عند نجاح التسجيل والحصول على التوكن
@@ -332,6 +336,9 @@ const AppCore = () => {
           console.log(`توجيه إجباري إلى صفحة العثور على الهاتف: ${url}`);
           navigate(url);
         });
+
+        // يجب إضافة المستمع قبل register حتى لا نفقد حدث التسجيل والتوكن.
+        await PushNotifications.register();
 
       } catch (e) {
         console.error("خطأ في إعداد الإشعارات:", e);
@@ -429,6 +436,13 @@ const AppCore = () => {
             <Route path="/profile-menu" element={<AuthGuard><ProfileMenuPage /></AuthGuard>} />
             <Route path="/notifications" element={<AuthGuard><NotificationsPage /></AuthGuard>} />
             <Route path="/rewards" element={<AuthGuard><RewardsPage /></AuthGuard>} />
+            <Route path="/daily-reward" element={<AuthGuard><RewardDailyPage /></AuthGuard>} />
+            <Route path="/rewards-categories" element={<AuthGuard><RewardCategoriesPage /></AuthGuard>} />
+            <Route path="/rewards-shops/:categoryId" element={<AuthGuard><RewardShopsPage /></AuthGuard>} />
+            <Route path="/reward-offer/:offerId" element={<AuthGuard><RewardOfferDetailsPage /></AuthGuard>} />
+            <Route path="/reward-confirm/:offerId" element={<AuthGuard><RewardConfirmationPage /></AuthGuard>} />
+            <Route path="/reward-success/:redemptionId" element={<AuthGuard><RewardSuccessPage /></AuthGuard>} />
+            <Route path="/rewards-history" element={<AuthGuard><RewardHistoryPage /></AuthGuard>} />
           </Routes>
         </Suspense>
       </>

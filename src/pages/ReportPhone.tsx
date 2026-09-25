@@ -310,8 +310,8 @@ const ReportPhone: React.FC = () => {
   };
 
   const validateForm = (data: FormData, isImeiRegisteredStatus: boolean, actualDbPassword: string | null, currentFieldReadOnlyState: typeof fieldReadOnlyState, quickMode: boolean): boolean => {
-    if (!data.imei || !data.phone_type || !data.lossLocation || !data.lossTime) {
-      toast({ title: t('error'), description: t('continue_in_data_mode'), variant: 'destructive' });
+    if (!/^\d{15}$/.test(data.imei.trim()) || !data.phone_type.trim() || !data.lossLocation.trim() || !data.lossTime) {
+      toast({ title: t('error'), description: t('required_fields'), variant: 'destructive' });
       return false;
     }
 
@@ -336,6 +336,31 @@ const ReportPhone: React.FC = () => {
 
     if (!currentFieldReadOnlyState.reportImage && !data.reportImage) {
       toast({ title: t('error'), description: t('report_image_required'), variant: 'destructive' });
+      return false;
+    }
+
+    return true;
+  };
+
+  const validateStep = (step: number): boolean => {
+    if (step === 1) {
+      if (!/^\d{15}$/.test(formData.imei.trim())) {
+        toast({ title: t('error'), description: t('imei_hint'), variant: 'destructive' });
+        return false;
+      }
+
+      if (!formData.phone_type.trim()) {
+        toast({ title: t('error'), description: t('required_fields'), variant: 'destructive' });
+        return false;
+      }
+    }
+
+    if (step === 2 && (!formData.lossLocation.trim() || !formData.lossTime)) {
+      toast({ title: t('error'), description: t('required_fields'), variant: 'destructive' });
+      return false;
+    }
+
+    if (step === 3 && !validateForm(formData, isImeiRegistered, dbPassword, fieldReadOnlyState, isQuickMode)) {
       return false;
     }
 
@@ -908,6 +933,10 @@ const ReportPhone: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!validateStep(currentStep)) {
+      return;
+    }
 
     if (currentStep < 3) {
       setCurrentStep((prev) => Math.min(prev + 1, 3));

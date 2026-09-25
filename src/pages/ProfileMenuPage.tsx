@@ -1,6 +1,6 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { User, PlusSquare, Search, Sparkles, LogOut, MessageSquare, Key, Globe, Fingerprint, Gift, Phone, Award, Crown, ChevronLeft, Shield, FileText, Bell, Trash2 } from 'lucide-react';
+import { User, PlusSquare, Search, Sparkles, LogOut, MessageSquare, Key, Globe, Fingerprint, Gift, Phone, Award, Crown, ChevronLeft, Shield, FileText, Bell, Trash2, Heart } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -36,6 +36,7 @@ interface PhoneInfo {
 
 // Constants
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? 'https://imei-safe.me' : '');
+const BUSINESS_ROLES = ['business', 'free_business', 'gold_business', 'silver_business'];
 
 // Main component
 const ProfileMenuPage: React.FC = () => {
@@ -45,6 +46,7 @@ const ProfileMenuPage: React.FC = () => {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
     const { toast } = useToast();
+    const isCommercialUser = BUSINESS_ROLES.includes(String(user?.role || '').toLowerCase().trim());
 
     // State variables
     const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
@@ -84,7 +86,7 @@ const ProfileMenuPage: React.FC = () => {
         publishedAdsCount: 0,
         remainingAds: 0
     });
-    
+
 
     // Display format for country code
     const displayedCountryCode = countryCode
@@ -127,7 +129,7 @@ const ProfileMenuPage: React.FC = () => {
         getDeviceInfo();
     }, [t]);
 
-    // Fetch rewards information
+      // Fetch rewards information
     useEffect(() => {
         const fetchRewardsInfo = async () => {
             if (!user) return;
@@ -197,69 +199,159 @@ const ProfileMenuPage: React.FC = () => {
         fetchSupportInfo();
     }, []);
 
-    // Fetch package information from server
+    // Fetch package information
     useEffect(() => {
         const fetchPackageInfo = async () => {
             if (!user?.id) return;
 
             try {
-                let token: string | undefined;
-                try {
-                    const sessionRes: any = await supabase.auth.getSession();
-                    token = sessionRes?.data?.session?.access_token;
-                } catch (e) {
-                    try {
-                        // @ts-ignore
-                        const sess = await supabase.auth.session();
-                        // @ts-ignore
-                        token = sess?.access_token;
-                    } catch (e2) {
-                        token = undefined;
-                    }
-                }
+                // Get user role and expiration date
+                const { data: userData, error: userError } = await supabase
+                    .from('users')
+                    .select('role, expires_at')
+                    .eq('id', user.id)
+                    .maybeSingle();
 
-                const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || '';
-                const api = (path: string) => (API_BASE ? `${API_BASE}${path}` : path);
-
-                const resp = await fetch(api('/api/ads/package-remaining'), {
-                    headers: token ? { Authorization: `Bearer ${token}` } : {}
-                });
-
-                if (!resp.ok) {
-                    console.error('Error fetching package info from server:', resp.status);
+                if (userError || !userData) {
+                    console.error('Error fetching user data:', userError);
                     return;
                 }
 
-                const json = await resp.json();
-                if (json.ok && json.isPackageUser) {
-                    setPackageInfo({
-                        planType: json.planType || 'UNKNOWN',
-                        expiresAt: '',
-                        daysRemaining: json.daysRemaining || 0,
-                        publishAdsCount: json.publishAdsCount || 0,
-                        publishedAdsCount: json.actualPublishedAdsCount || 0,
-                        remainingAds: json.remainingAds || 0
-                    });
-                } else {
-                    // User is not a package user
-                    setPackageInfo({
-                        planType: 'NONE',
-                        expiresAt: '',
-                        daysRemaining: 0,
-                        publishAdsCount: 0,
-                        publishedAdsCount: 0,
-                        remainingAds: 0
-                    });
+                // Determine plan type
+                const rawRole = String(userData.role || '').toLowerCase().trim();
+                const normalizedRole = rawRole.replace(/[\s\-]+/g, '_');
+                const basePlan = normalizedRole.split('_')[0];
+
+                // Get plan information
+                let plan = null;
+                const normalizedFull = normalizedRole || String(user?.role || '').toLowerCase().trim().replace(/[\s\-]+/g, '_');
+
+                // Try exact match with full normalized role
+                if (normalizedFull) {
+                    const exact = await supabase.from('plans').select('*').eq('type', normalizedFull).maybeSingle();
+                    plan = exact.data;
                 }
+
+                // Try ilike with full normalized role if exact not found
+                if (!plan && normalizedFull) {
+                    const res2 = await supabase.from('plans').select('*').ilike('type', `%${normalizedFull}%`).maybeSingle();
+                    plan = res2.data;
+                }
+
+                // Fallback to searching by base token
+                if (!plan) {
+                    const res3 = await supabase.from('plans').select('*').ilike('type', `%${basePlan}%`).maybeSingle();
+                    plan = res3.data;
+                }
+
+                // If DB queries didn't return a row, fetch all plans and try local match
+                if (!plan) {
+                    try {
+                        const allRes = await supabase.from('plans').select('*');
+                        const list = allRes.data || [];
+                        const found = list.find((r: any) => {
+                            const typ = String(r.type || '').toLowerCase().trim();
+                            return (
+                                (normalizedFull && typ.includes(normalizedFull)) ||
+                                (basePlan && typ.includes(basePlan))
+                            );
+                        });
+                        plan = found || null;
+                    } catch (scanErr) {
+                        console.error('Error in local search:', scanErr);
+                    }
+                }
+
+                // Try users_plans as fallback
+                if (!plan) {
+                    try {
+                        const upRes = await supabase.from('users_plans').select('*').eq('user_id', user.id).maybeSingle();
+                        const up = upRes.data;
+
+                        if (up) {
+                            const goldQuota = up.gold_ad ?? up.gold_ads ?? up.publish_ad ?? up.publishAd ?? null;
+                            const silverQuota = up.silver_ad ?? up.silver_ads ?? null;
+                            const quota = basePlan === 'gold' ? goldQuota : basePlan === 'silver' ? silverQuota : null;
+
+                            if (quota != null) {
+                                const qnum = Number(quota);
+                                if (Number.isFinite(qnum)) {
+                                    plan = { Publish_Ad: qnum };
+                                }
+                            }
+                        }
+                    } catch (upErr) {
+                        console.error('Error in users_plans search:', upErr);
+                    }
+                }
+
+                // --- 2. Determine packageStartDate (Latest payment for current cycle) ---
+                let packageStartDate: string | null = null;
+                const { data: latestPaid, error: latestPaidErr } = await supabase
+                    .from('ads_payment')
+                    .select('payment_date')
+                    .eq('user_id', user.id)
+                    .eq('is_paid', true)
+                    .eq('type', normalizedFull)
+                    .order('payment_date', { ascending: false }) // جلب أحدث دفعة لتبدأ الدورة منها
+                    .limit(1)
+                    .maybeSingle();
+
+                if (!latestPaidErr && latestPaid && latestPaid.payment_date) {
+                    packageStartDate = latestPaid.payment_date;
+                } else {
+                    // Fallback: use user's expires_at and plan duration
+                    const planDuration = plan?.duration_days ? Number(plan.duration_days) : 30;
+                    if (userData.expires_at) {
+                        const expiresAt = new Date(userData.expires_at);
+                        const start = new Date(expiresAt);
+                        start.setDate(start.getDate() - planDuration);
+                        packageStartDate = start.toISOString();
+                    }
+                }
+
+                // --- 3. Count actual published ads (pending + approved) since package start ---
+                let actualPublishedCount = 0;
+                if (packageStartDate) {
+                    const { data: adsList, error: countErr } = await supabase
+                        .from('ads_payment')
+                        .select('id, status, upload_date')
+                        .eq('user_id', user.id)
+                        .gte('upload_date', packageStartDate);
+
+                    if (!countErr && Array.isArray(adsList)) {
+                        actualPublishedCount = adsList.filter(ad => ad.status === 'pending' || ad.status === 'approved').length;
+                    }
+                }
+
+                // Calculate remaining ads
+                const publishVal = plan?.Publish_Ad ?? plan?.publish_ad ?? plan?.publishAd ?? plan?.publish_ads ?? plan?.publishAds ?? null;
+                const publishAdsCount = publishVal != null ? Number(publishVal) : 0;
+                const remainingAds = Math.max(0, publishAdsCount - actualPublishedCount);
+
+                // Calculate remaining days
+                let daysRemaining = 0;
+                if (userData.expires_at) {
+                    const expiryDate = new Date(userData.expires_at);
+                    const today = new Date();
+                    const diffTime = expiryDate.getTime() - today.getTime();
+                    daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                }
+
+                setPackageInfo({
+                    planType: basePlan.toUpperCase(),
+                    expiresAt: userData.expires_at || '',
+                    daysRemaining: Math.max(0, daysRemaining),
+                    publishAdsCount,
+                    publishedAdsCount: actualPublishedCount,
+                    remainingAds
+                });
             } catch (err) {
                 console.error('Error fetching package info:', err);
             }
         };
 
         fetchPackageInfo();
-        // Refresh every 30 seconds
-        const interval = setInterval(fetchPackageInfo, 30000);
-        return () => clearInterval(interval);
     }, [user?.id]);
 
     // Check biometric status on page load
@@ -435,7 +527,6 @@ toast({ title: t('success'), description: t('biometric_enabled_success') });
             );
         }
     };
-
     // Handle forgot password
     const handleForgotPassword = async () => {
         const imeiNormalized = String(forgotPasswordData.imei || '').replace(/\D/g, '');
@@ -628,520 +719,537 @@ toast({ title: t('success'), description: t('biometric_enabled_success') });
 
     return (
 
-            <PageContainer  >
-                <div className="px-3 sm:px-6 lg:px-8">
+        <PageContainer  >
+            <div className="px-3 sm:px-6 lg:px-8">
 
-                    <AppNavbar />
-                    <div>
-                        {/* User Info Card */}
-                        {user && (
-                            <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-lg p-5 mb-6">
-                                <div className="flex items-center gap-4 mb-4">
-                                    <div className="w-16 h-16 rounded-full bg-[#289c8e]/20 flex items-center justify-center flex-shrink-0">
-                                        <User className="w-8 h-8 text-[#289c8e]" />
+                <AppNavbar />
+                <div>
+                    {/* User Info Card */}
+                    {user && (
+                        <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-lg p-5 mb-6">
+                            <div className="flex items-center gap-4 mb-4">
+                                <div className="w-16 h-16 rounded-full bg-[#289c8e]/20 flex items-center justify-center flex-shrink-0">
+                                    <User className="w-8 h-8 text-[#289c8e]" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                        <h2 className="text-xl font-bold text-gray-900 truncate">
+                                            {user.username || user.email}
+                                        </h2>
+                                        <Shield className="w-4 h-4 text-[#289c8e]" />
                                     </div>
-                                    <div className="flex-1 min-w-0">
+                                    <p className="text-sm text-gray-500 truncate">{user.email}</p>
+                                </div>
+                            </div>
+
+                            {/* Package Info */}
+                            {isCommercialUser && packageInfo.planType && (
+                                <div className="mt-4 p-3 rounded-xl  shadow-lg bg-[#289c8e]/10 border border-[#289c8e]/20">
+                                    <div className="flex items-center justify-between mb-3">
                                         <div className="flex items-center gap-2">
-                                            <h2 className="text-lg font-bold text-gray-900 truncate">
-                                                {user.username || user.email}
-                                            </h2>
-                                            <Shield className="w-4 h-4 text-[#289c8e]" />
-                                        </div>
-                                        <p className="text-sm text-gray-500 truncate">{user.email}</p>
-                                    </div>
-                                </div>
-
-                                {/* Package Info */}
-                                {packageInfo.planType && (
-                                    <div className="mt-4 p-3 rounded-xl  shadow-lg bg-[#289c8e]/10 border border-[#289c8e]/20">
-                                        <div className="flex items-center justify-between mb-3">
-                                            <div className="flex items-center gap-2">
-                                                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${packageInfo.planType === 'GOLD'
-                                                    ? 'bg-gradient-to-br from-yellow-400 to-amber-400'
-                                                    : packageInfo.planType === 'SILVER'
-                                                        ? 'bg-gradient-to-br from-slate-200 to-emerald-200'
-                                                        : 'bg-gradient-to-br from-blue-400 to-blue-300'
-                                                    }`}>
-                                                    {packageInfo.planType === 'GOLD' ? (
-                                                        <Crown className="w-4 h-4 text-white" />
-                                                    ) : packageInfo.planType === 'SILVER' ? (
-                                                        <Award className="w-4 h-4 text-white" />
-                                                    ) : (
-                                                        <Gift className="w-4 h-4 text-white" />
-                                                    )}
-                                                </div>
-                                                <span className="font-bold text-gray-800">
-                                                    {packageInfo.planType === 'GOLD' ? t('gold_vip') : packageInfo.planType === 'SILVER' ? t('silver') : t('free')}
-                                                </span>
+                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${packageInfo.planType === 'GOLD'
+                                                ? 'bg-gradient-to-br from-yellow-400 to-amber-400'
+                                                : packageInfo.planType === 'SILVER'
+                                                    ? 'bg-gradient-to-br from-slate-200 to-emerald-200'
+                                                    : 'bg-gradient-to-br from-blue-400 to-blue-300'
+                                                }`}>
+                                                {packageInfo.planType === 'GOLD' ? (
+                                                    <Crown className="w-4 h-4 text-white" />
+                                                ) : packageInfo.planType === 'SILVER' ? (
+                                                    <Award className="w-4 h-4 text-white" />
+                                                ) : (
+                                                    <Gift className="w-4 h-4 text-white" />
+                                                )}
                                             </div>
-                                            {packageInfo.expiresAt && (
+                                            <span className="font-bold text-gray-800">
+                                                {packageInfo.planType === 'GOLD' ? t('gold_vip') : packageInfo.planType === 'SILVER' ? t('silver') : t('free')}
+                                            </span>
+                                        </div>
+                                        {packageInfo.expiresAt && (
                                             <span className="text-sm text-gray-600">
-                                               {t('expires_at')} {new Date(packageInfo.expiresAt).toLocaleDateString(language === 'ar' ? 'ar-EG' : language === 'fr' ? 'fr-FR' : language === 'hi' ? 'hi-IN' : 'en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-                                             </span>
-                                            )}
-                                        </div>
+                                                {t('expires_at')} {new Date(packageInfo.expiresAt).toLocaleDateString(language === 'ar' ? 'ar-EG' : language === 'fr' ? 'fr-FR' : language === 'hi' ? 'hi-IN' : 'en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                                            </span>
+                                        )}
+                                    </div>
 
-                                        <div className="grid grid-cols-3 gap-2">
-                                            <div className="text-center bg-white/50 rounded-lg p-2">
-                                                <div className="text-lg font-bold text-[#289c8e]">{packageInfo.remainingAds}</div>
-                                                <div className="text-xs text-gray-500">{t('remaining_ads')}</div>
-                                            </div>
-                                            <div className="text-center bg-white/50 rounded-lg p-2">
-                                                <div className="text-lg font-bold text-green-600">{packageInfo.daysRemaining}</div>
-                                                <div className="text-xs text-gray-500">{t('days_remaining')}</div>
-                                            </div>
-                                            <div className="text-center bg-white/50 rounded-lg p-2">
-                                                <div className="text-lg font-bold text-purple-600">{packageInfo.publishAdsCount}</div>
-                                                <div className="text-xs text-gray-500">{t('total_ads')}</div>
-                                            </div>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        <div className="text-center bg-white/50 rounded-lg p-2">
+                                            <div className="text-lg font-bold text-[#289c8e]">{packageInfo.remainingAds}</div>
+                                            <div className="text-xs text-gray-500">{t('remaining_ads')}</div>
+                                        </div>
+                                        <div className="text-center bg-white/50 rounded-lg p-2">
+                                            <div className="text-lg font-bold text-green-600">{packageInfo.daysRemaining}</div>
+                                            <div className="text-xs text-gray-500">{t('days_remaining')}</div>
+                                        </div>
+                                        <div className="text-center bg-white/50 rounded-lg p-2">
+                                            <div className="text-lg font-bold text-purple-600">{packageInfo.publishAdsCount}</div>
+                                            <div className="text-xs text-gray-500">{t('total_ads')}</div>
                                         </div>
                                     </div>
-                                )}
-                            </div>
-                        )}
-
-                        {/* Rewards Section */}
-                        <div className="mb-6">
-                            <h3 className="text-lg font-bold text-blue-600 mb-3">{t('rewards')}</h3>
-                            <div className="grid grid-cols-3 gap-3">
-                                <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-4 text-center">
-                                    <div className="w-10 h-10 rounded-full bg-[#289c8e]/20 flex items-center justify-center mx-auto mb-2">
-                                        <Gift className="w-5 h-5 text-[#289c8e]" />
-                                    </div>
-                                    <div className="text-xl font-bold text-gray-800">{rewardsInfo.count - rewardsInfo.claimedCount}</div>
-                                    <div className="text-xs text-gray-500">{t('available')}</div>
                                 </div>
-                                <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-4 text-center">
-                                    <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-2">
-                                        <Sparkles className="w-5 h-5 text-green-600" />
-                                    </div>
-                                    <div className="text-xl font-bold text-gray-800">{rewardsInfo.claimedCount}</div>
-                                    <div className="text-xs text-gray-500">{t('used')}</div>
-                                </div>
-                                <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-4 text-center">
-                                    <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center mx-auto mb-2">
-                                        <Award className="w-5 h-5 text-purple-600" />
-                                    </div>
-                                    <div className="text-xl font-bold text-gray-800">{rewardsInfo.count}</div>
-                                    <div className="text-xs text-gray-500">{t('total')}</div>
-                                </div>
-                            </div>
+                            )}
                         </div>
+                    )}
 
-                        {/* Settings Section */}
-                        <div className="mb-6">
-                            <h3 className="text-lg font-bold text-blue-600 mb-3">{t('settings')}</h3>
-                            <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg overflow-hidden">
-                                {/* Recovery Cards - Barcode My Phones */}
-                                <button
-                                    onClick={() => navigate('/recovery-cards')}
-                                    className="w-full flex items-center justify-between p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors"
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-full bg-cyan-100 flex items-center justify-center">
-                                            <Phone className="w-5 h-5 text-cyan-600" />
-                                        </div>
-                                        <div className="text-right">
-                                            <div className="font-medium text-gray-800">{t('barcode_my_phones') || 'باركود هواتفي'}</div>
-                                            <div className="text-xs text-gray-500">{t('manage_recovery_cards') || 'إدارة بطاقات الاسترداد'}</div>
-                                        </div>
-                                    </div>
-                                    <ChevronLeft className="w-5 h-5 text-gray-400" />
-                                </button>
-
-                                {/* Language */}
-                                <button
-                                    onClick={() => navigate('/notifications')}
-                                    className="w-full flex items-center justify-between p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors"
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-full bg-[#00E5FF]/15 flex items-center justify-center">
-                                            <Bell className="w-5 h-5 text-[#008b9a]" />
-                                        </div>
-                                        <div className="text-right">
-                                            <div className="font-medium text-gray-800">{t('my_notifications')}</div>
-                                            <div className="text-xs text-gray-500">{t('notifications_page_description')}</div>
-                                        </div>
-                                    </div>
-                                    <ChevronLeft className="w-5 h-5 text-gray-400" />
-                                </button>
-
-                                <button
-                                    onClick={() => setShowLanguageModal(true)}
-                                    className="w-full flex items-center justify-between p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors"
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-                                            <Globe className="w-5 h-5 text-blue-600" />
-                                        </div>
-                                        <div className="text-right">
-                                            <div className="font-medium text-gray-800">{t('change_language')}</div>
-                                            <div className="text-xs text-gray-500">{t('languages_list')}</div>
-                                        </div>
-                                    </div>
-                                    <ChevronLeft className="w-5 h-5 text-gray-400" />
-                                </button>
-
-                                {/* Biometric */}
-                                <button
-                                    onClick={toggleBiometric}
-                                    className="w-full flex items-center justify-between p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors"
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isBiometricEnabled ? 'bg-green-100' : 'bg-gray-100'}`}>
-                                            <Fingerprint className={`w-5 h-5 ${isBiometricEnabled ? 'text-green-600' : 'text-gray-600'}`} />
-                                        </div>
-                                   <div className="text-right">
-    <div className="font-medium text-gray-800">
-        {isBiometricEnabled ? t('disable_biometric') : t('enable_biometric')}
-    </div>
-    <div className="text-xs text-gray-500">
-        {isBiometricEnabled ? t('biometric_enabled') : t('biometric_disabled')}
-    </div>
-</div>
-
-                                    </div>
-                                    <ChevronLeft className="w-5 h-5 text-gray-400" />
-                                </button>
-
-                                {/* Forgot Password */}
-                                <button
-                                    onClick={() => setShowForgotPasswordModal(true)}
-                                    className="w-full flex items-center justify-between p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors"
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
-                                            <Key className="w-5 h-5 text-purple-600" />
-                                        </div>
-                                        <div className="text-right">
-                                            <div className="font-medium text-gray-800">{t('forgot_password')}</div>
-                                            <div className="text-xs text-gray-500">{t('reset_device_password')}</div>
-                                        </div>
-                                    </div>
-                                    <ChevronLeft className="w-5 h-5 text-gray-400" />
-                                </button>
-
-                                {/* Change Phone */}
-                                <button
-                                    onClick={() => {
-                                        setNewPhone('');
-                                        setVerificationLast6('');
-                                        setVerificationPassword('');
-                                        setShowChangePhoneModal(true);
-                                    }}
-                                    className="w-full flex items-center justify-between p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors"
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-full bg-cyan-100 flex items-center justify-center">
-                                            <Phone className="w-5 h-5 text-cyan-600" />
-                                        </div>
-                                        <div className="text-right">
-                                            <div className="font-medium text-gray-800">{t('change_phone_number')}</div>
-                                            <div className="text-xs text-gray-500">{t('update_contact_number')}</div>
-                                        </div>
-                                    </div>
-                                    <ChevronLeft className="w-5 h-5 text-gray-400" />
-                                </button>
-
-                                
-
-                                {/* Support */}
-                                <button
-                                    onClick={handleSupport}
-                                    className="w-full flex items-center justify-between p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors"
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-full bg-yellow-100 flex items-center justify-center">
-                                            <MessageSquare className="w-5 h-5 text-yellow-600" />
-                                        </div>
-                                        <div className="text-right">
-                                            <div className="font-medium text-gray-800">{t('support')}</div>
-                                            <div className="text-xs text-gray-500">{t('contact_us_whatsapp')}</div>
-                                        </div>
-                                    </div>
-                                    <ChevronLeft className="w-5 h-5 text-gray-400" />
-                                </button>
-
-                                {/* Delete Account */}
-                                <button
-                                    onClick={() => setShowDeleteAccountModal(true)}
-                                    className="w-full flex items-center justify-between p-4 border-b border-gray-100 hover:bg-red-50 transition-colors"
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
-                                            <Trash2 className="w-5 h-5 text-red-600" />
-                                        </div>
-                                        <div className="text-right">
-                                            <div className="font-medium text-red-700">حذف الحساب</div>
-                                            <div className="text-xs text-red-500">حذف بياناتك نهائياً من التطبيق</div>
-                                        </div>
-                                    </div>
-                                    <ChevronLeft className="w-5 h-5 text-red-400" />
-                                </button>
-
-                                {/* Logout */}
-                                <button
-                                    onClick={handleLogout}
-                                    className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
-                                            <LogOut className="w-5 h-5 text-red-600" />
-                                        </div>
-                                        <div className="text-right">
-                                            <div className="font-medium text-gray-800">{t('logout')}</div>
-                                            <div className="text-xs text-gray-500">{t('logout_from_account')}</div>
-                                        </div>
-                                    </div>
-                                    <ChevronLeft className="w-5 h-5 text-gray-400" />
-                                </button>
+                    {/* Rewards Section */}
+                    <div className="mb-6">
+                        <h3 className="text-xl font-bold text-blue-600 mb-3">{t('rewards')}</h3>
+                        <div className="grid grid-cols-3 gap-3">
+                            <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-4 text-center">
+                                <div className="w-10 h-10 rounded-full bg-[#289c8e]/20 flex items-center justify-center mx-auto mb-2">
+                                    <Gift className="w-5 h-5 text-[#289c8e]" />
+                                </div>
+                                <div className="text-xl font-bold text-gray-800">{rewardsInfo.count - rewardsInfo.claimedCount}</div>
+                                <div className="text-xs text-gray-500">{t('available')}</div>
                             </div>
-                        </div>
-
-                        {/* Legal Information Section */}
-                        <div className="mb-24">
-                            <h3 className="text-lg font-bold text-blue-600 mb-3">{t('legal_info')}</h3>
-                            <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg overflow-hidden ">
-                                <Link
-                                    to="/privacy-policy"
-                                    className="w-full flex items-center justify-between p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors"
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-                                            <Shield className="w-5 h-5 text-blue-600" />
-                                        </div>
-                                        <div className="text-right">
-                                            <div className="font-medium text-gray-800">{t('privacy_policy')}</div>
-                                            <div className="text-xs text-gray-500">{t('learn_how_we_protect')}</div>
-                                        </div>
-                                    </div>
-                                    <ChevronLeft className="w-5 h-5 text-gray-400" />
-                                </Link>
-                                <Link
-                                    to="/terms-of-use"
-                                    className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-                                            <FileText className="w-5 h-5 text-blue-600" />
-                                        </div>
-                                        <div className="text-right">
-                                            <div className="font-medium text-gray-800">{t('terms_of_use')}</div>
-                                            <div className="text-xs text-gray-500">{t('rules_and_terms')}</div>
-                                        </div>
-                                    </div>
-                                    <ChevronLeft className="w-5 h-5 text-gray-400" />
-                                </Link>
+                            <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-4 text-center">
+                                <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-2">
+                                    <Sparkles className="w-5 h-5 text-green-600" />
+                                </div>
+                                <div className="text-xl font-bold text-gray-800">{rewardsInfo.claimedCount}</div>
+                                <div className="text-xs text-gray-500">{t('used')}</div>
+                            </div>
+                            <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-4 text-center">
+                                <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center mx-auto mb-2">
+                                    <Award className="w-5 h-5 text-purple-600" />
+                                </div>
+                                <div className="text-xl font-bold text-gray-800">{rewardsInfo.count}</div>
+                                <div className="text-xs text-gray-500">{t('total')}</div>
                             </div>
                         </div>
                     </div>
 
-                    {/* Bottom Navigation */}
-                    <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm shadow-lg border-t border-white/20">
-                        <div className="flex justify-around py-3">
-                            <Link to="/dashboard" className="flex flex-col items-center text-gray-500">
-                                <PlusSquare className="w-6 h-6 mb-1" />
-                                <span className="text-xs">{t('home')}</span>
-                            </Link>
-                            <Link to="/Search" className="flex flex-col items-center text-gray-500">
-                                <Search className="w-6 h-6 mb-1" />
-                                <span className="text-xs">{t('search')}</span>
-                            </Link>
-                            <Link to="/rewards" className="flex flex-col items-center text-gray-500">
-                                <Gift className="w-6 h-6 mb-1" />
-                                <span className="text-xs">{t('my_rewards')}</span>
-                            </Link>
-                            <Link to="/profile" className="flex flex-col items-center text-[#289c8e]">
-                                <User className="w-6 h-6 mb-1" />
-                                <span className="text-xs">{t('my_account')}</span>
-                            </Link>
+                    {/* Settings Section */}
+                    <div className="mb-6">
+                        <h3 className="text-xl font-bold text-blue-600 mb-3">{t('settings')}</h3>
+                        <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg overflow-hidden">
+                            {/* Recovery Cards - Barcode My Phones */}
+                            <button
+                                onClick={() => navigate('/recovery-cards')}
+                                className="w-full flex items-center justify-between p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-cyan-100 flex items-center justify-center">
+                                        <Phone className="w-5 h-5 text-cyan-600" />
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="text-lg font-bold text-gray-800">{t('barcode_my_phones') || 'باركود هواتفي'}</div>
+                                        <div className="text-xs text-gray-500">{t('manage_recovery_cards') || 'إدارة بطاقات الاسترداد'}</div>
+                                    </div>
+                                </div>
+                                <ChevronLeft className="w-5 h-5 text-gray-400" />
+                            </button>
+
+                            {/* Language */}
+                            <button
+                                onClick={() => navigate('/notifications')}
+                                className="w-full flex items-center justify-between p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-[#00E5FF]/15 flex items-center justify-center">
+                                        <Bell className="w-5 h-5 text-[#008b9a]" />
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="text-lg font-bold text-gray-800">{t('my_notifications')}</div>
+                                        <div className="text-xs text-gray-500">{t('notifications_page_description')}</div>
+                                    </div>
+                                </div>
+                                <ChevronLeft className="w-5 h-5 text-gray-400" />
+                            </button>
+
+                            {/* Favorites */}
+                            <button
+                                onClick={() => navigate('/favorites')}
+                                className="w-full flex items-center justify-between p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                                        <Heart className="w-5 h-5 text-red-500" />
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="text-lg font-bold text-gray-800">{t('favorites')}</div>
+                                        <div className="text-xs text-gray-500">{t('favorites_page_description')}</div>
+                                    </div>
+                                </div>
+                                <ChevronLeft className="w-5 h-5 text-gray-400" />
+                            </button>
+
+                            <button
+                                onClick={() => setShowLanguageModal(true)}
+                                className="w-full flex items-center justify-between p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                                        <Globe className="w-5 h-5 text-blue-600" />
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="text-lg font-bold text-gray-800">{t('change_language')}</div>
+                                        <div className="text-xs text-gray-500">{t('languages_list')}</div>
+                                    </div>
+                                </div>
+                                <ChevronLeft className="w-5 h-5 text-gray-400" />
+                            </button>
+
+                            {/* Biometric */}
+                            <button
+                                onClick={toggleBiometric}
+                                className="w-full flex items-center justify-between p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isBiometricEnabled ? 'bg-green-100' : 'bg-gray-100'}`}>
+                                        <Fingerprint className={`w-5 h-5 ${isBiometricEnabled ? 'text-green-600' : 'text-gray-600'}`} />
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="text-lg font-bold text-gray-800">
+                                            {isBiometricEnabled ? t('disable_biometric') : t('enable_biometric')}
+                                        </div>
+                                        <div className="text-xs text-gray-500">
+                                            {isBiometricEnabled ? t('biometric_enabled') : t('biometric_disabled')}
+                                        </div>
+                                    </div>
+
+                                </div>
+                                <ChevronLeft className="w-5 h-5 text-gray-400" />
+                            </button>
+
+                            {/* Forgot Password */}
+                            <button
+                                onClick={() => setShowForgotPasswordModal(true)}
+                                className="w-full flex items-center justify-between p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
+                                        <Key className="w-5 h-5 text-purple-600" />
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="text-lg font-bold text-gray-800">{t('forgot_password')}</div>
+                                        <div className="text-xs text-gray-500">{t('reset_device_password')}</div>
+                                    </div>
+                                </div>
+                                <ChevronLeft className="w-5 h-5 text-gray-400" />
+                            </button>
+
+                            {/* Change Phone */}
+                            <button
+                                onClick={() => {
+                                    setNewPhone('');
+                                    setVerificationLast6('');
+                                    setVerificationPassword('');
+                                    setShowChangePhoneModal(true);
+                                }}
+                                className="w-full flex items-center justify-between p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-cyan-100 flex items-center justify-center">
+                                        <Phone className="w-5 h-5 text-cyan-600" />
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="text-lg font-bold text-gray-800">{t('change_phone_number')}</div>
+                                        <div className="text-xs text-gray-500">{t('update_contact_number')}</div>
+                                    </div>
+                                </div>
+                                <ChevronLeft className="w-5 h-5 text-gray-400" />
+                            </button>
+
+
+
+                            {/* Support */}
+                            <button
+                                onClick={handleSupport}
+                                className="w-full flex items-center justify-between p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-yellow-100 flex items-center justify-center">
+                                        <MessageSquare className="w-5 h-5 text-yellow-600" />
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="text-lg font-bold text-gray-800">{t('support')}</div>
+                                        <div className="text-xs text-gray-500">{t('contact_us_whatsapp')}</div>
+                                    </div>
+                                </div>
+                                <ChevronLeft className="w-5 h-5 text-gray-400" />
+                            </button>
+
+                            {/* Delete Account */}
+                            <button
+                                onClick={() => setShowDeleteAccountModal(true)}
+                                className="w-full flex items-center justify-between p-4 border-b border-gray-100 hover:bg-red-50 transition-colors"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                                        <Trash2 className="w-5 h-5 text-red-600" />
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="font-medium text-red-700">حذف الحساب</div>
+                                        <div className="text-xs text-red-500">حذف بياناتك نهائياً من التطبيق</div>
+                                    </div>
+                                </div>
+                                <ChevronLeft className="w-5 h-5 text-red-400" />
+                            </button>
+
+                            {/* Logout */}
+                            <button
+                                onClick={handleLogout}
+                                className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                                        <LogOut className="w-5 h-5 text-red-600" />
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="text-lg font-bold text-gray-800">{t('logout')}</div>
+                                        <div className="text-xs text-gray-500">{t('logout_from_account')}</div>
+                                    </div>
+                                </div>
+                                <ChevronLeft className="w-5 h-5 text-gray-400" />
+                            </button>
                         </div>
                     </div>
 
-                    {/* Forgot Password Modal */}
-                    <Dialog open={showForgotPasswordModal} onOpenChange={setShowForgotPasswordModal}>
-                        <DialogContent className="bg-white rounded-2xl shadow-xl p-6 max-w-md mx-auto">
-                            <DialogHeader className="text-center mb-4">
-                                <DialogTitle className="text-xl font-bold text-gray-900">{t('reset_password')}</DialogTitle>
-                                <DialogDescription className="text-gray-600 mt-2">
-                                    {t('enter_imei_and_new_password')}
-                                </DialogDescription>
-                            </DialogHeader>
-
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">{t('imei_number')}</label>
-                                    <Input
-                                        type="text"
-                                        value={forgotPasswordData.imei}
-                                        onChange={(e) => setForgotPasswordData(prev => ({
-                                            ...prev,
-                                            imei: e.target.value.replace(/\D/g, '')
-                                        }))}
-                                        className="w-full rounded-lg border-gray-300 focus:border-[#289c8e] focus:ring-[#289c8e]"
-                                        maxLength={15}
-                                        placeholder={t('enter_imei')}
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">{t('new_password')}</label>
-                                    <Input
-                                        type="password"
-                                        value={forgotPasswordData.newPassword}
-                                        onChange={(e) => setForgotPasswordData(prev => ({
-                                            ...prev,
-                                            newPassword: e.target.value
-                                        }))}
-                                        className="w-full rounded-lg border-gray-300 focus:border-[#289c8e] focus:ring-[#289c8e]"
-                                        placeholder={t('enter_new_password')}
-                                    />
-                                </div>
-                            </div>
-
-                            <DialogFooter className="gap-3 mt-6">
-                                <Button onClick={() => setShowForgotPasswordModal(false)} variant="outline" className="flex-1 rounded-lg">
-                                    {t('cancel')}
-                                </Button>
-                                <Button onClick={handleForgotPassword} disabled={isProcessing} className="flex-1 bg-[#289c8e] hover:bg-[#1a7468] rounded-lg">
-                                    {isProcessing ? t('processing') : t('update_password')}
-                                </Button>
-                            </DialogFooter>
-                        </DialogContent>
-                    </Dialog>
-
-                    {/* Delete Account Modal */}
-                    <Dialog open={showDeleteAccountModal} onOpenChange={setShowDeleteAccountModal}>
-                        <DialogContent className="bg-white rounded-2xl shadow-xl p-6 max-w-md mx-auto">
-                            <DialogHeader className="text-center mb-4">
-                                <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-3">
-                                    <Trash2 className="w-7 h-7 text-red-600" />
-                                </div>
-                                <DialogTitle className="text-xl font-bold text-gray-900">تأكيد حذف الحساب</DialogTitle>
-                                <DialogDescription className="text-gray-600 mt-2 leading-6">
-                                    سيتم حذف حسابك وجميع بياناتك وأجهزتك المسجلة نهائياً. لا يمكن التراجع عن هذا الإجراء.
-                                </DialogDescription>
-                            </DialogHeader>
-
-                            <DialogFooter className="gap-3 mt-6">
-                                <Button
-                                    onClick={() => setShowDeleteAccountModal(false)}
-                                    variant="outline"
-                                    className="flex-1 rounded-lg"
-                                    disabled={isProcessing}
-                                >
-                                    إلغاء
-                                </Button>
-                                <Button
-                                    onClick={handleDeleteAccount}
-                                    disabled={isProcessing}
-                                    className="flex-1 rounded-lg bg-red-600 hover:bg-red-700 text-white"
-                                >
-                                    {isProcessing ? 'جارٍ الحذف...' : 'حذف الحساب'}
-                                </Button>
-                            </DialogFooter>
-                        </DialogContent>
-                    </Dialog>
-
-                    {/* Change Phone Modal */}
-                    <Dialog open={showChangePhoneModal} onOpenChange={setShowChangePhoneModal}>
-                        <DialogContent className="bg-white rounded-2xl shadow-xl p-6 max-w-md mx-auto">
-                            <DialogHeader className="text-center mb-4">
-                                <DialogTitle className="text-xl font-bold text-gray-900">{t('change_phone_number')}</DialogTitle>
-                                <DialogDescription className="text-gray-600 mt-2">
-                                    {t('enter_new_phone_and_verification')}
-                                </DialogDescription>
-                            </DialogHeader>
-
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">{t('new_phone_number')}</label>
-                                    <div className="flex gap-2">
-                                        <CountryCodeSelector
-                                            value={displayedCountryCode}
-                                            onChange={(code) => setCountryCode(code)}
-                                        />
-                                        <Input
-                                            type="tel"
-                                            value={newPhone}
-                                            onChange={(e) => setNewPhone(e.target.value)}
-                                            className="flex-1 rounded-lg border-gray-300 focus:border-[#289c8e] focus:ring-[#289c8e]"
-                                            placeholder={t('phone_placeholder')}
-                                            name={phoneNameRef.current}
-                                            autoComplete="tel"
-                                            inputMode="tel"
-                                        />
+                    {/* Legal Information Section */}
+                    <div className="mb-24">
+                        <h3 className="text-xl font-bold text-blue-600 mb-3">{t('legal_info')}</h3>
+                        <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg overflow-hidden ">
+                            <Link
+                                to="/privacy-policy"
+                                className="w-full flex items-center justify-between p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                                        <Shield className="w-5 h-5 text-blue-600" />
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="text-lg font-bold text-gray-800">{t('privacy_policy')}</div>
+                                        <div className="text-xs text-gray-500">{t('learn_how_we_protect')}</div>
                                     </div>
                                 </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">{t('last6_from_card')}</label>
-                                    <Input
-                                        type="text"
-                                        value={verificationLast6}
-                                        onChange={(e) => setVerificationLast6(e.target.value.replace(/\D/g, ''))}
-                                        className="w-full rounded-lg border-gray-300 focus:border-[#289c8e] focus:ring-[#289c8e]"
-                                        placeholder={t('last6_placeholder')}
-                                        maxLength={6}
-                                        name={last6NameRef.current}
-                                        autoComplete="off"
-                                        inputMode="numeric"
-                                    />
+                                <ChevronLeft className="w-5 h-5 text-gray-400" />
+                            </Link>
+                            <Link
+                                to="/terms-of-use"
+                                className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                                        <FileText className="w-5 h-5 text-blue-600" />
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="text-lg font-bold text-gray-800">{t('terms_of_use')}</div>
+                                        <div className="text-xs text-gray-500">{t('rules_and_terms')}</div>
+                                    </div>
                                 </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">{t('current_password')}</label>
-                                    <Input
-                                        type="password"
-                                        value={verificationPassword}
-                                        onChange={(e) => setVerificationPassword(e.target.value)}
-                                        className="w-full rounded-lg border-gray-300 focus:border-[#289c8e] focus:ring-[#289c8e]"
-                                        placeholder={t('enter_account_password') || t('enter_current_password')}
-                                        name={pwdNameRef.current}
-                                        autoComplete="new-password"
-                                    />
-                                </div>
-                            </div>
-
-                            <DialogFooter className="gap-3 mt-6">
-                                <Button onClick={() => setShowChangePhoneModal(false)} variant="outline" className="flex-1 rounded-lg">
-                                    {t('cancel')}
-                                </Button>
-                                <Button onClick={handleUpdatePhone} disabled={isUpdatingPhone} className="flex-1 bg-[#289c8e] hover:bg-[#1a7468] rounded-lg">
-                                    {isUpdatingPhone ? t('processing') : t('update_phone')}
-                                </Button>
-                            </DialogFooter>
-                        </DialogContent>
-                    </Dialog>
-
-                    {/* Language Modal */}
-                    <Dialog open={showLanguageModal} onOpenChange={setShowLanguageModal}>
-                        <DialogContent className="bg-white rounded-2xl shadow-xl p-6 max-w-md mx-auto">
-                            <DialogHeader className="text-center mb-4">
-                                <DialogTitle className="text-xl font-bold text-gray-900">{t('change_language')}</DialogTitle>
-                            </DialogHeader>
-                            <div className="flex flex-col gap-3">
-                                <Button onClick={() => handleLanguageChange('ar')} className="w-full justify-start bg-[#289c8e]/10 hover:bg-[#289c8e]/20 text-[#289c8e] rounded-lg py-3">
-                                    <span className="mr-3">🇸🇦</span> العربية
-                                </Button>
-                                <Button onClick={() => handleLanguageChange('en')} className="w-full justify-start bg-[#289c8e]/10 hover:bg-[#289c8e]/20 text-[#289c8e] rounded-lg py-3">
-                                    <span className="mr-3">🇺🇸</span> English
-                                </Button>
-                                <Button onClick={() => handleLanguageChange('fr')} className="w-full justify-start bg-[#289c8e]/10 hover:bg-[#289c8e]/20 text-[#289c8e] rounded-lg py-3">
-                                    <span className="mr-3">🇫🇷</span> Français
-                                </Button>
-                                <Button onClick={() => handleLanguageChange('hi')} className="w-full justify-start bg-[#289c8e]/10 hover:bg-[#289c8e]/20 text-[#289c8e] rounded-lg py-3">
-                                    <span className="mr-3">🇮🇳</span> हिन्दी
-                                </Button>
-                            </div>
-                            <DialogFooter className="mt-6">
-                                <Button onClick={() => setShowLanguageModal(false)} variant="outline" className="w-full rounded-lg">
-                                    {t('close')}
-                                </Button>
-                            </DialogFooter>
-                        </DialogContent>
-                    </Dialog>
+                                <ChevronLeft className="w-5 h-5 text-gray-400" />
+                            </Link>
+                        </div>
+                    </div>
                 </div>
 
-            </PageContainer>
+                {/* Bottom Navigation */}
+                <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm shadow-lg border-t border-white/20">
+                    <div className="flex justify-around py-3">
+                        <Link to="/dashboard" className="flex flex-col items-center text-gray-500">
+                            <PlusSquare className="w-6 h-6 mb-1" />
+                            <span className="text-xs">{t('home')}</span>
+                        </Link>
+                        <Link to="/Search" className="flex flex-col items-center text-gray-500">
+                            <Search className="w-6 h-6 mb-1" />
+                            <span className="text-xs">{t('search')}</span>
+                        </Link>
+                        <Link to="/rewards" className="flex flex-col items-center text-gray-500">
+                            <Gift className="w-6 h-6 mb-1" />
+                            <span className="text-xs">{t('my_rewards')}</span>
+                        </Link>
+                        <Link to="/profile" className="flex flex-col items-center text-[#289c8e]">
+                            <User className="w-6 h-6 mb-1" />
+                            <span className="text-xs">{t('my_account')}</span>
+                        </Link>
+                    </div>
+                </div>
+
+                {/* Forgot Password Modal */}
+                <Dialog open={showForgotPasswordModal} onOpenChange={setShowForgotPasswordModal}>
+                    <DialogContent className="bg-white rounded-2xl shadow-xl p-6 max-w-md mx-auto">
+                        <DialogHeader className="text-center mb-4">
+                            <DialogTitle className="text-xl font-bold text-gray-900">{t('reset_password')}</DialogTitle>
+                            <DialogDescription className="text-gray-600 mt-2">
+                                {t('enter_imei_and_new_password')}
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">{t('imei_number')}</label>
+                                <Input
+                                    type="text"
+                                    value={forgotPasswordData.imei}
+                                    onChange={(e) => setForgotPasswordData(prev => ({
+                                        ...prev,
+                                        imei: e.target.value.replace(/\D/g, '')
+                                    }))}
+                                    className="w-full rounded-lg border-gray-300 focus:border-[#289c8e] focus:ring-[#289c8e]"
+                                    maxLength={15}
+                                    placeholder={t('enter_imei')}
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">{t('new_password')}</label>
+                                <Input
+                                    type="password"
+                                    value={forgotPasswordData.newPassword}
+                                    onChange={(e) => setForgotPasswordData(prev => ({
+                                        ...prev,
+                                        newPassword: e.target.value
+                                    }))}
+                                    className="w-full rounded-lg border-gray-300 focus:border-[#289c8e] focus:ring-[#289c8e]"
+                                    placeholder={t('enter_new_password')}
+                                />
+                            </div>
+                        </div>
+
+                        <DialogFooter className="gap-3 mt-6">
+                            <Button onClick={() => setShowForgotPasswordModal(false)} variant="outline" className="flex-1 rounded-lg">
+                                {t('cancel')}
+                            </Button>
+                            <Button onClick={handleForgotPassword} disabled={isProcessing} className="flex-1 bg-[#289c8e] hover:bg-[#1a7468] rounded-lg">
+                                {isProcessing ? t('processing') : t('update_password')}
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+
+                {/* Delete Account Modal */}
+                <Dialog open={showDeleteAccountModal} onOpenChange={setShowDeleteAccountModal}>
+                    <DialogContent className="bg-white rounded-2xl shadow-xl p-6 max-w-md mx-auto">
+                        <DialogHeader className="text-center mb-4">
+                            <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-3">
+                                <Trash2 className="w-7 h-7 text-red-600" />
+                            </div>
+                            <DialogTitle className="text-xl font-bold text-gray-900">تأكيد حذف الحساب</DialogTitle>
+                            <DialogDescription className="text-gray-600 mt-2 leading-6">
+                                سيتم حذف حسابك وجميع بياناتك وأجهزتك المسجلة نهائياً. لا يمكن التراجع عن هذا الإجراء.
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        <DialogFooter className="gap-3 mt-6">
+                            <Button
+                                onClick={() => setShowDeleteAccountModal(false)}
+                                variant="outline"
+                                className="flex-1 rounded-lg"
+                                disabled={isProcessing}
+                            >
+                                إلغاء
+                            </Button>
+                            <Button
+                                onClick={handleDeleteAccount}
+                                disabled={isProcessing}
+                                className="flex-1 rounded-lg bg-red-600 hover:bg-red-700 text-white"
+                            >
+                                {isProcessing ? 'جارٍ الحذف...' : 'حذف الحساب'}
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+
+                {/* Change Phone Modal */}
+                <Dialog open={showChangePhoneModal} onOpenChange={setShowChangePhoneModal}>
+                    <DialogContent className="bg-white rounded-2xl shadow-xl p-6 max-w-md mx-auto">
+                        <DialogHeader className="text-center mb-4">
+                            <DialogTitle className="text-xl font-bold text-gray-900">{t('change_phone_number')}</DialogTitle>
+                            <DialogDescription className="text-gray-600 mt-2">
+                                {t('enter_new_phone_and_verification')}
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">{t('new_phone_number')}</label>
+                                <div className="flex gap-2">
+                                    <CountryCodeSelector
+                                        value={displayedCountryCode}
+                                        onChange={(code) => setCountryCode(code)}
+                                    />
+                                    <Input
+                                        type="tel"
+                                        value={newPhone}
+                                        onChange={(e) => setNewPhone(e.target.value)}
+                                        className="flex-1 rounded-lg border-gray-300 focus:border-[#289c8e] focus:ring-[#289c8e]"
+                                        placeholder={t('phone_placeholder')}
+                                        name={phoneNameRef.current}
+                                        autoComplete="tel"
+                                        inputMode="tel"
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">{t('last6_from_card')}</label>
+                                <Input
+                                    type="text"
+                                    value={verificationLast6}
+                                    onChange={(e) => setVerificationLast6(e.target.value.replace(/\D/g, ''))}
+                                    className="w-full rounded-lg border-gray-300 focus:border-[#289c8e] focus:ring-[#289c8e]"
+                                    placeholder={t('last6_placeholder')}
+                                    maxLength={6}
+                                    name={last6NameRef.current}
+                                    autoComplete="off"
+                                    inputMode="numeric"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">{t('current_password')}</label>
+                                <Input
+                                    type="password"
+                                    value={verificationPassword}
+                                    onChange={(e) => setVerificationPassword(e.target.value)}
+                                    className="w-full rounded-lg border-gray-300 focus:border-[#289c8e] focus:ring-[#289c8e]"
+                                    placeholder={t('enter_account_password') || t('enter_current_password')}
+                                    name={pwdNameRef.current}
+                                    autoComplete="new-password"
+                                />
+                            </div>
+                        </div>
+
+                        <DialogFooter className="gap-3 mt-6">
+                            <Button onClick={() => setShowChangePhoneModal(false)} variant="outline" className="flex-1 rounded-lg">
+                                {t('cancel')}
+                            </Button>
+                            <Button onClick={handleUpdatePhone} disabled={isUpdatingPhone} className="flex-1 bg-[#289c8e] hover:bg-[#1a7468] rounded-lg">
+                                {isUpdatingPhone ? t('processing') : t('update_phone')}
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+
+                {/* Language Modal */}
+                <Dialog open={showLanguageModal} onOpenChange={setShowLanguageModal}>
+                    <DialogContent className="bg-white rounded-2xl shadow-xl p-6 max-w-md mx-auto">
+                        <DialogHeader className="text-center mb-4">
+                            <DialogTitle className="text-xl font-bold text-gray-900">{t('change_language')}</DialogTitle>
+                        </DialogHeader>
+                        <div className="flex flex-col gap-3">
+                            <Button onClick={() => handleLanguageChange('ar')} className="w-full justify-start bg-[#289c8e]/10 hover:bg-[#289c8e]/20 text-[#289c8e] rounded-lg py-3">
+                                <span className="mr-3">🇸🇦</span> العربية
+                            </Button>
+                            <Button onClick={() => handleLanguageChange('en')} className="w-full justify-start bg-[#289c8e]/10 hover:bg-[#289c8e]/20 text-[#289c8e] rounded-lg py-3">
+                                <span className="mr-3">🇺🇸</span> English
+                            </Button>
+                            <Button onClick={() => handleLanguageChange('fr')} className="w-full justify-start bg-[#289c8e]/10 hover:bg-[#289c8e]/20 text-[#289c8e] rounded-lg py-3">
+                                <span className="mr-3">🇫🇷</span> Français
+                            </Button>
+                            <Button onClick={() => handleLanguageChange('hi')} className="w-full justify-start bg-[#289c8e]/10 hover:bg-[#289c8e]/20 text-[#289c8e] rounded-lg py-3">
+                                <span className="mr-3">🇮🇳</span> हिन्दी
+                            </Button>
+                        </div>
+                        <DialogFooter className="mt-6">
+                            <Button onClick={() => setShowLanguageModal(false)} variant="outline" className="w-full rounded-lg">
+                                {t('close')}
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+            </div>
+
+        </PageContainer>
 
     );
 };

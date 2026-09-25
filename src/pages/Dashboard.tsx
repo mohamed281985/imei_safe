@@ -23,6 +23,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import axiosInstance from '@/services/axiosInterceptor';
 import { useDevRequestDeduper } from '@/hooks/useDevRequestDeduper';
+import { ACCESSORY_CATEGORIES } from '@/constants/accessoryCategories';
 
 const OwnershipConfirmationModal = React.lazy(() => import('../components/OwnershipConfirmationModal'));
 const AdPopupModal = React.lazy(() => import('../components/AdPopupModal'));
@@ -622,7 +623,15 @@ const Dashboard: React.FC = () => {
 
         // تطبيق فلتر حسب عمود countries فقط (مثل صفحة PhonesForSale)
         if (userCountryName) {
-          phoneQuery = phoneQuery.ilike('countries', `%${userCountryName}%`);
+          const { data: countryNames } = await supabase
+            .from('countries')
+            .select('name_ar, name_en')
+            .or(`name_ar.ilike.${userCountryName},name_en.ilike.${userCountryName}`)
+            .maybeSingle();
+          const names = [countryNames?.name_ar, countryNames?.name_en, userCountryName]
+            .filter(Boolean)
+            .map(name => String(name).replace(/,/g, ''));
+          phoneQuery = phoneQuery.or(names.map(name => `countries.ilike.%${name}%`).join(','));
           console.debug('[Country Filter] Applied countries ilike filter for phones:', userCountryName);
         }
 
@@ -687,9 +696,17 @@ const Dashboard: React.FC = () => {
           `)
           .eq('status', 'active');
 
-        // تطبيق فلتر حسب عمود countries فقط (مثل صفحة PhonesForSale)
+        // قبول اسم الدولة بالعربية أو الإنجليزية في بيانات الإكسسوار.
         if (userCountryName) {
-          accessoryQuery = accessoryQuery.ilike('countries', `%${userCountryName}%`);
+          const { data: countryNames } = await supabase
+            .from('countries')
+            .select('name_ar, name_en')
+            .or(`name_ar.ilike.${userCountryName},name_en.ilike.${userCountryName}`)
+            .maybeSingle();
+          const names = [countryNames?.name_ar, countryNames?.name_en, userCountryName]
+            .filter(Boolean)
+            .map(name => String(name).replace(/,/g, ''));
+          accessoryQuery = accessoryQuery.or(names.map(name => `countries.ilike.%${name}%`).join(','));
           console.debug('[Country Filter] Applied countries ilike filter for accessories:', userCountryName);
         }
 
@@ -714,12 +731,19 @@ const Dashboard: React.FC = () => {
             }, {});
           }
 
-          let sortedAccessories = fetchedAccessories.map((accessory: any) => ({
-            ...accessory,
-            role: accessory.role
+          let sortedAccessories = fetchedAccessories.map((accessory: any) => {
+            const role = accessory.role
               || rolesBySeller[accessory.seller_id || accessory.user_id || '']
-              || ((accessory.seller_id || accessory.user_id) === user?.id ? currentUserRole : undefined),
-          }));
+              || ((accessory.seller_id || accessory.user_id) === user?.id ? currentUserRole : undefined);
+            const normalizedRole = String(role || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+            const isPackageRole = ['gold_business', 'silver_business', 'gold_user', 'silver_user'].includes(normalizedRole);
+
+            return {
+              ...accessory,
+              role,
+              type: accessory.type === 'promotions' || isPackageRole ? 'promotions' : accessory.type,
+            };
+          });
           if (coords?.latitude && coords?.longitude) {
             sortedAccessories.forEach(acc => {
               if (acc.latitude && acc.longitude) {
@@ -970,8 +994,9 @@ const Dashboard: React.FC = () => {
 
     // الجولد
     const normalizedRole = String(role || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+    const colorRole = normalizedRole === 'customer' ? 'free_user' : normalizedRole;
 
-    if (normalizedRole.startsWith('gold')) {
+    if (colorRole.startsWith('gold')) {
       borderColor = '!border-yellow-400 !shadow-yellow-100';
       if (isPromotion) {
         topBar = <div className="h-1.5 bg-gradient-to-r from-yellow-400 to-amber-500"></div>;
@@ -983,7 +1008,7 @@ const Dashboard: React.FC = () => {
       }
     }
     // الفضي
-    else if (normalizedRole.startsWith('silver')) {
+    else if (colorRole.startsWith('silver')) {
       borderColor = '!border-slate-400 !shadow-slate-200';
       if (isPromotion) {
         topBar = <div className="h-1.5 bg-gradient-to-r from-gray-300 to-gray-500"></div>;
@@ -1026,7 +1051,7 @@ const Dashboard: React.FC = () => {
       >
         {showLocationRequest && <LocationPermissionRequest />}
 
-        <div className="w-full mx-auto px-4">
+        <div className="w-full mx-auto">
           <div className="mb-1">
 
             <div className="grid grid-cols-4 gap-2 text-center mt-4 mb-4">
@@ -1136,14 +1161,14 @@ const Dashboard: React.FC = () => {
 
 
           {/* شريط صور إعلانات العروض */}
-          <div className="pt-4">
-            <AdsOfferSlider containerClassName="mt-2 mb-2" showHeader={false} />
+          <div className="pt-3">
+            <AdsOfferSlider containerClassName="mt-1 mb-1" showHeader={false} />
           </div>
 
           {/* قسم براندات الهواتف */}
           <>
-            <div className="mb-5 mt-5">
-              <div className="mb-3 flex items-center justify-between">
+            <div className="mb-4 mt-4">
+              <div className="mb-2 flex items-center justify-between">
                 <h2 className="text-xl font-bold text-black">العلامات التجارية</h2>
                 <Link to="/phones-for-sale" className="text-sm font-bold text-black hover:text-blue-700">
                   عرض الكل
@@ -1167,9 +1192,9 @@ const Dashboard: React.FC = () => {
                     <Link
                       key={brand}
                       to={`/phones-for-sale?brand=${encodeURIComponent(brand)}`}
-                      className="flex h-14 w-20 min-w-20 items-center justify-center rounded-lg border border-slate-200 bg-white shadow-sm p-0"
+                      className="flex h-14 w-14 min-w-14 items-center justify-center rounded-full border border-slate-200 bg-white p-1 shadow-sm transition-transform hover:scale-105"
                     >
-                      <span className="flex h-[42px] w-[72px] items-center justify-center rounded-md bg-transparent p-0">
+                      <span className="flex h-full w-full items-center justify-center rounded-full bg-transparent p-1">
                         <img
                           src={logoUrl}
                           alt={`شعار ${brand}`}
@@ -1187,8 +1212,8 @@ const Dashboard: React.FC = () => {
 
 
           {/* قسم الهواتف المعروضة للبيع */}
-          <div className="mb-5">
-            <div className="flex justify-between items-center mb-3">
+          <div className="mb-4">
+            <div className="flex justify-between items-center mb-2">
               <h2 className="text-black text-xl font-bold">{t('Phones')}</h2>
               <Link to="/phones-for-sale" className="text-black hover:text-imei-cyan/80 text-sm font-bold leading-none">
                 {t('view_all')}
@@ -1248,13 +1273,13 @@ const Dashboard: React.FC = () => {
                         <Link
                           to={`/product/${phone.id}`}
                           onClick={() => incrementPhoneViews(phone.id)}
-                          className={`relative z-10 bg-white rounded-2xl overflow-hidden shadow-[0_6px_20px_rgba(15,23,42,0.3)] hover:shadow-[0_12px_30px_rgba(15,23,42,0.36)] transition-all duration-300 group flex flex-col h-[240px] sm:h-[260px] md:h-[280px] lg:h-[240px] border-2 border-slate-200 ring-2 ring-slate-300/70 ${style.borderColor} ${phone.type === 'promotions' ? 'shadow-xl' : ''}`}
+                          className={`relative z-10 bg-white rounded-2xl overflow-hidden shadow-[0_6px_20px_rgba(15,23,42,0.3)] hover:shadow-[0_12px_30px_rgba(15,23,42,0.36)] transition-all duration-300 group flex flex-col h-[260px] sm:h-[280px] md:h-[300px] lg:h-[260px] border-2 border-slate-200 ring-2 ring-slate-300/70 ${style.borderColor} ${phone.type === 'promotions' ? 'shadow-xl' : ''}`}
                         >
 
 
                           {/* الشريط العلوي للإعلانات المميزة */}
                           {style.topBar}
-                          <div className="relative w-full h-[150px] sm:h-[170px] md:h-[190px] lg:h-[150px] bg-gray-50">
+                          <div className="relative w-full h-[135px] shrink-0 sm:h-[155px] md:h-[175px] lg:h-[135px] bg-gray-50">
                             {phone.phone_images?.[0]?.image_path ? (
                               <>
 
@@ -1338,7 +1363,7 @@ const Dashboard: React.FC = () => {
                             )}
                           </div>
 
-                          <div className="p-1.5 sm:p-2 flex flex-col gap-1 sm:gap-1.5">
+                          <div className="min-h-0 flex-1 overflow-hidden p-1.5 sm:p-2 flex flex-col gap-1 sm:gap-1.5">
                             {/* Title */}
                             <h3 className="text-lg font-bold text-black truncate leading-tight px-1">
                               {phone.phone_type}
@@ -1386,12 +1411,33 @@ const Dashboard: React.FC = () => {
           </div>
 
           {/* قسم الإكسسوارات المعروضة للبيع */}
-          <div className="mb-5">
-            <div className="flex justify-between items-center mb-3">
+          <div className="mb-4">
+            <div className="flex justify-between items-center mb-2">
               <h2 className="text-black text-xl font-bold">{t('accessories')}</h2>
               <Link to="/accessories-for-sale" className="text-black hover:text-imei-cyan/80 text-sm font-bold leading-none">
                 {t('view_all')}
               </Link>
+            </div>
+            <div className="mb-3 flex gap-3 overflow-x-auto pb-2">
+              {ACCESSORY_CATEGORIES.map(category => (
+                <Link
+                  key={category.value}
+                  to={`/accessories-for-sale?category=${category.value}`}
+                  className="flex min-w-[68px] flex-col items-center gap-1.5"
+                >
+                  <div className="h-14 w-14 overflow-hidden rounded-full border-2 border-white bg-white shadow-md ring-2 ring-slate-200 transition-transform hover:scale-105">
+                    <img
+                      src={category.image}
+                      alt={t(category.labelKey)}
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                    />
+                  </div>
+                  <span className="max-w-[82px] text-center text-xs font-bold leading-tight text-slate-900">
+                    {t(category.labelKey)}
+                  </span>
+                </Link>
+              ))}
             </div>
             <div className="relative">
               {loadingAccessories ? (
@@ -1415,7 +1461,7 @@ const Dashboard: React.FC = () => {
                         onClick={() => navigate(`/product/${acc.id}`)}
                         className="cursor-pointer"
                       >
-<div className={`relative z-10 bg-white rounded-2xl overflow-hidden shadow-[0_6px_20px_rgba(15,23,42,0.3)] hover:shadow-[0_12px_30px_rgba(15,23,42,0.36)] transition-all duration-300 group flex flex-col h-[240px] border-2 ${style.borderColor} ${acc.type === 'promotions' ? 'shadow-xl' : ''}`}>
+<div className={`relative z-10 bg-white rounded-2xl overflow-hidden shadow-[0_6px_20px_rgba(15,23,42,0.3)] hover:shadow-[0_12px_30px_rgba(15,23,42,0.36)] transition-all duration-300 group flex flex-col h-[260px] sm:h-[280px] md:h-[300px] lg:h-[260px] border-2 border-slate-200 ring-2 ring-slate-300/70 ${style.borderColor} ${acc.type === 'promotions' ? 'shadow-xl' : ''}`}>
 
                           {/* ⭐ FIX 1: Render topBar immediately inside the main card container */}
                           {style.topBar}
@@ -1424,7 +1470,7 @@ const Dashboard: React.FC = () => {
                             to={`/product/${acc.id}`}
                             className="flex flex-col h-full"
                           >
-                            <div className="relative w-full h-[160px] bg-gray-50">
+                            <div className="relative w-full h-[145px] shrink-0 sm:h-[165px] md:h-[185px] lg:h-[145px] bg-gray-50">
                               {acc.accessory_images?.[0]?.image_path ? (
                                 <img
                                   src={getTransformedAccessoryImageUrl(getAccessoryMainImage(acc))}
@@ -1458,7 +1504,7 @@ const Dashboard: React.FC = () => {
                             )}
                             </div>
 
-                            <div className="p-1.5 sm:p-2 flex flex-col gap-1 sm:gap-1.5 bg-white">
+                            <div className="min-h-0 flex-1 overflow-hidden p-1.5 sm:p-2 flex flex-col gap-1 sm:gap-1.5 bg-white">
                               {/* Title */}
                               <h3 className="text-lg font-bold text-black truncate leading-tight">
                                 {acc.title}

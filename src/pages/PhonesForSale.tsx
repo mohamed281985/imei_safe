@@ -7,7 +7,7 @@ import PageContainer from '@/components/PageContainer';
 import AppNavbar from '@/components/AppNavbar';
 import BackButton from '@/components/BackButton';
 import { useAuth } from '../contexts/AuthContext';
-import { Smartphone, Eye, Search, Filter, SortAsc, Star, PhoneCallIcon } from 'lucide-react';
+import { Heart, Smartphone, Eye, Search, Filter, SortAsc, Star, PhoneCallIcon } from 'lucide-react';
 
 // Utility function to disable console logs in production
 if (import.meta.env.MODE === 'production') {
@@ -75,8 +75,30 @@ const PhonesForSale: React.FC = () => {
   const [sortBy, setSortBy] = useState('newest');
   const [page, setPage] = useState(1); // Current page for pagination
   const [totalPages, setTotalPages] = useState(1); // Total number of pages
+  const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
   const itemsPerPage = 10; // Number of items per page
   const { user } = useAuth();
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('favorites');
+      setFavoriteIds(raw ? JSON.parse(raw) : []);
+    } catch {
+      setFavoriteIds([]);
+    }
+  }, []);
+
+  const toggleFavorite = (event: React.MouseEvent, id: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const next = favoriteIds.includes(id)
+      ? favoriteIds.filter(favoriteId => favoriteId !== id)
+      : [id, ...favoriteIds];
+
+    localStorage.setItem('favorites', JSON.stringify(next));
+    setFavoriteIds(next);
+  };
   
   // الحالة الافتراضية لرمز العملة هي العملة المترجمة أو "EGP"
   const [userCurrencySymbol, setUserCurrencySymbol] = useState(t('currency_short') || 'EGP');
@@ -166,7 +188,17 @@ const PhonesForSale: React.FC = () => {
           .select(`*, is_verified, phone_images(image_path, main_image)`, { count: 'exact' })
           .eq('status', 'active');
 
-        if (userCountryName) phoneQuery = phoneQuery.ilike('countries', `%${userCountryName}%`);
+        if (userCountryName) {
+          const { data: countryNames } = await supabase
+            .from('countries')
+            .select('name_ar, name_en')
+            .or(`name_ar.ilike.${userCountryName},name_en.ilike.${userCountryName}`)
+            .maybeSingle();
+          const names = [countryNames?.name_ar, countryNames?.name_en, userCountryName]
+            .filter(Boolean)
+            .map(name => String(name).replace(/,/g, ''));
+          phoneQuery = phoneQuery.or(names.map(name => `countries.ilike.%${name}%`).join(','));
+        }
         if (brandFilter) phoneQuery = phoneQuery.ilike('phone_type', `%${brandFilter}%`);
 
         const { data, error, count } = await phoneQuery.range((page - 1) * itemsPerPage, page * itemsPerPage - 1); // Fetch items for the current page
@@ -295,6 +327,16 @@ const PhonesForSale: React.FC = () => {
     <PageContainer>
       <AppNavbar />
       <div className="p-4 mb-10">
+        <div className="mb-4 flex items-center justify-between">
+          <h1 className="text-xl font-bold text-black">{t('Phones')}</h1>
+          <Link
+            to="/favorites"
+            className="flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-bold text-red-500 shadow-sm transition-colors hover:bg-red-50"
+          >
+            <Heart className="h-5 w-5" />
+            {t('favorites')}
+          </Link>
+        </div>
         {/* قسم البحث والفلترة */}
         <div className="bg-white/80 backdrop-blur-lg rounded-xl p-3 mb-4 shadow-lg">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -405,6 +447,15 @@ const PhonesForSale: React.FC = () => {
                 >
                   {/* الشريط العلوي للإعلانات المميزة */}
                   {style.topBar}
+
+                  <button
+                    type="button"
+                    onClick={(event) => toggleFavorite(event, phone.id)}
+                    aria-label={favoriteIds.includes(phone.id) ? t('remove_from_favorites') : t('add_to_favorites')}
+                    className="absolute left-2 top-2 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-white/95 shadow-md transition-transform hover:scale-105"
+                  >
+                    <Heart className={`h-5 w-5 ${favoriteIds.includes(phone.id) ? 'fill-red-500 text-red-500' : 'text-gray-700'}`} />
+                  </button>
 
                   <div className="relative w-full h-[200px] bg-gray-50">
                     {phone.phone_images?.[0]?.image_path ? (

@@ -3,10 +3,11 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import Logo from './Logo';
-import { X, Search, Plus, LogOut, User, Settings, Key, Gift, MessageCircle } from 'lucide-react';
+import { X, Search, Plus, LogOut, User, Settings, Key, Gift, MessageCircle, Coins } from 'lucide-react';
 import PackageBadge from '@/components/PackageBadge';
 import Notifications from './Notifications';
 import NotificationBell from './NotificationBell';
+import { getRewardBalanceFromStorage } from '@/data/rewards';
 import { supabase } from '../lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
@@ -26,6 +27,20 @@ const AppNavbar: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [supportNumber, setSupportNumber] = useState('');
   const [countryCode, setCountryCode] = useState('');
+  const [coinBalance, setCoinBalance] = useState<number>(getRewardBalanceFromStorage());
+
+  useEffect(() => {
+    const syncBalance = () => setCoinBalance(getRewardBalanceFromStorage());
+    syncBalance();
+
+    window.addEventListener('storage', syncBalance);
+    window.addEventListener('imei-safe-reward-balance-updated', syncBalance as EventListener);
+
+    return () => {
+      window.removeEventListener('storage', syncBalance);
+      window.removeEventListener('imei-safe-reward-balance-updated', syncBalance as EventListener);
+    };
+  }, []);
 
   const handleLogout = () => {
     logout();
@@ -162,6 +177,22 @@ const AppNavbar: React.FC = () => {
           <div>
             <PackageBadge user={user} />
           </div>
+          <button
+            type="button"
+            onClick={() => navigate('/daily-reward')}
+            className="group inline-flex h-12 shrink-0 items-center gap-2 rounded-full border border-transparent bg-white/70 p-1.5 shadow-[0_6px_16px_rgba(2,6,23,0.12)] backdrop-blur-md transition hover:-translate-y-0.5 hover:bg-amber-50"
+            aria-label={`Coins: ${new Intl.NumberFormat('en-US').format(coinBalance)}`}
+          >
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-amber-300 to-orange-400 text-white shadow-inner shadow-amber-600/30">
+              <Coins className="h-4 w-4 drop-shadow-sm" />
+            </span>
+            <span className="relative flex h-full min-w-[52px] items-center justify-end pr-1 text-right">
+              <span className="absolute right-0 top-0.5 whitespace-nowrap text-right text-[9px] font-extrabold leading-none text-amber-700 sm:text-[10px]">بونص دخول</span>
+              <span className="w-full shrink-0 translate-y-2 whitespace-nowrap text-right text-xs font-black leading-none tabular-nums tracking-[0.08em] text-slate-900 sm:text-sm">
+                {new Intl.NumberFormat('en-US').format(coinBalance)}
+              </span>
+            </span>
+          </button>
           {/* تم إزالة زر القائمة المنسدلة */}
         </div>
       </div>

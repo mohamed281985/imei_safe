@@ -9,6 +9,7 @@ import { useToast } from '@/hooks/use-toast';
 import PageContainer from '../components/PageContainer';
 import { useScrollToTop } from '../hooks/useScrollToTop';
 import { useLanguage } from '../contexts/LanguageContext';
+import { getCountryNameByCode } from '@/data/countries';
 
 export default function BusinessSignup() {
   useScrollToTop();
@@ -167,6 +168,7 @@ export default function BusinessSignup() {
                 full_name: formData.ownerName,
                 phone: formData.phone,           // رقم الهاتف فقط
                 country_code: countryCode,      // رمز الدولة منفصل
+                countries: getCountryNameByCode(countryCode),
                 id_last6: formData.id_last6,
                 role: 'free_business',
                 store_name: formData.storeName,
@@ -262,7 +264,7 @@ export default function BusinessSignup() {
 
                   {/* البريد الإلكتروني */}
                   <div className="space-y-1.5">
-                    <label className="block text-gray-700 text-sm font-bold pr-1 flex items-center gap-2">
+                    <label className="flex items-center gap-2 text-gray-700 text-sm font-bold pr-1">
                       <Mail size={16} className="text-blue-500" />
                       {t('email_label')}
                     </label>
@@ -282,7 +284,7 @@ export default function BusinessSignup() {
 
                   {/* اسم المحل */}
                   <div className="space-y-1.5">
-                    <label className="block text-gray-700 text-sm font-bold pr-1 flex items-center gap-2">
+                    <label className="flex items-center gap-2 text-gray-700 text-sm font-bold pr-1">
                       <Store size={16} className="text-blue-500" />
                       {t('store_name_label')}
                     </label>
@@ -300,7 +302,7 @@ export default function BusinessSignup() {
 
                   {/* اسم صاحب المحل */}
                   <div className="space-y-1.5">
-                    <label className="block text-gray-700 text-sm font-bold pr-1 flex items-center gap-2">
+                    <label className="flex items-center gap-2 text-gray-700 text-sm font-bold pr-1">
                       <User size={16} className="text-blue-500" />
                       {t('owner_name_label')}
                     </label>
@@ -318,7 +320,7 @@ export default function BusinessSignup() {
 
                   {/* رقم الهاتف */}
                   <div className="space-y-1.5">
-                    <label className="block text-gray-700 text-sm font-bold pr-1 flex items-center gap-2">
+                    <label className="flex items-center gap-2 text-gray-700 text-sm font-bold pr-1">
                       <Phone size={16} className="text-blue-500" />
                       {t('phone_label')}
                     </label>
@@ -346,7 +348,7 @@ export default function BusinessSignup() {
 
                   {/* عنوان المحل */}
                   <div className="space-y-1.5">
-                    <label className="block text-gray-700 text-sm font-bold pr-1 flex items-center gap-2">
+                    <label className="flex items-center gap-2 text-gray-700 text-sm font-bold pr-1">
                       <MapPin size={16} className="text-blue-500" />
                       {t('address_label')}
                     </label>
@@ -364,7 +366,7 @@ export default function BusinessSignup() {
 
                   {/* نوع النشاط */}
                   <div className="space-y-1.5">
-                    <label className="block text-gray-700 text-sm font-bold pr-1 flex items-center gap-2">
+                    <label className="flex items-center gap-2 text-gray-700 text-sm font-bold pr-1">
                       <Briefcase size={16} className="text-blue-500" />
                       {t('business_type_label')}
                     </label>
@@ -382,7 +384,7 @@ export default function BusinessSignup() {
 
                   {/* آخر 6 أرقام من البطاقة */}
                   <div className="space-y-1.5">
-                    <label className="block text-gray-700 text-sm font-bold pr-1 flex items-center gap-2">
+                    <label className="flex items-center gap-2 text-gray-700 text-sm font-bold pr-1">
                       <Lock size={16} className="text-blue-500" />
                       {t('id_last_6_digits')}
                     </label>
@@ -401,7 +403,7 @@ export default function BusinessSignup() {
 
                   {/* كلمة المرور */}
                   <div className="space-y-1.5">
-                    <label className="block text-gray-700 text-sm font-bold pr-1 flex items-center gap-2">
+                    <label className="flex items-center gap-2 text-gray-700 text-sm font-bold pr-1">
                       <Lock size={16} className="text-blue-500" />
                       {t('password_label')}
                     </label>
@@ -449,7 +451,7 @@ export default function BusinessSignup() {
 
                   {/* تأكيد كلمة المرور */}
                   <div className="space-y-1.5 pb-2">
-                    <label className="block text-gray-700 text-sm font-bold pr-1 flex items-center gap-2">
+                    <label className="flex items-center gap-2 text-gray-700 text-sm font-bold pr-1">
                       <Lock size={16} className="text-blue-500" />
                       {t('confirm_password_label')}
                     </label>

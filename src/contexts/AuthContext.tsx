@@ -224,18 +224,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
 
             // التحقق من اكتمال بيانات الحساب التجاري عند استعادة الجلسة
-            if (userProfile.role === 'free_business') {
+            if (userProfile.role === 'business') {
               const { data: profile, error: profileError } = await supabase
                 .from('businesses')
-                .select('store_image_url, license_image_url, status')
+                .select('store_image_url, license_image_url')
                 .eq('user_id', user.id)
                 .maybeSingle();
 
               if (profileError) console.error("Error fetching business profile on session check:", profileError);
 
-              const isPendingOrRejected = profile && (profile.status === 'pending' || profile.status === 'rejected');
-              const isComplete = !!(profile && profile.store_image_url && profile.license_image_url && profile.status === 'approved');
-              setNeedsProfileCompletion(!isComplete || isPendingOrRejected);
+              const isComplete = !!(profile && profile.store_image_url && profile.license_image_url);
+              setNeedsProfileCompletion(!isComplete);
             } else {
               setNeedsProfileCompletion(false);
             }
@@ -309,25 +308,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (userProfile.role === 'free_business') {
           const { data: profile, error: profileError } = await supabase
             .from('businesses')
-            .select('store_image_url, license_image_url, status')
+            .select('store_image_url, license_image_url')
             .eq('user_id', user.id)
             .maybeSingle();
 
           if (profileError) console.error("Error fetching business profile:", profileError);
 
-          const needsBusinessCompletion = !profile || profile.status !== 'approved';
-          if (needsBusinessCompletion) {
+          if (!profile || !profile.store_image_url || !profile.license_image_url) {
             setNeedsProfileCompletion(true);
             return { success: true, needsProfileCompletion: true };
           }
         }
         setNeedsProfileCompletion(false);
         
-        // تسجيل FCM token للمستخدم الجديد
-        import('../lib/fcm-capacitor').then(module => {
-          module.registerFCMToken();
-        });
-
         // يتم إضافة تأخير بسيط لضمان أن كائن الجلسة من Supabase قد تم تحديثه بالكامل وأصبح متاحًا قبل محاولة قراءة refresh_token منه.
         setTimeout(async () => {
           // حفظ التوكن في SecureStorage بعد تسجيل الدخول العادي

@@ -42,3 +42,8 @@ export const countries = [
   { code: '+372', name: 'إستونيا', short: 'EE', flag: '🇪🇪' },
   // ... أضف المزيد حسب الحاجة
 ];
+
+export const getCountryNameByCode = (code: string): string => {
+  const normalizedCode = String(code || '').trim();
+  return countries.find((country) => country.code === normalizedCode)?.name || '';
+};

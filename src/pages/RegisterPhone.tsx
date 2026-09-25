@@ -695,6 +695,14 @@ const RegisterPhone: React.FC = () => {
 
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
+    if (currentStep === 1 && (!/^\d{15}$/.test(cleanImei(formData.imei)) || !formData.phoneType.trim())) {
+      showToast('error', 'required_fields');
+      return;
+    }
+    if (currentStep === 2 && (!formData.password.trim() || !formData.confirmPassword.trim())) {
+      showToast('error', 'required_fields');
+      return;
+    }
     if (currentStep < 3) {
       setCurrentStep(prev => Math.min(prev + 1, 3));
       return;
@@ -818,7 +826,7 @@ const RegisterPhone: React.FC = () => {
       <div className="pb-3">
         <AppNavbar />
         <PageAdvertisement pageName="registerphone" />
-        <div className="flex items-center mb-0 pt-3" style={{ background: 'linear-gradient(to top, #053060 0%, #0a4d8c 100%)', padding: '0.3rem', borderRadius: '1rem', marginTop: '1rem' }}>
+        <div className="flex items-center mb-3 pt-3" style={{ background: 'linear-gradient(to top, #053060 0%, #0a4d8c 100%)', padding: '0.3rem', borderRadius: '1rem', marginTop: '1rem' }}>
           <BackButton to="/dashboard" className="mr-4" />
           <h1
             className="flex-1 text-center text-2xl font-bold"

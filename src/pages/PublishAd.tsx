@@ -570,7 +570,7 @@ const PublishAd: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const goToMyAdsAfterDelay = () => setTimeout(() => navigate('/myads'), 5000);
-    if (!storeName || !phoneNumber) {
+    if (!storeName.trim() || !phoneNumber.trim()) {
       toast({ title: t('error'), description: t('required_fields'), variant: 'destructive' });
       setIsLoading(false);
       goToMyAdsAfterDelay();
@@ -595,6 +595,11 @@ const PublishAd: React.FC = () => {
     if (!activeUser) {
       toast({ title: t('error'), description: t('must_be_logged_in'), variant: 'destructive' });
       goToMyAdsAfterDelay();
+      return;
+    }
+
+    if (!isUpdateMode && !adImage && !adImagePreview) {
+      toast({ title: t('error'), description: t('required_fields'), variant: 'destructive' });
       return;
     }
 

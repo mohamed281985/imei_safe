@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '../contexts/LanguageContext';
-import PageContainer from '../components/PageContainer';
 import BackButton from '../components/BackButton';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import LoginForm from '../components/auth/LoginForm';
@@ -9,49 +8,46 @@ import AuthLinks from '../components/auth/AuthLinks';
 import { Button } from '@/components/ui/button';
 import { Fingerprint } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { useAuth } from '@/contexts/AuthContext'; // استيراد AuthContext
+import { useAuth } from '@/contexts/AuthContext';
 import { useScrollToTop } from '../hooks/useScrollToTop';
 
 const Login: React.FC = () => {
   useScrollToTop();
   const { t } = useLanguage();
-  // طلب صلاحية استقبال الإشعارات عند فتح صفحة تسجيل الدخول
-  useEffect(() => {
-    import('@/lib/fcm-capacitor').then(mod => {
-      mod.registerFCMToken();
-    });
-  }, []);
+  
   return (
-    <PageContainer clearBackground edgeToEdge>
-      <div
-        className="relative z-0 flex min-h-[100dvh] w-full flex-col items-center justify-start overflow-x-hidden rounded-3xl px-3 pb-10 pt-[24vh] sm:px-4 sm:pb-16 sm:pt-[33vh]"
-        style={{
-          backgroundImage: "url('/login-background.jpeg')",
-          backgroundSize: 'cover',
-          backgroundPosition: 'center center',
-          backgroundRepeat: 'no-repeat',
-        }}
-      >
-        <div className="relative z-10 flex w-full flex-col items-center">
-        <div className="w-full max-w-lg">
-          <Card className="rounded-xl border-t-4 border-t-orange-500 border-b-4 border-b-orange-500 shadow-[0_12px_35px_rgba(0,0,0,0.35)] glass-bg backdrop-blur-[28px] backdrop-saturate-150" style={{background: 'rgba(255,255,255,0.65)'}}>
-            <CardHeader className="p-4 pb-1">
-            <div className="relative flex items-center justify-center">
-              <BackButton to="/welcome" className="!right-0 !left-auto absolute" />
-              <CardTitle className="w-full text-2xl md:text-3xl font-bold text-orange-600 text-center tracking-tight">
-                {t('login')}
-              </CardTitle>
-            </div>
-          </CardHeader>
-            <CardContent className="space-y-3 p-3 sm:p-4">
+    <div 
+      className="min-h-screen flex items-center justify-center p-4 bg-cover bg-center bg-no-repeat"
+      style={{ 
+        backgroundImage: "url('/login-background.jpeg')",
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat'
+      }}
+    >
+      <div className="flex flex-col items-center justify-center min-h-screen p-2 w-full">
+        <div className="w-full max-w-md mt-2">
+          <Card className="shadow-md border-t-4 border-t-orange-500" 
+                style={{ 
+                  background: 'white',
+                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(255, 255, 255, 0.1)'
+                }}>
+            <CardHeader className="pb-2">
+              <div className="relative flex items-center justify-center">
+                <BackButton to="/welcome" className="!right-0 !left-auto absolute" />
+                <CardTitle className="w-full text-2xl md:text-3xl font-bold text-orange-600 text-center tracking-tight">
+                  {t('login')}
+                </CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4 p-2">
               <LoginForm hidePhoneField biometricButton={<BiometricButton />} />
               <AuthLinks />
             </CardContent>
           </Card>
         </div>
-        </div>
       </div>
-    </PageContainer>
+    </div>
   );
 };
 

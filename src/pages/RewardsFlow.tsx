@@ -1,0 +1,740 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import {
+  ArrowLeft,
+  CalendarDays,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+  Coins,
+  Gift,
+  MapPin,
+  Shield,
+  ShoppingBag,
+  Sparkles,
+  Star,
+  Store,
+  Tag,
+  Wallet,
+  Wrench,
+  Car,
+  Cable,
+  Headphones,
+  Smartphone,
+  Watch,
+  BatteryCharging,
+  QrCode,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import AppNavbar from '@/components/AppNavbar';
+import PageContainer from '@/components/PageContainer';
+import { ACCESSORY_CATEGORIES } from '@/constants/accessoryCategories';
+import {
+  coinPricingRules,
+  dailyRewardSchedule,
+  defaultRewardBalance,
+  getCategoryIcon,
+  getDailyClaimedDays,
+  getRewardBalanceFromStorage,
+  getRedemptions,
+  rewardCategories,
+  rewardOffers,
+  setDailyClaimedDays,
+  setRedemptions,
+  setRewardBalanceInStorage,
+} from '@/data/rewards';
+
+const formatCurrency = (value: number) => `${new Intl.NumberFormat('en-US').format(value)} ج.م`;
+const formatCoinsValue = (value: number) => `${new Intl.NumberFormat('en-US').format(value)} Coins`;
+const formatNumber = (value: number) => new Intl.NumberFormat('en-US').format(value);
+const isOfferValid = (offer: any) => offer?.isActive && offer?.status === 'approved' && new Date(offer.expiresAt).getTime() > Date.now();
+
+const getCurrentBalance = () => getRewardBalanceFromStorage();
+
+const buildRedeemCode = () => {
+  const random = Math.random().toString(36).slice(2, 8).toUpperCase();
+  return `IMEI-REWARD-${Date.now().toString().slice(-6)}${random}`;
+};
+
+const generateQrPattern = (seed: string) => {
+  const size = 21;
+  const matrix = Array.from({ length: size }, () => Array(size).fill(0));
+  const addFinder = (x: number, y: number) => {
+    for (let row = 0; row < 7; row += 1) {
+      for (let col = 0; col < 7; col += 1) {
+        const isBorder = row === 0 || row === 6 || col === 0 || col === 6;
+        const isCenter = row >= 2 && row <= 4 && col >= 2 && col <= 4;
+        matrix[y + row][x + col] = isBorder || isCenter ? 1 : 0;
+      }
+    }
+  };
+  addFinder(0, 0);
+  addFinder(size - 7, 0);
+  addFinder(0, size - 7);
+
+  for (let row = 0; row < size; row += 1) {
+    for (let col = 0; col < size; col += 1) {
+      if (matrix[row][col] !== 0) continue;
+      const value = (row * 17 + col * 31 + seed.length * 7) % 5;
+      matrix[row][col] = value === 0 ? 1 : 0;
+    }
+  }
+
+  return matrix;
+};
+
+const CategoryImage = ({ imageUrl, iconName, name }: { imageUrl?: string | null; iconName: string; name: string }) => {
+  const Icon = getCategoryIcon(iconName) || Shield;
+  const [failed, setFailed] = useState(false);
+
+  if (imageUrl && !failed) {
+    return (
+      <img
+        src={imageUrl}
+        alt={name}
+        loading="lazy"
+        className="h-20 w-full object-cover"
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+
+  return (
+    <div className="flex h-20 w-full items-center justify-center bg-gradient-to-br from-sky-100 via-blue-50 to-orange-100 text-sky-700">
+      <Icon className="h-9 w-9" />
+    </div>
+  );
+};
+
+const getOfferCardImage = (offer: any, category: any) => {
+  if (offer?.imageUrl) return offer.imageUrl;
+  if (category?.image_url) return category.image_url;
+  return '';
+};
+
+const categoryImageById: Record<string, string> = {
+  screen_protector: ACCESSORY_CATEGORIES.find((item) => item.value === 'screen_protectors')?.image || '',
+  phone_grips: ACCESSORY_CATEGORIES.find((item) => item.value === 'cases')?.image || '',
+  chargers: ACCESSORY_CATEGORIES.find((item) => item.value === 'chargers')?.image || '',
+  headphones: ACCESSORY_CATEGORIES.find((item) => item.value === 'headphones')?.image || '',
+  cables: ACCESSORY_CATEGORIES.find((item) => item.value === 'cables')?.image || '',
+  car_holders: ACCESSORY_CATEGORIES.find((item) => item.value === 'phone_holders')?.image || '',
+  smart_watches: ACCESSORY_CATEGORIES.find((item) => item.value === 'smartwatches')?.image || '',
+  other_accessories: ACCESSORY_CATEGORIES.find((item) => item.value === 'other')?.image || '',
+};
+
+const BusinessBadge = ({ label }: { label: string }) => (
+  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-[10px] font-bold text-slate-700 shadow-sm">
+    {label.slice(0, 2).toUpperCase()}
+  </div>
+);
+
+const RewardDailyPage: React.FC = () => {
+  const navigate = useNavigate();
+  const [balance, setBalance] = useState<number>(getCurrentBalance());
+  const [claimedDays, setClaimedDays] = useState<number[]>(getDailyClaimedDays());
+
+  useEffect(() => {
+    setBalance(getCurrentBalance());
+    setClaimedDays(getDailyClaimedDays());
+  }, []);
+
+  const todayDay = claimedDays.length + 1;
+  const todayReward = dailyRewardSchedule[claimedDays.length] || dailyRewardSchedule[dailyRewardSchedule.length - 1];
+  const isFullyClaimed = claimedDays.length >= dailyRewardSchedule.length;
+
+  const claimToday = () => {
+    if (isFullyClaimed) return;
+    const next = [...claimedDays, todayDay];
+    const rewardAmount = todayReward.amount;
+    const updatedBalance = getCurrentBalance() + rewardAmount;
+    setClaimedDays(next);
+    setBalance(updatedBalance);
+    setDailyClaimedDays(next);
+    setRewardBalanceInStorage(updatedBalance);
+  };
+
+  return (
+    <PageContainer>
+      <AppNavbar />
+      <div className="w-full max-w-md pb-0 pt-0">
+        <div className="mb-3 rounded-3xl bg-white/90 p-4 shadow-lg ring-1 ring-slate-200">
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <p className="text-xs text-slate-500">رصيدك الحالي</p>
+              <div className="mt-1 flex items-center gap-2 text-2xl font-black text-slate-900">
+                <Coins className="h-7 w-7 text-amber-500" />
+                <span>{formatCoinsValue(balance)}</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate('/rewards-categories')}
+              className="rounded-full bg-orange-500 px-3 py-1.5 text-xs font-bold text-white shadow-sm"
+            >
+              استبدال النقاط
+            </button>
+          </div>
+        </div>
+
+        <div className="rounded-3xl bg-white/95 p-4 shadow-md ring-1 ring-slate-200">
+          <div className="mb-4 flex items-center gap-2">
+            <Gift className="h-6 w-6 text-orange-500" />
+            <h1 className="text-xl font-black text-slate-900">مكافأة الدخول اليومي</h1>
+          </div>
+
+          <div className="space-y-3">
+            {dailyRewardSchedule.map((item) => {
+              const claimed = claimedDays.includes(item.day);
+              const isToday = !claimed && item.day === todayDay;
+              return (
+                <div
+                  key={item.day}
+                  className={`flex items-center justify-between rounded-2xl border p-3 ${
+                    claimed ? 'border-emerald-200 bg-emerald-50' : isToday ? 'border-orange-200 bg-orange-50' : 'border-slate-200 bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`flex h-10 w-10 items-center justify-center rounded-full ${claimed ? 'bg-emerald-500 text-white' : 'bg-white text-slate-700'}`}>
+                      {claimed ? <Check className="h-5 w-5" /> : <CalendarDays className="h-5 w-5" />}
+                    </div>
+                    <div>
+                      <p className="text-base font-bold text-slate-800">اليوم {item.day}</p>
+                      <p className="text-sm text-slate-600">+{formatNumber(item.amount)} Coins</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {claimed ? (
+                      <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-700">✓ تم الاستلام</span>
+                    ) : isToday ? (
+                      <button
+                        type="button"
+                        onClick={claimToday}
+                        className="rounded-full bg-gradient-to-r from-orange-500 to-amber-500 px-3 py-1.5 text-xs font-bold text-white shadow-sm"
+                      >
+                        احصل على +{formatNumber(item.amount)} Coins
+                      </button>
+                    ) : (
+                      <span className="text-xs font-medium text-slate-400">قادم</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => navigate('/rewards-categories')}
+              className="flex items-center justify-center gap-2 rounded-2xl bg-sky-600 px-4 py-3 text-sm font-black text-white shadow-md"
+            >
+              <Coins className="h-4 w-4" />
+              استبدال النقاط
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate('/rewards-history')}
+              className="flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-black text-slate-700"
+            >
+              <Clock3 className="h-4 w-4" />
+              سجل النقاط
+            </button>
+          </div>
+        </div>
+      </div>
+    </PageContainer>
+  );
+};
+
+const RewardCategoriesPage: React.FC = () => {
+  const navigate = useNavigate();
+  const [balance, setBalance] = useState<number>(getCurrentBalance());
+
+  useEffect(() => {
+    setBalance(getCurrentBalance());
+  }, []);
+
+  const categories = useMemo(() =>
+    rewardCategories.map((category) => {
+      const businesses = new Set(
+        rewardOffers
+          .filter((offer) => offer.categoryId === category.id && isOfferValid(offer))
+          .map((offer) => offer.businessName),
+      );
+
+      return { ...category, shopsCount: businesses.size };
+    }),
+  []);
+
+  return (
+    <PageContainer>
+      <AppNavbar />
+      <div className="w-full max-w-md pb-0 pt-0">
+        <div className="mb-3 rounded-3xl bg-white/90 p-4 shadow-md ring-1 ring-slate-200">
+          <p className="text-xs text-slate-500">رصيدك الحالي</p>
+          <div className="mt-1 flex items-center gap-2 text-2xl font-black text-slate-900">
+            <Coins className="h-7 w-7 text-amber-500" />
+            <span>{formatCoinsValue(balance)}</span>
+          </div>
+        </div>
+
+        <div className="rounded-3xl bg-white/95 p-4 shadow-md ring-1 ring-slate-200">
+          <h1 className="mb-4 text-xl font-black text-slate-900">استبدال النقاط</h1>
+          <p className="mb-4 text-sm text-slate-600">ماذا تريد أن تستبدل نقاطك به؟</p>
+
+          <div className="grid grid-cols-2 gap-3">
+            {categories.map((category) => {
+              const Icon = getCategoryIcon(category.icon);
+              return (
+                <button
+                  type="button"
+                  key={category.id}
+                  onClick={() => navigate(`/rewards-shops/${category.id}`)}
+                  className="flex min-h-[185px] w-full flex-col items-center rounded-2xl border border-slate-200 bg-white p-3 text-center shadow-sm transition hover:border-sky-300 hover:shadow-md"
+                >
+                  <div className="h-20 w-20 shrink-0 overflow-hidden rounded-full border-2 border-white bg-slate-100 shadow-md ring-2 ring-slate-200">
+                    <CategoryImage imageUrl={categoryImageById[category.id] || category.image_url} iconName={category.icon} name={category.name} />
+                  </div>
+                  <div className="flex w-full flex-1 flex-col items-center justify-between gap-2 pt-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center justify-center gap-1.5 text-slate-900">
+                        <Icon className="h-4 w-4 shrink-0 text-sky-600" />
+                        <span className="line-clamp-2 text-sm font-black leading-tight">{category.name}</span>
+                      </div>
+                      <p className="mt-1 text-[11px] text-slate-500">{formatNumber(category.shopsCount)} محل يقدم عروضًا</p>
+                    </div>
+                    <ChevronLeft className="h-4 w-4 text-slate-500" />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </PageContainer>
+  );
+};
+
+const RewardShopsPage: React.FC = () => {
+  const navigate = useNavigate();
+  const { categoryId } = useParams();
+  const [sort, setSort] = useState<'nearest' | 'discount' | 'coins' | 'latest'>('nearest');
+
+  const category = rewardCategories.find((item) => item.id === categoryId) ?? rewardCategories[0];
+  const offers = useMemo(() => {
+    const filtered = rewardOffers.filter((offer) => offer.categoryId === category.id && isOfferValid(offer));
+    switch (sort) {
+      case 'discount':
+        return [...filtered].sort((a, b) => b.discountPercent - a.discountPercent);
+      case 'coins':
+        return [...filtered].sort((a, b) => a.coinsRequired - b.coinsRequired);
+      case 'latest':
+        return [...filtered].sort((a, b) => new Date(b.expiresAt).getTime() - new Date(a.expiresAt).getTime());
+      default:
+        return [...filtered].sort((a, b) => a.distanceMeters - b.distanceMeters);
+    }
+  }, [category.id, sort]);
+
+  if (!category) {
+    return null;
+  }
+
+  return (
+    <PageContainer>
+      <AppNavbar />
+      <div className="w-full max-w-md pb-0 pt-0">
+        <div className="mb-3 rounded-3xl bg-white/90 p-4 shadow-md ring-1 ring-slate-200">
+          <div className="flex items-center justify-between gap-3">
+            <button type="button" onClick={() => navigate(-1)} className="rounded-full bg-slate-100 p-2 text-slate-700">
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+            <div>
+              <p className="text-xs text-slate-500">رصيدك</p>
+              <div className="flex items-center gap-2 text-xl font-black text-slate-900">
+                <Coins className="h-5 w-5 text-amber-500" />
+                <span>{formatCoinsValue(getCurrentBalance())}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-3xl bg-white/95 p-4 shadow-md ring-1 ring-slate-200">
+          <div className="mb-4 flex items-center justify-between">
+            <h1 className="text-xl font-black text-slate-900">عروض {category.name}</h1>
+          </div>
+
+          <div className="mb-4 grid grid-cols-2 gap-2 text-xs">
+            {[
+              ['الأقرب إليك', 'nearest'],
+              ['أعلى خصم', 'discount'],
+              ['الأقل Coins', 'coins'],
+              ['الأحدث', 'latest'],
+            ].map(([label, value]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setSort(value as any)}
+                className={`rounded-full px-3 py-2 font-bold ${sort === value ? 'bg-sky-600 text-white' : 'bg-slate-100 text-slate-700'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="space-y-3">
+            {offers.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
+                <ShoppingBag className="mx-auto mb-3 h-10 w-10 text-slate-400" />
+                <p className="font-bold text-slate-700">لا توجد عروض متاحة حاليًا</p>
+                <button type="button" onClick={() => navigate('/rewards-categories')} className="mt-3 rounded-full bg-sky-600 px-4 py-2 text-sm font-bold text-white">
+                  استكشف فئات أخرى
+                </button>
+              </div>
+            ) : (
+              offers.map((offer) => {
+                const imageUrl = getOfferCardImage(offer, category);
+                return (
+                  <button
+                    type="button"
+                    key={offer.id}
+                    onClick={() => navigate(`/reward-offer/${offer.id}`)}
+                    className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3 text-right shadow-sm transition hover:border-sky-300 hover:shadow-md"
+                  >
+                    <div className="h-20 w-20 overflow-hidden rounded-xl bg-slate-100">
+                      {imageUrl ? (
+                        <img src={imageUrl} alt={offer.productName} loading="lazy" className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-sky-100 to-orange-100 text-sky-700">
+                          <Shield className="h-8 w-8" />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 text-slate-800">
+                          <BusinessBadge label={offer.businessLogo || offer.businessName} />
+                          <span className="text-base font-black">{offer.businessName}</span>
+                        </div>
+                        <div className="flex items-center gap-1 text-amber-500">
+                          <Star className="h-4 w-4 fill-current" />
+                          <span className="text-xs font-bold text-slate-700">{offer.rating}</span>
+                        </div>
+                      </div>
+
+                      <div className="mb-1 flex items-center gap-1 text-xs text-slate-500">
+                        <MapPin className="h-3.5 w-3.5" />
+                        <span>{offer.distanceMeters} متر</span>
+                      </div>
+
+                      <p className="text-sm font-bold text-slate-700">{offer.productName}</p>
+
+                      <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
+                        <span className="line-through">{formatCurrency(offer.originalPrice)}</span>
+                        <span className="font-black text-slate-900">{formatCurrency(offer.offerPrice)}</span>
+                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-bold text-emerald-700">خصم {offer.discountPercent}%</span>
+                      </div>
+
+                      <div className="mt-2 flex items-center justify-between">
+                        <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-black text-amber-900">🪙 {formatNumber(offer.coinsRequired)} Coins</span>
+                        <ChevronLeft className="h-5 w-5 text-slate-500" />
+                      </div>
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      </div>
+    </PageContainer>
+  );
+};
+
+const RewardOfferDetailsPage: React.FC = () => {
+  const navigate = useNavigate();
+  const { offerId } = useParams();
+  const offer = rewardOffers.find((item) => item.id === offerId);
+
+  if (!offer) {
+    return (
+      <PageContainer>
+        <AppNavbar />
+        <div className="mx-auto max-w-md px-4 py-10 text-center">
+          <p className="text-lg font-black text-slate-800">العرض غير موجود</p>
+          <button type="button" onClick={() => navigate('/rewards-categories')} className="mt-4 rounded-full bg-sky-600 px-4 py-2 text-sm font-black text-white">العودة</button>
+        </div>
+      </PageContainer>
+    );
+  }
+
+  const category = rewardCategories.find((item) => item.id === offer.categoryId) ?? rewardCategories[0];
+  const imageUrl = getOfferCardImage(offer, category);
+
+  return (
+    <PageContainer>
+      <AppNavbar />
+      <div className="w-full max-w-md pb-0 pt-0">
+        <div className="overflow-hidden rounded-3xl bg-white/95 shadow-lg ring-1 ring-slate-200">
+          <div className="relative">
+            <button type="button" onClick={() => navigate(-1)} className="absolute left-3 top-3 z-10 rounded-full bg-white/85 p-2 shadow-sm">
+              <ArrowLeft className="h-5 w-5 text-slate-700" />
+            </button>
+            {imageUrl ? (
+              <img src={imageUrl} alt={offer.productName} className="h-60 w-full object-cover" loading="lazy" />
+            ) : (
+              <div className="flex h-60 w-full items-center justify-center bg-gradient-to-br from-sky-100 via-white to-orange-100 text-sky-700">
+                <Shield className="h-16 w-16" />
+              </div>
+            )}
+          </div>
+
+          <div className="p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm text-slate-500">{offer.productName}</p>
+                <h1 className="mt-1 text-2xl font-black text-slate-900">{offer.businessName}</h1>
+              </div>
+              <div className="flex rounded-full bg-slate-100 px-2 py-1 text-sm font-bold text-slate-700">
+                <Star className="mr-1 h-4 w-4 fill-amber-400 text-amber-400" />
+                {offer.rating}
+              </div>
+            </div>
+
+            <div className="mt-3 flex items-center gap-2 text-sm text-slate-600">
+              <MapPin className="h-4 w-4 text-sky-500" />
+              <span>{offer.distanceMeters} متر</span>
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
+              <div className="rounded-2xl bg-slate-50 p-3">
+                <p className="text-slate-500">السعر الأصلي</p>
+                <p className="mt-1 text-lg font-black text-slate-800">{formatCurrency(offer.originalPrice)}</p>
+              </div>
+              <div className="rounded-2xl bg-emerald-50 p-3">
+                <p className="text-emerald-700">السعر بعد الخصم</p>
+                <p className="mt-1 text-lg font-black text-emerald-800">{formatCurrency(offer.offerPrice)}</p>
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <div className="rounded-2xl bg-orange-50 p-3">
+                <p className="text-xs text-orange-700">خصم</p>
+                <p className="mt-1 text-lg font-black text-orange-900">{offer.discountPercent}%</p>
+              </div>
+              <div className="rounded-2xl bg-amber-50 p-3">
+                <p className="text-xs text-amber-700">النقاط المطلوبة</p>
+                <p className="mt-1 text-lg font-black text-amber-900">{formatNumber(offer.coinsRequired)} Coins</p>
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-2 text-sm text-slate-600">
+              <div className="flex items-center justify-between rounded-xl bg-slate-50 p-3">
+                <span>تاريخ انتهاء العرض</span>
+                <span className="font-black text-slate-800">{new Date(offer.expiresAt).toLocaleDateString('ar-EG', { day: 'numeric', month: 'long' })}</span>
+              </div>
+            </div>
+
+            <Button
+              type="button"
+              onClick={() => navigate(`/reward-confirm/${offer.id}`)}
+              className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-orange-500 to-amber-500 px-4 py-3 text-base font-black text-white shadow-lg"
+            >
+              <Coins className="h-4 w-4" />
+              استبدل الآن
+              <span className="text-sm">({formatNumber(offer.coinsRequired)} Coins)</span>
+            </Button>
+          </div>
+        </div>
+      </div>
+    </PageContainer>
+  );
+};
+
+const RewardConfirmationPage: React.FC = () => {
+  const navigate = useNavigate();
+  const { offerId } = useParams();
+  const offer = rewardOffers.find((item) => item.id === offerId);
+  if (!offer) return null;
+
+  const currentBalance = getCurrentBalance();
+  const balanceAfter = Math.max(0, currentBalance - offer.coinsRequired);
+
+  const confirmRedeem = () => {
+    const balanceBefore = getCurrentBalance();
+    if (balanceBefore < offer.coinsRequired) {
+      navigate('/rewards-categories');
+      return;
+    }
+
+    const redemption = {
+      id: `redemption-${Date.now()}`,
+      code: buildRedeemCode(),
+      qrSeed: `${Date.now()}`,
+      offerId: offer.id,
+      productName: offer.productName,
+      businessName: offer.businessName,
+      coinsUsed: offer.coinsRequired,
+      originalPrice: offer.originalPrice,
+      offerPrice: offer.offerPrice,
+      status: 'active',
+      expiresAt: offer.expiresAt,
+      redeemedAt: new Date().toISOString(),
+      used: false,
+    };
+
+    const list = getRedemptions();
+    list.unshift(redemption);
+    setRedemptions(list);
+    setRewardBalanceInStorage(balanceBefore - offer.coinsRequired);
+    navigate(`/reward-success/${redemption.id}`);
+  };
+
+  return (
+    <PageContainer>
+      <AppNavbar />
+      <div className="w-full max-w-md pb-0 pt-0">
+        <div className="rounded-3xl bg-white/95 p-5 shadow-lg ring-1 ring-slate-200">
+          <h2 className="text-xl font-black text-slate-900">تأكيد استبدال المكافأة</h2>
+
+          <div className="mt-5 space-y-3 rounded-2xl bg-amber-50 p-4 text-sm text-slate-700">
+            <div className="flex items-center justify-between">
+              <span>سيتم خصم:</span>
+              <span className="flex items-center gap-1 font-black text-amber-900">
+                <Coins className="h-4 w-4 text-amber-500" />
+                {formatNumber(offer.coinsRequired)} Coins
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>رصيدك الحالي:</span>
+              <span className="font-black text-slate-900">{formatCoinsValue(currentBalance)}</span>
+            </div>
+            <div className="flex items-center justify-between border-t border-amber-200 pt-3">
+              <span>رصيدك بعد الاستبدال:</span>
+              <span className="font-black text-slate-900">{formatCoinsValue(balanceAfter)}</span>
+            </div>
+          </div>
+
+          <div className="mt-5 flex gap-3">
+            <Button type="button" onClick={confirmRedeem} className="flex-1 rounded-2xl bg-gradient-to-r from-orange-500 to-amber-500 text-white font-black">
+              تأكيد الاستبدال
+            </Button>
+            <Button type="button" variant="outline" onClick={() => navigate(-1)} className="flex-1 rounded-2xl border-slate-200 text-slate-700">
+              إلغاء
+            </Button>
+          </div>
+        </div>
+      </div>
+    </PageContainer>
+  );
+};
+
+const RewardSuccessPage: React.FC = () => {
+  const navigate = useNavigate();
+  const { redemptionId } = useParams();
+  const redemptions = getRedemptions();
+  const redemption = redemptions.find((item) => item.id === redemptionId) ?? redemptions[0];
+
+  if (!redemption) {
+    return null;
+  }
+
+  const qrMatrix = generateQrPattern(redemption.code);
+
+  return (
+    <PageContainer>
+      <AppNavbar />
+      <div className="w-full max-w-md pb-0 pt-0">
+        <div className="rounded-3xl bg-white/95 p-5 shadow-lg ring-1 ring-slate-200">
+          <div className="text-center">
+            <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+              <Check className="h-8 w-8" />
+            </div>
+            <h2 className="text-2xl font-black text-slate-900">تم الاستبدال بنجاح</h2>
+            <p className="mt-2 text-sm text-slate-600">{redemption.productName}</p>
+            <p className="text-sm text-slate-500">{redemption.businessName}</p>
+          </div>
+
+          <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
+            <div className="rounded-2xl bg-slate-50 p-3">
+              <p className="text-slate-500">السعر</p>
+              <p className="mt-1 font-black text-slate-800">{formatCurrency(redemption.offerPrice)}</p>
+            </div>
+            <div className="rounded-2xl bg-slate-50 p-3">
+              <p className="text-slate-500">قيمة الخصم</p>
+              <p className="mt-1 font-black text-slate-800">{formatCurrency(redemption.originalPrice - redemption.offerPrice)}</p>
+            </div>
+            <div className="rounded-2xl bg-amber-50 p-3">
+              <p className="text-amber-700">Coins المستخدمة</p>
+              <p className="mt-1 font-black text-amber-900">{formatNumber(redemption.coinsUsed)}</p>
+            </div>
+            <div className="rounded-2xl bg-emerald-50 p-3">
+              <p className="text-emerald-700">الحالة</p>
+              <p className="mt-1 font-black text-emerald-900">صالح للاستخدام</p>
+            </div>
+          </div>
+
+          <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="mb-3 flex items-center justify-center gap-2">
+              <QrCode className="h-5 w-5 text-sky-600" />
+              <span className="font-black text-slate-800">QR Code</span>
+            </div>
+            <div className="grid grid-cols-21 gap-[2px] rounded-xl bg-slate-900 p-2" style={{ gridTemplateColumns: 'repeat(21, minmax(0, 1fr))' }}>
+              {qrMatrix.flat().map((cell, index) => (
+                <div
+                  key={`${index}-${cell}`}
+                  className={`aspect-square ${cell ? 'bg-slate-900' : 'bg-white'}`}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-5 rounded-2xl border border-sky-200 bg-sky-50 p-4 text-center">
+            <p className="text-xs text-sky-700">Redeem Code</p>
+            <p className="mt-1 text-lg font-black tracking-[0.2em] text-sky-900">{redemption.code}</p>
+          </div>
+
+          <p className="mt-4 text-center text-sm text-slate-600">اعرض هذا الكود للمحل</p>
+
+          <Button onClick={() => navigate('/rewards-categories')} className="mt-5 w-full rounded-2xl bg-sky-600 text-white font-black">
+            العودة لاستكشاف الفئات
+          </Button>
+        </div>
+      </div>
+    </PageContainer>
+  );
+};
+
+const RewardHistoryPage: React.FC = () => {
+  const redemptions = getRedemptions();
+  return (
+    <PageContainer>
+      <AppNavbar />
+      <div className="w-full max-w-md pb-0 pt-0">
+        <div className="rounded-3xl bg-white/95 p-4 shadow-md ring-1 ring-slate-200">
+          <h1 className="text-xl font-black text-slate-900">سجل النقاط</h1>
+          {redemptions.length === 0 ? (
+            <div className="mt-4 rounded-2xl bg-slate-50 p-4 text-center text-sm text-slate-600">لا توجد عمليات سابقة حتى الآن.</div>
+          ) : (
+            <div className="mt-4 space-y-2">
+              {redemptions.map((item) => (
+                <div key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="font-black text-slate-800">{item.productName}</span>
+                    <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-black text-emerald-700">مستخدم</span>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">{item.businessName}</p>
+                  <p className="mt-2 text-xs text-slate-600">{item.code}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </PageContainer>
+  );
+};
+
+export { RewardDailyPage, RewardCategoriesPage, RewardShopsPage, RewardOfferDetailsPage, RewardConfirmationPage, RewardSuccessPage, RewardHistoryPage };

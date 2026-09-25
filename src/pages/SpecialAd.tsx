@@ -275,6 +275,10 @@ const SpecialAd = () => {
       toast({ title: t('error'), description: t('must_be_logged_in'), variant: 'destructive' });
       return;
     }
+    if (!storeName.trim() || !phoneNumber.trim() || (!isUpdateMode && !adImage && !adImagePreview)) {
+      toast({ title: t('error'), description: t('required_fields'), variant: 'destructive' });
+      return;
+    }
     if (!coords) {
       toast({ title: t('error'), description: t('location_not_available'), variant: 'destructive' });
       return;
@@ -282,7 +286,7 @@ const SpecialAd = () => {
     // --- ⭐ التحقق من وجود الصورة قبل المتابعة ---
     // عند إنشاء إعلان جديد، يجب أن تكون الصورة موجودة.
     if (!isUpdateMode && !adImage && !adImagePreview) {
-      toast({ title: 'خطأ', description: 'يرجى رفع صورة للإعلان أولاً', variant: 'destructive' });
+      toast({ title: t('error'), description: t('required_fields'), variant: 'destructive' });
       return;
     }
 

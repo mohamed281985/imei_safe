@@ -63,7 +63,7 @@ const CountrySelector: React.FC<Props> = ({ value, onChange, disabled }) => {
       </button>
       
       {open && (
-        <div className="absolute z-[110] mt-2 w-full bg-white border border-gray-200 rounded-2xl shadow-2xl max-h-72 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200">
+        <div className="absolute z-[110] bottom-full mb-2 w-full bg-white border border-gray-200 rounded-2xl shadow-2xl max-h-72 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200">
           <div className="p-2 border-b border-gray-100 bg-gray-50 flex items-center gap-2">
             <Search className="w-4 h-4 text-gray-400" />
             <input

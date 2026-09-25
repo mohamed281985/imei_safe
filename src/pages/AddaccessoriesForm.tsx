@@ -5,11 +5,13 @@ import axiosInstance from '@/services/axiosInterceptor';
 import { useAuth } from '@/contexts/AuthContext';
 import { Upload, X, Loader2, Star, Zap, MapPin, Clock, Eye, Gift, CalendarDays, Store, Phone, MapPinned, Smartphone, Database, Palette, FileText, ImagePlus, ChevronRight, ChevronLeft, CheckCircle2, Wallet, ShieldCheck } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { ACCESSORY_CATEGORIES } from '@/constants/accessoryCategories';
 
 import { useGeolocated } from 'react-geolocated';
 import { useToast } from '@/hooks/use-toast';
 import AdsOfferSlider from '@/components/advertisements/AdsOfferSlider';
 import PackageBadge from '@/components/PackageBadge';
+import CountrySelector from '@/components/CountrySelector';
 import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -770,6 +772,14 @@ const AddAccessoriesForm: React.FC = () => {
     'rounded-3xl border border-white/70 bg-white/70 backdrop-blur-xl p-5 sm:p-6 shadow-[0_10px_30px_rgba(15,23,42,0.08)] transition-all duration-500';
 
   const nextStep = () => {
+    const missingStepFields = (currentStep === 0 && (!formData.title.trim() || !formData.category.trim()))
+      || (currentStep === 1 && (!formData.brand.trim() || !formData.price.trim()))
+      || (currentStep === 3 && images.length === 0);
+    if (missingStepFields) {
+      setError(t('required_fields'));
+      toast({ title: t('error'), description: t('required_fields'), variant: 'destructive' });
+      return;
+    }
     setCurrentStep(prev => Math.min(prev + 1, totalSteps - 1));
   };
 
@@ -817,7 +827,7 @@ const AddAccessoriesForm: React.FC = () => {
                   <button
                     key={step.title}
                     type="button"
-                    onClick={() => setCurrentStep(index)}
+                    onClick={() => index <= currentStep && setCurrentStep(index)}
                     className={`group rounded-2xl border px-2 py-3 text-center transition-all duration-300 ${
                       active
                         ? 'border-blue-500 bg-blue-600 text-white shadow-lg shadow-blue-200'
@@ -901,14 +911,20 @@ const AddAccessoriesForm: React.FC = () => {
                     <MapPin className="h-4 w-4 text-orange-500" />
                     {t('country')}
                   </label>
-                  <input
-                    name="country"
-                    value={formData.country || ''}
-                    onChange={handleInputChange}
-                    readOnly={countryAutoFilled}
-                    className={fieldClass}
-                    placeholder=""
-                  />
+                  {countryAutoFilled ? (
+                    <input
+                      name="country"
+                      value={formData.country || ''}
+                      readOnly
+                      className={fieldClass}
+                      placeholder=""
+                    />
+                  ) : (
+                    <CountrySelector
+                      value={formData.country || ''}
+                      onChange={(country) => setFormData(prev => ({ ...prev, country }))}
+                    />
+                  )}
                 </div>
                 <div className="sm:col-span-2">
                   <label className="mb-1 flex items-center gap-1 text-base font-bold text-slate-700">
@@ -951,7 +967,20 @@ const AddAccessoriesForm: React.FC = () => {
                     <Database className="h-4 w-4 text-orange-500" />
                     {t('category_required')}
                   </label>
-                  <input type="text" name="category" required value={formData.category} onChange={handleInputChange} className={fieldClass} placeholder={t('category_placeholder')} />
+                  <select
+                    name="category"
+                    required
+                    value={formData.category}
+                    onChange={handleInputChange}
+                    className={`${fieldClass} min-w-0 max-w-full text-sm sm:text-base`}
+                  >
+                    <option value="">{t('category_placeholder')}</option>
+                    {ACCESSORY_CATEGORIES.map(category => (
+                      <option key={category.value} value={category.value}>
+                        {t(category.labelKey)}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="mb-1 flex items-center gap-1 text-base font-bold text-slate-700">
@@ -1048,7 +1077,10 @@ const AddAccessoriesForm: React.FC = () => {
                 <div className="space-y-1 text-base font-bold text-slate-600">
                   <p><span className="font-bold text-slate-800">{t('preview_title_label')}:</span> {formData.title || '—'}</p>
                   <p><span className="font-bold text-slate-800">{t('preview_store_label')}:</span> {formData.store_name || '—'}</p>
-                  <p><span className="font-bold text-slate-800">{t('preview_category_label')}:</span> {formData.category || '—'}</p>
+                  <p>
+                    <span className="font-bold text-slate-800">{t('preview_category_label')}:</span>{' '}
+                    {t(ACCESSORY_CATEGORIES.find(category => category.value === formData.category)?.labelKey || formData.category || '—')}
+                  </p>
                   <p><span className="font-bold text-slate-800">{t('preview_price_label')}:</span> {formData.price ? `${formData.price} ${t('currency_short')}` : '—'}</p>
                   <p><span className="font-bold text-slate-800">{t('preview_location_label')}:</span> {formData.city || '—'}</p>
                 </div>

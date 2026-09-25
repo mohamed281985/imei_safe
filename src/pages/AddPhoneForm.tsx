@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Upload, X, Loader2, Star, Zap, MapPin, Clock, Eye, Gift, CalendarDays, Store, Phone, MapPinned, ShieldCheck, Smartphone, Database, Palette, FileText, ImagePlus, ChevronRight, ChevronLeft, CheckCircle2, Wallet, Hash, Crown, Gem, User, ExternalLink } from 'lucide-react';
 import PackageBadge from '@/components/PackageBadge'; // تأكد من استيراد المكون
+import CountrySelector from '@/components/CountrySelector';
 
 import { useGeolocated } from 'react-geolocated';
 import { useToast } from '@/hooks/use-toast';
@@ -818,6 +819,14 @@ const AddPhoneForm: React.FC = () => {
     'rounded-3xl border border-white/70 bg-white/70 backdrop-blur-xl p-5 sm:p-6 shadow-[0_10px_30px rgba(15,23,42,0.08)] transition-all duration-500';
 
   const nextStep = () => {
+    const missingStepFields = (currentStep === 0 && (!formData.title.trim() || !formData.city.trim() || !formData.contact_methods.phone?.trim()))
+      || (currentStep === 1 && (!formData.phone_type.trim() || !formData.price.trim() || !/^\d{15}$/.test(formData.imei.trim())))
+      || (currentStep === 3 && images.length === 0);
+    if (missingStepFields) {
+      setError(t('required_fields'));
+      toast({ title: t('error'), description: t('required_fields'), variant: 'destructive' });
+      return;
+    }
     setCurrentStep(prev => Math.min(prev + 1, totalSteps - 1));
   };
 
@@ -860,7 +869,7 @@ const AddPhoneForm: React.FC = () => {
                   <button
                     key={step.title}
                     type="button"
-                    onClick={() => setCurrentStep(index)}
+                    onClick={() => index <= currentStep && setCurrentStep(index)}
                     className={`group rounded-2xl border px-2 py-3 text-center transition-all duration-300 ${
                       active
                         ? 'border-blue-500 bg-blue-600 text-white shadow-lg shadow-blue-200'
@@ -954,17 +963,23 @@ const AddPhoneForm: React.FC = () => {
                     <MapPin className="h-4 w-4 text-orange-500" />
                     {t('country')}
                   </label>
-                  <div className="relative">
-                    <MapPin className={`pointer-events-none absolute ${iconSidePos} top-3.5 h-4 w-4 text-orange-500`} />
-                    <input
-                      name="country"
-                      value={formData.country || ''}
-                      onChange={handleInputChange}
-                      readOnly={countryAutoFilled}
-                      className={`${fieldClass} ${iconSidePad}`}
-                      placeholder=""
-                    />
-                  </div>
+                    {countryAutoFilled ? (
+                      <div className="relative">
+                        <MapPin className={`pointer-events-none absolute ${iconSidePos} top-3.5 h-4 w-4 text-orange-500`} />
+                        <input
+                          name="country"
+                          value={formData.country || ''}
+                          readOnly
+                          className={`${fieldClass} ${iconSidePad}`}
+                          placeholder=""
+                        />
+                      </div>
+                    ) : (
+                      <CountrySelector
+                        value={formData.country || ''}
+                        onChange={(country) => setFormData(prev => ({ ...prev, country }))}
+                      />
+                    )}
                 </div>
                 <div className="sm:col-span-2">
                   {/* ⭐ تم تغيير font-semibold إلى font-bold */}

@@ -702,7 +702,7 @@ const BusinessTransferBuy: React.FC = () => {
 
     try {
       if (!imei || !buyerName || !buyerPhone || !sellerName) { // التأكد من وجود اسم البائع أيضاً
-        toast({ title: 'خطأ', description: 'يرجى ملء جميع الحقول المطلوبة', variant: 'destructive' });
+        toast({ title: t('error'), description: t('required_fields'), variant: 'destructive' });
         setIsLoading(false);
         return;
       }

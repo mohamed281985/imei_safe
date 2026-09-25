@@ -1139,6 +1139,7 @@ app.post('/api/register', async (req, res) => {
       full_name,
       phone,           // رقم الهاتف فقط (بدون رمز الدولة)
       country_code,    // رمز الدولة (مثل +20)
+      countries,       // اسم الدولة المقابل لرمز الدولة
       id_last6,
       role,
       store_name,
@@ -1147,6 +1148,46 @@ app.post('/api/register', async (req, res) => {
     } = req.body;
 
     console.log('DATA RECEIVED:', req.body);
+
+    const countryNamesByCode = {
+      '+20': 'مصر',
+      '+966': 'السعودية',
+      '+971': 'الإمارات',
+      '+965': 'الكويت',
+      '+962': 'الأردن',
+      '+963': 'سوريا',
+      '+964': 'العراق',
+      '+1': 'الولايات المتحدة',
+      '+44': 'المملكة المتحدة',
+      '+49': 'ألمانيا',
+      '+33': 'فرنسا',
+      '+91': 'الهند',
+      '+39': 'إيطاليا',
+      '+34': 'إسبانيا',
+      '+81': 'اليابان',
+      '+86': 'الصين',
+      '+7': 'روسيا',
+      '+90': 'تركيا',
+      '+61': 'أستراليا',
+      '+55': 'البرازيل',
+      '+212': 'المغرب',
+      '+213': 'الجزائر',
+      '+216': 'تونس',
+      '+218': 'ليبيا',
+      '+94': 'سريلانكا',
+      '+234': 'نيجيريا',
+      '+27': 'جنوب أفريقيا',
+      '+82': 'كوريا الجنوبية',
+      '+380': 'أوكرانيا',
+      '+351': 'البرتغال',
+      '+353': 'أيرلندا',
+      '+420': 'التشيك',
+      '+386': 'سلوفينيا',
+      '+358': 'فنلندا',
+      '+370': 'ليتوانيا',
+      '+371': 'لاتفيا',
+      '+372': 'إستونيا'
+    };
 
     // التحقق من وجود البيانات الأساسية
     if (!phone || !country_code) {
@@ -1172,6 +1213,7 @@ app.post('/api/register', async (req, res) => {
       full_name: encFullName ? JSON.stringify(encFullName) : null,
       phone: encPhone ? JSON.stringify(encPhone) : null, // حفظ الرقم المشفر
       country_code: country_code, // حفظ رمز الدولة كنص عادي (غير مشفر عادة)
+      countries: countries || countryNamesByCode[country_code] || null, // حفظ اسم الدولة من البداية اعتماداً على الرمز
       id_last6: encIdLast6 ? JSON.stringify(encIdLast6) : null,
       role: initialRole,
       expires_at: trialExpiresAt.toISOString(),
