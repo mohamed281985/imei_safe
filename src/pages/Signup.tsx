@@ -21,7 +21,6 @@ import PageContainer from '../components/PageContainer';
 import Logo from '../components/Logo';
 import BackButton from '@/components/BackButton';
 import { supabase } from '@/lib/supabase';
-import { getCountryNameByCode } from '@/data/countries';
 
 interface SignupFormData {
   email: string;
@@ -187,7 +186,6 @@ const Signup: React.FC = () => {
                 // --- التعديل هنا: إرسال الهاتف ورمز الدولة بشكل منفصل ---
                 phone: phoneNumber,           // رقم الهاتف فقط
                 country_code: countryCode,    // مفتاح الدولة (+20, +966, ...)
-                countries: getCountryNameByCode(countryCode),
                 // -------------------------------------------------------
                 id_last6: idLast6,
                 role: 'free_user'

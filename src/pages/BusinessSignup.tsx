@@ -9,7 +9,6 @@ import { useToast } from '@/hooks/use-toast';
 import PageContainer from '../components/PageContainer';
 import { useScrollToTop } from '../hooks/useScrollToTop';
 import { useLanguage } from '../contexts/LanguageContext';
-import { getCountryNameByCode } from '@/data/countries';
 
 export default function BusinessSignup() {
   useScrollToTop();
@@ -168,7 +167,6 @@ export default function BusinessSignup() {
                 full_name: formData.ownerName,
                 phone: formData.phone,           // رقم الهاتف فقط
                 country_code: countryCode,      // رمز الدولة منفصل
-                countries: getCountryNameByCode(countryCode),
                 id_last6: formData.id_last6,
                 role: 'free_business',
                 store_name: formData.storeName,
