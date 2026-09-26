@@ -1,6 +1,6 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { User, PlusSquare, Search, Sparkles, LogOut, MessageSquare, Key, Globe, Fingerprint, Gift, Phone, Award, Crown, ChevronLeft, Shield, FileText, Bell, Trash2, Heart } from 'lucide-react';
+import { User, PlusSquare, Search, Sparkles, LogOut, MessageSquare, Key, Globe, Fingerprint, Gift, Phone, Award, ChevronLeft, Shield, FileText, Bell, Trash2, Heart } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -14,15 +14,6 @@ import CountryCodeSelector from '@/components/CountryCodeSelector';
 import PageContainer from '../components/PageContainer';
 import AppNavbar from '../components/AppNavbar';
 // Types for our component state
-interface PackageInfo {
-    planType: string;
-    expiresAt: string;
-    daysRemaining: number;
-    publishAdsCount: number;
-    publishedAdsCount: number;
-    remainingAds: number;
-}
-
 interface RewardsInfo {
     count: number;
     totalValue: number;
@@ -36,8 +27,6 @@ interface PhoneInfo {
 
 // Constants
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? 'https://imei-safe.me' : '');
-const BUSINESS_ROLES = ['business', 'free_business', 'gold_business', 'silver_business'];
-
 // Main component
 const ProfileMenuPage: React.FC = () => {
     useScrollToTop();
@@ -46,7 +35,6 @@ const ProfileMenuPage: React.FC = () => {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
     const { toast } = useToast();
-    const isCommercialUser = BUSINESS_ROLES.includes(String(user?.role || '').toLowerCase().trim());
 
     // State variables
     const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
@@ -78,16 +66,6 @@ const ProfileMenuPage: React.FC = () => {
         totalValue: 0,
         claimedCount: 0
     });
-    const [packageInfo, setPackageInfo] = useState<PackageInfo>({
-        planType: '',
-        expiresAt: '',
-        daysRemaining: 0,
-        publishAdsCount: 0,
-        publishedAdsCount: 0,
-        remainingAds: 0
-    });
-
-
     // Display format for country code
     const displayedCountryCode = countryCode
         ? (String(countryCode).startsWith('+') ? String(countryCode) : `+${String(countryCode).replace(/^0+/, '')}`)
@@ -198,161 +176,6 @@ const ProfileMenuPage: React.FC = () => {
 
         fetchSupportInfo();
     }, []);
-
-    // Fetch package information
-    useEffect(() => {
-        const fetchPackageInfo = async () => {
-            if (!user?.id) return;
-
-            try {
-                // Get user role and expiration date
-                const { data: userData, error: userError } = await supabase
-                    .from('users')
-                    .select('role, expires_at')
-                    .eq('id', user.id)
-                    .maybeSingle();
-
-                if (userError || !userData) {
-                    console.error('Error fetching user data:', userError);
-                    return;
-                }
-
-                // Determine plan type
-                const rawRole = String(userData.role || '').toLowerCase().trim();
-                const normalizedRole = rawRole.replace(/[\s\-]+/g, '_');
-                const basePlan = normalizedRole.split('_')[0];
-
-                // Get plan information
-                let plan = null;
-                const normalizedFull = normalizedRole || String(user?.role || '').toLowerCase().trim().replace(/[\s\-]+/g, '_');
-
-                // Try exact match with full normalized role
-                if (normalizedFull) {
-                    const exact = await supabase.from('plans').select('*').eq('type', normalizedFull).maybeSingle();
-                    plan = exact.data;
-                }
-
-                // Try ilike with full normalized role if exact not found
-                if (!plan && normalizedFull) {
-                    const res2 = await supabase.from('plans').select('*').ilike('type', `%${normalizedFull}%`).maybeSingle();
-                    plan = res2.data;
-                }
-
-                // Fallback to searching by base token
-                if (!plan) {
-                    const res3 = await supabase.from('plans').select('*').ilike('type', `%${basePlan}%`).maybeSingle();
-                    plan = res3.data;
-                }
-
-                // If DB queries didn't return a row, fetch all plans and try local match
-                if (!plan) {
-                    try {
-                        const allRes = await supabase.from('plans').select('*');
-                        const list = allRes.data || [];
-                        const found = list.find((r: any) => {
-                            const typ = String(r.type || '').toLowerCase().trim();
-                            return (
-                                (normalizedFull && typ.includes(normalizedFull)) ||
-                                (basePlan && typ.includes(basePlan))
-                            );
-                        });
-                        plan = found || null;
-                    } catch (scanErr) {
-                        console.error('Error in local search:', scanErr);
-                    }
-                }
-
-                // Try users_plans as fallback
-                if (!plan) {
-                    try {
-                        const upRes = await supabase.from('users_plans').select('*').eq('user_id', user.id).maybeSingle();
-                        const up = upRes.data;
-
-                        if (up) {
-                            const goldQuota = up.gold_ad ?? up.gold_ads ?? up.publish_ad ?? up.publishAd ?? null;
-                            const silverQuota = up.silver_ad ?? up.silver_ads ?? null;
-                            const quota = basePlan === 'gold' ? goldQuota : basePlan === 'silver' ? silverQuota : null;
-
-                            if (quota != null) {
-                                const qnum = Number(quota);
-                                if (Number.isFinite(qnum)) {
-                                    plan = { Publish_Ad: qnum };
-                                }
-                            }
-                        }
-                    } catch (upErr) {
-                        console.error('Error in users_plans search:', upErr);
-                    }
-                }
-
-                // --- 2. Determine packageStartDate (Latest payment for current cycle) ---
-                let packageStartDate: string | null = null;
-                const { data: latestPaid, error: latestPaidErr } = await supabase
-                    .from('ads_payment')
-                    .select('payment_date')
-                    .eq('user_id', user.id)
-                    .eq('is_paid', true)
-                    .eq('type', normalizedFull)
-                    .order('payment_date', { ascending: false }) // جلب أحدث دفعة لتبدأ الدورة منها
-                    .limit(1)
-                    .maybeSingle();
-
-                if (!latestPaidErr && latestPaid && latestPaid.payment_date) {
-                    packageStartDate = latestPaid.payment_date;
-                } else {
-                    // Fallback: use user's expires_at and plan duration
-                    const planDuration = plan?.duration_days ? Number(plan.duration_days) : 30;
-                    if (userData.expires_at) {
-                        const expiresAt = new Date(userData.expires_at);
-                        const start = new Date(expiresAt);
-                        start.setDate(start.getDate() - planDuration);
-                        packageStartDate = start.toISOString();
-                    }
-                }
-
-                // --- 3. Count actual published ads (pending + approved) since package start ---
-                let actualPublishedCount = 0;
-                if (packageStartDate) {
-                    const { data: adsList, error: countErr } = await supabase
-                        .from('ads_payment')
-                        .select('id, status, upload_date')
-                        .eq('user_id', user.id)
-                        .gte('upload_date', packageStartDate);
-
-                    if (!countErr && Array.isArray(adsList)) {
-                        actualPublishedCount = adsList.filter(ad => ad.status === 'pending' || ad.status === 'approved').length;
-                    }
-                }
-
-                // Calculate remaining ads
-                const publishVal = plan?.Publish_Ad ?? plan?.publish_ad ?? plan?.publishAd ?? plan?.publish_ads ?? plan?.publishAds ?? null;
-                const publishAdsCount = publishVal != null ? Number(publishVal) : 0;
-                const remainingAds = Math.max(0, publishAdsCount - actualPublishedCount);
-
-                // Calculate remaining days
-                let daysRemaining = 0;
-                if (userData.expires_at) {
-                    const expiryDate = new Date(userData.expires_at);
-                    const today = new Date();
-                    const diffTime = expiryDate.getTime() - today.getTime();
-                    daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                }
-
-                setPackageInfo({
-                    planType: basePlan.toUpperCase(),
-                    expiresAt: userData.expires_at || '',
-                    daysRemaining: Math.max(0, daysRemaining),
-                    publishAdsCount,
-                    publishedAdsCount: actualPublishedCount,
-                    remainingAds
-                });
-            } catch (err) {
-                console.error('Error fetching package info:', err);
-            }
-        };
-
-        fetchPackageInfo();
-    }, [user?.id]);
 
     // Check biometric status on page load
     useEffect(() => {
@@ -742,52 +565,6 @@ toast({ title: t('success'), description: t('biometric_enabled_success') });
                                 </div>
                             </div>
 
-                            {/* Package Info */}
-                            {isCommercialUser && packageInfo.planType && (
-                                <div className="mt-4 p-3 rounded-xl  shadow-lg bg-[#289c8e]/10 border border-[#289c8e]/20">
-                                    <div className="flex items-center justify-between mb-3">
-                                        <div className="flex items-center gap-2">
-                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${packageInfo.planType === 'GOLD'
-                                                ? 'bg-gradient-to-br from-yellow-400 to-amber-400'
-                                                : packageInfo.planType === 'SILVER'
-                                                    ? 'bg-gradient-to-br from-slate-200 to-emerald-200'
-                                                    : 'bg-gradient-to-br from-blue-400 to-blue-300'
-                                                }`}>
-                                                {packageInfo.planType === 'GOLD' ? (
-                                                    <Crown className="w-4 h-4 text-white" />
-                                                ) : packageInfo.planType === 'SILVER' ? (
-                                                    <Award className="w-4 h-4 text-white" />
-                                                ) : (
-                                                    <Gift className="w-4 h-4 text-white" />
-                                                )}
-                                            </div>
-                                            <span className="font-bold text-gray-800">
-                                                {packageInfo.planType === 'GOLD' ? t('gold_vip') : packageInfo.planType === 'SILVER' ? t('silver') : t('free')}
-                                            </span>
-                                        </div>
-                                        {packageInfo.expiresAt && (
-                                            <span className="text-sm text-gray-600">
-                                                {t('expires_at')} {new Date(packageInfo.expiresAt).toLocaleDateString(language === 'ar' ? 'ar-EG' : language === 'fr' ? 'fr-FR' : language === 'hi' ? 'hi-IN' : 'en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-                                            </span>
-                                        )}
-                                    </div>
-
-                                    <div className="grid grid-cols-3 gap-2">
-                                        <div className="text-center bg-white/50 rounded-lg p-2">
-                                            <div className="text-lg font-bold text-[#289c8e]">{packageInfo.remainingAds}</div>
-                                            <div className="text-xs text-gray-500">{t('remaining_ads')}</div>
-                                        </div>
-                                        <div className="text-center bg-white/50 rounded-lg p-2">
-                                            <div className="text-lg font-bold text-green-600">{packageInfo.daysRemaining}</div>
-                                            <div className="text-xs text-gray-500">{t('days_remaining')}</div>
-                                        </div>
-                                        <div className="text-center bg-white/50 rounded-lg p-2">
-                                            <div className="text-lg font-bold text-purple-600">{packageInfo.publishAdsCount}</div>
-                                            <div className="text-xs text-gray-500">{t('total_ads')}</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
                         </div>
                     )}
 

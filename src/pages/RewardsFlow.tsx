@@ -27,6 +27,7 @@ import {
   QrCode,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useNearbyRewardOffers } from '@/hooks/useNearbyRewardOffers';
 import AppNavbar from '@/components/AppNavbar';
 import PageContainer from '@/components/PageContainer';
 import { ACCESSORY_CATEGORIES } from '@/constants/accessoryCategories';
@@ -39,7 +40,6 @@ import {
   getRewardBalanceFromStorage,
   getRedemptions,
   rewardCategories,
-  rewardOffers,
   setDailyClaimedDays,
   setRedemptions,
   setRewardBalanceInStorage,
@@ -251,6 +251,7 @@ const RewardDailyPage: React.FC = () => {
 const RewardCategoriesPage: React.FC = () => {
   const navigate = useNavigate();
   const [balance, setBalance] = useState<number>(getCurrentBalance());
+  const { offers: nearbyOffers, loading: offersLoading, error: offersError, retry: retryNearbyOffers } = useNearbyRewardOffers();
 
   useEffect(() => {
     setBalance(getCurrentBalance());
@@ -259,14 +260,14 @@ const RewardCategoriesPage: React.FC = () => {
   const categories = useMemo(() =>
     rewardCategories.map((category) => {
       const businesses = new Set(
-        rewardOffers
+        nearbyOffers
           .filter((offer) => offer.categoryId === category.id && isOfferValid(offer))
           .map((offer) => offer.businessName),
       );
 
       return { ...category, shopsCount: businesses.size };
     }),
-  []);
+  [nearbyOffers]);
 
   return (
     <PageContainer>
@@ -283,6 +284,9 @@ const RewardCategoriesPage: React.FC = () => {
         <div className="rounded-3xl bg-white/95 p-4 shadow-md ring-1 ring-slate-200">
           <h1 className="mb-4 text-xl font-black text-slate-900">استبدال النقاط</h1>
           <p className="mb-4 text-sm text-slate-600">ماذا تريد أن تستبدل نقاطك به؟</p>
+
+          {offersLoading && <div className="mb-4 flex items-center gap-2 rounded-xl bg-slate-50 p-3 text-sm text-slate-600"><Clock3 className="h-4 w-4 animate-pulse text-sky-600" />جارٍ البحث عن العروض القريبة...</div>}
+          {offersError && <div className="mb-4 flex flex-col gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><span>{offersError}</span><button type="button" onClick={retryNearbyOffers} className="self-start font-bold text-amber-800 underline">السماح بالموقع وإعادة المحاولة</button></div>}
 
           <div className="grid grid-cols-2 gap-3">
             {categories.map((category) => {
@@ -321,10 +325,11 @@ const RewardShopsPage: React.FC = () => {
   const navigate = useNavigate();
   const { categoryId } = useParams();
   const [sort, setSort] = useState<'nearest' | 'discount' | 'coins' | 'latest'>('nearest');
+  const { offers: nearbyOffers, loading: offersLoading, error: offersError, retry: retryNearbyOffers } = useNearbyRewardOffers();
 
   const category = rewardCategories.find((item) => item.id === categoryId) ?? rewardCategories[0];
   const offers = useMemo(() => {
-    const filtered = rewardOffers.filter((offer) => offer.categoryId === category.id && isOfferValid(offer));
+    const filtered = nearbyOffers.filter((offer) => offer.categoryId === category.id && isOfferValid(offer));
     switch (sort) {
       case 'discount':
         return [...filtered].sort((a, b) => b.discountPercent - a.discountPercent);
@@ -335,7 +340,7 @@ const RewardShopsPage: React.FC = () => {
       default:
         return [...filtered].sort((a, b) => a.distanceMeters - b.distanceMeters);
     }
-  }, [category.id, sort]);
+  }, [category.id, nearbyOffers, sort]);
 
   if (!category) {
     return null;
@@ -384,7 +389,14 @@ const RewardShopsPage: React.FC = () => {
           </div>
 
           <div className="space-y-3">
-            {offers.length === 0 ? (
+            {offersLoading ? (
+              <div className="rounded-2xl bg-slate-50 p-6 text-center text-sm text-slate-600">جارٍ تحميل العروض القريبة...</div>
+            ) : offersError ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-center text-sm text-amber-900">
+                <p>{offersError}</p>
+                <button type="button" onClick={retryNearbyOffers} className="mt-3 font-bold underline">إعادة المحاولة</button>
+              </div>
+            ) : offers.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
                 <ShoppingBag className="mx-auto mb-3 h-10 w-10 text-slate-400" />
                 <p className="font-bold text-slate-700">لا توجد عروض متاحة حاليًا</p>
@@ -418,10 +430,7 @@ const RewardShopsPage: React.FC = () => {
                           <BusinessBadge label={offer.businessLogo || offer.businessName} />
                           <span className="text-base font-black">{offer.businessName}</span>
                         </div>
-                        <div className="flex items-center gap-1 text-amber-500">
-                          <Star className="h-4 w-4 fill-current" />
-                          <span className="text-xs font-bold text-slate-700">{offer.rating}</span>
-                        </div>
+                        {offer.rating > 0 && <div className="flex items-center gap-1 text-amber-500"><Star className="h-4 w-4 fill-current" /><span className="text-xs font-bold text-slate-700">{offer.rating}</span></div>}
                       </div>
 
                       <div className="mb-1 flex items-center gap-1 text-xs text-slate-500">
@@ -456,15 +465,17 @@ const RewardShopsPage: React.FC = () => {
 const RewardOfferDetailsPage: React.FC = () => {
   const navigate = useNavigate();
   const { offerId } = useParams();
-  const offer = rewardOffers.find((item) => item.id === offerId);
+  const { offers: nearbyOffers, loading: offersLoading, error: offersError, retry: retryNearbyOffers } = useNearbyRewardOffers();
+  const offer = nearbyOffers.find((item) => item.id === offerId);
 
   if (!offer) {
     return (
       <PageContainer>
         <AppNavbar />
         <div className="mx-auto max-w-md px-4 py-10 text-center">
-          <p className="text-lg font-black text-slate-800">العرض غير موجود</p>
-          <button type="button" onClick={() => navigate('/rewards-categories')} className="mt-4 rounded-full bg-sky-600 px-4 py-2 text-sm font-black text-white">العودة</button>
+          <p className="text-lg font-black text-slate-800">{offersLoading ? 'جارٍ تحميل العرض...' : offersError || 'العرض غير متاح ضمن نطاقك الحالي'}</p>
+          {offersError && <button type="button" onClick={retryNearbyOffers} className="mt-4 rounded-full bg-amber-500 px-4 py-2 text-sm font-black text-white">إعادة المحاولة</button>}
+          <button type="button" onClick={() => navigate('/rewards-categories')} className="mt-4 rounded-full bg-sky-600 px-4 py-2 text-sm font-black text-white">العودة للفئات</button>
         </div>
       </PageContainer>
     );
@@ -556,8 +567,20 @@ const RewardOfferDetailsPage: React.FC = () => {
 const RewardConfirmationPage: React.FC = () => {
   const navigate = useNavigate();
   const { offerId } = useParams();
-  const offer = rewardOffers.find((item) => item.id === offerId);
-  if (!offer) return null;
+  const { offers: nearbyOffers, loading: offersLoading, error: offersError, retry: retryNearbyOffers } = useNearbyRewardOffers();
+  const offer = nearbyOffers.find((item) => item.id === offerId);
+  if (!offer) {
+    return (
+      <PageContainer>
+        <AppNavbar />
+        <div className="mx-auto max-w-md px-4 py-10 text-center">
+          <p className="font-bold text-slate-700">{offersLoading ? 'جارٍ التحقق من العرض...' : offersError || 'العرض غير متاح للاستبدال من موقعك الحالي.'}</p>
+          {offersError && <button type="button" onClick={retryNearbyOffers} className="mt-4 rounded-full bg-amber-500 px-4 py-2 text-sm font-bold text-white">إعادة المحاولة</button>}
+          <button type="button" onClick={() => navigate('/rewards-categories')} className="mt-4 block w-full text-sm font-bold text-sky-700">العودة للعروض القريبة</button>
+        </div>
+      </PageContainer>
+    );
+  }
 
   const currentBalance = getCurrentBalance();
   const balanceAfter = Math.max(0, currentBalance - offer.coinsRequired);

@@ -11,6 +11,8 @@ create table if not exists public.business_offers (
   product_name text not null check (char_length(product_name) between 1 and 120),
   description text not null check (char_length(description) between 1 and 1500),
   category text not null default 'Other',
+  store_latitude double precision check (store_latitude between -90 and 90),
+  store_longitude double precision check (store_longitude between -180 and 180),
   original_price numeric(12, 2) not null check (original_price > 0),
   offer_price numeric(12, 2) not null check (offer_price > 0 and offer_price < original_price),
   discount_percent integer not null check (discount_percent between 1 and 100),
@@ -25,6 +27,11 @@ create table if not exists public.business_offers (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.business_offers
+  add column if not exists store_latitude double precision check (store_latitude between -90 and 90);
+alter table public.business_offers
+  add column if not exists store_longitude double precision check (store_longitude between -180 and 180);
 
 alter table public.business_offers
   drop column if exists available_quantity;

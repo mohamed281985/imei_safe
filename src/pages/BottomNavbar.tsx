@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { House, PlusSquare, User, Bell, FileText, CheckCircle2, Clock, Sparkles, X, Plus, Smartphone, Megaphone, Tags } from 'lucide-react';
+import { House, PlusSquare, User, Bell, FileText, CheckCircle2, Clock, Sparkles, X, Plus, Smartphone, Store } from 'lucide-react';
 import { Search } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -397,34 +397,24 @@ const BottomNavbar: React.FC<BottomNavbarProps> = ({ isVisible = true }) => {
               >
                 {/* تعديل لعرض الخيارات بناءً على نوع المستخدم */}
                 <div className="flex items-center justify-center w-full h-full -mt-5 gap-4">
-                  <Link
-                    to="/seller-dashboard"
-                    className="flex items-center justify-center px-8 sm:px-11 py-1 bg-white text-blue-800 rounded-full font-bold text-base sm:text-lg shadow-lg hover:bg-blue-50 transition-colors"
-                    onClick={() => setShowCreateAdModal(false)}
-                  >
-                    <Smartphone className="w-5 h-5 ml-2 text-orange-500" />
-                    {t('sell_now')}
-                  </Link>
-                  {/* عرض زر "إنشاء إعلان" فقط للمستخدمين التجاريين */}
-                  {isBusinessUser && (
-                    <>
-                      <Link
-                        to="/create-advertisement"
-                        className="flex items-center justify-center px-4 sm:px-6 py-1 bg-white text-blue-800 rounded-full font-bold text-sm sm:text-lg shadow-lg hover:bg-blue-50 transition-colors"
-                        onClick={() => setShowCreateAdModal(false)}
-                      >
-                        <Megaphone className="w-5 h-5 ml-2 text-blue-600" />
-                        {t('create_advertisement')}
-                      </Link>
-                      <Link
-                        to="/business-offers"
-                        className="flex items-center justify-center px-4 sm:px-6 py-1 bg-white text-blue-800 rounded-full font-bold text-sm sm:text-lg shadow-lg hover:bg-blue-50 transition-colors"
-                        onClick={() => setShowCreateAdModal(false)}
-                      >
-                        <Tags className="w-5 h-5 ml-2 text-orange-500" />
-                        عروض المتجر
-                      </Link>
-                    </>
+                  {isBusinessUser ? (
+                    <Link
+                      to="/my-store"
+                      className="flex min-h-11 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-orange-500 to-amber-500 px-7 text-base font-black text-white shadow-lg shadow-orange-950/20 transition-colors hover:from-orange-600 hover:to-amber-600 sm:min-h-12 sm:px-10 sm:text-lg"
+                      onClick={() => setShowCreateAdModal(false)}
+                    >
+                      <Store className="h-5 w-5" />
+                      متجري
+                    </Link>
+                  ) : (
+                    <Link
+                      to="/seller-dashboard"
+                      className="flex items-center justify-center rounded-full bg-white px-8 py-1 text-base font-bold text-blue-800 shadow-lg transition-colors hover:bg-blue-50 sm:px-11 sm:text-lg"
+                      onClick={() => setShowCreateAdModal(false)}
+                    >
+                      <Smartphone className="ml-2 h-5 w-5 text-orange-500" />
+                      {t('sell_now')}
+                    </Link>
                   )}
                 </div>
                 <button

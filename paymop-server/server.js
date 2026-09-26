@@ -4589,6 +4589,48 @@ app.get('/api/get-contact-info', verifyJwtToken, async (req, res) => {
 });
 
 // Return the authenticated user's business row with decrypted phone
+app.get('/api/rewards/offers', verifyJwtToken, async (req, res) => {
+  try {
+    const latitude = Number(req.query.latitude);
+    const longitude = Number(req.query.longitude);
+    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+      return res.status(400).json({ error: 'موقع المستخدم غير صالح' });
+    }
+
+    const { data: offers, error } = await supabase
+      .from('business_offers')
+      .select('id, category, product_name, business_name, original_price, offer_price, discount_percent, coins_required, expires_at, description, status, is_active, store_latitude, store_longitude, business_offer_images(image_path, main_image, sort_order)')
+      .eq('status', 'approved')
+      .eq('is_active', true)
+      .gt('expires_at', new Date().toISOString());
+
+    if (error) return sendError(res, 500, 'تعذر تحميل عروض الاستبدال', error);
+
+    const toRadians = (degrees) => degrees * Math.PI / 180;
+    const distanceInMeters = (lat1, lon1, lat2, lon2) => {
+      const deltaLat = toRadians(lat2 - lat1);
+      const deltaLon = toRadians(lon2 - lon1);
+      const haversine = Math.sin(deltaLat / 2) ** 2
+        + Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(deltaLon / 2) ** 2;
+      return 6371000 * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+    };
+
+    const nearbyOffers = (offers || [])
+      .filter((offer) => offer.store_latitude != null && offer.store_longitude != null
+        && Number.isFinite(Number(offer.store_latitude)) && Number.isFinite(Number(offer.store_longitude)))
+      .map((offer) => ({
+        ...offer,
+        distance_meters: Math.round(distanceInMeters(latitude, longitude, Number(offer.store_latitude), Number(offer.store_longitude))),
+      }))
+      .filter((offer) => offer.distance_meters <= 3000)
+      .sort((first, second) => first.distance_meters - second.distance_meters);
+
+    return res.json({ ok: true, radius_meters: 3000, offers: nearbyOffers });
+  } catch (error) {
+    return sendError(res, 500, 'حدث خطأ أثناء تحميل العروض القريبة', error);
+  }
+});
+
 app.get('/api/business/offers', verifyJwtToken, async (req, res) => {
   try {
     const userId = req.user?.id;
@@ -4632,11 +4674,13 @@ app.post('/api/business/offers', verifyJwtToken, async (req, res) => {
 
     const {
       productName, description, category, originalPrice, offerPrice,
-      coinsRequired, expiresAt, notes, imagePaths
+      coinsRequired, expiresAt, notes, imagePaths, storeLatitude, storeLongitude
     } = req.body || {};
     const original = Number(originalPrice);
     const offer = Number(offerPrice);
     const coins = Number(coinsRequired);
+    const latitude = Number(storeLatitude);
+    const longitude = Number(storeLongitude);
     const imageList = Array.isArray(imagePaths) ? imagePaths : [];
 
     if (typeof productName !== 'string' || !productName.trim() || productName.length > 120) {
@@ -4650,6 +4694,9 @@ app.post('/api/business/offers', verifyJwtToken, async (req, res) => {
     }
     if (!Number.isInteger(coins) || coins < 0) {
       return res.status(400).json({ error: 'تحقق من النقاط المطلوبة' });
+    }
+    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+      return res.status(400).json({ error: 'يجب تحديد موقع المتجر لإرسال العرض' });
     }
     if (imageList.length < 1 || imageList.length > 5 || imageList.some((path) => typeof path !== 'string' || !path.startsWith(`${userId}/`))) {
       return res.status(400).json({ error: 'أضف من صورة إلى خمس صور مرفوعة إلى مجلد حسابك' });
@@ -4674,6 +4721,8 @@ app.post('/api/business/offers', verifyJwtToken, async (req, res) => {
         offer_price: offer,
         discount_percent: discountPercent,
         coins_required: coins,
+        store_latitude: latitude,
+        store_longitude: longitude,
         expires_at: expiration.toISOString(),
         notes: typeof notes === 'string' ? notes.trim().slice(0, 500) : '',
         status: 'pending',

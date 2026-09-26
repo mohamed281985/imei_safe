@@ -62,6 +62,7 @@ const BusinessTransferBuy = lazy(() => import('@/pages/BusinessTransferbuy'));
 const BusinessTransferSell = lazy(() => import('@/pages/BusinessTransfersell'));
 const PhonesForSale = lazy(() => import('@/pages/PhonesForSale'));
 const SellerDashboard = lazy(() => import('@/pages/SellerDashboard'));
+const MyStore = lazy(() => import('@/pages/MyStore'));
 const BusinessOffers = lazy(() => import('@/pages/BusinessOffers'));
 const AddPhoneForm = lazy(() => import('@/pages/AddPhoneForm'));
 const AddAccessoriesForm = lazy(() => import('@/pages/AddaccessoriesForm'));
@@ -400,6 +401,7 @@ const AppCore = () => {
             <Route path="/transfer-history" element={<AuthGuard><TransferHistory /></AuthGuard>} />
             <Route path="/create-advertisement" element={<AuthGuard><CreateAdvertisement /></AuthGuard>} />
             <Route path="/business-offers" element={<AuthGuard><BusinessOffers /></AuthGuard>} />
+            <Route path="/my-store" element={<AuthGuard><MyStore /></AuthGuard>} />
             <Route path="/publish-ad" element={<AuthGuard><PublishAd /></AuthGuard>} />
             <Route path="/special-ad" element={<AuthGuard><SpecialAd /></AuthGuard>} />
             <Route path="/webview" element={<AuthGuard><WebViewPage /></AuthGuard>} />
