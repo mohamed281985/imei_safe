@@ -4589,6 +4589,120 @@ app.get('/api/get-contact-info', verifyJwtToken, async (req, res) => {
 });
 
 // Return the authenticated user's business row with decrypted phone
+app.get('/api/business/offers', verifyJwtToken, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { data: business, error: businessError } = await supabase
+      .from('businesses')
+      .select('id')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (businessError) return sendError(res, 500, 'تعذر التحقق من المتجر', businessError);
+    if (!business) return res.status(403).json({ error: 'هذا المسار مخصص للحسابات التجارية' });
+
+    const { data: offers, error } = await supabase
+      .from('business_offers')
+      .select('id, product_name, category, offer_price, original_price, status, created_at, business_offer_images(id, image_path, main_image, sort_order)')
+      .eq('business_id', business.id)
+      .order('created_at', { ascending: false });
+
+    if (error) return sendError(res, 500, 'تعذر تحميل عروض المتجر', error);
+    return res.json({ ok: true, offers: offers || [] });
+  } catch (error) {
+    return sendError(res, 500, 'حدث خطأ أثناء تحميل العروض', error);
+  }
+});
+
+app.post('/api/business/offers', verifyJwtToken, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { data: business, error: businessError } = await supabase
+      .from('businesses')
+      .select('id, store_name')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (businessError) return sendError(res, 500, 'تعذر التحقق من المتجر', businessError);
+    if (!business) return res.status(403).json({ error: 'هذا المسار مخصص للحسابات التجارية' });
+
+    const {
+      productName, description, category, originalPrice, offerPrice,
+      coinsRequired, expiresAt, notes, imagePaths
+    } = req.body || {};
+    const original = Number(originalPrice);
+    const offer = Number(offerPrice);
+    const coins = Number(coinsRequired);
+    const imageList = Array.isArray(imagePaths) ? imagePaths : [];
+
+    if (typeof productName !== 'string' || !productName.trim() || productName.length > 120) {
+      return res.status(400).json({ error: 'اسم العرض مطلوب وبحد أقصى 120 حرفًا' });
+    }
+    if (typeof description !== 'string' || !description.trim() || description.length > 1500) {
+      return res.status(400).json({ error: 'وصف العرض مطلوب وبحد أقصى 1500 حرف' });
+    }
+    if (!Number.isFinite(original) || !Number.isFinite(offer) || original <= 0 || offer <= 0 || offer >= original) {
+      return res.status(400).json({ error: 'يجب أن يكون سعر العرض أقل من السعر الأصلي' });
+    }
+    if (!Number.isInteger(coins) || coins < 0) {
+      return res.status(400).json({ error: 'تحقق من النقاط المطلوبة' });
+    }
+    if (imageList.length < 1 || imageList.length > 5 || imageList.some((path) => typeof path !== 'string' || !path.startsWith(`${userId}/`))) {
+      return res.status(400).json({ error: 'أضف من صورة إلى خمس صور مرفوعة إلى مجلد حسابك' });
+    }
+
+    const expiration = new Date(`${expiresAt}T23:59:59.999Z`);
+    if (!expiresAt || Number.isNaN(expiration.getTime()) || expiration.getTime() <= Date.now()) {
+      return res.status(400).json({ error: 'تاريخ انتهاء العرض يجب أن يكون في المستقبل' });
+    }
+
+    const discountPercent = Math.round(((original - offer) / original) * 100);
+    const { data: createdOffer, error: offerError } = await supabase
+      .from('business_offers')
+      .insert({
+        business_id: business.id,
+        user_id: userId,
+        business_name: business.store_name || '',
+        product_name: productName.trim(),
+        description: description.trim(),
+        category: String(category || 'أخرى').trim().slice(0, 80),
+        original_price: original,
+        offer_price: offer,
+        discount_percent: discountPercent,
+        coins_required: coins,
+        expires_at: expiration.toISOString(),
+        notes: typeof notes === 'string' ? notes.trim().slice(0, 500) : '',
+        status: 'pending',
+        is_active: false,
+      })
+      .select('id, product_name, status, created_at')
+      .single();
+
+    if (offerError) return sendError(res, 500, 'تعذر إنشاء العرض', offerError);
+
+    const imageRows = imageList.map((imagePath, index) => ({
+      offer_id: createdOffer.id,
+      image_path: imagePath,
+      main_image: index === 0,
+      sort_order: index,
+    }));
+    const { error: imagesError } = await supabase.from('business_offer_images').insert(imageRows);
+
+    if (imagesError) {
+      await supabase.from('business_offers').delete().eq('id', createdOffer.id).eq('user_id', userId);
+      return sendError(res, 500, 'تعذر حفظ صور العرض', imagesError);
+    }
+
+    return res.status(201).json({ ok: true, offer: createdOffer });
+  } catch (error) {
+    return sendError(res, 500, 'حدث خطأ أثناء إرسال العرض', error);
+  }
+});
+
 app.get('/api/businesses/me', verifyJwtToken, async (req, res) => {
   try {
     const userId = req.user?.id;
