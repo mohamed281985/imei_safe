@@ -7,7 +7,7 @@ import { X, Search, Plus, LogOut, User, Settings, Key, Gift, MessageCircle, Coin
 import PackageBadge from '@/components/PackageBadge';
 import Notifications from './Notifications';
 import NotificationBell from './NotificationBell';
-import { getRewardBalanceFromStorage } from '@/data/rewards';
+import { useRewardBalance } from '@/hooks/useRewardBalance';
 import { supabase } from '../lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
@@ -27,20 +27,7 @@ const AppNavbar: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [supportNumber, setSupportNumber] = useState('');
   const [countryCode, setCountryCode] = useState('');
-  const [coinBalance, setCoinBalance] = useState<number>(getRewardBalanceFromStorage());
-
-  useEffect(() => {
-    const syncBalance = () => setCoinBalance(getRewardBalanceFromStorage());
-    syncBalance();
-
-    window.addEventListener('storage', syncBalance);
-    window.addEventListener('imei-safe-reward-balance-updated', syncBalance as EventListener);
-
-    return () => {
-      window.removeEventListener('storage', syncBalance);
-      window.removeEventListener('imei-safe-reward-balance-updated', syncBalance as EventListener);
-    };
-  }, []);
+  const { balance: coinBalance } = useRewardBalance();
 
   const handleLogout = () => {
     logout();

@@ -29,8 +29,11 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useNearbyRewardOffers } from '@/hooks/useNearbyRewardOffers';
+import { useRewardBalance } from '@/hooks/useRewardBalance';
 import AppNavbar from '@/components/AppNavbar';
 import PageContainer from '@/components/PageContainer';
+import { supabase } from '@/lib/supabase';
+import { useToast } from '@/hooks/use-toast';
 import { ACCESSORY_CATEGORIES } from '@/constants/accessoryCategories';
 import {
   coinPricingRules,
@@ -38,10 +41,12 @@ import {
   defaultRewardBalance,
   getCategoryIcon,
   getDailyClaimedDays,
+  getLastDailyClaimDate,
   getRewardBalanceFromStorage,
   getRedemptions,
   rewardCategories,
   setDailyClaimedDays,
+  setLastDailyClaimDate,
   setRedemptions,
   setRewardBalanceInStorage,
 } from '@/data/rewards';
@@ -51,7 +56,7 @@ const formatCoinsValue = (value: number) => `${new Intl.NumberFormat('en-US').fo
 const formatNumber = (value: number) => new Intl.NumberFormat('en-US').format(value);
 const isOfferValid = (offer: any) => offer?.isActive && offer?.status === 'approved' && new Date(offer.expiresAt).getTime() > Date.now();
 
-const getCurrentBalance = () => getRewardBalanceFromStorage();
+const getCurrentBalance = (userId?: string) => getRewardBalanceFromStorage(userId);
 
 const buildRedeemCode = () => {
   const random = Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -133,27 +138,52 @@ const BusinessBadge = ({ label }: { label: string }) => (
 
 const RewardDailyPage: React.FC = () => {
   const navigate = useNavigate();
-  const [balance, setBalance] = useState<number>(getCurrentBalance());
-  const [claimedDays, setClaimedDays] = useState<number[]>(getDailyClaimedDays());
+  const { balance, userId } = useRewardBalance();
+  const [claimedDays, setClaimedDays] = useState<number[]>(() => getDailyClaimedDays(userId));
+  const [claimedToday, setClaimedToday] = useState(false);
+  const [claiming, setClaiming] = useState(false);
+  const { toast } = useToast();
 
   useEffect(() => {
-    setBalance(getCurrentBalance());
-    setClaimedDays(getDailyClaimedDays());
-  }, []);
+    const today = new Date().toLocaleDateString('en-CA');
+    const lastClaimDate = getLastDailyClaimDate(userId);
+    let days = getDailyClaimedDays(userId);
+    if (days.length >= dailyRewardSchedule.length && lastClaimDate !== today) {
+      days = [];
+      setDailyClaimedDays(days, userId);
+    }
+    setClaimedDays(days);
+    setClaimedToday(lastClaimDate === today);
+  }, [userId]);
 
   const todayDay = claimedDays.length + 1;
   const todayReward = dailyRewardSchedule[claimedDays.length] || dailyRewardSchedule[dailyRewardSchedule.length - 1];
   const isFullyClaimed = claimedDays.length >= dailyRewardSchedule.length;
 
-  const claimToday = () => {
-    if (isFullyClaimed) return;
+  const claimToday = async () => {
+    if (isFullyClaimed || claimedToday || claiming || !userId) return;
+    setClaiming(true);
     const next = [...claimedDays, todayDay];
     const rewardAmount = todayReward.amount;
-    const updatedBalance = getCurrentBalance() + rewardAmount;
+    const { error } = await supabase.rpc('increment_points', {
+      p_user_id: userId,
+      p_amount: rewardAmount,
+    });
+    if (error) {
+      console.error('Failed to add daily reward points:', error);
+      toast({ title: 'تعذر استلام المكافأة', description: 'تحقق من اتصال الإنترنت وحاول مرة أخرى.', variant: 'destructive' });
+      setClaiming(false);
+      return;
+    }
+
+    const updatedBalance = getCurrentBalance(userId) + rewardAmount;
+    const claimedAt = new Date().toLocaleDateString('en-CA');
     setClaimedDays(next);
-    setBalance(updatedBalance);
-    setDailyClaimedDays(next);
-    setRewardBalanceInStorage(updatedBalance);
+    setClaimedToday(true);
+    setDailyClaimedDays(next, userId);
+    setLastDailyClaimDate(claimedAt, userId);
+    setRewardBalanceInStorage(updatedBalance, userId);
+    setClaiming(false);
   };
 
   return (
@@ -208,14 +238,17 @@ const RewardDailyPage: React.FC = () => {
                   <div className="flex items-center gap-2">
                     {claimed ? (
                       <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-700">✓ تم الاستلام</span>
-                    ) : isToday ? (
+                    ) : isToday && !claimedToday ? (
                       <button
                         type="button"
                         onClick={claimToday}
-                        className="rounded-full bg-gradient-to-r from-orange-500 to-amber-500 px-3 py-1.5 text-xs font-bold text-white shadow-sm"
+                        disabled={claiming}
+                        className="rounded-full bg-gradient-to-r from-orange-500 to-amber-500 px-3 py-1.5 text-xs font-bold text-white shadow-sm disabled:opacity-60"
                       >
-                        احصل على +{formatNumber(item.amount)} Coins
+                        {claiming ? 'جارٍ الاستلام...' : `احصل على +${formatNumber(item.amount)} Coins`}
                       </button>
+                    ) : isToday && claimedToday ? (
+                      <span className="text-xs font-bold text-emerald-700">تم استلام مكافأة اليوم</span>
                     ) : (
                       <span className="text-xs font-medium text-slate-400">قادم</span>
                     )}
@@ -251,12 +284,8 @@ const RewardDailyPage: React.FC = () => {
 
 const RewardCategoriesPage: React.FC = () => {
   const navigate = useNavigate();
-  const [balance, setBalance] = useState<number>(getCurrentBalance());
+  const { balance } = useRewardBalance();
   const { offers: nearbyOffers, loading: offersLoading, error: offersError, retry: retryNearbyOffers } = useNearbyRewardOffers();
-
-  useEffect(() => {
-    setBalance(getCurrentBalance());
-  }, []);
 
   const categories = useMemo(() =>
     rewardCategories.map((category) => {
@@ -325,6 +354,7 @@ const RewardCategoriesPage: React.FC = () => {
 const RewardShopsPage: React.FC = () => {
   const navigate = useNavigate();
   const { categoryId } = useParams();
+  const { balance } = useRewardBalance();
   const [sort, setSort] = useState<'nearest' | 'discount' | 'coins' | 'latest'>('nearest');
   const { offers: nearbyOffers, loading: offersLoading, error: offersError, retry: retryNearbyOffers } = useNearbyRewardOffers();
 
@@ -360,7 +390,7 @@ const RewardShopsPage: React.FC = () => {
               <p className="text-xs text-slate-500">رصيدك</p>
               <div className="flex items-center gap-2 text-xl font-black text-slate-900">
                 <Coins className="h-5 w-5 text-amber-500" />
-                <span>{formatCoinsValue(getCurrentBalance())}</span>
+                <span>{formatCoinsValue(balance)}</span>
               </div>
             </div>
           </div>
@@ -568,9 +598,9 @@ const RewardOfferDetailsPage: React.FC = () => {
 const RewardConfirmationPage: React.FC = () => {
   const navigate = useNavigate();
   const { offerId } = useParams();
+  const { balance, userId } = useRewardBalance();
   const { offers: nearbyOffers, loading: offersLoading, error: offersError, retry: retryNearbyOffers } = useNearbyRewardOffers();
   const offer = nearbyOffers.find((item) => item.id === offerId);
-  const [balance, setBalance] = useState<number>(getCurrentBalance());
   const [cameraOpen, setCameraOpen] = useState(false);
   const [scanError, setScanError] = useState('');
   const [insufficientBalance, setInsufficientBalance] = useState(false);
@@ -579,14 +609,12 @@ const RewardConfirmationPage: React.FC = () => {
   const redemptionHandlerRef = React.useRef<() => void>(() => undefined);
 
   useEffect(() => {
-    setBalance(getCurrentBalance());
     setInsufficientBalance(false);
   }, [offerId]);
 
   const confirmRedemption = () => {
     if (!offer) return;
-    const balanceBefore = getCurrentBalance();
-    setBalance(balanceBefore);
+    const balanceBefore = getCurrentBalance(userId);
     if (balanceBefore < offer.coinsRequired) {
       setInsufficientBalance(true);
       setCameraOpen(false);
@@ -612,8 +640,7 @@ const RewardConfirmationPage: React.FC = () => {
     const list = getRedemptions();
     list.unshift(redemption);
     setRedemptions(list);
-    setRewardBalanceInStorage(balanceBefore - offer.coinsRequired);
-    setBalance(balanceBefore - offer.coinsRequired);
+    setRewardBalanceInStorage(balanceBefore - offer.coinsRequired, userId);
     navigate(`/reward-success/${redemption.id}`);
   };
   redemptionHandlerRef.current = confirmRedemption;
@@ -623,6 +650,7 @@ const RewardConfirmationPage: React.FC = () => {
 
     let cancelled = false;
     let animationFrame = 0;
+    let lastScanAt = 0;
     let stream: MediaStream | null = null;
 
     const startScanner = async () => {
@@ -644,9 +672,12 @@ const RewardConfirmationPage: React.FC = () => {
 
         const scanFrame = () => {
           if (cancelled) return;
-          if (video.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA && video.videoWidth > 0) {
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
+          const now = performance.now();
+          if (video.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA && video.videoWidth > 0 && now - lastScanAt >= 250) {
+            lastScanAt = now;
+            const scale = Math.min(1, 640 / video.videoWidth);
+            canvas.width = Math.round(video.videoWidth * scale);
+            canvas.height = Math.round(video.videoHeight * scale);
             context.drawImage(video, 0, 0, canvas.width, canvas.height);
             const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
             const decoded = jsQR(pixels.data, pixels.width, pixels.height, { inversionAttempts: 'dontInvert' });
@@ -684,8 +715,7 @@ const RewardConfirmationPage: React.FC = () => {
 
   const openStoreScanner = () => {
     if (!offer) return;
-    const balanceNow = getCurrentBalance();
-    setBalance(balanceNow);
+    const balanceNow = getCurrentBalance(userId);
     setScanError('');
     if (balanceNow < offer.coinsRequired) {
       setInsufficientBalance(true);

@@ -42,7 +42,7 @@ export const dailyRewardSchedule = [
   { day: 7, amount: 200 },
 ];
 
-export const defaultRewardBalance = 1250;
+export const defaultRewardBalance = 0;
 
 export const rewardCategories: RewardCategory[] = [
   { id: 'screen_protector', name: 'اسكرينات حماية', description: 'حماية شاشات الهواتف', icon: 'shield', accent: 'from-sky-500 to-blue-600', image_url: null, shopsCount: 12 },
@@ -251,32 +251,34 @@ export const getCategoryIcon = (iconName: string) => {
   }
 };
 
-export const getRewardBalanceFromStorage = () => {
+const getUserStorageKey = (baseKey: string, userId?: string) => `${baseKey}:${userId || 'guest'}`;
+
+export const getRewardBalanceFromStorage = (userId?: string) => {
   if (typeof window === 'undefined') return defaultRewardBalance;
   try {
-    const raw = window.localStorage.getItem('imei-safe-reward-balance');
-    return raw ? Number(raw) || defaultRewardBalance : defaultRewardBalance;
+    const raw = window.localStorage.getItem(getUserStorageKey('imei-safe-reward-balance', userId));
+    return raw == null ? defaultRewardBalance : Math.max(0, Number(raw) || 0);
   } catch {
     return defaultRewardBalance;
   }
 };
 
-export const setRewardBalanceInStorage = (value: number) => {
+export const setRewardBalanceInStorage = (value: number, userId?: string) => {
   if (typeof window === 'undefined') return;
-  const nextValue = Number.isFinite(value) ? value : defaultRewardBalance;
-  window.localStorage.setItem('imei-safe-reward-balance', String(nextValue));
+  const nextValue = Number.isFinite(value) ? Math.max(0, value) : defaultRewardBalance;
+  window.localStorage.setItem(getUserStorageKey('imei-safe-reward-balance', userId), String(nextValue));
 
   if (typeof window.CustomEvent !== 'undefined') {
     window.dispatchEvent(new CustomEvent('imei-safe-reward-balance-updated', {
-      detail: nextValue,
+      detail: { userId: userId || null, balance: nextValue },
     }));
   }
 };
 
-export const getDailyClaimedDays = () => {
+export const getDailyClaimedDays = (userId?: string) => {
   if (typeof window === 'undefined') return [] as number[];
   try {
-    const raw = window.localStorage.getItem('imei-safe-daily-claimed-days');
+    const raw = window.localStorage.getItem(getUserStorageKey('imei-safe-daily-claimed-days', userId));
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed.map((value) => Number(value)).filter(Boolean) : [];
@@ -285,9 +287,19 @@ export const getDailyClaimedDays = () => {
   }
 };
 
-export const setDailyClaimedDays = (days: number[]) => {
+export const setDailyClaimedDays = (days: number[], userId?: string) => {
   if (typeof window === 'undefined') return;
-  window.localStorage.setItem('imei-safe-daily-claimed-days', JSON.stringify(days));
+  window.localStorage.setItem(getUserStorageKey('imei-safe-daily-claimed-days', userId), JSON.stringify(days));
+};
+
+export const getLastDailyClaimDate = (userId?: string) => {
+  if (typeof window === 'undefined') return '';
+  return window.localStorage.getItem(getUserStorageKey('imei-safe-daily-last-claim', userId)) || '';
+};
+
+export const setLastDailyClaimDate = (date: string, userId?: string) => {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(getUserStorageKey('imei-safe-daily-last-claim', userId), date);
 };
 
 export const getRedemptions = () => {

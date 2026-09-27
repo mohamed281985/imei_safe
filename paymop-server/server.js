@@ -1207,6 +1207,18 @@ app.post('/api/register', async (req, res) => {
       return res.status(400).json(userError);
     }
 
+    const isPersonalAccount = ['free_user', 'customer', 'user'].includes(normalizedRole);
+    if (isPersonalAccount) {
+      const { error: welcomePointsError } = await supabase.rpc('increment_points', {
+        p_user_id: id,
+        p_amount: 1250,
+      });
+      if (welcomePointsError) {
+        console.error('WELCOME POINTS ERROR:', welcomePointsError);
+        return res.status(500).json({ error: 'تعذر إضافة نقاط الترحيب للحساب' });
+      }
+    }
+
     // إذا كان المستخدم تاجراً (business)، قم بتحديث جدول businesses أيضاً
     if (role === 'free_business') {
       const businessPayload = {
