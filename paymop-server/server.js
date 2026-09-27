@@ -4670,6 +4670,57 @@ app.get('/api/business/offers', verifyJwtToken, async (req, res) => {
   }
 });
 
+app.delete('/api/business/offers/:offerId', verifyJwtToken, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const offerId = req.params.offerId;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { data: business, error: businessError } = await supabase
+      .from('businesses')
+      .select('id')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (businessError) return sendError(res, 500, 'تعذر التحقق من المتجر', businessError);
+    if (!business) return res.status(403).json({ error: 'هذا المسار مخصص للحسابات التجارية' });
+
+    const { data: offer, error: offerError } = await supabase
+      .from('business_offers')
+      .select('id, business_offer_images(image_path)')
+      .eq('id', offerId)
+      .eq('business_id', business.id)
+      .maybeSingle();
+
+    if (offerError) return sendError(res, 500, 'تعذر تحميل بيانات العرض', offerError);
+    if (!offer) return res.status(404).json({ error: 'العرض غير موجود أو لا تملك صلاحية حذفه' });
+
+    const imagePaths = (offer.business_offer_images || [])
+      .map((image) => image.image_path)
+      .filter((imagePath) => typeof imagePath === 'string' && imagePath.startsWith(`${userId}/`));
+
+    const { error: deleteError } = await supabase
+      .from('business_offers')
+      .delete()
+      .eq('id', offerId)
+      .eq('business_id', business.id);
+
+    if (deleteError) return sendError(res, 500, 'تعذر حذف العرض', deleteError);
+
+    if (imagePaths.length) {
+      const { error: storageError } = await supabase.storage.from('business-offer-images').remove(imagePaths);
+      if (storageError) {
+        console.error('Offer deleted but image cleanup failed:', storageError);
+        return res.json({ ok: true, imagesCleanupPending: true, message: 'تم حذف العرض، وتعذر حذف بعض الصور.' });
+      }
+    }
+
+    return res.json({ ok: true, message: 'تم حذف العرض وصوره بنجاح.' });
+  } catch (error) {
+    return sendError(res, 500, 'حدث خطأ أثناء حذف العرض', error);
+  }
+});
+
 app.post('/api/business/offers', verifyJwtToken, async (req, res) => {
   try {
     const userId = req.user?.id;

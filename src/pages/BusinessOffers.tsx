@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, BadgePercent, CalendarDays, Check, Clock3, Coins, ImagePlus, Loader2, MapPin, Plus, RefreshCw, Search, Send, Store, X } from 'lucide-react';
+import { ArrowLeft, BadgePercent, CalendarDays, Check, Clock3, Coins, ImagePlus, Loader2, MapPin, Plus, RefreshCw, Search, Send, Store, Trash2, X } from 'lucide-react';
 import axiosInstance from '@/services/axiosInterceptor';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -67,6 +67,7 @@ const BusinessOffers: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [submitting, setSubmitting] = useState(false);
+  const [deletingOfferId, setDeletingOfferId] = useState<string | null>(null);
   const [step, setStep] = useState<0 | 1 | 2 | 3 | 4>(0);
   const [form, setForm] = useState<OfferForm>(emptyForm);
   const [images, setImages] = useState<File[]>([]);
@@ -170,6 +171,21 @@ const BusinessOffers: React.FC = () => {
     }
   };
 
+  const deleteOffer = async (offer: Offer) => {
+    if (!window.confirm(`هل أنت متأكد من حذف العرض "${offer.product_name}"؟ لا يمكن التراجع عن هذا الإجراء.`)) return;
+    setDeletingOfferId(offer.id);
+    setLoadError('');
+    try {
+      await axiosInstance.delete(`/api/business/offers/${offer.id}`);
+      setOffers((current) => current.filter((item) => item.id !== offer.id));
+    } catch (deleteError: any) {
+      console.error('Could not delete business offer:', deleteError);
+      setLoadError(deleteError?.response?.data?.error || 'تعذر حذف العرض الآن. حاول مرة أخرى.');
+    } finally {
+      setDeletingOfferId(null);
+    }
+  };
+
   const startOffer = () => {
     setForm(emptyForm);
     setImages([]);
@@ -253,6 +269,9 @@ const BusinessOffers: React.FC = () => {
                             {offer.expires_at && <span className="inline-flex items-center gap-1 text-slate-500"><CalendarDays className="h-3.5 w-3.5" />ينتهي {new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(offer.expires_at))}</span>}
                           </div>
                         </div>
+                        <button type="button" onClick={() => void deleteOffer(offer)} disabled={deletingOfferId === offer.id} aria-label={`حذف العرض ${offer.product_name}`} title="حذف العرض" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-rose-600 transition-colors hover:bg-rose-50 disabled:cursor-wait disabled:opacity-50">
+                          {deletingOfferId === offer.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                        </button>
                       </article>
                     );
                   })}
