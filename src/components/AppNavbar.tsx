@@ -4,7 +4,6 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import Logo from './Logo';
 import { X, Search, Plus, LogOut, User, Settings, Key, Gift, MessageCircle, Coins } from 'lucide-react';
-import PackageBadge from '@/components/PackageBadge';
 import Notifications from './Notifications';
 import NotificationBell from './NotificationBell';
 import { useRewardBalance } from '@/hooks/useRewardBalance';
@@ -161,9 +160,6 @@ const AppNavbar: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2 h-14 min-h-[3.5rem]">
-          <div>
-            <PackageBadge user={user} />
-          </div>
           <button
             type="button"
             onClick={() => navigate('/daily-reward')}

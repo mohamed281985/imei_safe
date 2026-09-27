@@ -13,6 +13,7 @@ import { useScrollToTop } from '../hooks/useScrollToTop';
 import CountryCodeSelector from '@/components/CountryCodeSelector';
 import PageContainer from '../components/PageContainer';
 import AppNavbar from '../components/AppNavbar';
+import PackageBadge from '@/components/PackageBadge';
 // Types for our component state
 interface RewardsInfo {
     count: number;
@@ -549,23 +550,25 @@ toast({ title: t('success'), description: t('biometric_enabled_success') });
                 <div>
                     {/* User Info Card */}
                     {user && (
-                        <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-lg p-5 mb-6">
-                            <div className="flex items-center gap-4 mb-4">
-                                <div className="w-16 h-16 rounded-full bg-[#289c8e]/20 flex items-center justify-center flex-shrink-0">
-                                    <User className="w-8 h-8 text-[#289c8e]" />
+                        <section className="relative mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                            <div className="flex items-center gap-3.5 p-4 sm:gap-4 sm:p-5">
+                                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-50 to-emerald-100 ring-1 ring-emerald-200/70 sm:h-16 sm:w-16">
+                                    <User className="h-7 w-7 text-[#208b7e] sm:h-8 sm:w-8" />
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2">
-                                        <h2 className="text-xl font-bold text-gray-900 truncate">
+                                        <h2 className="truncate text-lg font-extrabold text-slate-900 sm:text-xl">
                                             {user.username || user.email}
                                         </h2>
-                                        <Shield className="w-4 h-4 text-[#289c8e]" />
+                                        <Shield className="h-4 w-4 shrink-0 text-[#208b7e]" />
                                     </div>
-                                    <p className="text-sm text-gray-500 truncate">{user.email}</p>
+                                    <p className="mt-1 truncate text-sm text-slate-500">{user.email}</p>
                                 </div>
                             </div>
-
-                        </div>
+                            <div className="border-t border-slate-100 px-4 py-3 sm:px-5">
+                                <PackageBadge user={user} compact className="w-full" />
+                            </div>
+                        </section>
                     )}
 
                     {/* Rewards Section */}
