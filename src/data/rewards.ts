@@ -12,6 +12,7 @@ export type RewardCategory = {
 
 export type RewardOffer = {
   id: string;
+  businessId?: string;
   categoryId: string;
   productName: string;
   businessName: string;

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import jsQR from 'jsqr';
 import {
   ArrowLeft,
   CalendarDays,
@@ -412,43 +413,43 @@ const RewardShopsPage: React.FC = () => {
                     type="button"
                     key={offer.id}
                     onClick={() => navigate(`/reward-offer/${offer.id}`)}
-                    className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3 text-right shadow-sm transition hover:border-sky-300 hover:shadow-md"
+                    className="group flex w-full items-stretch gap-3 overflow-hidden rounded-2xl border border-slate-200 bg-white p-2.5 text-right shadow-sm transition hover:border-sky-300 hover:shadow-md active:scale-[0.99]"
                   >
-                    <div className="h-20 w-20 overflow-hidden rounded-xl bg-slate-100">
+                    <div className="relative h-[104px] w-[92px] shrink-0 self-center overflow-hidden rounded-xl bg-slate-100 sm:h-28 sm:w-24">
                       {imageUrl ? (
                         <img src={imageUrl} alt={offer.productName} loading="lazy" className="h-full w-full object-cover" />
                       ) : (
-                        <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-sky-100 to-orange-100 text-sky-700">
-                          <Shield className="h-8 w-8" />
+                        <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-sky-100 via-white to-orange-100 text-sky-700">
+                          <Shield className="h-7 w-7" />
                         </div>
                       )}
+                      <span className="absolute left-1.5 top-1.5 rounded-md bg-rose-600 px-1.5 py-1 text-[10px] font-black leading-none text-white shadow-sm">-{formatNumber(offer.discountPercent)}%</span>
                     </div>
 
-                    <div className="flex-1 min-w-0">
-                      <div className="mb-1 flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 text-slate-800">
-                          <BusinessBadge label={offer.businessLogo || offer.businessName} />
-                          <span className="text-base font-black">{offer.businessName}</span>
+                    <div className="flex min-w-0 flex-1 flex-col justify-between py-0.5">
+                      <div className="min-w-0">
+                        <div className="flex min-w-0 items-center gap-1.5">
+                          <span className="truncate text-xs font-bold text-slate-500">{offer.businessName}</span>
+                          {offer.rating > 0 && <span className="flex shrink-0 items-center gap-0.5 text-[10px] font-bold text-slate-600"><Star className="h-3 w-3 fill-amber-400 text-amber-400" />{offer.rating}</span>}
                         </div>
-                        {offer.rating > 0 && <div className="flex items-center gap-1 text-amber-500"><Star className="h-4 w-4 fill-current" /><span className="text-xs font-bold text-slate-700">{offer.rating}</span></div>}
+                        <p className="mt-1 line-clamp-2 text-sm font-black leading-snug text-slate-900 sm:text-base">{offer.productName}</p>
                       </div>
 
-                      <div className="mb-1 flex items-center gap-1 text-xs text-slate-500">
-                        <MapPin className="h-3.5 w-3.5" />
-                        <span>{offer.distanceMeters} متر</span>
+                      <div className="mt-1 flex items-center gap-1 text-[11px] text-slate-500">
+                        <MapPin className="h-3 w-3 shrink-0 text-sky-600" />
+                        <span>{offer.distanceMeters >= 1000 ? `${(offer.distanceMeters / 1000).toFixed(1)} كم` : `${formatNumber(offer.distanceMeters)} م`}</span>
+                        <span className="mx-0.5 text-slate-300">·</span>
+                        <span className="truncate">{category.name}</span>
                       </div>
 
-                      <p className="text-sm font-bold text-slate-700">{offer.productName}</p>
-
-                      <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
-                        <span className="line-through">{formatCurrency(offer.originalPrice)}</span>
-                        <span className="font-black text-slate-900">{formatCurrency(offer.offerPrice)}</span>
-                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-bold text-emerald-700">خصم {offer.discountPercent}%</span>
-                      </div>
-
-                      <div className="mt-2 flex items-center justify-between">
-                        <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-black text-amber-900">🪙 {formatNumber(offer.coinsRequired)} Coins</span>
-                        <ChevronLeft className="h-5 w-5 text-slate-500" />
+                      <div className="mt-2 flex min-w-0 items-end justify-between gap-2 border-t border-slate-100 pt-2">
+                        <div className="flex min-w-0 items-baseline gap-1.5">
+                          <span className="truncate text-base font-black tabular-nums text-slate-900 sm:text-lg">{formatCurrency(offer.offerPrice)}</span>
+                          <span className="shrink-0 text-[10px] tabular-nums text-slate-400 line-through">{formatCurrency(offer.originalPrice)}</span>
+                        </div>
+                        <span className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-amber-50 px-2 py-1.5 text-[10px] font-extrabold text-amber-800 ring-1 ring-amber-100">
+                          <Coins className="h-3.5 w-3.5 text-amber-600" />{formatNumber(offer.coinsRequired)}
+                        </span>
                       </div>
                     </div>
                   </button>
@@ -569,26 +570,26 @@ const RewardConfirmationPage: React.FC = () => {
   const { offerId } = useParams();
   const { offers: nearbyOffers, loading: offersLoading, error: offersError, retry: retryNearbyOffers } = useNearbyRewardOffers();
   const offer = nearbyOffers.find((item) => item.id === offerId);
-  if (!offer) {
-    return (
-      <PageContainer>
-        <AppNavbar />
-        <div className="mx-auto max-w-md px-4 py-10 text-center">
-          <p className="font-bold text-slate-700">{offersLoading ? 'جارٍ التحقق من العرض...' : offersError || 'العرض غير متاح للاستبدال من موقعك الحالي.'}</p>
-          {offersError && <button type="button" onClick={retryNearbyOffers} className="mt-4 rounded-full bg-amber-500 px-4 py-2 text-sm font-bold text-white">إعادة المحاولة</button>}
-          <button type="button" onClick={() => navigate('/rewards-categories')} className="mt-4 block w-full text-sm font-bold text-sky-700">العودة للعروض القريبة</button>
-        </div>
-      </PageContainer>
-    );
-  }
+  const [balance, setBalance] = useState<number>(getCurrentBalance());
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [scanError, setScanError] = useState('');
+  const [insufficientBalance, setInsufficientBalance] = useState(false);
+  const videoRef = React.useRef<HTMLVideoElement>(null);
+  const canvasRef = React.useRef<HTMLCanvasElement>(null);
+  const redemptionHandlerRef = React.useRef<() => void>(() => undefined);
 
-  const currentBalance = getCurrentBalance();
-  const balanceAfter = Math.max(0, currentBalance - offer.coinsRequired);
+  useEffect(() => {
+    setBalance(getCurrentBalance());
+    setInsufficientBalance(false);
+  }, [offerId]);
 
-  const confirmRedeem = () => {
+  const confirmRedemption = () => {
+    if (!offer) return;
     const balanceBefore = getCurrentBalance();
+    setBalance(balanceBefore);
     if (balanceBefore < offer.coinsRequired) {
-      navigate('/rewards-categories');
+      setInsufficientBalance(true);
+      setCameraOpen(false);
       return;
     }
 
@@ -612,8 +613,106 @@ const RewardConfirmationPage: React.FC = () => {
     list.unshift(redemption);
     setRedemptions(list);
     setRewardBalanceInStorage(balanceBefore - offer.coinsRequired);
+    setBalance(balanceBefore - offer.coinsRequired);
     navigate(`/reward-success/${redemption.id}`);
   };
+  redemptionHandlerRef.current = confirmRedemption;
+
+  useEffect(() => {
+    if (!cameraOpen) return;
+
+    let cancelled = false;
+    let animationFrame = 0;
+    let stream: MediaStream | null = null;
+
+    const startScanner = async () => {
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) throw new Error('camera_unavailable');
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        const video = videoRef.current;
+        const canvas = canvasRef.current;
+        const context = canvas?.getContext('2d', { willReadFrequently: true });
+        if (!video || !canvas || !context) throw new Error('camera_unavailable');
+
+        video.srcObject = stream;
+        await video.play();
+
+        const scanFrame = () => {
+          if (cancelled) return;
+          if (video.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA && video.videoWidth > 0) {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+            const decoded = jsQR(pixels.data, pixels.width, pixels.height, { inversionAttempts: 'dontInvert' });
+
+            if (decoded) {
+              if (decoded.data !== `IMEI-SAFE:STORE:${offer?.businessId}`) {
+                setScanError('هذا الباركود لا يخص المحل الذي يقدم العرض.');
+                setCameraOpen(false);
+                return;
+              }
+              setScanError('');
+              redemptionHandlerRef.current();
+              setCameraOpen(false);
+              return;
+            }
+          }
+          animationFrame = window.requestAnimationFrame(scanFrame);
+        };
+
+        scanFrame();
+      } catch (error) {
+        console.error('Failed to start reward store QR scanner:', error);
+        if (!cancelled) setScanError('تعذر تشغيل الكاميرا. تحقق من الإذن وحاول مرة أخرى.');
+      }
+    };
+
+    void startScanner();
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(animationFrame);
+      stream?.getTracks().forEach((track) => track.stop());
+      if (videoRef.current) videoRef.current.srcObject = null;
+    };
+  }, [cameraOpen, offer?.businessId]);
+
+  const openStoreScanner = () => {
+    if (!offer) return;
+    const balanceNow = getCurrentBalance();
+    setBalance(balanceNow);
+    setScanError('');
+    if (balanceNow < offer.coinsRequired) {
+      setInsufficientBalance(true);
+      return;
+    }
+    if (!offer.businessId) {
+      setScanError('تعذر تحديد المحل لهذا العرض. حاول تحديث العروض.');
+      return;
+    }
+    setInsufficientBalance(false);
+    setCameraOpen(true);
+  };
+
+  if (!offer) {
+    return (
+      <PageContainer>
+        <AppNavbar />
+        <div className="mx-auto max-w-md px-4 py-10 text-center">
+          <p className="font-bold text-slate-700">{offersLoading ? 'جارٍ التحقق من العرض...' : offersError || 'العرض غير متاح للاستبدال من موقعك الحالي.'}</p>
+          {offersError && <button type="button" onClick={retryNearbyOffers} className="mt-4 rounded-full bg-amber-500 px-4 py-2 text-sm font-bold text-white">إعادة المحاولة</button>}
+          <button type="button" onClick={() => navigate('/rewards-categories')} className="mt-4 block w-full text-sm font-bold text-sky-700">العودة للعروض القريبة</button>
+        </div>
+      </PageContainer>
+    );
+  }
+
+  const balanceAfter = Math.max(0, balance - offer.coinsRequired);
 
   return (
     <PageContainer>
@@ -632,7 +731,7 @@ const RewardConfirmationPage: React.FC = () => {
             </div>
             <div className="flex items-center justify-between">
               <span>رصيدك الحالي:</span>
-              <span className="font-black text-slate-900">{formatCoinsValue(currentBalance)}</span>
+                <span className="font-black text-slate-900">{formatCoinsValue(balance)}</span>
             </div>
             <div className="flex items-center justify-between border-t border-amber-200 pt-3">
               <span>رصيدك بعد الاستبدال:</span>
@@ -640,9 +739,15 @@ const RewardConfirmationPage: React.FC = () => {
             </div>
           </div>
 
+          {insufficientBalance && <div role="alert" className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-bold text-rose-800">
+            <p>رصيد النقاط لا يكفي، عاود الدخول يوميًا لمزيد من النقاط.</p>
+            <button type="button" onClick={() => navigate('/daily-reward')} className="mt-2 underline">المكافأة اليومية</button>
+          </div>}
+          {scanError && !cameraOpen && <p role="alert" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900">{scanError}</p>}
+
           <div className="mt-5 flex gap-3">
-            <Button type="button" onClick={confirmRedeem} className="flex-1 rounded-2xl bg-gradient-to-r from-orange-500 to-amber-500 text-white font-black">
-              تأكيد الاستبدال
+            <Button type="button" onClick={openStoreScanner} className="flex-1 rounded-2xl bg-gradient-to-r from-orange-500 to-amber-500 text-white font-black">
+              <QrCode className="ml-2 h-4 w-4" /> تأكيد الاستلام ومسح باركود المحل
             </Button>
             <Button type="button" variant="outline" onClick={() => navigate(-1)} className="flex-1 rounded-2xl border-slate-200 text-slate-700">
               إلغاء
@@ -650,6 +755,20 @@ const RewardConfirmationPage: React.FC = () => {
           </div>
         </div>
       </div>
+      {cameraOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4" role="dialog" aria-modal="true" aria-label="مسح باركود المحل">
+        <div className="w-full max-w-md rounded-2xl bg-white p-4 shadow-2xl">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="font-black text-slate-900">امسح باركود المحل</h2>
+            <button type="button" onClick={() => setCameraOpen(false)} className="rounded-lg px-3 py-1.5 text-sm font-bold text-slate-600 hover:bg-slate-100">إغلاق</button>
+          </div>
+          <div className="overflow-hidden rounded-xl bg-black">
+            <video ref={videoRef} autoPlay playsInline muted className="aspect-[4/3] w-full object-cover" />
+          </div>
+          <canvas ref={canvasRef} className="hidden" />
+          <p className="mt-3 text-center text-sm text-slate-600">وجّه الكاميرا إلى باركود المحل لتأكيد الاستبدال.</p>
+          {scanError && <p role="alert" className="mt-3 rounded-lg bg-rose-50 p-3 text-sm font-bold text-rose-800">{scanError}</p>}
+        </div>
+      </div>}
     </PageContainer>
   );
 };

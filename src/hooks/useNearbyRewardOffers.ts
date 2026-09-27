@@ -5,6 +5,7 @@ import type { RewardOffer } from '@/data/rewards';
 
 type OfferRow = {
   id: string;
+  business_id: string;
   category: string;
   product_name: string;
   business_name: string;
@@ -96,6 +97,7 @@ export const useNearbyRewardOffers = () => {
               : null;
           return {
             id: row.id,
+            businessId: row.business_id,
             categoryId: categoryMap[row.category] || 'other_accessories',
             productName: row.product_name,
             businessName: row.business_name,

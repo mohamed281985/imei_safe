@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ArrowUpRight, Award, BadgeCheck, Building2, Camera, Crown, Gift, Megaphone, PackagePlus, Store, Tags } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, Award, BadgeCheck, Building2, Camera, Crown, Download, Gift, Megaphone, PackagePlus, QrCode, Store, Tags } from 'lucide-react';
+import QRCode from 'qrcode';
 import AppNavbar from '@/components/AppNavbar';
 import PageContainer from '@/components/PageContainer';
 import { useAuth } from '@/contexts/AuthContext';
@@ -8,6 +9,7 @@ import { supabase } from '@/lib/supabase';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 type StoreProfile = {
+  id: string;
   store_name: string | null;
   business_type: string | null;
   status: string | null;
@@ -59,6 +61,29 @@ const MyStore: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [imageFailed, setImageFailed] = useState(false);
   const [packageInfo, setPackageInfo] = useState<PackageInfo | null>(null);
+  const [storeQr, setStoreQr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!profile?.id) {
+      setStoreQr(null);
+      return;
+    }
+
+    let active = true;
+    QRCode.toDataURL(`IMEI-SAFE:STORE:${profile.id}`, {
+      errorCorrectionLevel: 'H',
+      width: 1024,
+      margin: 4,
+      color: { dark: '#111827', light: '#ffffff' },
+    }).then((dataUrl) => {
+      if (active) setStoreQr(dataUrl);
+    }).catch((error) => {
+      console.error('Failed to generate store QR code:', error);
+      if (active) setStoreQr(null);
+    });
+
+    return () => { active = false; };
+  }, [profile?.id]);
 
   useEffect(() => {
     let active = true;
@@ -73,7 +98,7 @@ const MyStore: React.FC = () => {
         const [{ data: business }, { data: userData }] = await Promise.all([
           supabase
             .from('businesses')
-            .select('store_name, business_type, status, store_image_url')
+            .select('id, store_name, business_type, status, store_image_url')
             .eq('user_id', user.id)
             .maybeSingle(),
           supabase
@@ -188,6 +213,13 @@ const MyStore: React.FC = () => {
   const storeName = profile?.store_name?.trim() || 'متجري';
   const statusLabel = profile?.status === 'approved' ? 'متجر موثق' : profile?.status === 'rejected' ? 'يحتاج إلى تحديث' : 'قيد المراجعة';
   const initials = storeName.slice(0, 2).toUpperCase();
+  const downloadStoreQr = () => {
+    if (!storeQr || !profile?.id) return;
+    const link = document.createElement('a');
+    link.href = storeQr;
+    link.download = `imei-safe-store-${profile.id.slice(0, 8)}.png`;
+    link.click();
+  };
 
   return (
     <PageContainer>
@@ -219,6 +251,19 @@ const MyStore: React.FC = () => {
           </div>
 
         </section>
+
+        {profile?.id && <section className="mt-5 flex flex-col items-center gap-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 sm:flex-row sm:justify-between">
+          <div className="text-center sm:text-right">
+            <div className="mb-1 flex items-center justify-center gap-2 text-slate-900 sm:justify-start"><QrCode className="h-5 w-5 text-teal-700" /><h2 className="font-black">باركود متجرك</h2></div>
+            <p className="max-w-sm text-sm text-slate-600">رمز تعريف ثابت لمتجرك، جاهز للمشاركة والطباعة.</p>
+            <button type="button" onClick={downloadStoreQr} disabled={!storeQr} className="mt-3 inline-flex items-center gap-2 rounded-lg bg-teal-700 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-50">
+              <Download className="h-4 w-4" /> تحميل للطباعة
+            </button>
+          </div>
+          <div className="flex h-56 w-56 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white p-3">
+            {storeQr ? <img src={storeQr} alt={`باركود متجر ${storeName}`} className="h-full w-full object-contain" /> : <span className="text-sm text-slate-500">جارٍ إنشاء الباركود...</span>}
+          </div>
+        </section>}
 
         {packageInfo?.planType && <section className="mt-5">
           <div className="mb-3 flex items-center gap-2.5">

@@ -4599,7 +4599,7 @@ app.get('/api/rewards/offers', verifyJwtToken, async (req, res) => {
 
     const { data: offers, error } = await supabase
       .from('business_offers')
-      .select('id, category, product_name, business_name, original_price, offer_price, discount_percent, coins_required, expires_at, description, status, is_active, store_latitude, store_longitude, business_offer_images(image_path, main_image, sort_order)')
+      .select('id, business_id, category, product_name, business_name, original_price, offer_price, discount_percent, coins_required, expires_at, description, status, is_active, store_latitude, store_longitude, business_offer_images(image_path, main_image, sort_order)')
       .eq('status', 'approved')
       .eq('is_active', true)
       .gt('expires_at', new Date().toISOString());
