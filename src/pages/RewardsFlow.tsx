@@ -40,18 +40,14 @@ import {
   dailyRewardSchedule,
   defaultRewardBalance,
   getCategoryIcon,
-  getDailyClaimedDays,
-  getLastDailyClaimDate,
   getRewardBalanceFromStorage,
   getRedemptions,
   rewardCategories,
-  setDailyClaimedDays,
-  setLastDailyClaimDate,
   setRedemptions,
   setRewardBalanceInStorage,
 } from '@/data/rewards';
 
-const formatCurrency = (value: number) => `${new Intl.NumberFormat('en-US').format(value)} ج.م`;
+const formatCurrency = (value: number, currencySymbol = 'EGP') => `${new Intl.NumberFormat('en-US').format(value)} ${currencySymbol}`;
 const formatCoinsValue = (value: number) => `${new Intl.NumberFormat('en-US').format(value)} Coins`;
 const formatNumber = (value: number) => new Intl.NumberFormat('en-US').format(value);
 const isOfferValid = (offer: any) => offer?.isActive && offer?.status === 'approved' && new Date(offer.expiresAt).getTime() > Date.now();
@@ -139,50 +135,80 @@ const BusinessBadge = ({ label }: { label: string }) => (
 const RewardDailyPage: React.FC = () => {
   const navigate = useNavigate();
   const { balance, userId } = useRewardBalance();
-  const [claimedDays, setClaimedDays] = useState<number[]>(() => getDailyClaimedDays(userId));
+  const [claimedDays, setClaimedDays] = useState<number[]>([]);
   const [claimedToday, setClaimedToday] = useState(false);
+  const [todayDay, setTodayDay] = useState(1);
+  const [dailyStatusLoaded, setDailyStatusLoaded] = useState(false);
   const [claiming, setClaiming] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
-    const today = new Date().toLocaleDateString('en-CA');
-    const lastClaimDate = getLastDailyClaimDate(userId);
-    let days = getDailyClaimedDays(userId);
-    if (days.length >= dailyRewardSchedule.length && lastClaimDate !== today) {
-      days = [];
-      setDailyClaimedDays(days, userId);
-    }
-    setClaimedDays(days);
-    setClaimedToday(lastClaimDate === today);
+    let active = true;
+    const syncDailyRewardStatus = async () => {
+      if (!userId) {
+        if (active) {
+          setClaimedDays([]);
+          setClaimedToday(false);
+          setTodayDay(1);
+          setDailyStatusLoaded(true);
+        }
+        return;
+      }
+
+      const { data, error } = await supabase.rpc('get_daily_reward_status');
+      if (error) {
+        console.error('Could not load daily reward status:', error);
+        return;
+      }
+      if (!active || !data) return;
+
+      const status = data as { claimed_days?: unknown; claimed_today?: boolean; today_day?: number };
+      setClaimedDays(Array.isArray(status.claimed_days) ? status.claimed_days.map(Number) : []);
+      setClaimedToday(Boolean(status.claimed_today));
+      setTodayDay(Number(status.today_day) || 1);
+      setDailyStatusLoaded(true);
+    };
+
+    void syncDailyRewardStatus();
+    window.addEventListener('imei-safe-daily-reward-updated', syncDailyRewardStatus);
+    window.addEventListener('focus', syncDailyRewardStatus);
+    return () => {
+      active = false;
+      window.removeEventListener('imei-safe-daily-reward-updated', syncDailyRewardStatus);
+      window.removeEventListener('focus', syncDailyRewardStatus);
+    };
   }, [userId]);
 
-  const todayDay = claimedDays.length + 1;
-  const todayReward = dailyRewardSchedule[claimedDays.length] || dailyRewardSchedule[dailyRewardSchedule.length - 1];
+  const todayReward = dailyRewardSchedule[todayDay - 1] || dailyRewardSchedule[dailyRewardSchedule.length - 1];
   const isFullyClaimed = claimedDays.length >= dailyRewardSchedule.length;
 
   const claimToday = async () => {
-    if (isFullyClaimed || claimedToday || claiming || !userId) return;
+    if (isFullyClaimed || claimedToday || claiming || !userId || !dailyStatusLoaded) return;
     setClaiming(true);
-    const next = [...claimedDays, todayDay];
-    const rewardAmount = todayReward.amount;
-    const { error } = await supabase.rpc('increment_points', {
-      p_user_id: userId,
-      p_amount: rewardAmount,
-    });
-    if (error) {
-      console.error('Failed to add daily reward points:', error);
+    const { data, error } = await supabase.rpc('claim_daily_reward');
+    if (error || !data) {
+      console.error('Failed to claim daily reward:', error);
       toast({ title: 'تعذر استلام المكافأة', description: 'تحقق من اتصال الإنترنت وحاول مرة أخرى.', variant: 'destructive' });
       setClaiming(false);
       return;
     }
 
-    const updatedBalance = getCurrentBalance(userId) + rewardAmount;
-    const claimedAt = new Date().toLocaleDateString('en-CA');
-    setClaimedDays(next);
-    setClaimedToday(true);
-    setDailyClaimedDays(next, userId);
-    setLastDailyClaimDate(claimedAt, userId);
-    setRewardBalanceInStorage(updatedBalance, userId);
+    const result = data as {
+      already_claimed?: boolean;
+      claimed_days?: unknown;
+      claimed_today?: boolean;
+      today_day?: number;
+      current_balance?: number;
+    };
+    setClaimedDays(Array.isArray(result.claimed_days) ? result.claimed_days.map(Number) : []);
+    setClaimedToday(Boolean(result.claimed_today));
+    setTodayDay(Number(result.today_day) || todayDay);
+    setDailyStatusLoaded(true);
+    if (typeof result.current_balance === 'number') setRewardBalanceInStorage(result.current_balance, userId);
+    window.dispatchEvent(new Event('imei-safe-daily-reward-updated'));
+    if (result.already_claimed) {
+      toast({ title: 'تم استلام مكافأة اليوم', description: 'تم تحديث حالة المكافأة على هذا الجهاز.' });
+    }
     setClaiming(false);
   };
 
@@ -218,7 +244,7 @@ const RewardDailyPage: React.FC = () => {
           <div className="space-y-3">
             {dailyRewardSchedule.map((item) => {
               const claimed = claimedDays.includes(item.day);
-              const isToday = !claimed && item.day === todayDay;
+              const isToday = item.day === todayDay;
               return (
                 <div
                   key={item.day}
@@ -242,10 +268,10 @@ const RewardDailyPage: React.FC = () => {
                       <button
                         type="button"
                         onClick={claimToday}
-                        disabled={claiming}
+                        disabled={claiming || !dailyStatusLoaded}
                         className="rounded-full bg-gradient-to-r from-orange-500 to-amber-500 px-3 py-1.5 text-xs font-bold text-white shadow-sm disabled:opacity-60"
                       >
-                        {claiming ? 'جارٍ الاستلام...' : `احصل على +${formatNumber(item.amount)} Coins`}
+                        {claiming ? 'جارٍ الاستلام...' : !dailyStatusLoaded ? 'جارٍ تحميل الحالة...' : `احصل على +${formatNumber(item.amount)} Coins`}
                       </button>
                     ) : isToday && claimedToday ? (
                       <span className="text-xs font-bold text-emerald-700">تم استلام مكافأة اليوم</span>
@@ -356,7 +382,7 @@ const RewardShopsPage: React.FC = () => {
   const { categoryId } = useParams();
   const { balance } = useRewardBalance();
   const [sort, setSort] = useState<'nearest' | 'discount' | 'coins' | 'latest'>('nearest');
-  const { offers: nearbyOffers, loading: offersLoading, error: offersError, retry: retryNearbyOffers } = useNearbyRewardOffers();
+  const { offers: nearbyOffers, loading: offersLoading, error: offersError, retry: retryNearbyOffers } = useNearbyRewardOffers(categoryId);
 
   const category = rewardCategories.find((item) => item.id === categoryId) ?? rewardCategories[0];
   const offers = useMemo(() => {
@@ -378,9 +404,9 @@ const RewardShopsPage: React.FC = () => {
   }
 
   return (
-    <PageContainer>
+    <PageContainer fullWidth>
       <AppNavbar />
-      <div className="w-full max-w-md pb-0 pt-0">
+      <div className="w-full max-w-none pb-0 pt-0">
         <div className="mb-3 rounded-3xl bg-white/90 p-4 shadow-md ring-1 ring-slate-200">
           <div className="flex items-center justify-between gap-3">
             <button type="button" onClick={() => navigate(-1)} className="rounded-full bg-slate-100 p-2 text-slate-700">
@@ -419,16 +445,16 @@ const RewardShopsPage: React.FC = () => {
             ))}
           </div>
 
-          <div className="space-y-3">
+          <div className="grid grid-cols-1 gap-3 sm:gap-4">
             {offersLoading ? (
-              <div className="rounded-2xl bg-slate-50 p-6 text-center text-sm text-slate-600">جارٍ تحميل العروض القريبة...</div>
+              <div className="col-span-1 rounded-2xl bg-slate-50 p-6 text-center text-base text-slate-600">جارٍ تحميل العروض القريبة...</div>
             ) : offersError ? (
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-center text-sm text-amber-900">
+              <div className="col-span-1 rounded-2xl border border-amber-200 bg-amber-50 p-5 text-center text-base text-amber-900">
                 <p>{offersError}</p>
                 <button type="button" onClick={retryNearbyOffers} className="mt-3 font-bold underline">إعادة المحاولة</button>
               </div>
             ) : offers.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
+              <div className="col-span-1 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
                 <ShoppingBag className="mx-auto mb-3 h-10 w-10 text-slate-400" />
                 <p className="font-bold text-slate-700">لا توجد عروض متاحة حاليًا</p>
                 <button type="button" onClick={() => navigate('/rewards-categories')} className="mt-3 rounded-full bg-sky-600 px-4 py-2 text-sm font-bold text-white">
@@ -443,9 +469,9 @@ const RewardShopsPage: React.FC = () => {
                     type="button"
                     key={offer.id}
                     onClick={() => navigate(`/reward-offer/${offer.id}`)}
-                    className="group flex w-full items-stretch gap-3 overflow-hidden rounded-2xl border border-slate-200 bg-white p-2.5 text-right shadow-sm transition hover:border-sky-300 hover:shadow-md active:scale-[0.99]"
+                    className="group flex min-w-0 w-full items-stretch gap-2 overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 text-right shadow-sm transition hover:border-sky-300 hover:shadow-md active:scale-[0.99] sm:gap-3 sm:p-3"
                   >
-                    <div className="relative h-[104px] w-[92px] shrink-0 self-center overflow-hidden rounded-xl bg-slate-100 sm:h-28 sm:w-24">
+                    <div className="relative min-h-[112px] w-[34%] shrink-0 self-stretch overflow-hidden rounded-xl bg-slate-100 sm:min-h-[132px]">
                       {imageUrl ? (
                         <img src={imageUrl} alt={offer.productName} loading="lazy" className="h-full w-full object-cover" />
                       ) : (
@@ -453,33 +479,36 @@ const RewardShopsPage: React.FC = () => {
                           <Shield className="h-7 w-7" />
                         </div>
                       )}
-                      <span className="absolute left-1.5 top-1.5 rounded-md bg-rose-600 px-1.5 py-1 text-[10px] font-black leading-none text-white shadow-sm">-{formatNumber(offer.discountPercent)}%</span>
+                      <span className="absolute left-1 top-1 rounded-md bg-rose-600 px-1.5 py-1 text-[10px] font-black leading-none text-white shadow-sm sm:left-2 sm:top-2 sm:rounded-lg sm:px-2 sm:py-1.5 sm:text-xs">-{formatNumber(offer.discountPercent)}%</span>
                     </div>
 
                     <div className="flex min-w-0 flex-1 flex-col justify-between py-0.5">
                       <div className="min-w-0">
-                        <div className="flex min-w-0 items-center gap-1.5">
-                          <span className="truncate text-xs font-bold text-slate-500">{offer.businessName}</span>
-                          {offer.rating > 0 && <span className="flex shrink-0 items-center gap-0.5 text-[10px] font-bold text-slate-600"><Star className="h-3 w-3 fill-amber-400 text-amber-400" />{offer.rating}</span>}
+                        <div className="flex min-w-0 items-center justify-between gap-2">
+                          <div className="flex min-w-0 items-center gap-1.5">
+                            <span className="truncate text-xs font-bold text-slate-900 sm:text-sm">{offer.businessName}</span>
+                            {offer.rating > 0 && <span className="flex shrink-0 items-center gap-0.5 text-[10px] font-bold text-slate-900 sm:text-xs"><Star className="h-3 w-3 fill-amber-400 text-amber-400" />{offer.rating}</span>}
+                          </div>
+                          <span className="inline-flex shrink-0 items-center justify-center gap-1 rounded-lg bg-amber-50 px-2 py-1.5 text-xs font-black text-amber-900 ring-1 ring-amber-200 sm:gap-1.5 sm:px-2.5 sm:text-sm">
+                            <Coins className="h-4 w-4 text-amber-600" />{formatNumber(offer.coinsRequired)} نقطة
+                          </span>
                         </div>
-                        <p className="mt-1 line-clamp-2 text-sm font-black leading-snug text-slate-900 sm:text-base">{offer.productName}</p>
+                        <p className="mt-1 line-clamp-2 min-h-9 text-sm font-black leading-snug text-slate-900 sm:text-base">{offer.productName}</p>
                       </div>
 
-                      <div className="mt-1 flex items-center gap-1 text-[11px] text-slate-500">
-                        <MapPin className="h-3 w-3 shrink-0 text-sky-600" />
-                        <span>{offer.distanceMeters >= 1000 ? `${(offer.distanceMeters / 1000).toFixed(1)} كم` : `${formatNumber(offer.distanceMeters)} م`}</span>
-                        <span className="mx-0.5 text-slate-300">·</span>
+                      <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1 text-[11px] text-slate-900 sm:gap-1.5 sm:text-xs">
+                        <MapPin className="h-3.5 w-3.5 shrink-0 text-sky-600" />
+                        <span className="shrink-0">{offer.distanceMeters >= 1000 ? `${(offer.distanceMeters / 1000).toFixed(1)} كم` : `${formatNumber(offer.distanceMeters)} م`}</span>
+                        <span className="text-slate-400">·</span>
                         <span className="truncate">{category.name}</span>
+                        {offer.isFallback && <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-bold text-sky-800">الأقرب إليك</span>}
                       </div>
 
-                      <div className="mt-2 flex min-w-0 items-end justify-between gap-2 border-t border-slate-100 pt-2">
-                        <div className="flex min-w-0 items-baseline gap-1.5">
-                          <span className="truncate text-base font-black tabular-nums text-slate-900 sm:text-lg">{formatCurrency(offer.offerPrice)}</span>
-                          <span className="shrink-0 text-[10px] tabular-nums text-slate-400 line-through">{formatCurrency(offer.originalPrice)}</span>
+                      <div className="mt-1 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5 border-t border-slate-100 pt-1.5 sm:pt-2">
+                        <div className="flex min-w-0 flex-wrap items-baseline gap-x-1">
+                          <span className="text-2xl font-black tabular-nums leading-none text-slate-900">{formatCurrency(offer.offerPrice, offer.currencySymbol)}</span>
+                          <span className="text-xs tabular-nums text-slate-900 line-through">{formatCurrency(offer.originalPrice, offer.currencySymbol)}</span>
                         </div>
-                        <span className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-amber-50 px-2 py-1.5 text-[10px] font-extrabold text-amber-800 ring-1 ring-amber-100">
-                          <Coins className="h-3.5 w-3.5 text-amber-600" />{formatNumber(offer.coinsRequired)}
-                        </span>
                       </div>
                     </div>
                   </button>
@@ -553,11 +582,11 @@ const RewardOfferDetailsPage: React.FC = () => {
             <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
               <div className="rounded-2xl bg-slate-50 p-3">
                 <p className="text-slate-500">السعر الأصلي</p>
-                <p className="mt-1 text-lg font-black text-slate-800">{formatCurrency(offer.originalPrice)}</p>
+                <p className="mt-1 text-lg font-black text-slate-800">{formatCurrency(offer.originalPrice, offer.currencySymbol)}</p>
               </div>
               <div className="rounded-2xl bg-emerald-50 p-3">
                 <p className="text-emerald-700">السعر بعد الخصم</p>
-                <p className="mt-1 text-lg font-black text-emerald-800">{formatCurrency(offer.offerPrice)}</p>
+                <p className="mt-1 text-lg font-black text-emerald-800">{formatCurrency(offer.offerPrice, offer.currencySymbol)}</p>
               </div>
             </div>
 
@@ -628,6 +657,7 @@ const RewardConfirmationPage: React.FC = () => {
       offerId: offer.id,
       productName: offer.productName,
       businessName: offer.businessName,
+      currencySymbol: offer.currencySymbol,
       coinsUsed: offer.coinsRequired,
       originalPrice: offer.originalPrice,
       offerPrice: offer.offerPrice,
@@ -656,7 +686,13 @@ const RewardConfirmationPage: React.FC = () => {
     const startScanner = async () => {
       try {
         if (!navigator.mediaDevices?.getUserMedia) throw new Error('camera_unavailable');
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } });
+        } catch (cameraError) {
+          const errorName = cameraError instanceof DOMException ? cameraError.name : '';
+          if (!['OverconstrainedError', 'NotFoundError'].includes(errorName)) throw cameraError;
+          stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        }
         if (cancelled) {
           stream.getTracks().forEach((track) => track.stop());
           return;
@@ -700,7 +736,13 @@ const RewardConfirmationPage: React.FC = () => {
         scanFrame();
       } catch (error) {
         console.error('Failed to start reward store QR scanner:', error);
-        if (!cancelled) setScanError('تعذر تشغيل الكاميرا. تحقق من الإذن وحاول مرة أخرى.');
+        if (!cancelled) {
+          const errorName = error instanceof DOMException ? error.name : '';
+          setScanError(errorName === 'NotAllowedError' || errorName === 'PermissionDeniedError'
+            ? 'إذن الكاميرا مرفوض. اسمح للتطبيق باستخدام الكاميرا من إعدادات الهاتف ثم أعد المحاولة.'
+            : 'تعذر تشغيل الكاميرا. تحقق من أن الموقع يعمل عبر اتصال آمن وأن الكاميرا متاحة.');
+          setCameraOpen(false);
+        }
       }
     };
 
@@ -832,11 +874,11 @@ const RewardSuccessPage: React.FC = () => {
           <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
             <div className="rounded-2xl bg-slate-50 p-3">
               <p className="text-slate-500">السعر</p>
-              <p className="mt-1 font-black text-slate-800">{formatCurrency(redemption.offerPrice)}</p>
+              <p className="mt-1 font-black text-slate-800">{formatCurrency(redemption.offerPrice, redemption.currencySymbol)}</p>
             </div>
             <div className="rounded-2xl bg-slate-50 p-3">
               <p className="text-slate-500">قيمة الخصم</p>
-              <p className="mt-1 font-black text-slate-800">{formatCurrency(redemption.originalPrice - redemption.offerPrice)}</p>
+              <p className="mt-1 font-black text-slate-800">{formatCurrency(redemption.originalPrice - redemption.offerPrice, redemption.currencySymbol)}</p>
             </div>
             <div className="rounded-2xl bg-amber-50 p-3">
               <p className="text-amber-700">Coins المستخدمة</p>

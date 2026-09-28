@@ -13,12 +13,14 @@ type OfferRow = {
   distance_meters: number;
   original_price: number;
   offer_price: number;
+  currency_symbol?: string | null;
   discount_percent: number;
   coins_required: number;
   expires_at: string;
   description: string;
   status: 'approved';
   is_active: boolean;
+  is_fallback?: boolean;
   business_offer_images?: Array<{ image_path: string; main_image: boolean; sort_order: number }>;
 };
 
@@ -59,7 +61,7 @@ const getCachedLocation = (): CachedLocation | null => {
   }
 };
 
-export const useNearbyRewardOffers = () => {
+export const useNearbyRewardOffers = (categoryId?: string) => {
   const [offers, setOffers] = useState<RewardOffer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -85,7 +87,11 @@ export const useNearbyRewardOffers = () => {
         }
 
         const { data } = await axiosInstance.get('/api/rewards/offers', {
-          params: { latitude: location.latitude, longitude: location.longitude },
+          params: {
+            latitude: location.latitude,
+            longitude: location.longitude,
+            ...(categoryId ? { category: Object.entries(categoryMap).find(([, mappedId]) => mappedId === categoryId)?.[0] } : {}),
+          },
         });
         const mappedOffers: RewardOffer[] = ((data?.offers || []) as OfferRow[]).map((row) => {
           const images = [...(row.business_offer_images || [])].sort((a, b) => a.sort_order - b.sort_order);
@@ -106,6 +112,7 @@ export const useNearbyRewardOffers = () => {
             distanceMeters: Math.round(Number(row.distance_meters)),
             originalPrice: Number(row.original_price),
             offerPrice: Number(row.offer_price),
+            currencySymbol: row.currency_symbol || undefined,
             discountPercent: Number(row.discount_percent),
             coinsRequired: Number(row.coins_required),
             availableQuantity: 0,
@@ -115,6 +122,7 @@ export const useNearbyRewardOffers = () => {
             branchNames: [],
             status: row.status,
             isActive: row.is_active,
+            isFallback: Boolean(row.is_fallback),
           };
         });
         if (active) setOffers(mappedOffers);
@@ -130,7 +138,7 @@ export const useNearbyRewardOffers = () => {
 
     void loadOffers();
     return () => { active = false; };
-  }, [retryKey]);
+  }, [categoryId, retryKey]);
 
   return { offers, loading, error, retry };
 };

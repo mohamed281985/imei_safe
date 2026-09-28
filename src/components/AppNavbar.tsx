@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import Logo from './Logo';
@@ -7,6 +7,7 @@ import { X, Search, Plus, LogOut, User, Settings, Key, Gift, MessageCircle, Coin
 import Notifications from './Notifications';
 import NotificationBell from './NotificationBell';
 import { useRewardBalance } from '@/hooks/useRewardBalance';
+import { dailyRewardSchedule } from '@/data/rewards';
 import { supabase } from '../lib/supabase';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
@@ -16,6 +17,7 @@ const AppNavbar: React.FC = () => {
   const { user, logout, isAdmin } = useAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   // تم إزالة حالة menuOpen
   const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
@@ -27,6 +29,43 @@ const AppNavbar: React.FC = () => {
   const [supportNumber, setSupportNumber] = useState('');
   const [countryCode, setCountryCode] = useState('');
   const { balance: coinBalance } = useRewardBalance();
+  const userId = user?.id;
+  const [dailyRewardStatus, setDailyRewardStatus] = useState({
+    claimedToday: false,
+    amount: dailyRewardSchedule[0].amount,
+  });
+
+  useEffect(() => {
+    let active = true;
+    const syncDailyRewardStatus = async () => {
+      if (!userId) {
+        if (active) setDailyRewardStatus({ claimedToday: false, amount: dailyRewardSchedule[0].amount });
+        return;
+      }
+
+      const { data, error } = await supabase.rpc('get_daily_reward_status');
+      if (error) {
+        console.warn('Could not sync daily reward status:', error.message);
+        return;
+      }
+      if (!active || !data) return;
+
+      const status = data as { claimed_today?: boolean; amount?: number };
+      setDailyRewardStatus({
+        claimedToday: Boolean(status.claimed_today),
+        amount: Number(status.amount) || dailyRewardSchedule[0].amount,
+      });
+    };
+
+    void syncDailyRewardStatus();
+    window.addEventListener('imei-safe-daily-reward-updated', syncDailyRewardStatus);
+    window.addEventListener('focus', syncDailyRewardStatus);
+    return () => {
+      active = false;
+      window.removeEventListener('imei-safe-daily-reward-updated', syncDailyRewardStatus);
+      window.removeEventListener('focus', syncDailyRewardStatus);
+    };
+  }, [userId]);
 
   const handleLogout = () => {
     logout();
@@ -160,22 +199,30 @@ const AppNavbar: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2 h-14 min-h-[3.5rem]">
-          <button
-            type="button"
-            onClick={() => navigate('/daily-reward')}
-            className="group inline-flex h-12 shrink-0 items-center gap-2 rounded-full border border-transparent bg-white/70 p-1.5 shadow-[0_6px_16px_rgba(2,6,23,0.12)] backdrop-blur-md transition hover:-translate-y-0.5 hover:bg-amber-50"
-            aria-label={`Coins: ${new Intl.NumberFormat('en-US').format(coinBalance)}`}
-          >
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-amber-300 to-orange-400 text-white shadow-inner shadow-amber-600/30">
-              <Coins className="h-4 w-4 drop-shadow-sm" />
-            </span>
-            <span className="relative flex h-full min-w-[52px] items-center justify-end pr-1 text-right">
-              <span className="absolute right-0 top-0.5 whitespace-nowrap text-right text-[9px] font-extrabold leading-none text-amber-700 sm:text-[10px]">بونص دخول</span>
-              <span className="w-full shrink-0 translate-y-2 whitespace-nowrap text-right text-xs font-black leading-none tabular-nums tracking-[0.08em] text-slate-900 sm:text-sm">
-                {new Intl.NumberFormat('en-US').format(coinBalance)}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => navigate('/daily-reward')}
+              className="group inline-flex min-h-10 min-w-0 max-w-[min(220px,calc(100vw-2rem))] items-center gap-2 rounded-2xl border border-amber-200/80 bg-white/80 px-2 py-1 text-right shadow-[0_6px_16px_rgba(2,6,23,0.12)] backdrop-blur-md transition hover:-translate-y-0.5 hover:bg-amber-50"
+              aria-label={dailyRewardStatus.claimedToday ? 'تم استلام مكافأة اليوم' : `مكافأة الدخول اليومي +${dailyRewardStatus.amount} Coins`}
+            >
+              <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-amber-300 to-orange-400 text-white shadow-inner shadow-amber-600/30">
+                <Coins className="h-4 w-4 drop-shadow-sm" />
+                {!dailyRewardStatus.claimedToday && userId && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-white"><span className="absolute inset-0 animate-ping rounded-full bg-rose-400 opacity-60" /></span>}
               </span>
-            </span>
-          </button>
+              <span className="flex min-w-0 flex-col items-center gap-0 text-center leading-none">
+                <span className="-translate-y-0.5 text-sm font-extrabold leading-none text-slate-700">اضغط واجمع</span>
+                <span className="max-w-full text-base font-black leading-none text-slate-900 [overflow-wrap:anywhere]">{new Intl.NumberFormat('en-US').format(coinBalance)}</span>
+                {dailyRewardStatus.claimedToday ? (
+                  null
+                ) : userId ? (
+                  <span className="animate-pulse max-w-full whitespace-normal rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-black leading-none text-amber-800">🎁 اضغط واجمع +{dailyRewardStatus.amount}</span>
+                ) : (
+                  <span className="whitespace-nowrap text-[10px] font-black text-amber-700">مكافأة الدخول</span>
+                )}
+              </span>
+            </button>
+          </div>
           {/* تم إزالة زر القائمة المنسدلة */}
         </div>
       </div>

@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ACCESSORY_CATEGORIES } from '@/constants/accessoryCategories';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useCountryCurrency } from '@/hooks/useCountryCurrency';
 
 type OfferImage = { id: string; image_path: string; main_image: boolean; sort_order: number };
 type Offer = {
@@ -17,6 +18,7 @@ type Offer = {
   category: string;
   offer_price: number;
   original_price: number;
+  currency_symbol?: string;
   expires_at: string;
   status: 'pending' | 'approved' | 'rejected';
   created_at: string;
@@ -36,7 +38,7 @@ type OfferForm = {
 
 const emptyForm: OfferForm = {
   productName: '', description: '', category: 'cases',
-  originalPrice: '', offerPrice: '', coinsRequired: '1000', expiresAt: '', notes: '',
+  originalPrice: '', offerPrice: '', coinsRequired: '500', expiresAt: '', notes: '',
 };
 
 const statusLabels = {
@@ -61,6 +63,7 @@ const getCurrentStoreLocation = (): Promise<{ storeLatitude: number; storeLongit
 const BusinessOffers: React.FC = () => {
   const { user } = useAuth();
   const { t } = useLanguage();
+  const { currencySymbol } = useCountryCurrency();
   const [offers, setOffers] = useState<Offer[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -264,8 +267,8 @@ const BusinessOffers: React.FC = () => {
                           <div className="flex flex-wrap items-center gap-2"><h3 className="max-w-full truncate text-sm font-bold text-slate-900 sm:text-base">{offer.product_name}</h3><span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${offer.status === 'approved' ? 'bg-emerald-50 text-emerald-700' : offer.status === 'rejected' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-800'}`}>{statusLabels[offer.status] || statusLabels.pending}</span></div>
                           <p className="mt-1 truncate text-xs text-slate-500">{categoryName}</p>
                           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                            <span className="font-extrabold tabular-nums text-slate-900">{new Intl.NumberFormat('en-US').format(offer.offer_price)} <span className="font-medium text-slate-500">ج.م</span></span>
-                            <span className="text-slate-400 line-through">{new Intl.NumberFormat('en-US').format(offer.original_price)} ج.م</span>
+                            <span className="font-extrabold tabular-nums text-slate-900">{new Intl.NumberFormat('en-US').format(offer.offer_price)} <span className="font-medium text-slate-500">{offer.currency_symbol || currencySymbol}</span></span>
+                            <span className="text-slate-400 line-through">{new Intl.NumberFormat('en-US').format(offer.original_price)} {offer.currency_symbol || currencySymbol}</span>
                             {offer.expires_at && <span className="inline-flex items-center gap-1 text-slate-500"><CalendarDays className="h-3.5 w-3.5" />ينتهي {new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(offer.expires_at))}</span>}
                           </div>
                         </div>
@@ -313,8 +316,8 @@ const BusinessOffers: React.FC = () => {
                     </SelectContent>
                   </Select>
                 </div>
-                <label className="space-y-1.5"><span className="text-sm font-bold text-slate-700">السعر الأصلي (ج.م) <b className="text-rose-500">*</b></span><input type="number" min="0.01" step="0.01" value={form.originalPrice} onChange={(event) => updateForm('originalPrice', event.target.value)} className="w-full rounded-2xl border border-blue-300/50 bg-white px-4 py-3 text-base font-medium text-black shadow-[0_2px_10px_rgba(37,99,235,0.08)] outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-200/60" /></label>
-                <label className="space-y-1.5"><span className="text-sm font-bold text-slate-700">سعر العرض (ج.م) <b className="text-rose-500">*</b></span><input type="number" min="0.01" step="0.01" value={form.offerPrice} onChange={(event) => updateForm('offerPrice', event.target.value)} className="w-full rounded-2xl border border-blue-300/50 bg-white px-4 py-3 text-base font-medium text-black shadow-[0_2px_10px_rgba(37,99,235,0.08)] outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-200/60" /></label>
+                <label className="space-y-1.5"><span className="text-sm font-bold text-slate-700">السعر الأصلي ({currencySymbol}) <b className="text-rose-500">*</b></span><input type="number" min="0.01" step="0.01" value={form.originalPrice} onChange={(event) => updateForm('originalPrice', event.target.value)} className="w-full rounded-2xl border border-blue-300/50 bg-white px-4 py-3 text-base font-medium text-black shadow-[0_2px_10px_rgba(37,99,235,0.08)] outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-200/60" /></label>
+                <label className="space-y-1.5"><span className="text-sm font-bold text-slate-700">سعر العرض ({currencySymbol}) <b className="text-rose-500">*</b></span><input type="number" min="0.01" step="0.01" value={form.offerPrice} onChange={(event) => updateForm('offerPrice', event.target.value)} className="w-full rounded-2xl border border-blue-300/50 bg-white px-4 py-3 text-base font-medium text-black shadow-[0_2px_10px_rgba(37,99,235,0.08)] outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-200/60" /></label>
                 <label className="space-y-1.5"><span className="text-sm font-bold text-slate-700">النقاط المطلوبة</span><input type="number" min="0" step="1" value={form.coinsRequired} onChange={(event) => updateForm('coinsRequired', event.target.value)} className="w-full rounded-2xl border border-blue-300/50 bg-white px-4 py-3 text-base font-medium text-black shadow-[0_2px_10px_rgba(37,99,235,0.08)] outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-200/60" /></label>
               </div>
               <label className="block space-y-1.5"><span className="text-sm font-bold text-slate-700">تاريخ انتهاء العرض <b className="text-rose-500">*</b></span><input type="date" min={new Date().toISOString().slice(0, 10)} value={form.expiresAt} onChange={(event) => updateForm('expiresAt', event.target.value)} className="w-full rounded-2xl border border-blue-300/50 bg-white px-4 py-3 text-base font-medium text-black shadow-[0_2px_10px_rgba(37,99,235,0.08)] outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-200/60" /></label>
@@ -357,8 +360,8 @@ const BusinessOffers: React.FC = () => {
                       <p className="mb-1 text-xs font-semibold text-slate-500">سعر العرض</p>
                       <div className="flex items-baseline gap-2">
                         <span className="text-2xl font-black tabular-nums text-orange-600">{new Intl.NumberFormat('en-US').format(Number(form.offerPrice))}</span>
-                        <span className="text-sm font-bold text-slate-600">ج.م</span>
-                        <span className="text-sm tabular-nums text-slate-400 line-through">{new Intl.NumberFormat('en-US').format(Number(form.originalPrice))}</span>
+                        <span className="text-sm font-bold text-slate-600">{currencySymbol}</span>
+                        <span className="text-sm tabular-nums text-slate-400 line-through">{new Intl.NumberFormat('en-US').format(Number(form.originalPrice))} {currencySymbol}</span>
                       </div>
                     </div>
                     <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-2 text-xs font-extrabold text-amber-800">

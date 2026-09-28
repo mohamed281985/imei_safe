@@ -4611,12 +4611,17 @@ app.get('/api/rewards/offers', verifyJwtToken, async (req, res) => {
 
     const { data: offers, error } = await supabase
       .from('business_offers')
-      .select('id, business_id, category, product_name, business_name, original_price, offer_price, discount_percent, coins_required, expires_at, description, status, is_active, store_latitude, store_longitude, business_offer_images(image_path, main_image, sort_order)')
+      .select('id, business_id, category, product_name, business_name, original_price, offer_price, currency_symbol, discount_percent, coins_required, expires_at, description, status, is_active, store_latitude, store_longitude, business_offer_images(image_path, main_image, sort_order)')
       .eq('status', 'approved')
       .eq('is_active', true)
       .gt('expires_at', new Date().toISOString());
 
     if (error) return sendError(res, 500, 'تعذر تحميل عروض الاستبدال', error);
+
+    const validCategories = ['screen_protectors', 'cases', 'chargers', 'cables', 'headphones', 'smartwatches', 'phone_holders', 'other'];
+    const requestedCategory = typeof req.query.category === 'string' && validCategories.includes(req.query.category)
+      ? req.query.category
+      : null;
 
     const toRadians = (degrees) => degrees * Math.PI / 180;
     const distanceInMeters = (lat1, lon1, lat2, lon2) => {
@@ -4627,17 +4632,27 @@ app.get('/api/rewards/offers', verifyJwtToken, async (req, res) => {
       return 6371000 * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
     };
 
-    const nearbyOffers = (offers || [])
+    const locatedOffers = (offers || [])
+      .filter((offer) => !requestedCategory || offer.category === requestedCategory)
       .filter((offer) => offer.store_latitude != null && offer.store_longitude != null
         && Number.isFinite(Number(offer.store_latitude)) && Number.isFinite(Number(offer.store_longitude)))
       .map((offer) => ({
         ...offer,
         distance_meters: Math.round(distanceInMeters(latitude, longitude, Number(offer.store_latitude), Number(offer.store_longitude))),
       }))
-      .filter((offer) => offer.distance_meters <= 3000)
       .sort((first, second) => first.distance_meters - second.distance_meters);
 
-    return res.json({ ok: true, radius_meters: 3000, offers: nearbyOffers });
+    const nearbyOffers = locatedOffers.filter((offer) => offer.distance_meters <= 3000);
+    const offersToReturn = nearbyOffers.length
+      ? nearbyOffers
+      : locatedOffers.slice(0, 1).map((offer) => ({ ...offer, is_fallback: true }));
+
+    return res.json({
+      ok: true,
+      radius_meters: 3000,
+      fallback_used: nearbyOffers.length === 0 && offersToReturn.length > 0,
+      offers: offersToReturn,
+    });
   } catch (error) {
     return sendError(res, 500, 'حدث خطأ أثناء تحميل العروض القريبة', error);
   }
@@ -4659,7 +4674,7 @@ app.get('/api/business/offers', verifyJwtToken, async (req, res) => {
 
     const { data: offers, error } = await supabase
       .from('business_offers')
-      .select('id, product_name, category, offer_price, original_price, status, created_at, business_offer_images(id, image_path, main_image, sort_order)')
+      .select('id, product_name, category, offer_price, original_price, currency_symbol, status, created_at, business_offer_images(id, image_path, main_image, sort_order)')
       .eq('business_id', business.id)
       .order('created_at', { ascending: false });
 
@@ -4737,8 +4752,35 @@ app.post('/api/business/offers', verifyJwtToken, async (req, res) => {
 
     const {
       productName, description, category, originalPrice, offerPrice,
-      coinsRequired, expiresAt, notes, imagePaths, storeLatitude, storeLongitude
+      coinsRequired = 500, expiresAt, notes, imagePaths, storeLatitude, storeLongitude
     } = req.body || {};
+
+    let currencySymbol = 'EGP';
+    const { data: owner, error: ownerError } = await supabase
+      .from('users')
+      .select('countries')
+      .eq('id', userId)
+      .maybeSingle();
+    if (ownerError) return sendError(res, 500, 'تعذر تحديد عملة بلد المتجر', ownerError);
+    if (owner?.countries) {
+      const countryName = String(owner.countries).trim();
+      const { data: countryAr } = await supabase
+        .from('countries')
+        .select('currency_symbol')
+        .ilike('name_ar', countryName)
+        .maybeSingle();
+      if (countryAr?.currency_symbol) {
+        currencySymbol = countryAr.currency_symbol;
+      } else {
+        const { data: countryEn } = await supabase
+          .from('countries')
+          .select('currency_symbol')
+          .ilike('name_en', countryName)
+          .maybeSingle();
+        if (countryEn?.currency_symbol) currencySymbol = countryEn.currency_symbol;
+      }
+    }
+
     const original = Number(originalPrice);
     const offer = Number(offerPrice);
     const coins = Number(coinsRequired);
@@ -4782,6 +4824,7 @@ app.post('/api/business/offers', verifyJwtToken, async (req, res) => {
         category: String(category || 'أخرى').trim().slice(0, 80),
         original_price: original,
         offer_price: offer,
+        currency_symbol: currencySymbol,
         discount_percent: discountPercent,
         coins_required: coins,
         store_latitude: latitude,

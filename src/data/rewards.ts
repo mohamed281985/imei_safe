@@ -21,6 +21,7 @@ export type RewardOffer = {
   distanceMeters: number;
   originalPrice: number;
   offerPrice: number;
+  currencySymbol?: string;
   discountPercent: number;
   coinsRequired: number;
   availableQuantity: number;
@@ -30,6 +31,7 @@ export type RewardOffer = {
   branchNames: string[];
   status: 'approved' | 'pending';
   isActive: boolean;
+  isFallback?: boolean;
 };
 
 export const dailyRewardSchedule = [
@@ -273,33 +275,6 @@ export const setRewardBalanceInStorage = (value: number, userId?: string) => {
       detail: { userId: userId || null, balance: nextValue },
     }));
   }
-};
-
-export const getDailyClaimedDays = (userId?: string) => {
-  if (typeof window === 'undefined') return [] as number[];
-  try {
-    const raw = window.localStorage.getItem(getUserStorageKey('imei-safe-daily-claimed-days', userId));
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.map((value) => Number(value)).filter(Boolean) : [];
-  } catch {
-    return [] as number[];
-  }
-};
-
-export const setDailyClaimedDays = (days: number[], userId?: string) => {
-  if (typeof window === 'undefined') return;
-  window.localStorage.setItem(getUserStorageKey('imei-safe-daily-claimed-days', userId), JSON.stringify(days));
-};
-
-export const getLastDailyClaimDate = (userId?: string) => {
-  if (typeof window === 'undefined') return '';
-  return window.localStorage.getItem(getUserStorageKey('imei-safe-daily-last-claim', userId)) || '';
-};
-
-export const setLastDailyClaimDate = (date: string, userId?: string) => {
-  if (typeof window === 'undefined') return;
-  window.localStorage.setItem(getUserStorageKey('imei-safe-daily-last-claim', userId), date);
 };
 
 export const getRedemptions = () => {
