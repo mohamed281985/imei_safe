@@ -930,25 +930,69 @@ const RewardSuccessPage: React.FC = () => {
 };
 
 const RewardHistoryPage: React.FC = () => {
-  const redemptions = getRedemptions();
+  const { userId } = useRewardBalance();
+  const [redemptions, setRedemptions] = useState<any[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    const loadRedemptions = async () => {
+      if (!userId) {
+        setRedemptions([]);
+        setTotalCount(0);
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+      setLoadError('');
+      try {
+        const { data } = await axiosInstance.get('/api/rewards/redemptions');
+        if (!active) return;
+        setRedemptions(data?.redemptions || []);
+        setTotalCount(Number(data?.total_count) || 0);
+      } catch (error: any) {
+        if (active) setLoadError(error?.response?.data?.error || 'تعذر تحميل سجل الاستبدالات. حاول مرة أخرى.');
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+
+    void loadRedemptions();
+    return () => { active = false; };
+  }, [userId]);
+
   return (
     <PageContainer>
       <AppNavbar />
       <div className="w-full max-w-md pb-0 pt-0">
         <div className="rounded-3xl bg-white/95 p-4 shadow-md ring-1 ring-slate-200">
-          <h1 className="text-xl font-black text-slate-900">سجل النقاط</h1>
-          {redemptions.length === 0 ? (
+          <div className="flex items-center justify-between gap-3">
+            <div><h1 className="text-xl font-black text-slate-900">سجل النقاط</h1><p className="mt-1 text-sm text-slate-500">عمليات الاستبدال المؤكدة من رصيدك</p></div>
+            {!loading && <span className="rounded-full bg-sky-50 px-3 py-1 text-sm font-black tabular-nums text-sky-800">{totalCount}</span>}
+          </div>
+          {loading ? (
+            <div className="mt-4 rounded-2xl bg-slate-50 p-4 text-center text-sm text-slate-600">جارٍ تحميل عملياتك...</div>
+          ) : loadError ? (
+            <div role="alert" className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-center text-sm font-bold text-rose-800">{loadError}</div>
+          ) : redemptions.length === 0 ? (
             <div className="mt-4 rounded-2xl bg-slate-50 p-4 text-center text-sm text-slate-600">لا توجد عمليات سابقة حتى الآن.</div>
           ) : (
             <div className="mt-4 space-y-2">
               {redemptions.map((item) => (
-                <div key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                  <div className="flex items-center justify-between">
-                    <span className="font-black text-slate-800">{item.productName}</span>
-                    <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-black text-emerald-700">مستخدم</span>
+                <div key={item.id} className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                  <div className="flex min-w-0 items-start justify-between gap-2">
+                    <span className="min-w-0 flex-1 font-black text-slate-900">{item.product_name}</span>
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-black text-emerald-800"><Check className="h-3 w-3" />تم الاستبدال</span>
                   </div>
-                  <p className="mt-1 text-xs text-slate-500">{item.businessName}</p>
-                  <p className="mt-2 text-xs text-slate-600">{item.code}</p>
+                  <p className="mt-1 text-sm text-slate-600">{item.business_name}</p>
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2 text-xs">
+                    <span className="inline-flex items-center gap-1 font-black text-amber-900"><Coins className="h-3.5 w-3.5 text-amber-600" />-{formatNumber(Number(item.coins_used))} نقطة</span>
+                    <span className="text-slate-500">{new Date(item.redeemed_at).toLocaleDateString('ar-EG', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+                  </div>
+                  <p className="mt-2 break-all text-[11px] text-slate-500">رمز الاستبدال: {item.redemption_code}</p>
                 </div>
               ))}
             </div>

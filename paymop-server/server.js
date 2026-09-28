@@ -4688,6 +4688,25 @@ app.post('/api/rewards/redeem', verifyJwtToken, async (req, res) => {
   }
 });
 
+app.get('/api/rewards/redemptions', verifyJwtToken, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { data, count, error } = await supabase
+      .from('reward_redemptions')
+      .select('id, offer_id, redemption_code, product_name, business_name, coins_used, original_price, offer_price, currency_symbol, status, redeemed_at', { count: 'exact' })
+      .eq('user_id', userId)
+      .order('redeemed_at', { ascending: false })
+      .limit(100);
+
+    if (error) return sendError(res, 500, 'تعذر تحميل سجل استبدالاتك', error);
+    return res.json({ ok: true, total_count: count || 0, redemptions: data || [] });
+  } catch (error) {
+    return sendError(res, 500, 'حدث خطأ أثناء تحميل سجل الاستبدالات', error);
+  }
+});
+
 app.get('/api/business/offers', verifyJwtToken, async (req, res) => {
   try {
     const userId = req.user?.id;
