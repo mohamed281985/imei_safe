@@ -1,12 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ArrowUpRight, Award, BadgeCheck, Building2, Camera, Crown, Download, Gift, Megaphone, PackagePlus, QrCode, Store, Tags } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, Award, BadgeCheck, Building2, Camera, CheckCircle2, Clock3, Crown, Coins, Download, Gift, Megaphone, PackagePlus, QrCode, Store, Tags } from 'lucide-react';
 import QRCode from 'qrcode';
+import axiosInstance from '@/services/axiosInterceptor';
 import AppNavbar from '@/components/AppNavbar';
 import PageContainer from '@/components/PageContainer';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { Capacitor } from '@capacitor/core';
+import { Directory, Filesystem } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
+import { useToast } from '@/hooks/use-toast';
 
 type StoreProfile = {
   id: string;
@@ -23,6 +28,17 @@ type PackageInfo = {
   publishAdsCount: number;
   publishedAdsCount: number;
   remainingAds: number;
+};
+
+type StoreRedemption = {
+  id: string;
+  product_name: string;
+  coins_used: number;
+  original_price: number;
+  offer_price: number;
+  currency_symbol: string;
+  status: string;
+  redeemed_at: string;
 };
 
 const actionItems = [
@@ -56,12 +72,16 @@ const MyStore: React.FC = () => {
   const { user } = useAuth();
   const { t, language } = useLanguage();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [profile, setProfile] = useState<StoreProfile | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [imageFailed, setImageFailed] = useState(false);
   const [packageInfo, setPackageInfo] = useState<PackageInfo | null>(null);
   const [storeQr, setStoreQr] = useState<string | null>(null);
+  const [downloadingStoreQr, setDownloadingStoreQr] = useState(false);
+  const [redemptions, setRedemptions] = useState<StoreRedemption[]>([]);
+  const [redemptionCount, setRedemptionCount] = useState(0);
 
   useEffect(() => {
     if (!profile?.id) {
@@ -210,27 +230,92 @@ const MyStore: React.FC = () => {
     return () => { active = false; };
   }, [user?.id, user?.role]);
 
+  useEffect(() => {
+    let active = true;
+    const loadRedemptions = async () => {
+      if (!user?.id) return;
+      try {
+        const { data } = await axiosInstance.get('/api/business/reward-redemptions');
+        if (!active) return;
+        setRedemptions(data?.redemptions || []);
+        setRedemptionCount(Number(data?.total_count) || 0);
+      } catch (error) {
+        console.warn('Could not load store reward redemptions:', error);
+      }
+    };
+    void loadRedemptions();
+    return () => { active = false; };
+  }, [user?.id]);
+
   const storeName = profile?.store_name?.trim() || 'متجري';
   const statusLabel = profile?.status === 'approved' ? 'متجر موثق' : profile?.status === 'rejected' ? 'يحتاج إلى تحديث' : 'قيد المراجعة';
   const initials = storeName.slice(0, 2).toUpperCase();
-  const downloadStoreQr = () => {
+  const downloadStoreQr = async () => {
     if (!storeQr || !profile?.id) return;
-    const link = document.createElement('a');
-    link.href = storeQr;
-    link.download = `imei-safe-store-${profile.id.slice(0, 8)}.png`;
-    link.click();
+    const fileName = `imei-safe-store-${profile.id.slice(0, 8)}.png`;
+    setDownloadingStoreQr(true);
+
+    try {
+      const base64Data = storeQr.split(',')[1];
+      if (!base64Data) throw new Error('تعذر تجهيز صورة الباركود.');
+
+      if (Capacitor.isNativePlatform()) {
+        const result = await Filesystem.writeFile({
+          path: fileName,
+          data: base64Data,
+          directory: Directory.Cache,
+        });
+        await Share.share({
+          title: 'باركود متجري',
+          text: 'باركود المتجر جاهز للطباعة.',
+          url: result.uri,
+          dialogTitle: 'مشاركة أو حفظ باركود المتجر',
+        });
+        return;
+      }
+
+      const response = await fetch(storeQr);
+      const blob = await response.blob();
+      const file = new File([blob], fileName, { type: 'image/png' });
+      if (navigator.canShare?.({ files: [file] }) && navigator.share) {
+        await navigator.share({ files: [file], title: 'باركود متجري' });
+        return;
+      }
+
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      if (isMobile) {
+        window.open(URL.createObjectURL(blob), '_blank', 'noopener,noreferrer');
+        toast({ title: 'تم فتح الباركود', description: 'استخدم مشاركة المتصفح أو اضغط مطولًا على الصورة لحفظها.' });
+        return;
+      }
+
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') return;
+      console.error('Failed to export store QR code:', error);
+      toast({ title: 'تعذر تحميل الباركود', description: 'حاول مرة أخرى أو افتح الصورة وشاركها يدويًا.', variant: 'destructive' });
+    } finally {
+      setDownloadingStoreQr(false);
+    }
   };
 
   return (
     <PageContainer>
       <AppNavbar />
-      <main className="mx-auto w-full max-w-3xl px-3 pb-8 pt-2 sm:px-5">
-        <header className="mb-4 flex items-center gap-3">
+      <main className="mx-auto flex w-full max-w-3xl flex-col px-3 pb-8 pt-2 sm:px-5">
+        <header className="order-1 mb-4 flex items-center gap-3">
           <button type="button" onClick={() => navigate(-1)} className="rounded-full bg-white p-2 text-slate-700 shadow-sm ring-1 ring-slate-200" aria-label="رجوع"><ArrowLeft className="h-5 w-5" /></button>
           <div><h1 className="text-xl font-black text-slate-900">متجري</h1><p className="text-sm text-slate-500">إدارة متجرك ونشاطك التجاري</p></div>
         </header>
 
-        <section className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+        <section className="order-2 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
           <div className="relative h-44 bg-gradient-to-br from-blue-800 via-blue-700 to-cyan-600 sm:h-56">
             {imageUrl && !imageFailed ? <img src={imageUrl} alt={storeName} className="absolute inset-0 h-full w-full object-cover" onError={() => setImageFailed(true)} /> : (
               <div className="absolute inset-0 flex items-center justify-center bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.18),transparent_35%),linear-gradient(135deg,#1e3a8a,#0369a1)]">
@@ -252,12 +337,12 @@ const MyStore: React.FC = () => {
 
         </section>
 
-        {profile?.id && <section className="mt-5 flex flex-col items-center gap-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 sm:flex-row sm:justify-between">
+        {profile?.id && <section className="order-6 mt-5 flex flex-col items-center gap-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 sm:flex-row sm:justify-between">
           <div className="text-center sm:text-right">
             <div className="mb-1 flex items-center justify-center gap-2 text-slate-900 sm:justify-start"><QrCode className="h-5 w-5 text-teal-700" /><h2 className="font-black">باركود متجرك</h2></div>
             <p className="max-w-sm text-sm text-slate-600">رمز تعريف ثابت لمتجرك، جاهز للمشاركة والطباعة.</p>
-            <button type="button" onClick={downloadStoreQr} disabled={!storeQr} className="mt-3 inline-flex items-center gap-2 rounded-lg bg-teal-700 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-50">
-              <Download className="h-4 w-4" /> تحميل للطباعة
+            <button type="button" onClick={() => void downloadStoreQr()} disabled={!storeQr || downloadingStoreQr} className="mt-3 inline-flex items-center gap-2 rounded-lg bg-teal-700 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-50">
+              <Download className="h-4 w-4" /> {downloadingStoreQr ? 'جارٍ تجهيز الباركود...' : 'تحميل للطباعة'}
             </button>
           </div>
           <div className="flex h-56 w-56 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white p-3">
@@ -265,7 +350,7 @@ const MyStore: React.FC = () => {
           </div>
         </section>}
 
-        {packageInfo?.planType && <section className="mt-5">
+        {packageInfo?.planType && <section className="order-3 mt-5">
           <div className="mb-3 flex items-center gap-2.5">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-teal-500 to-emerald-600 text-white shadow-sm"><Megaphone className="h-4 w-4" /></span>
             <div><h2 className="font-black text-slate-900">إعلانات الصفحة الرئيسية</h2><p className="text-xs text-slate-500">ملخص باقتك واستخدام الإعلانات</p></div>
@@ -288,13 +373,38 @@ const MyStore: React.FC = () => {
           </div>
         </section>}
 
-        <section className="mt-6">
-          <div className="mb-3 flex items-end justify-between"><div><h2 className="text-lg font-black text-slate-900">إدارة المتجر</h2><p className="mt-0.5 text-sm text-slate-500">إجراءاتك التجارية في مكان واحد</p></div></div>
-          <div className="divide-y divide-slate-100 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+        <section className="order-4 mt-5 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+          <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-4 sm:px-5">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700"><CheckCircle2 className="h-5 w-5" /></span>
+              <div className="min-w-0"><h2 className="font-black text-slate-900">استبدالات العروض</h2><p className="text-xs text-slate-500">عمليات مؤكدة من رصيد النقاط</p></div>
+            </div>
+            <span className="rounded-full bg-emerald-50 px-3 py-1 text-sm font-black tabular-nums text-emerald-800">{redemptionCount}</span>
+          </div>
+          {redemptions.length ? (
+            <div className="divide-y divide-slate-100">
+              {redemptions.map((redemption) => (
+                <div key={redemption.id} className="flex min-w-0 items-center justify-between gap-3 px-4 py-3 sm:px-5">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold text-slate-900">{redemption.product_name}</p>
+                    <p className="mt-1 flex items-center gap-1 text-xs text-slate-500"><Clock3 className="h-3.5 w-3.5 shrink-0" />{new Date(redemption.redeemed_at).toLocaleDateString(language === 'ar' ? 'ar-EG' : language === 'fr' ? 'fr-FR' : language === 'hi' ? 'hi-IN' : 'en-US')}</p>
+                  </div>
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs font-black text-amber-900"><Coins className="h-3.5 w-3.5 text-amber-600" />{new Intl.NumberFormat('en-US').format(redemption.coins_used)}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="px-4 py-5 text-center text-sm text-slate-500">لا توجد استبدالات مؤكدة حتى الآن.</p>
+          )}
+        </section>
+
+        <section className="order-5 mt-6">
+          <div className="mb-3 flex items-end justify-between"><div><h2 className="text-lg font-black text-slate-900">إجراءات سريعة</h2><p className="mt-0.5 text-sm text-slate-500">إدارة البيع والتسويق والعروض</p></div></div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             {actionItems.map(({ title, description, to, Icon, iconClass, arrowClass }) => (
-              <button key={to} type="button" onClick={() => navigate(to)} className="group flex w-full items-center gap-3 px-4 py-4 text-right transition-colors hover:bg-slate-50 sm:px-5">
+              <button key={to} type="button" onClick={() => navigate(to)} className="group flex min-h-28 w-full items-center gap-3 rounded-2xl bg-white p-4 text-right shadow-sm ring-1 ring-slate-200 transition hover:-translate-y-0.5 hover:shadow-md sm:items-start sm:flex-col sm:justify-between sm:gap-4">
                 <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${iconClass}`}><Icon className="h-5 w-5" /></span>
-                <span className="min-w-0 flex-1"><span className="block font-bold text-slate-900">{title}</span><span className="mt-1 block truncate text-xs text-slate-500 sm:text-sm">{description}</span></span>
+                <span className="min-w-0 flex-1 sm:w-full"><span className="block font-bold text-slate-900">{title}</span><span className="mt-1 block text-xs leading-relaxed text-slate-500 sm:text-sm">{description}</span></span>
                 <ArrowUpRight className={`h-5 w-5 shrink-0 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5 ${arrowClass}`} />
               </button>
             ))}

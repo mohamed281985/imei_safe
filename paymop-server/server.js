@@ -4658,6 +4658,36 @@ app.get('/api/rewards/offers', verifyJwtToken, async (req, res) => {
   }
 });
 
+app.post('/api/rewards/redeem', verifyJwtToken, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const { offerId, businessId } = req.body || {};
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    if (typeof offerId !== 'string' || typeof businessId !== 'string') {
+      return res.status(400).json({ error: 'بيانات الاستبدال غير مكتملة.' });
+    }
+
+    const redemptionCode = `IMEI-REWARD-${crypto.randomUUID().replace(/-/g, '').slice(0, 18).toUpperCase()}`;
+    const { data, error } = await supabase.rpc('redeem_reward_offer', {
+      p_user_id: userId,
+      p_offer_id: offerId,
+      p_business_id: businessId,
+      p_redemption_code: redemptionCode,
+    });
+
+    if (error) {
+      if (error.code === 'P0001') return res.status(409).json({ error: 'رصيد النقاط لا يكفي لإتمام الاستبدال.' });
+      if (error.code === 'P0002') return res.status(409).json({ error: 'العرض لم يعد متاحًا في هذا المتجر.' });
+      if (error.code === '23505') return res.status(409).json({ error: 'تعذر إنشاء رمز استبدال جديد. حاول مرة أخرى.' });
+      return sendError(res, 500, 'تعذر إتمام استبدال العرض', error);
+    }
+
+    return res.status(201).json({ ok: true, redemption: data });
+  } catch (error) {
+    return sendError(res, 500, 'حدث خطأ أثناء استبدال العرض', error);
+  }
+});
+
 app.get('/api/business/offers', verifyJwtToken, async (req, res) => {
   try {
     const userId = req.user?.id;
@@ -4682,6 +4712,34 @@ app.get('/api/business/offers', verifyJwtToken, async (req, res) => {
     return res.json({ ok: true, offers: offers || [] });
   } catch (error) {
     return sendError(res, 500, 'حدث خطأ أثناء تحميل العروض', error);
+  }
+});
+
+app.get('/api/business/reward-redemptions', verifyJwtToken, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { data: business, error: businessError } = await supabase
+      .from('businesses')
+      .select('id')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (businessError) return sendError(res, 500, 'تعذر التحقق من المتجر', businessError);
+    if (!business) return res.status(403).json({ error: 'هذا المسار مخصص للحسابات التجارية' });
+
+    const { data, count, error } = await supabase
+      .from('reward_redemptions')
+      .select('id, product_name, business_name, coins_used, original_price, offer_price, currency_symbol, status, redeemed_at', { count: 'exact' })
+      .eq('business_id', business.id)
+      .eq('status', 'redeemed')
+      .order('redeemed_at', { ascending: false })
+      .limit(8);
+    if (error) return sendError(res, 500, 'تعذر تحميل استبدالات المتجر', error);
+
+    return res.json({ ok: true, total_count: count || 0, redemptions: data || [] });
+  } catch (error) {
+    return sendError(res, 500, 'حدث خطأ أثناء تحميل استبدالات المتجر', error);
   }
 });
 

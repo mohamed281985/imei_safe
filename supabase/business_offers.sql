@@ -33,6 +33,8 @@ alter table public.business_offers
   add column if not exists store_latitude double precision check (store_latitude between -90 and 90);
 alter table public.business_offers
   add column if not exists store_longitude double precision check (store_longitude between -180 and 180);
+alter table public.business_offers
+  add column if not exists currency_symbol text not null default 'EGP';
 
 alter table public.business_offers
   drop column if exists available_quantity;

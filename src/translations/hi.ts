@@ -427,6 +427,7 @@ export default {
   "error_updating_report_status": "रिपोर्ट की स्थिति अपडेट करने में त्रुटि",
   "invalid_phone": "अमान्य फ़ोन नंबर",
   "passwords_dont_match": "पासवर्ड मेल नहीं खाते",
+  "password_requirements": "पासवर्ड कम से कम 8 अक्षरों का होना चाहिए और उसमें एक अक्षर, एक अंक और एक विशेष चिह्न होना चाहिए।",
   "invalid_date": "अमान्य तारीख",
   "invalid_file": "अमान्य फ़ाइल",
   "file_too_large": "फ़ाइल बहुत बड़ी है (अधिकतम 5MB)",

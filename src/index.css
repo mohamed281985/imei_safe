@@ -152,3 +152,31 @@
        focus:ring-1 focus:ring-[#289c8e];
   }
 }
+
+@layer base {
+  html,
+  body,
+  #root {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    overflow-x: hidden;
+  }
+
+  #root {
+    overflow-x: clip;
+    overflow-wrap: anywhere;
+  }
+
+  img,
+  video,
+  canvas,
+  iframe {
+    max-width: 100%;
+  }
+}

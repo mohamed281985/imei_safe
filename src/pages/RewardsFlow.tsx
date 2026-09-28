@@ -33,6 +33,7 @@ import { useRewardBalance } from '@/hooks/useRewardBalance';
 import AppNavbar from '@/components/AppNavbar';
 import PageContainer from '@/components/PageContainer';
 import { supabase } from '@/lib/supabase';
+import axiosInstance from '@/services/axiosInterceptor';
 import { useToast } from '@/hooks/use-toast';
 import { ACCESSORY_CATEGORIES } from '@/constants/accessoryCategories';
 import {
@@ -53,11 +54,6 @@ const formatNumber = (value: number) => new Intl.NumberFormat('en-US').format(va
 const isOfferValid = (offer: any) => offer?.isActive && offer?.status === 'approved' && new Date(offer.expiresAt).getTime() > Date.now();
 
 const getCurrentBalance = (userId?: string) => getRewardBalanceFromStorage(userId);
-
-const buildRedeemCode = () => {
-  const random = Math.random().toString(36).slice(2, 8).toUpperCase();
-  return `IMEI-REWARD-${Date.now().toString().slice(-6)}${random}`;
-};
 
 const generateQrPattern = (seed: string) => {
   const size = 21;
@@ -633,47 +629,58 @@ const RewardConfirmationPage: React.FC = () => {
   const [cameraOpen, setCameraOpen] = useState(false);
   const [scanError, setScanError] = useState('');
   const [insufficientBalance, setInsufficientBalance] = useState(false);
+  const [redeeming, setRedeeming] = useState(false);
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
-  const redemptionHandlerRef = React.useRef<() => void>(() => undefined);
 
   useEffect(() => {
     setInsufficientBalance(false);
   }, [offerId]);
 
-  const confirmRedemption = () => {
-    if (!offer) return;
-    const balanceBefore = getCurrentBalance(userId);
-    if (balanceBefore < offer.coinsRequired) {
-      setInsufficientBalance(true);
+  const confirmRedemption = async () => {
+    if (!offer || !userId || redeeming) return;
+    setRedeeming(true);
+    setScanError('');
+    try {
+      const { data } = await axiosInstance.post('/api/rewards/redeem', {
+        offerId: offer.id,
+        businessId: offer.businessId,
+      });
+      const row = data?.redemption;
+      if (!row?.id || !row.code) throw new Error('لم يؤكد الخادم عملية الاستبدال.');
+
+      const redemption = {
+        id: row.id,
+        code: row.code,
+        qrSeed: row.code,
+        offerId: row.offer_id,
+        businessId: row.business_id,
+        productName: row.product_name,
+        businessName: row.business_name,
+        currencySymbol: row.currency_symbol || offer.currencySymbol,
+        coinsUsed: Number(row.coins_used),
+        originalPrice: Number(row.original_price),
+        offerPrice: Number(row.offer_price),
+        status: row.status,
+        redeemedAt: row.redeemed_at,
+        used: false,
+      };
+
+      const list = getRedemptions();
+      list.unshift(redemption);
+      setRedemptions(list);
+      if (typeof row.current_balance === 'number') setRewardBalanceInStorage(row.current_balance, userId);
+      window.dispatchEvent(new Event('imei-safe-reward-balance-updated'));
       setCameraOpen(false);
-      return;
+      navigate(`/reward-success/${redemption.id}`);
+    } catch (error: any) {
+      const message = error?.response?.data?.error || error?.message || 'تعذر إتمام الاستبدال. لم يتم خصم النقاط.';
+      if (error?.response?.status === 409 && String(message).includes('رصيد')) setInsufficientBalance(true);
+      setScanError(message);
+    } finally {
+      setRedeeming(false);
     }
-
-    const redemption = {
-      id: `redemption-${Date.now()}`,
-      code: buildRedeemCode(),
-      qrSeed: `${Date.now()}`,
-      offerId: offer.id,
-      productName: offer.productName,
-      businessName: offer.businessName,
-      currencySymbol: offer.currencySymbol,
-      coinsUsed: offer.coinsRequired,
-      originalPrice: offer.originalPrice,
-      offerPrice: offer.offerPrice,
-      status: 'active',
-      expiresAt: offer.expiresAt,
-      redeemedAt: new Date().toISOString(),
-      used: false,
-    };
-
-    const list = getRedemptions();
-    list.unshift(redemption);
-    setRedemptions(list);
-    setRewardBalanceInStorage(balanceBefore - offer.coinsRequired, userId);
-    navigate(`/reward-success/${redemption.id}`);
   };
-  redemptionHandlerRef.current = confirmRedemption;
 
   useEffect(() => {
     if (!cameraOpen) return;
@@ -725,8 +732,8 @@ const RewardConfirmationPage: React.FC = () => {
                 return;
               }
               setScanError('');
-              redemptionHandlerRef.current();
               setCameraOpen(false);
+              void confirmRedemption();
               return;
             }
           }
@@ -818,7 +825,7 @@ const RewardConfirmationPage: React.FC = () => {
           {scanError && !cameraOpen && <p role="alert" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-900">{scanError}</p>}
 
           <div className="mt-5 flex gap-3">
-            <Button type="button" onClick={openStoreScanner} className="flex-1 rounded-2xl bg-gradient-to-r from-orange-500 to-amber-500 text-white font-black">
+            <Button type="button" onClick={openStoreScanner} disabled={redeeming} className="flex-1 rounded-2xl bg-gradient-to-r from-orange-500 to-amber-500 text-white font-black">
               <QrCode className="ml-2 h-4 w-4" /> تأكيد الاستلام ومسح باركود المحل
             </Button>
             <Button type="button" variant="outline" onClick={() => navigate(-1)} className="flex-1 rounded-2xl border-slate-200 text-slate-700">
@@ -831,7 +838,7 @@ const RewardConfirmationPage: React.FC = () => {
         <div className="w-full max-w-md rounded-2xl bg-white p-4 shadow-2xl">
           <div className="mb-3 flex items-center justify-between gap-3">
             <h2 className="font-black text-slate-900">امسح باركود المحل</h2>
-            <button type="button" onClick={() => setCameraOpen(false)} className="rounded-lg px-3 py-1.5 text-sm font-bold text-slate-600 hover:bg-slate-100">إغلاق</button>
+            <button type="button" onClick={() => setCameraOpen(false)} disabled={redeeming} className="rounded-lg px-3 py-1.5 text-sm font-bold text-slate-600 hover:bg-slate-100 disabled:opacity-50">{redeeming ? 'جارٍ تأكيد الاستبدال...' : 'إغلاق'}</button>
           </div>
           <div className="overflow-hidden rounded-xl bg-black">
             <video ref={videoRef} autoPlay playsInline muted className="aspect-[4/3] w-full object-cover" />
@@ -869,6 +876,7 @@ const RewardSuccessPage: React.FC = () => {
             <h2 className="text-2xl font-black text-slate-900">تم الاستبدال بنجاح</h2>
             <p className="mt-2 text-sm text-slate-600">{redemption.productName}</p>
             <p className="text-sm text-slate-500">{redemption.businessName}</p>
+            <p className="mt-2 text-sm font-bold text-emerald-700">تم تأكيد الاستبدال وخصم النقاط لدى المتجر.</p>
           </div>
 
           <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
@@ -910,7 +918,7 @@ const RewardSuccessPage: React.FC = () => {
             <p className="mt-1 text-lg font-black tracking-[0.2em] text-sky-900">{redemption.code}</p>
           </div>
 
-          <p className="mt-4 text-center text-sm text-slate-600">اعرض هذا الكود للمحل</p>
+          <p className="mt-4 text-center text-sm text-slate-600">احتفظ بتفاصيل العملية للرجوع إليها.</p>
 
           <Button onClick={() => navigate('/rewards-categories')} className="mt-5 w-full rounded-2xl bg-sky-600 text-white font-black">
             العودة لاستكشاف الفئات

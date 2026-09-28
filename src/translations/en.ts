@@ -424,6 +424,7 @@ export default {
   "error_updating_report_status": "Error updating report status",
   "invalid_phone": "Invalid phone number",
   "passwords_dont_match": "Passwords do not match",
+  "password_requirements": "Password must be at least 8 characters and include a letter, a number, and a special character.",
   "invalid_date": "Invalid date",
   "invalid_file": "Invalid file",
   "file_too_large": "File too large (maximum 5MB)",

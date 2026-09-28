@@ -819,8 +819,8 @@ const AddPhoneForm: React.FC = () => {
     'rounded-3xl border border-white/70 bg-white/70 backdrop-blur-xl p-5 sm:p-6 shadow-[0_10px_30px rgba(15,23,42,0.08)] transition-all duration-500';
 
   const nextStep = () => {
-    const missingStepFields = (currentStep === 0 && (!formData.title.trim() || !formData.city.trim() || !formData.contact_methods.phone?.trim()))
-      || (currentStep === 1 && (!formData.phone_type.trim() || !formData.price.trim() || !/^\d{15}$/.test(formData.imei.trim())))
+    const missingStepFields = (currentStep === 1 && (!formData.phone_type.trim() || !formData.model.trim() || !formData.price.trim() || !/^\d{15}$/.test(formData.imei.trim())))
+      || (currentStep === 2 && (!formData.title.trim() || !formData.description.trim()))
       || (currentStep === 3 && images.length === 0);
     if (missingStepFields) {
       setError(t('required_fields'));

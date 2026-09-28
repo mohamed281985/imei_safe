@@ -244,9 +244,9 @@ const Signup: React.FC = () => {
         </CardHeader>
         <CardContent className="space-y-6">
           {signupError && (
-            <Alert variant="destructive" className="mb-4">
-              <AlertDescription>
-                <span style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{signupError}</span>
+            <Alert variant="destructive" className="mb-4 min-w-0 max-w-full overflow-hidden">
+              <AlertDescription className="min-w-0 max-w-full text-base font-bold leading-relaxed [overflow-wrap:anywhere]">
+                {signupError}
               </AlertDescription>
             </Alert>
           )}

@@ -772,8 +772,8 @@ const AddAccessoriesForm: React.FC = () => {
     'rounded-3xl border border-white/70 bg-white/70 backdrop-blur-xl p-5 sm:p-6 shadow-[0_10px_30px_rgba(15,23,42,0.08)] transition-all duration-500';
 
   const nextStep = () => {
-    const missingStepFields = (currentStep === 0 && (!formData.title.trim() || !formData.category.trim()))
-      || (currentStep === 1 && (!formData.brand.trim() || !formData.price.trim()))
+    const missingStepFields = (currentStep === 1 && (!formData.category.trim() || !formData.price.trim()))
+      || (currentStep === 2 && (!formData.title.trim() || !formData.description.trim()))
       || (currentStep === 3 && images.length === 0);
     if (missingStepFields) {
       setError(t('required_fields'));

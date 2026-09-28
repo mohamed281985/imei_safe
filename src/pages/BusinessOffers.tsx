@@ -111,6 +111,43 @@ const BusinessOffers: React.FC = () => {
 
   const updateForm = (field: keyof OfferForm, value: string) => {
     setForm((current) => ({ ...current, [field]: value }));
+    setError('');
+  };
+
+  const continueToImages = () => {
+    const originalPrice = Number(form.originalPrice);
+    const offerPrice = Number(form.offerPrice);
+    const coinsRequired = Number(form.coinsRequired);
+    const expirationTime = form.expiresAt ? new Date(`${form.expiresAt}T23:59:59`).getTime() : 0;
+
+    if (!form.productName.trim() || !form.description.trim()) {
+      setError('أدخل اسم العرض ووصفه للمتابعة.');
+      return;
+    }
+    if (!Number.isFinite(originalPrice) || !Number.isFinite(offerPrice) || originalPrice <= 0 || offerPrice <= 0 || offerPrice >= originalPrice) {
+      setError('أدخل سعرًا أصليًا وسعر عرض صحيحًا، ويجب أن يكون سعر العرض أقل من الأصلي.');
+      return;
+    }
+    if (!form.expiresAt || !Number.isFinite(expirationTime) || expirationTime <= Date.now()) {
+      setError('اختر تاريخ انتهاء في المستقبل.');
+      return;
+    }
+    if (!Number.isInteger(coinsRequired) || coinsRequired < 0) {
+      setError('أدخل عدد نقاط صحيحًا يساوي صفرًا أو أكثر.');
+      return;
+    }
+
+    setError('');
+    setStep(2);
+  };
+
+  const continueToPreview = () => {
+    if (!images.length) {
+      setError('أضف صورة واحدة على الأقل لمعاينة العرض.');
+      return;
+    }
+    setError('');
+    setStep(3);
   };
 
   const addImages = (files: FileList | null) => {
@@ -323,13 +360,13 @@ const BusinessOffers: React.FC = () => {
               <label className="block space-y-1.5"><span className="text-sm font-bold text-slate-700">تاريخ انتهاء العرض <b className="text-rose-500">*</b></span><input type="date" min={new Date().toISOString().slice(0, 10)} value={form.expiresAt} onChange={(event) => updateForm('expiresAt', event.target.value)} className="w-full rounded-2xl border border-blue-300/50 bg-white px-4 py-3 text-base font-medium text-black shadow-[0_2px_10px_rgba(37,99,235,0.08)] outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-200/60" /></label>
               <label className="block space-y-1.5"><span className="text-sm font-bold text-slate-700">ملاحظات إضافية</span><textarea value={form.notes} onChange={(event) => updateForm('notes', event.target.value)} rows={2} maxLength={500} className="w-full rounded-2xl border border-blue-300/50 bg-white px-4 py-3 text-base font-medium text-black shadow-[0_2px_10px_rgba(37,99,235,0.08)] outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-200/60" /></label>
               {discount > 0 && <div className="flex justify-between rounded-xl bg-rose-50 px-3 py-2 text-sm"><span className="text-rose-800">نسبة الخصم</span><strong className="text-rose-800">{discount}%</strong></div>}
-              <Button type="button" disabled={!form.productName.trim() || !form.description.trim() || !form.expiresAt || discount <= 0 || !Number.isInteger(Number(form.coinsRequired)) || Number(form.coinsRequired) < 0} onClick={() => { setError(''); setStep(2); }} className="w-full bg-blue-600 font-bold hover:bg-blue-700">التالي: إضافة الصور</Button>
+              <Button type="button" onClick={continueToImages} className="w-full bg-blue-600 font-bold hover:bg-blue-700">التالي: إضافة الصور</Button>
             </div>}
 
             {step === 2 && <div className="space-y-4 p-4 sm:p-6">
               <label className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-blue-200 bg-blue-50/50 p-5 text-center hover:border-blue-400"><ImagePlus className="mb-2 h-8 w-8 text-blue-600" /><span className="font-bold text-slate-800">إضافة صور العرض</span><span className="mt-1 text-xs text-slate-500">حتى 5 صور، بحد أقصى 8 ميجابايت للصورة</span><input type="file" accept="image/*" multiple className="sr-only" onChange={(event) => { addImages(event.target.files); event.currentTarget.value = ''; }} /></label>
               {images.length > 0 && <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">{images.map((file, index) => <div key={`${file.name}-${index}`} className="relative aspect-square overflow-hidden rounded-xl border border-slate-200"><img src={previews[index]} alt={file.name} className="h-full w-full object-cover" />{index === 0 && <span className="absolute bottom-1 left-1 rounded bg-blue-600 px-1.5 py-0.5 text-[10px] font-bold text-white">الصورة الرئيسية</span>}<button type="button" onClick={() => setImages((current) => current.filter((_, itemIndex) => itemIndex !== index))} className="absolute right-1 top-1 rounded-full bg-white/90 p-1 text-rose-600" aria-label="حذف الصورة"><X className="h-4 w-4" /></button></div>)}</div>}
-              <div className="flex gap-3"><Button type="button" variant="outline" onClick={() => setStep(1)} className="flex-1">السابق</Button><Button type="button" disabled={!images.length} onClick={() => { setError(''); setStep(3); }} className="flex-1 bg-blue-600 font-bold hover:bg-blue-700">معاينة العرض</Button></div>
+              <div className="flex gap-3"><Button type="button" variant="outline" onClick={() => setStep(1)} className="flex-1">السابق</Button><Button type="button" onClick={continueToPreview} className="flex-1 bg-blue-600 font-bold hover:bg-blue-700">معاينة العرض</Button></div>
             </div>}
 
             {step === 3 && <div className="space-y-4 p-4 sm:p-6">

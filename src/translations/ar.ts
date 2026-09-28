@@ -444,6 +444,7 @@ export default {
   "error_updating_report_status": "خطأ في تحديث حالة البلاغ",
   "invalid_phone": "رقم الهاتف غير صالح",
   "passwords_dont_match": "كلمات المرور غير متطابقة",
+  "password_requirements": "يجب أن تتكون كلمة المرور من 8 أحرف على الأقل، وتتضمن حرفًا ورقمًا ورمزًا خاصًا.",
   "invalid_date": "التاريخ غير صالح",
   "invalid_file": "الملف غير صالح",
   "file_too_large": "حجم الملف كبير جداً (الحد الأقصى 5 ميجابايت)",

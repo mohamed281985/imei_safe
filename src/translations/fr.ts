@@ -435,6 +435,7 @@ export default {
   "error_updating_report_status": "Erreur lors de la mise à jour du statut du rapport",
   "invalid_phone": "Numéro de téléphone invalide",
   "passwords_dont_match": "Les mots de passe ne correspondent pas",
+  "password_requirements": "Le mot de passe doit contenir au moins 8 caractères, une lettre, un chiffre et un caractère spécial.",
   "invalid_date": "Date invalide",
   "invalid_file": "Fichier invalide",
   "file_too_large": "Le fichier est trop volumineux (max 5 Mo)",
