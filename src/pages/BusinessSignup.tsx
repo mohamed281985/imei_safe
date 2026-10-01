@@ -143,6 +143,15 @@ export default function BusinessSignup() {
         }
       });
 
+      const emailAlreadyRegistered = error?.code === 'user_already_exists'
+        || /already registered|already exists/i.test(error?.message || '')
+        || Boolean(data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0);
+
+      if (emailAlreadyRegistered) {
+        toast({ title: t('account_already_registered'), variant: 'destructive' });
+        return;
+      }
+
       if (error) {
         // ... (معالجة أخطاء Supabase تظل كما هي) ...
         throw error;

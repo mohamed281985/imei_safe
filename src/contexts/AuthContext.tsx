@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslation } from 'react-i18next';
 import { supabase } from '../lib/supabase';
@@ -42,6 +42,7 @@ const MOCK_USERS = [
 ];
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const SESSION_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -52,6 +53,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isFirstLogin, setIsFirstLogin] = useState<boolean>(false); // ⭐ تعريف الحالة
   const { toast } = useToast();
   const [lastActivity, setLastActivity] = useState<number>(Date.now());
+  const lastActivityRef = useRef(lastActivity);
   const { t } = useTranslation();
 
   // دالة لتحديث عدد الإشعارات غير المقروؤة
@@ -87,7 +89,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setNeedsProfileCompletion(false);
     setUnreadNotificationsCount(0);
     setIsFirstLogin(false); // ⭐ إعادة تعيين الحالة عند الخروج
-    setLastActivity(Date.now());
+    const timestamp = Date.now();
+    lastActivityRef.current = timestamp;
+    setLastActivity(timestamp);
+    localStorage.removeItem('last_activity_timestamp');
+    localStorage.removeItem('background_timestamp');
 
     // ملاحظة: لا نستدعي supabase.auth.signOut() للحفاظ على صلاحية refresh_token.
     // هذا هو ما يسمح للمستخدم بتسجيل الدخول مرة أخرى بالبصمة.
@@ -95,7 +101,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Function to update last activity time
   const updateLastActivity = () => {
-    setLastActivity(Date.now());
+    const timestamp = Date.now();
+    lastActivityRef.current = timestamp;
+    setLastActivity(timestamp);
+    const storedTimestamp = Number(localStorage.getItem('last_activity_timestamp'));
+    if (!storedTimestamp || timestamp - storedTimestamp >= 10000) {
+      localStorage.setItem('last_activity_timestamp', timestamp.toString());
+    }
   };
   
   // Add event listeners for user activity
@@ -105,15 +117,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const handleActivity = () => {
       updateLastActivity();
     };
+
+    const handlePageHide = () => {
+      localStorage.setItem('last_activity_timestamp', lastActivityRef.current.toString());
+    };
     
     activityEvents.forEach(event => {
       window.addEventListener(event, handleActivity);
     });
+    window.addEventListener('pagehide', handlePageHide);
     
     return () => {
       activityEvents.forEach(event => {
         window.removeEventListener(event, handleActivity);
       });
+      window.removeEventListener('pagehide', handlePageHide);
     };
   }, []);
   
@@ -122,9 +140,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const checkInactivity = () => {
       const now = Date.now();
       const timeElapsed = now - lastActivity;
-      const FIVE_MINUTES = 5 * 60 * 1000; // 5 minutes in milliseconds
-      
-      if (timeElapsed > FIVE_MINUTES && user) {
+      if (timeElapsed > SESSION_IDLE_TIMEOUT_MS && user) {
         logout();
         toast({
           title: t('session_expired'),
@@ -146,20 +162,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     const handleAppStateChange = async (state: { isActive: boolean }) => {
-      const FIVE_MINUTES = 5 * 60 * 1000;
-
       if (!state.isActive) {
         // التطبيق ينتقل إلى الخلفية
         // نخزن الوقت الحالي إذا كان المستخدم مسجلاً دخوله
         if (user) {
-          localStorage.setItem('background_timestamp', Date.now().toString());
+          localStorage.setItem('background_timestamp', lastActivityRef.current.toString());
         }
       } else {
         // التطبيق يعود إلى الواجهة
         const backgroundTimestamp = localStorage.getItem('background_timestamp');
         if (backgroundTimestamp) {
           const timeInBackground = Date.now() - parseInt(backgroundTimestamp, 10);
-          if (timeInBackground > FIVE_MINUTES) {
+          if (timeInBackground > SESSION_IDLE_TIMEOUT_MS) {
             logout();
             toast({ title: t('session_expired'), description: t('logged_out_inactivity') });
           }
@@ -186,6 +200,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (manualLogout === 'true') {
           // لا تقم بتسجيل الدخول تلقائيًا، مما يجبر المستخدم على رؤية شاشة تسجيل الدخول.
           // هذا يعطي إحساسًا بانتهاء الجلسة مع الحفاظ على صلاحية التوكن للبصمة.
+          setIsLoading(false);
+          return;
+        }
+
+        const lastActivityTimestamp = Number(localStorage.getItem('last_activity_timestamp'));
+        const backgroundTimestamp = Number(localStorage.getItem('background_timestamp'));
+        const persistedLastActivity = Math.max(lastActivityTimestamp || 0, backgroundTimestamp || 0);
+        if (persistedLastActivity > 0 && Date.now() - persistedLastActivity > SESSION_IDLE_TIMEOUT_MS) {
+          localStorage.setItem('manual_logout', 'true');
+          localStorage.removeItem('last_activity_timestamp');
+          localStorage.removeItem('background_timestamp');
           setIsLoading(false);
           return;
         }
@@ -296,7 +321,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           role: user.user_metadata.role
         };
         setUser(userProfile);
-        setLastActivity(Date.now());
+        updateLastActivity();
+        localStorage.removeItem('background_timestamp');
         setIsFirstLogin(true); // ⭐ تعيين حالة أول تسجيل دخول
 
         localStorage.removeItem('manual_logout');
@@ -568,7 +594,7 @@ return 'success';
           role: user.user_metadata.role
         };
         setUser(userProfile);
-        setLastActivity(Date.now());
+        updateLastActivity();
         setIsFirstLogin(true); // ⭐ تفعيل حالة أول تسجيل دخول
         // إزالة علامة تسجيل الخروج اليدوي عند تسجيل الدخول بنجاح
         localStorage.removeItem('manual_logout');

@@ -1678,12 +1678,7 @@ const Dashboard: React.FC = () => {
 
       {/* تم نقل زر إنشاء الإعلان إلى App.tsx لضمان ثباته */}
 
-      <div
-        className={`sticky bottom-0 z-40 transition-transform duration-300 ease-in-out ${isNavbarVisible ? 'translate-y-0' : 'translate-y-full'} bg-transparent`}
-        style={{ willChange: 'transform' }}
-      >
-        <BottomNavbar />
-      </div>
+      <BottomNavbar isVisible={isNavbarVisible} renderInPortal />
 
     </PageContainer>
   );

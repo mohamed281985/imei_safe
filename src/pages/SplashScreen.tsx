@@ -2,11 +2,20 @@ import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import PageContainer from '../components/PageContainer';
 import logoGif from '../assets/images/logo1.png'; // تم تغيير اسم الصورة
+import { useAuth } from '../contexts/AuthContext';
 
 const SplashScreen: React.FC = () => {
   const navigate = useNavigate();
+  const { isLoading } = useAuth();
 
   useEffect(() => {
+    if (isLoading) return;
+
+    if (localStorage.getItem('manual_logout') === 'true') {
+      navigate('/login', { replace: true });
+      return;
+    }
+
     // طلب إذن الموقع الجغرافي
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -30,7 +39,7 @@ const SplashScreen: React.FC = () => {
       clearTimeout(timer);
       window.removeEventListener('popstate', handlePopState);
     };
-  }, [navigate]);
+  }, [isLoading, navigate]);
 
   return (
     <div className="fixed inset-0 w-full h-full flex items-center justify-center z-50">

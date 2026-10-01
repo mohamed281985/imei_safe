@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { House, PlusSquare, User, Bell, FileText, CheckCircle2, Clock, Sparkles, X, Plus, Smartphone, Store } from 'lucide-react';
 import { Search } from 'lucide-react';
@@ -28,9 +29,10 @@ interface Notification {
 
 interface BottomNavbarProps {
   isVisible?: boolean;
+  renderInPortal?: boolean;
 }
 
-const BottomNavbar: React.FC<BottomNavbarProps> = ({ isVisible = true }) => {
+const BottomNavbar: React.FC<BottomNavbarProps> = ({ isVisible = true, renderInPortal = false }) => {
   // حالة القائمة المنسدلة
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
@@ -224,14 +226,14 @@ const BottomNavbar: React.FC<BottomNavbarProps> = ({ isVisible = true }) => {
     { id: 'profile-menu', icon: User, label: t('my_account'), side: 'right', action: () => setMenuOpen(prev => !prev) },
   ];
 
-  return (
+  const navbar = (
     <div
       ref={navbarRef}
       onMouseEnter={resetCollapseTimer}
       onTouchStart={resetCollapseTimer}
       className={`fixed print:hidden transition-all duration-300 ease-in-out ${isVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'} ${isNavbarExpanded ? 'bottom-0 left-0 right-0' : 'bottom-[calc(env(safe-area-inset-bottom)+1rem)] right-4'}`}
       style={{
-        zIndex: 50,
+        zIndex: renderInPortal ? 9999 : 50,
         willChange: 'transform',
       }}
     >
@@ -240,7 +242,7 @@ const BottomNavbar: React.FC<BottomNavbarProps> = ({ isVisible = true }) => {
           type="button"
           aria-label="فتح شريط التنقل"
           onClick={() => setIsNavbarExpanded(true)}
-          className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-orange-400 to-orange-600 text-white shadow-xl ring-2 ring-white/70 transition-transform duration-300 hover:scale-105"
+          className="animate-float flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-orange-400 to-orange-600 text-white shadow-xl ring-2 ring-white/70 transition-transform duration-300 hover:scale-105"
         >
           <Plus className="h-7 w-7" />
         </button>
@@ -465,6 +467,8 @@ const BottomNavbar: React.FC<BottomNavbarProps> = ({ isVisible = true }) => {
       )}
     </div>
   );
+
+  return renderInPortal ? createPortal(navbar, document.body) : navbar;
 };
 
 export default BottomNavbar;

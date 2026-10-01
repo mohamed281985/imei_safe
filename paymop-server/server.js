@@ -20,6 +20,7 @@ import session from 'express-session';
 import { csrfProtection, csrfErrorHandler, getCsrfToken } from './middleware/csrf.js';
 import { logAudit as rawLogAudit } from './utils/auditLogger.js';
 import { getMessaging } from './firebaseAdmin.js';
+import { pointsForDiscountPercent } from '../shared/rewardPoints.js';
 import { SECURITY_CONFIG } from './config/security.js';
 import { registerAdRoutes } from './routes/adRoutes.js';
 import { registerNotificationRoutes } from './routes/notificationRoutes.js';
@@ -4747,16 +4748,19 @@ app.get('/api/business/reward-redemptions', verifyJwtToken, async (req, res) => 
     if (businessError) return sendError(res, 500, 'تعذر التحقق من المتجر', businessError);
     if (!business) return res.status(403).json({ error: 'هذا المسار مخصص للحسابات التجارية' });
 
+    const requestedPage = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const pageSize = Math.min(50, Math.max(1, Number.parseInt(req.query.pageSize, 10) || 20));
+    const offset = (requestedPage - 1) * pageSize;
     const { data, count, error } = await supabase
       .from('reward_redemptions')
       .select('id, product_name, business_name, coins_used, original_price, offer_price, currency_symbol, status, redeemed_at', { count: 'exact' })
       .eq('business_id', business.id)
       .eq('status', 'redeemed')
       .order('redeemed_at', { ascending: false })
-      .limit(8);
+      .range(offset, offset + pageSize - 1);
     if (error) return sendError(res, 500, 'تعذر تحميل استبدالات المتجر', error);
 
-    return res.json({ ok: true, total_count: count || 0, redemptions: data || [] });
+    return res.json({ ok: true, total_count: count || 0, page: requestedPage, page_size: pageSize, redemptions: data || [] });
   } catch (error) {
     return sendError(res, 500, 'حدث خطأ أثناء تحميل استبدالات المتجر', error);
   }
@@ -4829,7 +4833,7 @@ app.post('/api/business/offers', verifyJwtToken, async (req, res) => {
 
     const {
       productName, description, category, originalPrice, offerPrice,
-      coinsRequired = 500, expiresAt, notes, imagePaths, storeLatitude, storeLongitude
+      expiresAt, notes, imagePaths, storeLatitude, storeLongitude
     } = req.body || {};
 
     let currencySymbol = 'EGP';
@@ -4860,7 +4864,6 @@ app.post('/api/business/offers', verifyJwtToken, async (req, res) => {
 
     const original = Number(originalPrice);
     const offer = Number(offerPrice);
-    const coins = Number(coinsRequired);
     const latitude = Number(storeLatitude);
     const longitude = Number(storeLongitude);
     const imageList = Array.isArray(imagePaths) ? imagePaths : [];
@@ -4873,9 +4876,6 @@ app.post('/api/business/offers', verifyJwtToken, async (req, res) => {
     }
     if (!Number.isFinite(original) || !Number.isFinite(offer) || original <= 0 || offer <= 0 || offer >= original) {
       return res.status(400).json({ error: 'يجب أن يكون سعر العرض أقل من السعر الأصلي' });
-    }
-    if (!Number.isInteger(coins) || coins < 0) {
-      return res.status(400).json({ error: 'تحقق من النقاط المطلوبة' });
     }
     if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
       return res.status(400).json({ error: 'يجب تحديد موقع المتجر لإرسال العرض' });
@@ -4890,6 +4890,10 @@ app.post('/api/business/offers', verifyJwtToken, async (req, res) => {
     }
 
     const discountPercent = Math.round(((original - offer) / original) * 100);
+    const coins = pointsForDiscountPercent(discountPercent);
+    if (!coins) {
+      return res.status(400).json({ error: 'يجب أن تكون نسبة الخصم 1% على الأقل' });
+    }
     const { data: createdOffer, error: offerError } = await supabase
       .from('business_offers')
       .insert({

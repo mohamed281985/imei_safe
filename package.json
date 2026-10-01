@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "check:i18n": "node scripts/check-translation-coverage.cjs",
+    "test:reward-points": "node --test shared/rewardPoints.test.js",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",

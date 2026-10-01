@@ -188,7 +188,7 @@ const ChallengeGame: React.FC<ChallengeGameProps> = ({ onComplete }) => {
 
       {/* تعليمات اللعبة */}
       <div className="text-center text-white-400 text-xl font-bold  p-3 bg-black/20 rounded-lg border border-imei-cyan/10">
-        {gameState === 'idle' && t('اضغط  عند 00 : 10  لتربح')}
+        {gameState === 'idle' && t('stop_at_target_time', { target: String(targetTime) })}
       
       </div>
     </div>

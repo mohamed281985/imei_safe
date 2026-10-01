@@ -1,0 +1,1 @@
+export function pointsForDiscountPercent(discountPercent: number): number;

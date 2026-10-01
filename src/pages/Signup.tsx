@@ -146,16 +146,18 @@ const Signup: React.FC = () => {
         }
       } as any);
 
+      const emailAlreadyRegistered = error?.code === 'user_already_exists'
+        || /already registered|already exists/i.test(error?.message || '')
+        || Boolean(data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0);
+
+      if (emailAlreadyRegistered) {
+        setSignupError(t('account_already_registered'));
+        return;
+      }
+
       // معالجة الأخطاء
       if (error) {
-        if (error.message?.includes('User already registered')) {
-          setSignupError('البريد مستخدم بالفعل');
-          setIsSubmitting(false);
-          return;
-        }
-
         setSignupError(error.message || t('signup_error'));
-        setIsSubmitting(false);
         return;
       }
 

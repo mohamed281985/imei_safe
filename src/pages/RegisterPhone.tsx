@@ -17,6 +17,7 @@ import PageAdvertisement from '@/components/advertisements/PageAdvertisement';
 import { supabase } from '@/lib/supabase';
 import { useScrollToTop } from '../hooks/useScrollToTop';
 import { useAuth } from '@/contexts/AuthContext';
+import NotificationPermissionPrompt from '@/components/NotificationPermissionPrompt';
 
 type ReviewStatus = 'تمت المراجعة' | 'بيانات خاطئة';
 type Status = 'approved' | 'rejected' | 'pending';
@@ -825,6 +826,7 @@ const RegisterPhone: React.FC = () => {
     <PageContainer >
       <div className="pb-3">
         <AppNavbar />
+        <NotificationPermissionPrompt />
         <PageAdvertisement pageName="registerphone" />
         <div className="flex items-center mb-3 pt-3" style={{ background: 'linear-gradient(to top, #053060 0%, #0a4d8c 100%)', padding: '0.3rem', borderRadius: '1rem', marginTop: '1rem' }}>
           <BackButton to="/dashboard" className="mr-4" />

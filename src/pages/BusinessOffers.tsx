@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ACCESSORY_CATEGORIES } from '@/constants/accessoryCategories';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useCountryCurrency } from '@/hooks/useCountryCurrency';
+import { pointsForDiscountPercent } from '../../shared/rewardPoints.js';
 
 type OfferImage = { id: string; image_path: string; main_image: boolean; sort_order: number };
 type Offer = {
@@ -31,14 +32,13 @@ type OfferForm = {
   category: string;
   originalPrice: string;
   offerPrice: string;
-  coinsRequired: string;
   expiresAt: string;
   notes: string;
 };
 
 const emptyForm: OfferForm = {
   productName: '', description: '', category: 'cases',
-  originalPrice: '', offerPrice: '', coinsRequired: '500', expiresAt: '', notes: '',
+  originalPrice: '', offerPrice: '', expiresAt: '', notes: '',
 };
 
 const statusLabels = {
@@ -90,6 +90,7 @@ const BusinessOffers: React.FC = () => {
       ? Math.round(((original - offer) / original) * 100)
       : 0;
   }, [form.originalPrice, form.offerPrice]);
+  const requiredPoints = pointsForDiscountPercent(discount);
 
   const loadOffers = async () => {
     setLoading(true);
@@ -117,7 +118,6 @@ const BusinessOffers: React.FC = () => {
   const continueToImages = () => {
     const originalPrice = Number(form.originalPrice);
     const offerPrice = Number(form.offerPrice);
-    const coinsRequired = Number(form.coinsRequired);
     const expirationTime = form.expiresAt ? new Date(`${form.expiresAt}T23:59:59`).getTime() : 0;
 
     if (!form.productName.trim() || !form.description.trim()) {
@@ -128,15 +128,14 @@ const BusinessOffers: React.FC = () => {
       setError('أدخل سعرًا أصليًا وسعر عرض صحيحًا، ويجب أن يكون سعر العرض أقل من الأصلي.');
       return;
     }
+    if (!discount || !requiredPoints) {
+      setError('يجب أن تكون نسبة الخصم 1% على الأقل.');
+      return;
+    }
     if (!form.expiresAt || !Number.isFinite(expirationTime) || expirationTime <= Date.now()) {
       setError('اختر تاريخ انتهاء في المستقبل.');
       return;
     }
-    if (!Number.isInteger(coinsRequired) || coinsRequired < 0) {
-      setError('أدخل عدد نقاط صحيحًا يساوي صفرًا أو أكثر.');
-      return;
-    }
-
     setError('');
     setStep(2);
   };
@@ -193,7 +192,7 @@ const BusinessOffers: React.FC = () => {
         ...form,
         originalPrice: Number(form.originalPrice),
         offerPrice: Number(form.offerPrice),
-        coinsRequired: Number(form.coinsRequired),
+        coinsRequired: requiredPoints,
         discountPercent: discount,
         imagePaths: uploadedPaths,
         ...storeLocation,
@@ -355,7 +354,7 @@ const BusinessOffers: React.FC = () => {
                 </div>
                 <label className="space-y-1.5"><span className="text-sm font-bold text-slate-700">السعر الأصلي ({currencySymbol}) <b className="text-rose-500">*</b></span><input type="number" min="0.01" step="0.01" value={form.originalPrice} onChange={(event) => updateForm('originalPrice', event.target.value)} className="w-full rounded-2xl border border-blue-300/50 bg-white px-4 py-3 text-base font-medium text-black shadow-[0_2px_10px_rgba(37,99,235,0.08)] outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-200/60" /></label>
                 <label className="space-y-1.5"><span className="text-sm font-bold text-slate-700">سعر العرض ({currencySymbol}) <b className="text-rose-500">*</b></span><input type="number" min="0.01" step="0.01" value={form.offerPrice} onChange={(event) => updateForm('offerPrice', event.target.value)} className="w-full rounded-2xl border border-blue-300/50 bg-white px-4 py-3 text-base font-medium text-black shadow-[0_2px_10px_rgba(37,99,235,0.08)] outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-200/60" /></label>
-                <label className="space-y-1.5"><span className="text-sm font-bold text-slate-700">النقاط المطلوبة</span><input type="number" min="0" step="1" value={form.coinsRequired} onChange={(event) => updateForm('coinsRequired', event.target.value)} className="w-full rounded-2xl border border-blue-300/50 bg-white px-4 py-3 text-base font-medium text-black shadow-[0_2px_10px_rgba(37,99,235,0.08)] outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-200/60" /></label>
+                <div className="space-y-1.5"><span className="block text-sm font-bold text-slate-700">النقاط المطلوبة</span><div aria-live="polite" className="flex min-h-12 items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-base font-bold text-amber-900"><Coins className="h-5 w-5 text-amber-600" />{new Intl.NumberFormat('en-US').format(requiredPoints)} نقطة</div></div>
               </div>
               <label className="block space-y-1.5"><span className="text-sm font-bold text-slate-700">تاريخ انتهاء العرض <b className="text-rose-500">*</b></span><input type="date" min={new Date().toISOString().slice(0, 10)} value={form.expiresAt} onChange={(event) => updateForm('expiresAt', event.target.value)} className="w-full rounded-2xl border border-blue-300/50 bg-white px-4 py-3 text-base font-medium text-black shadow-[0_2px_10px_rgba(37,99,235,0.08)] outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-200/60" /></label>
               <label className="block space-y-1.5"><span className="text-sm font-bold text-slate-700">ملاحظات إضافية</span><textarea value={form.notes} onChange={(event) => updateForm('notes', event.target.value)} rows={2} maxLength={500} className="w-full rounded-2xl border border-blue-300/50 bg-white px-4 py-3 text-base font-medium text-black shadow-[0_2px_10px_rgba(37,99,235,0.08)] outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-200/60" /></label>
@@ -403,7 +402,7 @@ const BusinessOffers: React.FC = () => {
                     </div>
                     <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-2 text-xs font-extrabold text-amber-800">
                       <Coins className="h-4 w-4 text-amber-600" aria-hidden="true" />
-                      {new Intl.NumberFormat('en-US').format(Number(form.coinsRequired))} Coins
+                      {new Intl.NumberFormat('en-US').format(requiredPoints)} Coins
                     </span>
                   </div>
                 </div>

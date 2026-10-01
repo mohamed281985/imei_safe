@@ -39,6 +39,25 @@
   z-index: 2;
 }
 
+.animate-float {
+  animation: floating-button 2.4s ease-in-out infinite;
+}
+
+@keyframes floating-button {
+  0%, 100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 -7px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-float {
+    animation: none;
+  }
+}
+
 @layer base {
   :root {
     --background: 222 50% 17%;

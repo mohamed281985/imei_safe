@@ -13,48 +13,51 @@ const CreateAdvertisement: React.FC = () => {
 
   return (
     <PageContainer>
-      <div className="container mx-auto rounded-[28px] border-2 border-blue-300 bg-gradient-to-br from-blue-100 via-white to-cyan-100 px-4 py-8 shadow-lg">
-        <div className="flex justify-between items-center mb-8 mt-[50px]">
-          <h1 className="text-2xl font-bold text-center" style={{ color: '#000000' }}>
-            {t('create_advertisement')}
-          </h1>
-          <Button onClick={() => navigate('/myads')} variant="outline" className="flex items-center gap-2 border-imei-cyan text-imei-cyan hover:bg-imei-cyan/10">
+      <main className="mx-auto w-full max-w-6xl px-3 pb-8 pt-4 sm:px-5 sm:pt-8">
+        <header className="mb-5 flex flex-wrap items-center justify-between gap-3 sm:mb-7">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-black text-slate-900 sm:text-3xl">{t('create_advertisement')}</h1>
+            <p className="mt-1 text-sm text-slate-600">{t('website_ad_description')}</p>
+          </div>
+          <Button onClick={() => navigate('/myads')} variant="outline" className="flex shrink-0 items-center gap-2 border-imei-cyan text-imei-cyan hover:bg-imei-cyan/10">
             <List className="w-4 h-4" />
             {t('my_ads')}
           </Button>
-        </div>
+        </header>
 
-        <div className="flex justify-center">
-          {/* Location-Based Ad Box */}
-          <div className="bg-white rounded-2xl p-6 border border-imei-cyan/30 hover:border-imei-cyan/40 transition-all duration-300 mt-[50px] shadow-lg hover:shadow-xl w-full max-w-md" style={{ background: 'rgba(255, 255, 255, 0.95)' }}>
-            <div className="flex items-center justify-center mb-4">
-              <MapPin className="w-10 h-10 text-imei-button-gradient-from/100" />
+        <div className="grid min-w-0 items-start gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)] lg:gap-8">
+          <figure className="m-0 flex min-w-0 items-center justify-center overflow-hidden rounded-2xl bg-white p-2 shadow-sm ring-1 ring-slate-200 sm:rounded-3xl sm:p-4">
+            <img
+              src="/ad-promo.jpeg"
+              alt="أعلن عن محلك في البانر العلوي للوصول إلى العملاء القريبين وزيادة مبيعاتك"
+              className="block h-auto max-h-[68svh] w-auto max-w-full rounded-xl object-contain sm:max-h-[74svh] sm:rounded-2xl"
+              fetchPriority="high"
+            />
+          </figure>
+
+          <section className="min-w-0 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 sm:rounded-3xl sm:p-7 lg:sticky lg:top-5">
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
+              <MapPin className="h-6 w-6" />
             </div>
-            <h2 className="text-2xl font-bold mb-4 text-center text-imei-button-gradient-from/100">
-              {t('website_commercial_ad')}
-            </h2>
-            <p className="text-gray-700 font-medium mb-8 text-center">
-              {t('website_ad_description')}
-            </p>
+            <h2 className="text-xl font-black text-slate-900 sm:text-2xl">{t('website_commercial_ad')}</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">{t('website_ad_description')}</p>
 
-            <div className="flex flex-col sm:flex-row justify-center gap-4">
-              <Button onClick={() => setIsDetailsModalOpen(true)} variant="outline" className="flex items-center border-imei-cyan text-imei-cyan hover:bg-imei-cyan hover:text-white transition-colors duration-300 w-full sm:w-auto justify-center">
-                <Info className="mr-2 h-4 w-4" />
-                {t('details')}
-              </Button>
+            <div className="mt-6 grid gap-3">
               <Button
                 onClick={() => navigate('/publish-ad')}
-                className="flex items-center bg-gradient-to-r from-imei-cyan to-blue-600 text-white hover:from-imei-cyan/90 hover:to-blue-700 transition-colors duration-300 w-full sm:w-auto justify-center"
-                style={{ background: 'linear-gradient(135deg, #f97316 0%, #fb923c 100%)' }}
+                className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-orange-500 text-base font-black text-white shadow-sm hover:bg-orange-600"
               >
-                <Share2 className="mr-2 h-4 w-4" />
-                {t('create_advertisement')}
+                <Share2 className="h-4 w-4" />
+                {t('create_ad_now')}
+              </Button>
+              <Button onClick={() => setIsDetailsModalOpen(true)} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-slate-900 bg-slate-900 text-white hover:border-slate-800 hover:bg-slate-800 hover:text-white">
+                <Info className="h-4 w-4" />
+                {t('details')}
               </Button>
             </div>
-          </div>
-
+          </section>
         </div>
-      </div>
+      </main>
 
       {/* Location Ad Details Modal */}
       <Dialog open={isDetailsModalOpen} onOpenChange={setIsDetailsModalOpen}>

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ArrowUpRight, Award, BadgeCheck, Building2, Camera, CheckCircle2, Clock3, Crown, Coins, Download, Gift, Megaphone, PackagePlus, QrCode, Store, Tags } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, Award, BadgeCheck, Building2, Camera, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Crown, Coins, Download, Gift, Megaphone, PackagePlus, QrCode, Store, Tags } from 'lucide-react';
 import QRCode from 'qrcode';
 import axiosInstance from '@/services/axiosInterceptor';
 import AppNavbar from '@/components/AppNavbar';
@@ -52,7 +52,7 @@ const actionItems = [
   },
   {
     title: 'إنشاء إعلان',
-    description: 'روّج لمتجرك ومنتجاتك',
+    description: 'إعلانات الصفحة الرئيسية',
     to: '/create-advertisement',
     Icon: Megaphone,
     iconClass: 'bg-blue-100 text-blue-700',
@@ -373,7 +373,7 @@ const MyStore: React.FC = () => {
           </div>
         </section>}
 
-        <section className="order-4 mt-5 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+        <button type="button" onClick={() => navigate('/my-store/redemptions')} aria-label="فتح سجل جميع استبدالات المتجر" className="order-4 mt-5 block w-full overflow-hidden rounded-2xl bg-white text-right shadow-sm ring-1 ring-slate-200 transition hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600">
           <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-4 sm:px-5">
             <div className="flex min-w-0 items-center gap-3">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700"><CheckCircle2 className="h-5 w-5" /></span>
@@ -396,7 +396,7 @@ const MyStore: React.FC = () => {
           ) : (
             <p className="px-4 py-5 text-center text-sm text-slate-500">لا توجد استبدالات مؤكدة حتى الآن.</p>
           )}
-        </section>
+        </button>
 
         <section className="order-5 mt-6">
           <div className="mb-3 flex items-end justify-between"><div><h2 className="text-lg font-black text-slate-900">إجراءات سريعة</h2><p className="mt-0.5 text-sm text-slate-500">إدارة البيع والتسويق والعروض</p></div></div>
@@ -409,6 +409,89 @@ const MyStore: React.FC = () => {
               </button>
             ))}
           </div>
+        </section>
+      </main>
+    </PageContainer>
+  );
+};
+
+export const StoreRedemptionsPage: React.FC = () => {
+  const navigate = useNavigate();
+  const { language } = useLanguage();
+  const [redemptions, setRedemptions] = useState<StoreRedemption[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const pageSize = 20;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+
+  useEffect(() => {
+    let active = true;
+    const loadPage = async () => {
+      setLoading(true);
+      setLoadError('');
+      try {
+        const { data } = await axiosInstance.get('/api/business/reward-redemptions', {
+          params: { page, pageSize },
+        });
+        if (!active) return;
+        setRedemptions(data?.redemptions || []);
+        setTotalCount(Number(data?.total_count) || 0);
+      } catch (error: any) {
+        if (active) setLoadError(error?.response?.data?.error || 'تعذر تحميل سجل الاستبدالات. حاول مرة أخرى.');
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    void loadPage();
+    return () => { active = false; };
+  }, [page]);
+
+  const locale = language === 'ar' ? 'ar-EG' : language === 'fr' ? 'fr-FR' : language === 'hi' ? 'hi-IN' : 'en-US';
+
+  return (
+    <PageContainer>
+      <AppNavbar />
+      <main className="mx-auto w-full max-w-3xl px-3 pb-8 pt-2 sm:px-5">
+        <header className="mb-4 flex items-center gap-3">
+          <button type="button" onClick={() => navigate('/my-store')} className="rounded-full bg-white p-2 text-slate-700 shadow-sm ring-1 ring-slate-200" aria-label="العودة إلى متجري"><ArrowLeft className="h-5 w-5" /></button>
+          <div><h1 className="text-xl font-black text-slate-900">سجل استبدالات المتجر</h1><p className="text-sm text-slate-500">جميع عمليات الاستبدال المؤكدة</p></div>
+        </header>
+
+        <section className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-4 sm:px-5">
+            <h2 className="font-black text-slate-900">العمليات</h2>
+            {!loading && <span className="rounded-full bg-emerald-50 px-3 py-1 text-sm font-black tabular-nums text-emerald-800">{totalCount}</span>}
+          </div>
+          {loading ? (
+            <p className="p-6 text-center text-sm text-slate-500">جارٍ تحميل سجل الاستبدالات...</p>
+          ) : loadError ? (
+            <p role="alert" className="p-6 text-center text-sm font-bold text-rose-700">{loadError}</p>
+          ) : redemptions.length === 0 ? (
+            <p className="p-6 text-center text-sm text-slate-500">لا توجد عمليات استبدال حتى الآن.</p>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {redemptions.map((item) => (
+                <article key={item.id} className="flex min-w-0 items-center justify-between gap-3 px-4 py-4 sm:px-5">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-black text-slate-900">{item.product_name}</p>
+                    <p className="mt-1 truncate text-sm text-slate-600">{item.business_name}</p>
+                    <p className="mt-1 flex items-center gap-1 text-xs text-slate-500"><Clock3 className="h-3.5 w-3.5 shrink-0" />{new Date(item.redeemed_at).toLocaleString(locale)}</p>
+                  </div>
+                  <div className="shrink-0 text-left">
+                    <span className="inline-flex items-center gap-1 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs font-black text-amber-900"><Coins className="h-3.5 w-3.5 text-amber-600" />{new Intl.NumberFormat('en-US').format(item.coins_used)}</span>
+                    <p className="mt-1 text-left text-[11px] font-bold text-emerald-700">تم الاستبدال</p>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+          {!loading && totalCount > pageSize && <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3 sm:px-5">
+            <button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page <= 1} className="inline-flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40"><ChevronRight className="h-4 w-4" />السابق</button>
+            <span className="text-xs font-bold text-slate-500">صفحة {page} من {totalPages}</span>
+            <button type="button" onClick={() => setPage((current) => Math.min(totalPages, current + 1))} disabled={page >= totalPages} className="inline-flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40">التالي<ChevronLeft className="h-4 w-4" /></button>
+          </div>}
         </section>
       </main>
     </PageContainer>

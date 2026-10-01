@@ -21,6 +21,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import CountryCodeSelector from '../components/CountryCodeSelector';
 import axiosInstance from '@/services/axiosInterceptor';
+import NotificationPermissionPrompt from '@/components/NotificationPermissionPrompt';
 
 // تعريف واجهة بيانات المستخدم الموسعة
 interface ExtendedUser {
@@ -1156,6 +1157,7 @@ const ReportPhone: React.FC = () => {
     <PageContainer>
       <div className="pb-3">
         <AppNavbar />
+        <NotificationPermissionPrompt />
         <PageAdvertisement pageName="reportphone" />
 
         <div className="flex items-center mb-6 pt-3" style={{ background: 'linear-gradient(to top, #053060 0%, #0a4d8c 100%)', padding: '0.3rem', borderRadius: '1rem', marginTop: '1rem' }}>

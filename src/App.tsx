@@ -63,6 +63,7 @@ const BusinessTransferSell = lazy(() => import('@/pages/BusinessTransfersell'));
 const PhonesForSale = lazy(() => import('@/pages/PhonesForSale'));
 const SellerDashboard = lazy(() => import('@/pages/SellerDashboard'));
 const MyStore = lazy(() => import('@/pages/MyStore'));
+const StoreRedemptionsPage = lazy(() => import('@/pages/MyStore').then((module) => ({ default: module.StoreRedemptionsPage })));
 const BusinessOffers = lazy(() => import('@/pages/BusinessOffers'));
 const AddPhoneForm = lazy(() => import('@/pages/AddPhoneForm'));
 const AddAccessoriesForm = lazy(() => import('@/pages/AddaccessoriesForm'));
@@ -348,9 +349,12 @@ const AppCore = () => {
     };
 
     setupPushNotifications();
+    const handlePermissionGranted = () => { void setupPushNotifications(); };
+    window.addEventListener('imei-safe-notifications-permission-granted', handlePermissionGranted);
 
     // 3. وظيفة التنظيف عند إلغاء تحميل المكون
     return () => {
+      window.removeEventListener('imei-safe-notifications-permission-granted', handlePermissionGranted);
       console.log('Cleaning up push notification listeners.');
       if (!(Capacitor.getPlatform && Capacitor.getPlatform() === 'web')) {
         try {
@@ -402,6 +406,7 @@ const AppCore = () => {
             <Route path="/create-advertisement" element={<AuthGuard><CreateAdvertisement /></AuthGuard>} />
             <Route path="/business-offers" element={<AuthGuard><BusinessOffers /></AuthGuard>} />
             <Route path="/my-store" element={<AuthGuard><MyStore /></AuthGuard>} />
+            <Route path="/my-store/redemptions" element={<AuthGuard><StoreRedemptionsPage /></AuthGuard>} />
             <Route path="/publish-ad" element={<AuthGuard><PublishAd /></AuthGuard>} />
             <Route path="/special-ad" element={<AuthGuard><SpecialAd /></AuthGuard>} />
             <Route path="/webview" element={<AuthGuard><WebViewPage /></AuthGuard>} />
