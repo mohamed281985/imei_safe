@@ -2773,7 +2773,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       const id = req.params.id;
       if (!id) return res.status(400).json({ error: 'missing id' });
 
-      let { status, role } = req.body || {};
+      let { status, role, reason } = req.body || {};
       const payload = {};
       if (typeof role !== 'undefined' && role !== null && String(role).trim() !== '') payload.role = role;
 
@@ -2784,6 +2784,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
         let mapped = null;
         if (activeSet.has(s)) mapped = 'active';
         else if (blockedSet.has(s)) mapped = 'blocked';
+        else if (s === 'rejected' || s === 'مرفوض') mapped = 'rejected';
         if (!mapped) return res.status(400).json({ error: 'invalid status value' });
         payload.status = mapped;
       }
@@ -2792,7 +2793,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
 
       const { data: existingUser, error: existingUserErr } = await supabase
         .from('users')
-        .select('id, role, status')
+        .select('id, role, status, language, fcm_token')
         .eq('id', id)
         .maybeSingle();
       if (existingUserErr) return res.status(500).json({ error: existingUserErr.message || 'failed to fetch current user' });
@@ -2832,7 +2833,54 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
         console.warn('/admin/users patch: audit failed', e);
       }
 
-      return res.json({ ok: true, user: data });
+      let notificationCreated = false;
+      if (typeof payload.status !== 'undefined' && oldValues.status !== payload.status) {
+        const isArabic = String(existingUser.language || '').toLowerCase().startsWith('ar');
+        const notificationText = {
+          active: {
+            title: isArabic ? 'تم قبول الحساب' : 'Account approved',
+            body: isArabic ? 'تمت مراجعة حسابك وقبوله بنجاح.' : 'Your account has been reviewed and approved.'
+          },
+          blocked: {
+            title: isArabic ? 'تم حظر الحساب' : 'Account blocked',
+            body: isArabic ? 'تم حظر حسابك. يرجى التواصل مع الدعم لمزيد من المعلومات.' : 'Your account has been blocked. Please contact support for more information.'
+          },
+          rejected: {
+            title: isArabic ? 'تم رفض طلب الحساب' : 'Account request rejected',
+            body: isArabic
+              ? `تم رفض طلب إنشاء الحساب بعد المراجعة. السبب: ${String(reason || 'لم يتم تحديد سبب').trim()}`
+              : `Your account request was rejected after review. Reason: ${String(reason || 'No reason provided').trim()}`
+          }
+        }[payload.status];
+
+        const { error: notificationError } = await supabase.from('notifications').insert({
+          user_id: id,
+          title: notificationText.title,
+          body: notificationText.body,
+          type: `user_${payload.status}`,
+          is_read: false,
+          created_at: new Date().toISOString()
+        });
+        if (notificationError) {
+          console.warn('/admin/users patch: notification insert failed', notificationError);
+        } else {
+          notificationCreated = true;
+        }
+
+        if (existingUser.fcm_token) {
+          try {
+            await sendFCMNotificationV1({
+              token: existingUser.fcm_token,
+              title: notificationText.title,
+              body: notificationText.body
+            });
+          } catch (notificationErr) {
+            console.error('/admin/users patch: FCM notification failed', notificationErr);
+          }
+        }
+      }
+
+      return res.json({ ok: true, user: data, notificationCreated });
     } catch (err) {
       console.error('/admin/users patch error', err);
       return res.status(500).json({ error: 'Server error' });
