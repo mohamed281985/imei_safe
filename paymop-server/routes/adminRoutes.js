@@ -2691,7 +2691,35 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       const limit = Math.min(Number(req.query.limit || 200), 1000);
       const { data, error } = await supabase.from('users').select('*').order('id', { ascending: false }).limit(limit);
       if (error) throw error;
-      const out = (data || []).map(u => ({ id: u.id, ...decryptDeep(u) }));
+
+      const users = data || [];
+      const rejectedUserIds = users.filter(user => user.status === 'rejected').map(user => user.id);
+      const rejectionReasonByUser = new Map();
+      if (rejectedUserIds.length) {
+        const { data: rejectionNotifications, error: notificationError } = await supabase
+          .from('notifications')
+          .select('user_id, body, created_at')
+          .in('user_id', rejectedUserIds)
+          .eq('type', 'user_rejected')
+          .order('created_at', { ascending: false });
+
+        if (notificationError) {
+          console.warn('/admin/users: failed to load rejection reasons', notificationError);
+        } else {
+          for (const notification of rejectionNotifications || []) {
+            if (rejectionReasonByUser.has(notification.user_id)) continue;
+            const body = String(notification.body || '').trim();
+            const reasonMatch = body.match(/(?:Reason:\s*|السبب:\s*)([\s\S]*)$/i);
+            rejectionReasonByUser.set(notification.user_id, reasonMatch?.[1]?.trim() || body);
+          }
+        }
+      }
+
+      const out = users.map(u => ({
+        id: u.id,
+        ...decryptDeep(u),
+        rejection_reason: rejectionReasonByUser.get(u.id) || ''
+      }));
 
       return res.json({ ok: true, users: out });
     } catch (err) {
