@@ -1,0 +1,956 @@
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
+import { useLanguage } from '../contexts/LanguageContext';
+import { format } from 'date-fns';
+import { processArabicTextWithEncoding as processArabicText, loadArabicFontSafe as loadArabicFont } from '../utils/pdf/arabic-final-solution';
+import ImageViewer from '@/components/ImageViewer';
+import { jsPDF } from 'jspdf';
+import { Capacitor } from '@capacitor/core';
+import { Filesystem, Directory } from '@capacitor/filesystem';
+import axiosInstance from '@/services/axiosInterceptor';
+import { Share } from '@capacitor/share';
+import autoTable from 'jspdf-autotable';
+import bidiFactory from 'bidi-js';
+import * as ArabicReshaper from 'arabic-persian-reshaper';
+import { Input } from '@/components/ui/input';
+import { useToast } from '@/hooks/use-toast';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Search, ArrowLeft, Upload, AlertCircle, History, FileDown } from 'lucide-react';
+import { mockPhoneReports } from '../services/mockData';
+import PageContainer from '../components/PageContainer';
+import AppNavbar from '../components/AppNavbar';
+import BackButton from '../components/BackButton';
+import AdsOfferSlider from '@/components/AdsOfferSlider';
+
+interface TransferRecord {
+  id: string;
+  date: string;
+  imei: string;
+  phone_type: string;
+  seller_name: string;
+  seller_phone: string;
+  seller_id_last6?: string;
+  seller_type?: string;
+  buyer_name: string;
+  buyer_phone: string;
+  buyer_id_last6?: string;
+  buyer_type?: string;
+  seller_id_image?: string;
+  seller_selfie?: string;
+  buyer_id_image?: string;
+  buyer_selfie?: string;
+  receipt_image?: string;
+  phone_image?: string;
+  [key: string]: any;
+}
+
+const maskName = (name: string): string => {
+  if (!name) return '';
+  const words = name.trim().split(/\s+/);
+  const maskedWords = words.map(word => {
+    if (word.length <= 1) return word;
+    return '******' + word.charAt(0);
+  });
+  return maskedWords.join(' ');
+};
+
+const maskPhone = (phone: string): string => {
+  if (!phone) return '';
+  const cleanPhone = phone.replace(/\D/g, '');
+  if (cleanPhone.length <= 2) return cleanPhone;
+  const lastTwoDigits = cleanPhone.slice(-2);
+  return lastTwoDigits + '*'.repeat(Math.min(cleanPhone.length - 2, 8));
+};
+
+const maskIdNumber = (idNumber: string): string => {
+  if (!idNumber) return '';
+  const cleanId = idNumber.replace(/\D/g, '');
+  if (cleanId.length <= 4) return cleanId;
+  const lastFourDigits = cleanId.slice(-4);
+  return lastFourDigits + '*'.repeat(Math.min(cleanId.length - 4, 6));
+};
+
+const isSellerBusiness = (record: TransferRecord): boolean => {
+  try {
+    if (record.seller_type === 'business' || record.seller_type === 'store') return true;
+    if (record.seller_id_last6 === null || record.seller_id_last6 === undefined ||
+      record.seller_id_last6 === "" || record.seller_id_last6 === "متجر") return true;
+    return false;
+  } catch (error) {
+    console.debug('خطأ في التحقق من نوع البائع:', error);
+    return false;
+  }
+};
+
+const isBuyerBusiness = (record: TransferRecord): boolean => {
+  try {
+    if (record.buyer_type === 'business' || record.buyer_type === 'store') return true;
+    if (record.buyer_id_last6 === null || record.buyer_id_last6 === undefined ||
+      record.buyer_id_last6 === "" || record.buyer_id_last6 === "متجر") return true;
+    return false;
+  } catch (error) {
+    console.debug('خطأ في التحقق من نوع المشتري:', error);
+    return false;
+  }
+};
+
+const TransferHistory: React.FC = () => {
+  const { t } = useLanguage();
+  const { toast } = useToast();
+  const [records, setRecords] = useState<TransferRecord[]>([]);
+  const [phoneImage, setPhoneImage] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isPhoneReported, setIsPhoneReported] = useState<boolean | null>(null);
+  const [existingPhoneImage, setExistingPhoneImage] = useState<string | null>(null);
+  const navigate = useNavigate();
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [showOwnerPasswordModal, setShowOwnerPasswordModal] = useState(false);
+  const [ownerPassword, setOwnerPassword] = useState('');
+  const [ownerCardLast6, setOwnerCardLast6] = useState('');
+  const [isVerifyingOwnerPassword, setIsVerifyingOwnerPassword] = useState(false);
+  const [hasReachedSearchLimit, setHasReachedSearchLimit] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [hasReachedPrintLimit, setHasReachedPrintLimit] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://imei-safe.me';
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      setUserId(user?.id || null);
+    };
+    fetchUser();
+  }, []);
+
+  // Helper to resolve storage paths into signed URLs via server
+  const resolveImageUrl = async (path: string | null | undefined, bucket?: string) => {
+    if (!path || typeof path !== 'string') return '';
+    const cleanPath = path.trim();
+    if (cleanPath.startsWith('http') || cleanPath.startsWith('data:') || cleanPath.startsWith('blob:')) return cleanPath;
+
+    try {
+      const reqBucket = bucket || (cleanPath.startsWith('receipts/') ? 'transfer-assets' : 'registerphone');
+      const resp = await axiosInstance.get('/api/signed-url', { params: { bucket: reqBucket, path: cleanPath, expiresIn: 300 } });
+      if (resp && resp.status === 200 && resp.data && resp.data.signedUrl) return resp.data.signedUrl;
+    } catch (e) {
+      console.debug('resolveImageUrl signed-url error', e);
+    }
+
+    // ✅ SECURITY: لا يوجد fallback إلى getPublicUrl هنا عمداً. الـ bucket "registerphone"
+    // (وكذلك "transfer-assets") يحتوي صور هواتف وإيصالات شراء خاصة بالمستخدمين، وقد تكون
+    // غير عامة (private) في إعدادات Supabase Storage. استخدام getPublicUrl كـ fallback كان
+    // يمكن أن يُنشئ رابطًا يُتيح لأي شخص يحصل عليه الوصول لصورة مستخدم آخر بدون أي مصادقة،
+    // متجاوزًا تمامًا حماية /api/signed-url الموثّقة (verifyJwtToken). عند فشل جلب الرابط
+    // الموقّع، نُعيد سلسلة فارغة بدلاً من ذلك؛ الاستدعاء الخارجي يتعامل مع هذه الحالة بالفعل.
+    return '';
+  };
+
+  // تم إزالة هذا useEffect لأننا نتحقق من الحد مباشرة في الدوال
+
+  const checkTransferLimit = async (userId: string) => {
+    try {
+      const response = await axiosInstance.post('/api/check-limit', { 
+        type: 'search_history',
+        consumeBonusOnLimit: false
+      });
+
+      const result = response.data;
+
+      if (!result.allowed) {
+        toast({
+          title: t('alert'),
+          description: t('search_limit_exceeded_plan'),
+          variant: 'destructive'
+        });
+        setHasReachedSearchLimit(true);
+        return false;
+      }
+
+      if (result.isLastUsage) {
+        toast({
+          title: t('alert'),
+          description: t('last_transfer_allowed'),
+          variant: 'default'
+        });
+      }
+
+      setHasReachedSearchLimit(false);
+      return true;
+    } catch (error) {
+      toast({
+        title: 'خطأ',
+        description: 'حدث خطأ في التحقق من حد البحث',
+        variant: 'destructive'
+      });
+      return false;
+    }
+  };
+
+  const checkPrintLimit = async (userId: string) => {
+    try {
+      const response = await axiosInstance.post('/api/check-limit', { 
+        type: 'print_history',
+        consumeBonusOnLimit: false
+      });
+
+      const result = response.data;
+
+      if (!result.allowed) {
+        toast({
+          title: t('alert'),
+          description: t('print_limit_exceeded'),
+          variant: 'destructive'
+        });
+        setHasReachedPrintLimit(true);
+        return false;
+      }
+
+      if (result.isLastUsage) {
+        toast({
+          title: t('alert'),
+          description: t('last_print_allowed'),
+          variant: 'default'
+        });
+      }
+
+      setHasReachedPrintLimit(false);
+      return true;
+    } catch (error) {
+      toast({
+        title: 'خطأ',
+        description: 'حدث خطأ في التحقق من حد الطباعة',
+        variant: 'destructive'
+      });
+      return false;
+    }
+  };
+
+  const updateSearchUsage = async (userId: string) => {
+    try {
+      await axiosInstance.post('/api/increment-usage', { 
+        type: 'search_history' 
+      });
+    } catch (error) {
+      console.debug('خطأ في تحديث استخدام البحث:', error);
+      throw error;
+    }
+  };
+
+  const updatePrintUsage = async (userId: string) => {
+    try {
+      await axiosInstance.post('/api/increment-usage', { 
+        type: 'print_history' 
+      });
+    } catch (error) {
+      console.debug('خطأ في تحديث استخدام الطباعة:', error);
+      throw error;
+    }
+  };
+
+  // لاحقًا: لا نجلب سجلات النقل عند تحميل الصفحة تلقائياً لأن ذلك يتطلب `imei`
+  // السجلات تُجلب عندما يضغط المستخدم زر البحث ويُدخل IMEI.
+
+  const findPhoneImage = async (imei: string): Promise<string | null> => {
+    const { data: transferData, error: transferError } = await supabase
+      .from('transfer_records')
+      .select('phone_image')
+      .eq('imei', imei)
+      .maybeSingle();
+
+    if (transferError) console.debug('Error finding phone image in transfers:', transferError);
+    if (transferData?.phone_image) {
+      return transferData.phone_image;
+    }
+
+    const { data: reportData, error: reportError } = await supabase
+      .from('phone_reports')
+      .select('phone_image_url')
+      .eq('imei', imei)
+      .maybeSingle();
+
+    if (reportError) console.debug('Error finding phone image in reports:', reportError);
+    if (reportData?.phone_image_url) {
+      return reportData.phone_image_url;
+    }
+
+    const mockReport = mockPhoneReports.find(report => report.imei === imei);
+    if (mockReport?.phoneImage) {
+      return mockReport.phoneImage;
+    }
+
+    return null;
+  };
+
+  const checkPhoneStatus = async (imei: string): Promise<boolean> => {
+    const { data, error, count } = await supabase
+      .from('phone_reports')
+      .select('status', { count: 'exact' })
+      .eq('imei', imei)
+      .eq('status', 'active');
+
+    if (error) {
+      console.debug('Error checking phone status:', error);
+      return false;
+    }
+
+    return (count ?? 0) > 0;
+  };
+
+  const computeImeiHash = async (imei: string) => {
+    const normalized = String(imei || '').replace(/\D/g, '');
+    if (!normalized) return '';
+    const buffer = new TextEncoder().encode(normalized);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+  };
+
+  const checkCurrentUserOwnsImei = async (imei: string): Promise<boolean> => {
+    if (!userId) return false;
+    try {
+      const imeiHash = await computeImeiHash(imei);
+      if (!imeiHash) return false;
+      const { data, error } = await supabase
+        .from('registered_phones')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('imei_hash', imeiHash)
+        .maybeSingle();
+
+      if (error) {
+        console.debug('Error checking ownership for current user:', error);
+        return false;
+      }
+
+      return !!data;
+    } catch (error) {
+      console.debug('Error computing IMEI ownership:', error);
+      return false;
+    }
+  };
+
+  const checkImeiRegisteredInSystem = async (imei: string): Promise<boolean> => {
+    try {
+      const imeiHash = await computeImeiHash(imei);
+      if (!imeiHash) return false;
+      const { data, error } = await supabase
+        .from('registered_phones')
+        .select('id')
+        .eq('imei_hash', imeiHash)
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        console.debug('Error checking IMEI registration:', error);
+        return false;
+      }
+
+      return !!data;
+    } catch (error) {
+      console.debug('Error checking IMEI registration:', error);
+      return false;
+    }
+  };
+
+  const fetchPhoneDetails = async (imei: string) => {
+    setIsLoading(true);
+    if (userId) {
+  const canSearch = await checkTransferLimit(userId);
+      if (!canSearch) {
+        setIsLoading(false);
+        return [];
+      }
+    }
+    try {
+      const resp = await axiosInstance.post('/api/transfer-records', { 
+        imei 
+      });
+      const json = resp.data;
+
+      const transferRecords = (json?.data || []) as TransferRecord[];
+      if (transferRecords.length === 0) {
+        toast({
+          title: 'لا توجد سجلات',
+          description: `لم يتم العثور على سجلات نقل ملكية للهاتف برقم IMEI: ${imei}`,
+          variant: 'default'
+        });
+      }
+      setRecords(transferRecords);
+      if (transferRecords.length > 0) {
+        setPhoneImage(transferRecords[0].phone_image || null);
+      } else {
+        setPhoneImage(null);
+      }
+
+      const isReported = await checkPhoneStatus(imei);
+      setIsPhoneReported(isReported);
+      if (userId) {
+        await updateSearchUsage(userId);
+      }
+      setExistingPhoneImage(null);
+      return transferRecords as TransferRecord[];
+    } catch (error) {
+      console.debug('Error fetching phone details:', error);
+      setRecords([]);
+      setPhoneImage(null);
+      return [];
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.replace(/\D/g, '');
+    if (value.length <= 15) {
+      setSearchTerm(value);
+    }
+    // عند تغيير الرقم فقط يتم تحديث searchTerm ولا يتم البحث أو عرض السجلات
+    setExistingPhoneImage(null);
+    setIsPhoneReported(null);
+    setRecords([]);
+  };
+
+  const handleSearchButtonClick = async () => {
+    if (searchTerm.length !== 15) {
+      toast({ title: 'خطأ', description: 'يرجى إدخال رقم IMEI صحيح', variant: 'destructive' });
+      return;
+    }
+
+    if (userId) {
+      const isCurrentOwner = await checkCurrentUserOwnsImei(searchTerm);
+      if (isCurrentOwner) {
+        await fetchPhoneDetails(searchTerm);
+        return;
+      }
+    }
+
+    const isRegistered = await checkImeiRegisteredInSystem(searchTerm);
+    if (!isRegistered) {
+      toast({ title: 'غير مسجل', description: 'هذا الهاتف غير مسجل لدي نظامنا', variant: 'destructive' });
+      return;
+    }
+
+    // المستخدم الحالي ليس مالك الهاتف، لذلك نطلب التحقق بكلمة المرور + البطاقة
+    setShowOwnerPasswordModal(true);
+  };
+
+  const verifyOwnerPasswordAndFetch = async () => {
+    if (!searchTerm || searchTerm.length !== 15) {
+      toast({ title: 'خطأ', description: 'IMEI غير صالح', variant: 'destructive' });
+      return;
+    }
+    if (!ownerPassword) {
+      toast({ title: 'خطأ', description: 'يرجى إدخال كلمة المرور', variant: 'destructive' });
+      return;
+    }
+    if (!ownerCardLast6 || ownerCardLast6.length !== 6 || !/^\d+$/.test(ownerCardLast6)) {
+      toast({ title: 'خطأ', description: 'يرجى إدخال آخر 6 أرقام من البطاقة (أرقام فقط)', variant: 'destructive' });
+      return;
+    }
+
+    setIsVerifyingOwnerPassword(true);
+    try {
+      const cleanedImei = String(searchTerm || '').replace(/\D/g, '').trim();
+      const resp = await axiosInstance.post('/api/transfer-records/verify-owner', {
+        imei: cleanedImei,
+        ownerPassword,
+        cardLast6: ownerCardLast6
+      });
+
+      const json = resp.data;
+      if (json && json.success) {
+        const transferRecords = (json.data || []) as TransferRecord[];
+
+        // لا نخصم بونص البحث إلا بعد ظهور نتائج فعلية في السجل
+        if (userId && transferRecords.length > 0) {
+          const limitCheckResp = await axiosInstance.post('/api/check-limit', {
+            type: 'search_history',
+            consumeBonusOnLimit: false
+          });
+          const limitCheck = limitCheckResp.data;
+
+          if (!limitCheck.allowed) {
+            const consumeBonusResp = await axiosInstance.post('/api/check-limit', {
+              type: 'search_history',
+              consumeBonusOnLimit: true
+            });
+            const consumeBonusResult = consumeBonusResp.data;
+
+            if (!consumeBonusResult.allowed) {
+              toast({
+                title: t('alert'),
+                description: t('search_limit_exceeded_plan'),
+                variant: 'destructive'
+              });
+              setHasReachedSearchLimit(true);
+              setShowUpgradeModal(true);
+              return;
+            }
+
+            if (consumeBonusResult?.usedBonus) {
+              toast({
+                title: t('alert'),
+                description: `تم خصم ${consumeBonusResult.deductedAmount} من البونص ويمكنك المتابعة`,
+                variant: 'default'
+              });
+            }
+          } else if (limitCheck.isLastUsage) {
+            toast({
+              title: t('alert'),
+              description: t('last_transfer_allowed'),
+              variant: 'default'
+            });
+          }
+        }
+
+        // Resolve image paths to signed URLs
+        for (const rec of transferRecords) {
+          try {
+            rec.phone_image = (await resolveImageUrl(rec.phone_image)) || rec.phone_image || null;
+          } catch (e) {
+            rec.phone_image = rec.phone_image || null;
+          }
+          try {
+            rec.receipt_image = (await resolveImageUrl(rec.receipt_image)) || rec.receipt_image || null;
+          } catch (e) {
+            rec.receipt_image = rec.receipt_image || null;
+          }
+        }
+
+        setRecords(transferRecords);
+        setPhoneImage(transferRecords.length > 0 ? transferRecords[0].phone_image || null : null);
+        setShowOwnerPasswordModal(false);
+        setOwnerPassword('');
+        setOwnerCardLast6('');
+
+        // عدّل استخدام البحث إذا كان المستخدم مسجلاً وظهرت نتائج فعلية
+        if (userId && transferRecords.length > 0) await updateSearchUsage(userId);
+      } else {
+        // handle unexpected shape
+        toast({ title: 'خطأ', description: (json && json.error) ? json.error : 'فشل استرجاع السجلات', variant: 'destructive' });
+      }
+    } catch (err: any) {
+      if (err.response?.status === 401) {
+        toast({ title: 'خطأ في المصادقة', description: 'كلمة مرور المالك غير صحيحة', variant: 'destructive' });
+      } else if (err.response?.status === 404) {
+        toast({ title: 'غير موجود', description: 'لم يتم العثور على مالك هذا الـ IMEI', variant: 'destructive' });
+      } else {
+        console.debug('verifyOwnerPasswordAndFetch error:', err);
+        toast({ title: 'خطأ', description: 'حدث خطأ أثناء الاستعلام', variant: 'destructive' });
+      }
+    } finally {
+      setIsVerifyingOwnerPassword(false);
+    }
+  };
+
+  const handlePrintButtonClick = async () => {
+    if (userId) {
+      // استخدم checkPrintLimit فقط، المنطق الموحد
+      const canProceed = await checkPrintLimit(userId);
+      if (!canProceed) {
+        setShowUpgradeModal(true);
+        return;
+      }
+      await generatePdf(records, searchTerm, phoneImage);
+      await updatePrintUsage(userId);
+    } else {
+      toast({ title: 'خطأ', description: 'يرجى تسجيل الدخول أولاً', variant: 'destructive' });
+    }
+  };
+
+  const filteredRecords = records.filter(record => {
+    // لا يتم تصفية السجلات أثناء الكتابة، بل فقط بعد الضغط على زر البحث
+    return true;
+  });
+
+  const generatePdf = async (recordsToPrint: TransferRecord[], imei: string, imageUrl: string | null) => {
+    if (!recordsToPrint || recordsToPrint.length === 0) {
+      toast({
+        title: t('error'),
+        description: t('no_records_to_print'),
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      const doc = new jsPDF();
+      let fontForTable = 'helvetica';
+
+      try {
+        const fontLoaded = await loadArabicFont(doc);
+        if (!fontLoaded) throw new Error("Font loading failed");
+        fontForTable = 'Amiri';
+      } catch (fontError: any) {
+        console.debug("Could not load Arabic font. Arabic text might not render correctly.", fontError);
+        doc.setFont('helvetica');
+        toast({
+          title: t('font_load_error_title'),
+          description: t('font_load_error_desc'),
+          variant: 'default',
+        });
+      }
+
+      try {
+        const logoUrl = '/images/imei-logo.png';
+        const logoResponse = await fetch(logoUrl);
+        if (!logoResponse.ok) throw new Error('Logo file not found');
+        const logoBlob = await logoResponse.blob();
+        const logoDataUrl = await new Promise<string>(resolve => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.readAsDataURL(logoBlob);
+        });
+        doc.addImage(logoDataUrl, 'PNG', 14, 15, 40, 20);
+      } catch (logoError) {
+        console.debug("Could not load logo for PDF:", logoError);
+      }
+
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const margin = 14;
+      const xPosRight = pageWidth - margin;
+
+      doc.setFontSize(20);
+      doc.text(processArabicText(t('transfer_history')), xPosRight, 22, { align: 'right' });
+
+      doc.setFontSize(16);
+      doc.text(processArabicText(`${t('imei')}: ${imei}`), xPosRight, 32, { align: 'right' });
+
+      if (imageUrl) {
+        try {
+          const imgResponse = await fetch(imageUrl);
+          const blob = await imgResponse.blob();
+          const dataUrl = await new Promise<string>(resolve => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.readAsDataURL(blob);
+          });
+          const imageWidth = 80;
+          const xOffset = (doc.internal.pageSize.getWidth() - imageWidth) / 2;
+          doc.addImage(dataUrl, 'JPEG', xOffset, 45, imageWidth, 60);
+        } catch (imgError) {
+          console.debug("Error adding image to PDF:", imgError);
+        }
+      }
+
+      const headers = [
+        [
+          processArabicText(t('date')),
+          processArabicText(t('seller')),
+          processArabicText(t('seller_id') || 'رقم بطاقة البائع'),
+          processArabicText(t('buyer')),
+          processArabicText(t('buyer_id') || 'رقم بطاقة المشتري')
+        ]
+      ];
+
+      const body = recordsToPrint.map(record => {
+        const dateObj = new Date(record.date);
+        const formattedDate = record.date && !isNaN(dateObj.getTime())
+          ? format(dateObj, 'dd/MM/yyyy HH:mm')
+          : t('not_available');
+
+        const formatNamePDF = (name: string): string => {
+          if (!name) return '';
+          const words = name.trim().split(/\s+/);
+          const formattedWords = words.map(word => {
+            if (word.length <= 1) return word;
+            return word.charAt(0) + '*'.repeat(6);
+          });
+          return formattedWords.join(' ');
+        };
+
+        const sellerName = formatNamePDF(record.seller_name || t('unknown_seller'));
+        const buyerName = record.buyer_name ? formatNamePDF(record.buyer_name) : '';
+
+        const formatPhonePDF = (phone: string): string => {
+          if (!phone) return '';
+          const cleanPhone = phone.replace(/\D/g, '');
+          if (cleanPhone.length <= 2) return cleanPhone;
+          return '*'.repeat(cleanPhone.length - 2) + cleanPhone.slice(-2);
+        };
+
+        const formatIdPDF = (id: string): string => {
+          if (!id) return 'غير متوفر';
+          const cleanId = id.replace(/\D/g, '');
+          if (cleanId.length <= 4) return cleanId;
+          return '*'.repeat(cleanId.length - 4) + cleanId.slice(-4);
+        };
+
+        const sellerPhone = formatPhonePDF(record.seller_phone || t('no_phone'));
+        const buyerPhone = formatPhonePDF(record.buyer_phone || t('no_phone'));
+
+        const sellerIdInfo = isSellerBusiness(record) ? 'متجر' :
+          (record.seller_id_last6 ? formatIdPDF(record.seller_id_last6) : 'غير متوفر');
+
+        const buyerIdInfo = isBuyerBusiness(record) ? 'متجر' :
+          (record.buyer_id_last6 ? formatIdPDF(record.buyer_id_last6) : 'غير متوفر');
+
+        const sellerInfo = `${sellerName} (${sellerPhone})`;
+        const buyerInfo = record.buyer_name ? `${buyerName} (${buyerPhone})` : t('no_buyer_data');
+
+        return [
+          formattedDate,
+          processArabicText(sellerInfo),
+          processArabicText(sellerIdInfo),
+          processArabicText(buyerInfo),
+          processArabicText(buyerIdInfo)
+        ];
+      });
+
+      const tableStartY = 120;
+
+      autoTable(doc, {
+        head: headers,
+        body,
+        startY: tableStartY,
+        styles: {
+          font: fontForTable,
+          halign: 'center',
+          fontSize: 9,
+          cellPadding: 4,
+          lineWidth: 0.2,
+          lineColor: [80, 80, 80]
+        },
+        headStyles: {
+          font: fontForTable,
+          halign: 'center',
+          fontSize: 10,
+          fontStyle: 'normal',
+          fillColor: [25, 118, 210],
+          textColor: [255, 255, 255],
+          cellPadding: 8
+        },
+        alternateRowStyles: { fillColor: [240, 247, 255] },
+        margin: { top: 5, right: margin, bottom: 5, left: margin },
+        bodyStyles: { lineWidth: 0.2, lineColor: [150, 150, 150] },
+        tableWidth: 'auto',
+        columnStyles: {
+          0: { cellWidth: 'auto' },
+          1: { cellWidth: 'auto' },
+          2: { cellWidth: 'auto' },
+          3: { cellWidth: 'auto' },
+          4: { cellWidth: 'auto' }
+        }
+      });
+
+      const fileName = `transfer_history_${imei}.pdf`;
+      if (Capacitor.isNativePlatform()) {
+        try {
+          const base64Data = doc.output('datauristring').split(',')[1];
+
+          const result = await Filesystem.writeFile({
+            path: fileName,
+            data: base64Data,
+            directory: Directory.Cache,
+            recursive: true
+          });
+
+          await Share.share({
+            title: fileName,
+            text: t('pdf_document_for_transfer_history'),
+            url: result.uri,
+            dialogTitle: t('share_or_save_pdf'),
+          });
+        } catch (e: any) {
+          if (e.message && e.message.includes('Share canceled')) {
+            // User cancelled share sheet
+          } else {
+            toast({ title: t('error'), description: t('error_sharing_pdf'), variant: 'destructive' });
+          }
+        }
+      } else {
+        try {
+          const pdfBlob = doc.output('blob');
+          const url = URL.createObjectURL(pdfBlob);
+          window.open(url, '_blank');
+          setTimeout(() => URL.revokeObjectURL(url), 60000);
+        } catch (e) {
+          doc.save(fileName);
+        }
+      }
+
+    } catch (error) {
+      console.debug('Failed to generate PDF. Error details:', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      toast({ title: t('error_generating_pdf'), description: errorMessage, variant: 'destructive' });
+    }
+  };
+
+  return (
+    <PageContainer>
+      <AppNavbar />
+      <div className="container mx-auto rounded-[28px] border-2 border-blue-300 bg-gradient-to-br from-blue-100 via-white to-cyan-100 p-4 pt-6 shadow-lg">
+        <div className="flex justify-between items-center mb-4">
+          <h1 className="text-3xl font-bold text-black">{t('transfer_history')}</h1>
+          <BackButton />
+        </div>
+        <div className="mb-4 space-y-4">
+          <div className="relative flex-1">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Search className="h-5 w-5 text-gray-400" />
+            </div>
+            <Input
+              type="text"
+              value={searchTerm}
+              onChange={handleSearch}
+              placeholder={t('search_by_imei_or_phone')}
+              className="pl-10 w-full focus:ring-2 focus:ring-orange-500 bg-imei-dark/50 backdrop-blur-sm border border-orange-500"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={handleSearchButtonClick}
+              className="bg-orange-500 hover:bg-orange-600 text-white transition-colors flex-1"
+              disabled={searchTerm.length !== 15 || isLoading}
+            >
+              <Search className="h-4 w-4 mr-2" />
+              {t('search')}
+            </Button>
+            <Button
+              onClick={handlePrintButtonClick}
+              className="bg-blue-500 hover:bg-blue-600 text-white transition-colors flex-1"
+              disabled={isLoading || records.length === 0}
+            >
+              <FileDown className="h-4 w-4 mr-2" />
+              {t('print_pdf')}
+            </Button>
+          </div>
+          {/* Owner password modal (server-side verification) */}
+          {showOwnerPasswordModal && (
+            <div className="fixed inset-0 top-80 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+              <div className="bg-white rounded-lg p-4 w-full max-w-xs shadow-2xl border border-orange-200">
+                <h3 className="text-xl font-bold mb-2 text-gray-800">🔐 تأكيد هوية صاحب الهاتف</h3>
+                <p className="text-xs text-gray-600 mb-4">أدخل بيانات المالك الأصلي للتحقق من الهوية وعرض سجلات النقل</p>
+                
+                <div className="mb-3">
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">🔑 كلمة مرور الجهاز وليس التطبيق</label>
+                  <input
+                    type="password"
+                    value={ownerPassword}
+                    onChange={(e) => setOwnerPassword(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-black placeholder-gray-400 focus:border-orange-500 focus:outline-none transition bg-gray-50 text-sm"
+                    placeholder="أدخل كلمة مرورك"
+                    disabled={isVerifyingOwnerPassword}
+                  />
+                </div>
+
+                <div className="mb-4">
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">💳 آخر 6 أرقام من البطاقة</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={ownerCardLast6}
+                    onChange={(e) => setOwnerCardLast6(e.target.value.replace(/\D/g, ''))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-black placeholder-gray-400 focus:border-orange-500 focus:outline-none transition text-sm tracking-widest font-mono bg-gray-50"
+                    placeholder="●●●●●●"
+                    disabled={isVerifyingOwnerPassword}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">أدخل آخر 6 أرقام من بطاقتك الشخصية/جواز سفرك</p>
+                </div>
+
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 mb-4">
+                  <p className="text-xs text-blue-800">
+                    ℹ️ <span className="font-semibold">معلومة أمان:</span> يتم تشفير بيانات التحقق وعدم مشاركتها مع أحد
+                  </p>
+                </div>
+
+                <div className="flex justify-end gap-2">
+                  <button
+                    className="px-3 py-1.5 rounded-lg bg-gray-200 text-gray-700 font-medium hover:bg-gray-300 transition disabled:opacity-50 text-sm"
+                    onClick={() => { setShowOwnerPasswordModal(false); setOwnerPassword(''); setOwnerCardLast6(''); }}
+                    disabled={isVerifyingOwnerPassword}
+                  >
+                    إلغاء
+                  </button>
+                  <button
+                    className="px-3 py-1.5 rounded-lg bg-orange-500 text-white font-medium hover:bg-orange-600 transition disabled:opacity-50 flex items-center gap-1 text-sm"
+                    onClick={verifyOwnerPasswordAndFetch}
+                    disabled={isVerifyingOwnerPassword}
+                  >
+                    {isVerifyingOwnerPassword ? '⏳ جاري التحقق...' : '✓ تحقق من الهوية'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+          {phoneImage && (
+            <div className="mt-4">
+              <h3 className="text-lg font-bold text-white mb-2">{t('latest_phone_image')}</h3>
+              <button
+                onClick={() => {
+                  setSelectedImage(phoneImage);
+                  setIsImageViewerOpen(true);
+                }}
+                className="cursor-pointer block"
+              >
+                <img
+                  src={phoneImage}
+                  alt="Phone"
+                  className="w-full max-w-sm rounded-lg border border-gray-700 shadow-lg transition-transform hover:scale-[1.02]"
+                />
+              </button>
+            </div>
+          )}
+
+          <ImageViewer
+            imageUrl={selectedImage || ''}
+            isOpen={isImageViewerOpen}
+            onClose={() => setIsImageViewerOpen(false)}
+          />
+        </div>
+        {searchTerm.length === 15 && (
+          <>
+            {isLoading && <p className="text-center text-white">{t('loading')}...</p>}
+            {!isLoading && records.length === 0 && (
+              <p className="text-center text-white">{t('no_records_found')}</p>
+            )}
+            {!isLoading && records.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="min-w-full border-collapse border border-gray-800">
+                  <thead>
+                    <tr className="bg-gray-900 text-white">
+                      <th className="px-6 py-3 border border-gray-700 text-left text-sm font-medium uppercase tracking-wider">{t('date')}</th>
+                      <th className="px-6 py-3 border border-gray-700 text-left text-sm font-medium uppercase tracking-wider">{t('seller')}</th>
+                      <th className="px-6 py-3 border border-gray-700 text-left text-sm font-medium uppercase tracking-wider">{t('seller_id')}</th>
+                      <th className="px-6 py-3 border border-gray-700 text-left text-sm font-medium uppercase tracking-wider">{t('buyer')}</th>
+                      <th className="px-6 py-3 border border-gray-700 text-left text-sm font-medium uppercase tracking-wider">{t('buyer_id')}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-gray-800 divide-y divide-gray-700">
+                    {records.map((record) => (
+                      <tr key={record.id} className="hover:bg-gray-700">
+                        <td className="px-6 py-4 border border-gray-700 text-sm text-gray-300">{format(new Date(record.date), 'dd/MM/yyyy HH:mm')}</td>
+                        <td className="px-6 py-4 border border-gray-700 text-sm text-gray-300">
+                          {maskName(record.seller_name)} ({maskPhone(record.seller_phone)})
+                        </td>
+                        <td className="px-6 py-4 border border-gray-700 text-xs text-gray-300">
+                          {isSellerBusiness(record) ? t('store') : (record.seller_id_last6 ? maskIdNumber(record.seller_id_last6) : t('not_available'))}
+                        </td>
+                        <td className="px-6 py-4 border border-gray-700 text-sm text-gray-300">
+                          {record.buyer_name ? `${maskName(record.buyer_name)} (${maskPhone(record.buyer_phone || t('no_phone'))})` : t('no_buyer_data')}
+                        </td>
+                        <td className="px-6 py-4 border border-gray-700 text-xs text-gray-300">
+                          {isBuyerBusiness(record) ? t('store') : (record.buyer_id_last6 ? maskIdNumber(record.buyer_id_last6) : t('not_available'))}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+      {showUpgradeModal && userId && (
+        <AdsOfferSlider onClose={() => setShowUpgradeModal(false)} userId={userId} isUpgradePrompt={true} />
+      )}
+    </PageContainer>
+  );
+};
+
+export default TransferHistory;

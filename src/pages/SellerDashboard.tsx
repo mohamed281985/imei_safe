@@ -1,0 +1,492 @@
+import React from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../lib/supabase';
+import { Plus, Edit, Trash2, Eye, AlertTriangle, Smartphone, Headphones, X } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+
+interface Product {
+  id: string;
+  title: string;
+  price: number;
+  status: string;
+  created_at: string;
+  views_count: number;
+  images: Array<{ image_path: string; main_image: boolean }>;
+  type: 'phone' | 'accessory';
+}
+
+const SellerDashboard: React.FC = () => {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const { t, i18n } = useTranslation();
+  const [products, setProducts] = React.useState<Product[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [isModalOpen, setIsModalOpen] = React.useState(false);
+  const [stats, setStats] = React.useState({
+    total: 0,
+    active: 0,
+    pending: 0,
+    rejected: 0
+  });
+
+  // حالة رمز العملة
+  const [userCurrencySymbol, setUserCurrencySymbol] = React.useState(t('currency_short') || 'EGP');
+  const [currencyLoading, setCurrencyLoading] = React.useState(true);
+
+  // --- دالة جلب رمز العملة ---
+  React.useEffect(() => {
+    const fetchUserCurrency = async () => {
+      setCurrencyLoading(true);
+
+      // جلب المستخدم الحالي من Supabase Auth
+      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+
+      if (authError) {
+        console.error('Error fetching auth user:', authError);
+        setCurrencyLoading(false);
+        return;
+      }
+
+      if (!authUser?.id) {
+        console.warn('No authenticated user found');
+        setCurrencyLoading(false);
+        return;
+      }
+
+      console.log('Fetching currency for user ID:', authUser.id);
+
+      try {
+        // 1. جلب بيانات البلد من جدول المستخدمين
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('countries')
+          .eq('id', authUser.id)
+          .single();
+
+        if (userError) {
+          console.error('Error fetching user data:', userError);
+          setCurrencyLoading(false);
+          return;
+        }
+
+        if (!userData?.countries) {
+          console.warn('No country found for user:', authUser.id);
+          setCurrencyLoading(false);
+          return;
+        }
+
+        console.log('User country:', userData.countries);
+
+        // تنظيف اسم البلد
+        const userCountryName = userData.countries.trim();
+
+        // 2. محاولة البحث في العمود العربي أولاً (لأن البيانات غالباً بالعربية)
+        const { data: countryDataAr, error: countryErrorAr } = await supabase
+          .from('countries')
+          .select('currency_symbol')
+          .ilike('name_ar', userCountryName)
+          .maybeSingle();
+
+        if (!countryErrorAr && countryDataAr?.currency_symbol) {
+          // تم العثور على العملة في العمود العربي
+          console.log('Found currency in Arabic table:', countryDataAr.currency_symbol);
+          setUserCurrencySymbol(countryDataAr.currency_symbol);
+        } else {
+          // 3. إذا لم نجد في العمود العربي، نبحث في العمود الإنجليزي
+          const { data: countryDataEn, error: countryErrorEn } = await supabase
+            .from('countries')
+            .select('currency_symbol')
+            .ilike('name_en', userCountryName)
+            .maybeSingle();
+
+          if (!countryErrorEn && countryDataEn?.currency_symbol) {
+            // تم العثور على العملة في العمود الإنجليزي
+            console.log('Found currency in English table:', countryDataEn.currency_symbol);
+            setUserCurrencySymbol(countryDataEn.currency_symbol);
+          } else {
+            // 4. لم يتم العثور على البلد في أي من العمودين
+            console.warn(`Currency symbol not found for country: ${userCountryName}`);
+            console.log('Using default currency:', t('currency_short') || 'EGP');
+            setUserCurrencySymbol(t('currency_short') || 'EGP');
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching user currency:', error);
+      } finally {
+        setCurrencyLoading(false);
+      }
+    };
+
+    fetchUserCurrency();
+  }, [i18n.language]); // استخدام i18n.language بدلاً من language
+
+  React.useEffect(() => {
+    if (!user) return;
+    fetchProducts();
+  }, [user]);
+
+  const fetchProducts = async () => {
+    try {
+      setLoading(true);
+      if (!user) return;
+
+      const fetchPhones = supabase
+        .from('phones')
+        .select('id, title, price, status, created_at, views_count, phone_images(image_path, main_image)')
+        .eq('seller_id', user.id);
+
+      const fetchAccessories = supabase
+        .from('accessories')
+        .select('id, title, price, status, created_at, views_count, accessory_images(image_path, main_image)')
+        .eq('seller_id', user.id);
+
+      const [
+        { data: phonesData, error: phonesError },
+        { data: accessoriesData, error: accessoriesError }
+      ] = await Promise.all([fetchPhones, fetchAccessories]);
+console.log("phonesData", JSON.stringify(phonesData, null, 2));
+      if (phonesError) throw phonesError;
+      if (accessoriesError) throw accessoriesError;
+
+      // --- معالجة صور الهواتف ---
+      const transformedPhones: Product[] = (phonesData || []).map(p => {
+        // طباعة بيانات الصور القادمة من قاعدة البيانات للهواتف (للتشخيص)
+        console.log('Raw Phone Images:', p.phone_images);
+
+        const processedImages = (p.phone_images || []).map(img => {
+          let finalPath = img.image_path;
+
+          // التحقق مما إذا كان الرابط يبدأ بـ http
+          if (!img.image_path.startsWith('http')) {
+            // محاولة جلب الرابط العام
+            // ملاحظة: تأكد من أن 'phone-images' هو اسم الـ Bucket الصحيح
+            // إذا كان اسم الـ Bucket مختلفاً، قم بتغييره هنا
+            const { data } = supabase.storage.from('phone-images').getPublicUrl(img.image_path);
+            finalPath = data.publicUrl;
+
+            // طباعة الرابط الناتج للتأكد
+            console.log('Generated Phone URL:', finalPath);
+          }
+
+          return {
+            image_path: finalPath,
+            main_image: img.main_image
+          };
+        });
+
+        return {
+          ...p,
+          images: processedImages,
+          type: 'phone' as const
+        };
+      });
+
+      // --- معالجة صور الإكسسوارات ---
+      const transformedAccessories: Product[] = (accessoriesData || []).map(a => {
+        // طباعة بيانات الصور القادمة من قاعدة البيانات للإكسسوارات
+        console.log('Raw Accessory Images:', a.accessory_images);
+
+        const processedImages = (a.accessory_images || []).map(img => {
+          let finalPath = img.image_path;
+
+          if (!img.image_path.startsWith('http')) {
+            // ملاحظة: تأكد من أن 'accessory-images' هو اسم الـ Bucket الصحيح
+            const { data } = supabase.storage.from('accessory-images').getPublicUrl(img.image_path);
+            finalPath = data.publicUrl;
+
+            console.log('Generated Accessory URL:', finalPath);
+          }
+
+          return {
+            image_path: finalPath,
+            main_image: img.main_image
+          };
+        });
+
+        return {
+          ...a,
+          images: processedImages,
+          type: 'accessory' as const
+        };
+      });
+
+      const allProducts = [...transformedPhones, ...transformedAccessories]
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+      setProducts(allProducts);
+
+      setStats({
+        total: allProducts.length,
+        active: allProducts.filter(p => p.status === 'active').length,
+        pending: allProducts.filter(p => p.status === 'pending').length,
+        rejected: allProducts.filter(p => p.status === 'rejected').length
+      });
+
+    } catch (error) {
+      console.error('Error fetching products:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchPhones = fetchProducts; // Alias for backward compatibility if needed
+
+  const deleteProduct = async (id: string, type: 'phone' | 'accessory') => {
+    if (!window.confirm(t('confirm_delete_ad'))) return;
+
+    try {
+      const tableName = type === 'phone' ? 'phones' : 'accessories';
+      const { error } = await supabase
+        .from(tableName)
+        .delete()
+        .eq('id', id)
+        .eq('seller_id', user?.id);
+
+      if (error) throw error;
+
+      setProducts(products.filter(p => p.id !== id));
+      // تحديث الإحصائيات
+      const deletedProduct = products.find(p => p.id === id);
+      if (deletedProduct) {
+        setStats(prev => ({
+          ...prev,
+          total: prev.total - 1,
+          active: deletedProduct.status === 'active' ? prev.active - 1 : prev.active,
+          pending: deletedProduct.status === 'pending' ? prev.pending - 1 : prev.pending,
+          rejected: deletedProduct.status === 'rejected' ? prev.rejected - 1 : prev.rejected
+        }));
+      }
+    } catch (error) {
+      console.error('Error deleting phone:', error);
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'active':
+        return 'text-green-600 bg-green-100';
+      case 'pending':
+        return 'text-yellow-600 bg-yellow-100';
+      case 'rejected':
+        return 'text-red-600 bg-red-100';
+      default:
+        return 'text-gray-600 bg-gray-100';
+    }
+  };
+
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case 'active':
+        return t('active');
+      case 'pending':
+        return t('pending_review');
+      case 'rejected':
+        return t('rejected');
+      default:
+        return status;
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="p-4">
+        <div className="animate-pulse">
+          <div className="h-32 bg-gray-200 rounded-lg mb-4"></div>
+          <div className="h-64 bg-gray-200 rounded-lg"></div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 py-6">
+      {/* رأس الصفحة */}
+      <div className="flex justify-between items-center mb-6 mt-6">
+        <h1 className="text-2xl font-bold text-gray-900">{t('dashboard')}</h1>
+        <button
+          onClick={() => setIsModalOpen(true)}
+          className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700"
+        >
+          <Plus className="h-5 w-5 ml-2" />
+          {t('add_new_ad')}
+        </button>
+      </div>
+
+
+      {/* إحصائيات */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="text-sm font-medium text-gray-500">{t('total_ads')}</div>
+          <div className="mt-1 text-2xl font-semibold text-gray-900">{stats.total}</div>
+        </div>
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="text-sm font-medium text-gray-500">{t('active_ads')}</div>
+          <div className="mt-1 text-2xl font-semibold text-green-600">{stats.active}</div>
+        </div>
+        <div className="bg-white rounded-lg shadow p-4">
+          <div className="text-sm font-medium text-gray-500">{t('pending_review')}</div>
+          <div className="mt-1 text-2xl font-semibold text-yellow-600">{stats.pending}</div>
+        </div>
+      </div>
+
+      {/* قائمة الهواتف */}
+      <div className="mb-7 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px] table-fixed divide-y divide-slate-200">
+            <colgroup>
+              <col className="w-[30%]" />
+              <col className="w-[16%]" />
+              <col className="w-[17%]" />
+              <col className="w-[20%]" />
+              <col className="w-[17%]" />
+            </colgroup>
+            <thead className="bg-slate-50">
+              <tr>
+                <th scope="col" className="break-words px-5 py-4 text-right text-xs font-bold text-slate-600">
+                  {t('phone')}
+                </th>
+                <th scope="col" className="break-words px-5 py-4 text-right text-xs font-bold text-slate-600">
+                  {t('price')}
+                </th>
+                <th scope="col" className="break-words px-5 py-4 text-right text-xs font-bold text-slate-600">
+                  {t('status')}
+                </th>
+                <th scope="col" className="break-words px-5 py-4 text-right text-xs font-bold text-slate-600">
+                  {t('publish_date')}
+                </th>
+                <th scope="col" className="relative px-5 py-4">
+                  <span className="sr-only">{t('edit')}</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {products.map((product) => (
+                <tr key={product.id} className="transition-colors duration-150 hover:bg-slate-50">
+                  <td className="px-5 py-4">
+                    <div className="flex min-w-0 items-center gap-3.5">
+                      <div className="h-14 w-14 flex-shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+                        <img
+                          className="h-full w-full object-cover"
+                          src={product.images?.[0]?.image_path}
+                          alt={product.title}
+                          onLoad={() => console.log("Loaded", product.title)}
+                          onError={(e) => {
+                            console.log("Error", product.title);
+                            console.log(product.images);
+                            console.log(product.images?.[0]?.image_path);
+                          }}
+                        />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div dir="auto" className="line-clamp-2 text-[15px] font-bold leading-6 text-slate-800">
+                          {product.title}
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="break-words px-5 py-4 text-right align-middle">
+                    <div dir="auto" className="text-base font-extrabold tabular-nums text-slate-900">
+                      {(product.price || 0).toLocaleString()} {userCurrencySymbol}
+                    </div>
+                  </td>
+                  <td className="break-words px-5 py-4 text-right align-middle">
+                    <span className={`inline-flex max-w-full whitespace-normal break-words rounded-full px-3 py-1 text-xs font-bold leading-5 ${getStatusColor(product.status)}`}>
+                      {getStatusText(product.status)}
+                    </span>
+                  </td>
+                  <td className="break-words px-5 py-4 text-right align-middle text-sm font-medium tabular-nums text-slate-600">
+                    {new Date(product.created_at).toLocaleDateString(i18n.language === 'ar' ? 'ar-EG' : 'en-US')}
+                  </td>
+                  <td className="px-5 py-4 text-right align-middle">
+                    <div className="flex items-center justify-end gap-2">
+                      <Link
+                        to={`/product/${product.id}`}
+                        className="flex h-9 w-9 items-center justify-center rounded-lg border border-blue-100 bg-blue-50 text-blue-600 transition hover:border-blue-200 hover:bg-blue-100 hover:text-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                        aria-label={t('view') || 'عرض'}
+                        title={t('view') || 'عرض'}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Link>
+                      <Link
+                        to={product.type === 'phone' ? `/edit-phone/${product.id}` : `/edit-accessory/${product.id}`}
+                        className="flex h-9 w-9 items-center justify-center rounded-lg border border-indigo-100 bg-indigo-50 text-indigo-600 transition hover:border-indigo-200 hover:bg-indigo-100 hover:text-indigo-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
+                        aria-label={t('edit') || 'تعديل'}
+                        title={t('edit') || 'تعديل'}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Link>
+                      <button
+                        onClick={() => deleteProduct(product.id, product.type)}
+                        className="flex h-9 w-9 items-center justify-center rounded-lg border border-red-100 bg-red-50 text-red-600 transition hover:border-red-200 hover:bg-red-100 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
+                        aria-label={t('delete') || 'حذف'}
+                        title={t('delete') || 'حذف'}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {products.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
+                    <div className="flex flex-col items-center">
+                      <AlertTriangle className="h-12 w-12 text-gray-400 mb-4" />
+                      <p className="text-lg font-medium mb-2">{t('no_ads_found')}</p>
+                      <p className="text-sm">{t('add_first_phone')}</p>
+                      <Link
+                        to="/add-phone"
+                        className="mt-4 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700"
+                      >
+                        <Plus className="h-5 w-5 ml-2" />
+                        {t('add_new_phone')}
+                      </Link>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* نافذة الاختيار المنبثقة */}
+      {isModalOpen && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center transition-opacity duration-300"
+          onClick={() => setIsModalOpen(false)}
+        >
+          <div
+            className="bg-white p-8 rounded-2xl shadow-2xl text-center w-full max-w-md transform transition-all duration-300 scale-95"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button onClick={() => setIsModalOpen(false)} className="absolute top-4 left-4 text-gray-400 hover:text-gray-600">
+              <X size={24} />
+            </button>
+            <h2 className="text-2xl font-bold mb-6 text-gray-800">{t('what_to_add')}</h2>
+            <div className="flex flex-col space-y-4">
+              <Link
+                to="/add-phone"
+                className="flex items-center justify-center p-4 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition-all duration-200 font-semibold text-lg"
+              >
+                <Smartphone className="ml-3" />
+                {t('phone_for_sale')}
+              </Link>
+              <Link
+                to="/add-accessories"
+                className="flex items-center justify-center p-4 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-all duration-200 font-semibold text-lg"
+              >
+                <Headphones className="ml-3" />
+                {t('accessory_for_sale')}
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+};
+
+export default SellerDashboard;

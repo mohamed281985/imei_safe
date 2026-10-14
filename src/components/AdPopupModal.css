@@ -1,0 +1,25 @@
+.ad-location-btn {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 20;
+  background: var(--ad-location-btn-bg, #3b82f6);
+  color: #fff;
+  border-radius: 50%;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  transition: all 0.3s ease;
+}
+.ad-location-btn.no-location {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+.ad-location-btn:hover {
+  transform: scale(1.1);
+}

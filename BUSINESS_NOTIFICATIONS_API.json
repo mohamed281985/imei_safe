@@ -1,0 +1,364 @@
+{
+  "documentation": {
+    "title": "Business Verification Notifications API",
+    "description": "API endpoints for approving and rejecting business verification requests with notifications",
+    "version": "1.0.0",
+    "baseUrl": "http://localhost:3000",
+    "auth": {
+      "type": "Bearer Token",
+      "header": "Authorization",
+      "format": "Bearer <admin_jwt_token>"
+    }
+  },
+  
+  "endpoints": [
+    {
+      "name": "Approve Business Verification",
+      "method": "POST",
+      "path": "/admin/businesses/:userId/approve",
+      "authentication": "Required (Admin)",
+      "description": "Approve a business verification request and send notifications",
+      
+      "parameters": {
+        "path": {
+          "userId": {
+            "type": "string",
+            "required": true,
+            "description": "User ID of the business owner"
+          }
+        },
+        "body": {
+          "type": "object",
+          "required": false,
+          "description": "Empty object or no body needed"
+        }
+      },
+      
+      "request": {
+        "method": "POST",
+        "url": "http://localhost:3000/admin/businesses/user123/approve",
+        "headers": {
+          "Authorization": "Bearer eyJhbGciOiJIUzI1NiIs...",
+          "Content-Type": "application/json"
+        },
+        "body": {}
+      },
+      
+      "response": {
+        "success": {
+          "status": 200,
+          "body": {
+            "success": true,
+            "data": {
+              "id": "business456",
+              "user_id": "user123",
+              "status": "approved",
+              "reason": null,
+              "store_name": "متجر السلع التجارية",
+              "owner_name": "أحمد محمد",
+              "email": "ahmed@example.com",
+              "updated_at": "2026-07-20T12:34:56Z"
+            }
+          }
+        },
+        "error": {
+          "status": 400,
+          "body": {
+            "error": "User ID is required"
+          }
+        },
+        "notFound": {
+          "status": 404,
+          "body": {
+            "error": "Business not found"
+          }
+        }
+      },
+      
+      "sideEffects": [
+        {
+          "type": "Database",
+          "table": "businesses",
+          "action": "UPDATE",
+          "details": "Set status='approved' and reason=null"
+        },
+        {
+          "type": "Database",
+          "table": "notifications",
+          "action": "INSERT",
+          "details": {
+            "user_id": "user123",
+            "title": "تمت الموافقة على تسجيل نشاطك التجاري",
+            "body": "Your business registration has been approved. You can now access all features.",
+            "type": "business_approved",
+            "is_read": false
+          }
+        },
+        {
+          "type": "FCM",
+          "condition": "If user has fcm_token",
+          "action": "SEND",
+          "details": {
+            "title": "تمت الموافقة على نشاطك",
+            "body": "يرجى مراجعة التطبيق لمعرفة التفاصيل.",
+            "priority": "high"
+          }
+        },
+        {
+          "type": "Email",
+          "condition": "If user has email",
+          "provider": "Resend",
+          "action": "SEND",
+          "details": {
+            "from": "onboarding@resend.dev",
+            "to": "user@example.com",
+            "subject": "تمت الموافقة على تسجيل نشاطك التجاري",
+            "htmlContent": "<p>Your business registration has been successfully approved...</p>"
+          }
+        },
+        {
+          "type": "AuditLog",
+          "table": "audit_logs",
+          "action": "INSERT",
+          "details": {
+            "userId": "admin_user_id",
+            "action": "approve_business",
+            "resourceType": "businesses",
+            "resourceId": "user123",
+            "newValues": {
+              "status": "approved",
+              "reason": null
+            },
+            "ip": "192.168.1.1",
+            "timestamp": "2026-07-20T12:34:56Z"
+          }
+        }
+      ]
+    },
+    
+    {
+      "name": "Reject Business Verification",
+      "method": "POST",
+      "path": "/admin/businesses/:userId/reject",
+      "authentication": "Required (Admin)",
+      "description": "Reject a business verification request with a reason and send notifications",
+      
+      "parameters": {
+        "path": {
+          "userId": {
+            "type": "string",
+            "required": true,
+            "description": "User ID of the business owner"
+          }
+        },
+        "body": {
+          "type": "object",
+          "required": true,
+          "properties": {
+            "reason": {
+              "type": "string",
+              "required": true,
+              "description": "Reason for rejection (Arabic or English)",
+              "examples": [
+                "صورة رخصة غير واضحة",
+                "License image is not clear"
+              ]
+            }
+          }
+        }
+      },
+      
+      "request": {
+        "method": "POST",
+        "url": "http://localhost:3000/admin/businesses/user123/reject",
+        "headers": {
+          "Authorization": "Bearer eyJhbGciOiJIUzI1NiIs...",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "reason": "صورة رخصة غير واضحة - License image is not clear"
+        }
+      },
+      
+      "response": {
+        "success": {
+          "status": 200,
+          "body": {
+            "success": true,
+            "data": {
+              "id": "business456",
+              "user_id": "user123",
+              "status": "rejected",
+              "reason": "صورة رخصة غير واضحة - License image is not clear",
+              "store_name": "متجر السلع التجارية",
+              "owner_name": "أحمد محمد",
+              "email": "ahmed@example.com",
+              "updated_at": "2026-07-20T12:34:56Z"
+            }
+          }
+        },
+        "missingReason": {
+          "status": 400,
+          "body": {
+            "error": "Rejection reason is required"
+          }
+        },
+        "notFound": {
+          "status": 404,
+          "body": {
+            "error": "Business not found"
+          }
+        }
+      },
+      
+      "sideEffects": [
+        {
+          "type": "Database",
+          "table": "businesses",
+          "action": "UPDATE",
+          "details": "Set status='rejected' and reason='provided reason'"
+        },
+        {
+          "type": "Database",
+          "table": "notifications",
+          "action": "INSERT",
+          "details": {
+            "user_id": "user123",
+            "title": "تم رفض تسجيل نشاطك التجاري",
+            "body": "سبب الرفض: صورة رخصة غير واضحة",
+            "type": "business_rejected",
+            "is_read": false
+          }
+        },
+        {
+          "type": "FCM",
+          "condition": "If user has fcm_token",
+          "action": "SEND",
+          "details": {
+            "title": "تم رفض تسجيل نشاطك",
+            "body": "يرجى مراجعة التطبيق لمعرفة التفاصيل.",
+            "priority": "high"
+          }
+        },
+        {
+          "type": "Email",
+          "condition": "If user has email",
+          "provider": "Resend",
+          "action": "SEND",
+          "details": {
+            "from": "onboarding@resend.dev",
+            "to": "user@example.com",
+            "subject": "تم رفض تسجيل نشاطك التجاري",
+            "htmlContent": "<p>تم رفض تسجيل نشاطك التجاري. السبب: صورة رخصة غير واضحة</p>"
+          }
+        },
+        {
+          "type": "AuditLog",
+          "table": "audit_logs",
+          "action": "INSERT",
+          "details": {
+            "userId": "admin_user_id",
+            "action": "reject_business",
+            "resourceType": "businesses",
+            "resourceId": "user123",
+            "newValues": {
+              "status": "rejected",
+              "reason": "صورة رخصة غير واضحة"
+            },
+            "ip": "192.168.1.1",
+            "timestamp": "2026-07-20T12:34:56Z"
+          }
+        }
+      ]
+    }
+  ],
+  
+  "notifications": {
+    "database": {
+      "table": "notifications",
+      "types": [
+        "business_approved",
+        "business_rejected"
+      ],
+      "fields": {
+        "user_id": "Target user ID",
+        "title": "Localized notification title",
+        "body": "Localized notification body with rejection reason if applicable",
+        "type": "Notification type (business_approved or business_rejected)",
+        "is_read": "Read status (false on creation)",
+        "created_at": "ISO 8601 timestamp"
+      }
+    },
+    "fcm": {
+      "provider": "Firebase Cloud Messaging",
+      "priority": "high",
+      "condition": "Sent only if user has fcm_token",
+      "platforms": {
+        "android": {
+          "priority": "high"
+        },
+        "ios": {
+          "priority": "10"
+        }
+      }
+    },
+    "email": {
+      "provider": "Resend",
+      "condition": "Sent only if user has email",
+      "from": "process.env.RESEND_FROM_EMAIL or onboarding@resend.dev",
+      "format": "HTML"
+    }
+  },
+  
+  "errorHandling": {
+    "philosophy": "Errors in notifications do not affect the main operation",
+    "logging": "All errors are logged with warnings",
+    "failureScenarios": [
+      {
+        "scenario": "Email sending fails",
+        "result": "Warning logged, main operation succeeds"
+      },
+      {
+        "scenario": "FCM sending fails",
+        "result": "Warning logged, main operation succeeds"
+      },
+      {
+        "scenario": "Notification insertion fails",
+        "result": "Warning logged, main operation succeeds"
+      },
+      {
+        "scenario": "Database update fails",
+        "result": "Error returned to client, no notifications sent"
+      }
+    ]
+  },
+  
+  "translations": {
+    "supported_languages": ["ar", "en"],
+    "keys": {
+      "business.approved_title": {
+        "ar": "تمت الموافقة على تسجيل نشاطك التجاري",
+        "en": "Business Registration Approved"
+      },
+      "business.approved_body": {
+        "ar": "تمت مراجعة تسجيل نشاطك التجاري والموافقة عليه. يمكنك الآن الوصول إلى جميع الميزات.",
+        "en": "Your business registration has been approved. You can now access all features."
+      },
+      "business.rejected_title": {
+        "ar": "تم رفض تسجيل نشاطك التجاري",
+        "en": "Business Registration Rejected"
+      },
+      "business.rejected_body": {
+        "ar": "سبب الرفض: {reason}",
+        "en": "Rejection reason: {reason}"
+      }
+    }
+  },
+  
+  "databaseQueries": {
+    "checkNotifications": "SELECT * FROM notifications WHERE type IN ('business_approved', 'business_rejected') ORDER BY created_at DESC LIMIT 10;",
+    "checkBusinessStatus": "SELECT id, user_id, status, reason, created_at, updated_at FROM businesses WHERE user_id = '{userId}';",
+    "checkAuditLogs": "SELECT * FROM audit_logs WHERE action IN ('approve_business', 'reject_business') ORDER BY created_at DESC LIMIT 10;",
+    "checkUserEmail": "SELECT id, email, fcm_token, language FROM users WHERE id = '{userId}';"
+  }
+}

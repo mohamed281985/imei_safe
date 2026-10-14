@@ -1,0 +1,498 @@
+import OffersGallery from "./pages/OffersGallery";
+import { Toaster } from "@/components/ui/toaster";
+import { Toaster as Sonner } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import React, { useEffect, Suspense, lazy } from 'react';
+import { App as CapacitorApp } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
+import type { PluginListenerHandle } from '@capacitor/core';
+import { supabase } from './lib/supabase';
+import { Routes, Route, useNavigate, useLocation, Link } from "react-router-dom";
+import { PushNotifications, Token } from '@capacitor/push-notifications';
+import { LocalNotifications } from '@capacitor/local-notifications';
+
+import { LanguageProvider } from "./contexts/LanguageContext";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { AdProvider } from "./contexts/AdContext";
+import { AdModalProvider } from "./contexts/AdModalContext";
+import AuthGuard from "./components/AuthGuard";
+import { useAdModal } from "./contexts/AdModalContext";
+import LoginAdModal from "./components/advertisements/LoginAdModal";
+import GuestGuard from "./components/GuestGuard";
+import "slick-carousel/slick/slick.css";
+import "slick-carousel/slick/slick-theme.css";
+
+const Index = lazy(() => import("./pages/Index"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+const SplashScreen = lazy(() => import("./pages/SplashScreen"));
+const LanguageSelect = lazy(() => import("./pages/LanguageSelect"));
+const Welcome = lazy(() => import("./pages/Welcome"));
+const Login = lazy(() => import("./pages/Login"));
+const Signup = lazy(() => import("./pages/Signup"));
+const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const ReportPhone = lazy(() => import("./pages/ReportPhone"));
+const SearchIMEI = lazy(() => import("./pages/SearchIMEI"));
+const OriginalPhoneGuide = lazy(() => import("./pages/OriginalPhoneGuide"));
+const PhoneSafetyTips = lazy(() => import("./pages/PhoneSafetyTips"));
+const PhoneDetails = lazy(() => import("./pages/PhoneDetails"));
+const OwnershipTransfer = lazy(() => import('./pages/OwnershipTransfer.tsx'));
+const PayToUnlock = lazy(() => import('./pages/OwnershipTransfer.tsx'));
+const RegisterPhone = lazy(() => import("./pages/RegisterPhone"));
+const RecoveryCard = lazy(() => import('./pages/RecoveryCard'));
+const RecoveryCards = lazy(() => import('./pages/RecoveryCards'));
+const TransferHistory = lazy(() => import('./pages/TransferHistory'));
+const CreateAdvertisement = lazy(() => import('./pages/CreateAdvertisement'));
+const PublishAd = lazy(() => import('./pages/PublishAd'));
+const SpecialAd = lazy(() => import('./pages/SpecialAd.tsx'));
+const WebViewPage = lazy(() => import('./pages/WebViewPage'));
+const MyAds = lazy(() => import('./pages/MyAds'));
+const Reset = lazy(() => import("./pages/Reset"));
+const DeepLinkHandler = lazy(() => import('./DeepLinkHandler'));
+const PhoneFound = lazy(() => import('./pages/PhoneFound'));const FoundByQrToken = lazy(() => import('./pages/FoundByQrToken'));const ResetRegister = lazy(() => import("./pages/ResetRegister"));
+const PaymentSuccess = lazy(() => import('./pages/PaymentSuccess'));
+const PaymentFailed = lazy(() => import('./pages/PaymentFailed'));
+const PaymobRedirectSuccess = lazy(() => import('./pages/PaymobRedirectSuccess'));
+const PaymobRedirectFailed = lazy(() => import('./pages/PaymobRedirectFailed'));
+const BusinessSignup = lazy(() => import('@/pages/BusinessSignup'));
+const BusinessProfileComplete = lazy(() => import('@/pages/BusinessProfileComplete'));
+const BusinessTransfer = lazy(() => import('@/pages/BusinessTransfer'));
+const BusinessTransferBuy = lazy(() => import('@/pages/BusinessTransferbuy'));
+const BusinessTransferSell = lazy(() => import('@/pages/BusinessTransfersell'));
+const PhonesForSale = lazy(() => import('@/pages/PhonesForSale'));
+const SellerDashboard = lazy(() => import('@/pages/SellerDashboard'));
+const MyStore = lazy(() => import('@/pages/MyStore'));
+const StoreRedemptionsPage = lazy(() => import('@/pages/MyStore').then((module) => ({ default: module.StoreRedemptionsPage })));
+const BusinessOffers = lazy(() => import('@/pages/BusinessOffers'));
+const AddPhoneForm = lazy(() => import('@/pages/AddPhoneForm'));
+const AddAccessoriesForm = lazy(() => import('@/pages/AddaccessoriesForm'));
+const AccessoriesForSalePage = lazy(() => import('@/pages/AccessoriesForSalePage'));
+const ChallengeGamePage = lazy(() => import('./pages/ChallengeGamePage'));
+const ProfileMenuPage = lazy(() => import('./pages/ProfileMenuPage'));
+const NotificationsPage = lazy(() => import('./pages/NotificationsPage'));
+const RewardsPage = lazy(() => import('./pages/RewardsPage'));
+const RewardDailyPage = lazy(() => import('./pages/RewardsFlow').then((module) => ({ default: module.RewardDailyPage })));
+const RewardCategoriesPage = lazy(() => import('./pages/RewardsFlow').then((module) => ({ default: module.RewardCategoriesPage })));
+const RewardShopsPage = lazy(() => import('./pages/RewardsFlow').then((module) => ({ default: module.RewardShopsPage })));
+const RewardOfferDetailsPage = lazy(() => import('./pages/RewardsFlow').then((module) => ({ default: module.RewardOfferDetailsPage })));
+const RewardConfirmationPage = lazy(() => import('./pages/RewardsFlow').then((module) => ({ default: module.RewardConfirmationPage })));
+const RewardSuccessPage = lazy(() => import('./pages/RewardsFlow').then((module) => ({ default: module.RewardSuccessPage })));
+const RewardHistoryPage = lazy(() => import('./pages/RewardsFlow').then((module) => ({ default: module.RewardHistoryPage })));
+const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
+const TermsOfUse = lazy(() => import('./pages/TermsOfUse'));
+const EditPhoneListing = lazy(() => import('./pages/EditPhoneListing'));
+const EditAccessoryListing = lazy(() => import('./pages/EditAccessoryListing'));
+const ProductDetails = lazy(() => import('./pages/ProductDetails'));
+const Favorites = lazy(() => import('./pages/Favorites'));
+
+import { toast } from "@/hooks/use-toast";
+
+declare global {
+  interface Window {
+    Capacitor?: any;
+  }
+}
+
+const queryClient = new QueryClient();
+
+// =================================================================
+// ⭐ الزر العائم لإنشاء الإعلانات - تم نقله هنا ليكون ثابتاً
+// =================================================================
+
+
+
+//  const { user } = useAuth();
+//  const location = useLocation();
+
+// تعديل الشرط ليشمل جميع أنواع الحسابات التجارية ويظهر فقط في لوحة التحكم
+//  const isBusinessUser = user?.role && ['business', 'free_business', 'gold_business', 'silver_business'].includes(user.role);
+//  const showButton = isBusinessUser && location.pathname === '/dashboard';
+//
+//  if (!showButton) {
+//    return null;
+//  }
+//
+//  return (
+//    <div className="fixed bottom-20 sm:bottom-24 left-1/2 -translate-x-1/2 z-[9999] flex flex-col items-center group" style={{ paddingBottom: 'env(safe-area-inset-bottom, 20px)' }}>
+//      <Link to="/create-advertisement" className="flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 bg-gradient-to-r from-orange-500 to-orange-600 rounded-full shadow-lg hover:shadow-xl hover:shadow-orange-500/30 transition-all transform group-hover:-translate-y-1" aria-label="إنشاء إعلان">
+//        <Plus className="text-white relative z-10 transition-transform duration-300 group-hover:rotate-12" size={40} />
+//      </Link>
+//      <span className="text-white text-sm sm:text-base mt-2 font-semibold">إعلان</span>
+//    </div>
+//  );
+// };
+
+// =================================================================
+// ⭐ المكون الجديد الذي يحتوي على المنطق المعتمد على useAuth
+// =================================================================
+const AppCore = () => {
+  const navigate = useNavigate();
+  const { adToShow, hideAd } = useAdModal();
+  const { user } = useAuth();
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    let active = true;
+
+    void CapacitorApp.getLaunchUrl().then((launch) => {
+      if (active && !launch?.url) navigate('/', { replace: true });
+    }).catch((error) => {
+      console.warn('Could not determine app launch URL:', error);
+      if (active) navigate('/', { replace: true });
+    });
+
+    return () => { active = false; };
+  }, [navigate]);
+
+  useEffect(() => {
+    const setupListener = async () => {
+      listener = await CapacitorApp.addListener('appUrlOpen', (event) => {
+        const urlString = event.url;
+        if (!urlString) return;
+
+        console.log('Deep link opened:', urlString);
+
+        try {
+          const url = new URL(urlString);
+          const { pathname, hash } = url;
+
+          // معالجة myapp://my-ads
+          if (url.protocol === 'myapp:') {
+            const hostOrPath = url.host || pathname.replace(/^\/+/, '');
+            if (hostOrPath === 'my-ads') {
+              navigate('/myads');
+              return;
+            }
+            // لا نُرجع هنا لأن روابط المصادقة قد تستخدم myapp://auth#... ويجب معالجتها لاحقاً
+          }
+
+          // معالجة روابط المصادقة من Supabase: دمج query و hash ودعم وجود access_token بدون refresh_token
+          try {
+            const combined = new URLSearchParams();
+            if (url.search && url.search.length > 1) {
+              const s = new URLSearchParams(url.search);
+              for (const [k, v] of s) combined.set(k, v);
+            }
+            if (hash && hash.includes('=')) {
+              const h = new URLSearchParams(hash.substring(1));
+              for (const [k, v] of h) combined.set(k, v);
+            }
+            const type = combined.get('type');
+            const access = combined.get('access_token');
+            // حالة خاصة: إذا كان المسار أو host يشير إلى 'reset' فنتجاهل شرط type/access
+            if ((url.host && url.host.toLowerCase() === 'reset') || pathname === '/reset' || pathname === 'reset') {
+              navigate(`/reset?${combined.toString()}`);
+            }
+            // Fallback for myapp://auth — treat as confirmation unless access_token present
+            else if ((url.host && url.host.toLowerCase() === 'auth') || pathname === '/auth' || pathname === 'auth') {
+              if (access && access.length >= 10) {
+                navigate(`/reset?${combined.toString()}`);
+              } else {
+                navigate('/login?confirmed=1');
+              }
+            } else if (type === 'signup') {
+              navigate('/login?confirmed=1');
+            } else if (type === 'recovery' && access) {
+              navigate(`/reset?${combined.toString()}`);
+            }
+          } catch (e) {
+            console.error('Failed to parse auth params from deep link', e);
+          }
+        } catch (e) {
+          console.error('Failed to parse deep link URL:', e);
+        }
+      });
+    };
+    let listener: PluginListenerHandle | null = null;
+    setupListener();
+    return () => {
+      if (listener) listener.remove();
+    };
+  }, [navigate]);
+
+  // =================================================================
+  // إدارة الإشعارات (Push Notifications) بشكل كامل
+  // =================================================================
+  useEffect(() => {
+    // لا تقم بتشغيل هذا المنطق إلا على الأجهزة الأصلية (iOS/Android)
+    if (Capacitor.getPlatform && Capacitor.getPlatform() === 'web') {
+      return;
+    }
+
+    // 1. وظيفة لإرسال توكن FCM إلى السيرفر
+    const updateTokenToServer = async (fcmToken: string) => {
+      if (!user || !user.id) {
+        console.log('المستخدم غير مسجل دخوله، تخطي تحديث توكن FCM.');
+        return;
+      }
+      console.log('جاري تحديث توكن FCM للمستخدم:', user.id);
+      try {
+        const session = await supabase.auth.getSession();
+        const token = session?.data?.session?.access_token;
+        if (!token) {
+          console.warn('لا يوجد توكن جلسة صالح لتحديث FCM token.');
+          return;
+        }
+
+        const response = await fetch('https://imei-safe.me/api/update-fcm-token', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ id: user.id, fcmToken: fcmToken }),
+        });
+        const result = await response.json();
+        if (response.ok) {
+          console.log('تم تحديث توكن FCM بنجاح على السيرفر.');
+        } else {
+          console.error('فشل السيرفر في تحديث التوكن:', result.error);
+        }
+      } catch (error) {
+        console.error('فشل إرسال توكن FCM إلى السيرفر:', error);
+      }
+    };
+
+    // 2. وظيفة لإعداد كل ما يتعلق بالإشعارات
+    const setupPushNotifications = async () => {
+      // لا تقم بالتسجيل إذا لم يكن المستخدم مسجلاً دخوله
+      if (!user) {
+        return;
+      }
+
+      try {
+        // طلب أذونات الاشعارات المحلية وPush
+        try {
+          const localPerm = await LocalNotifications.requestPermissions();
+          if (localPerm.display !== 'granted') {
+            console.warn('لم يمنح المستخدم إذن الإشعارات المحلية.');
+          }
+
+          await LocalNotifications.createChannel({
+            id: 'default',
+            name: 'Default Notifications',
+            description: 'Foreground push notification channel',
+            importance: 5,
+          });
+        } catch (err) {
+          console.warn('فشل إعداد الإشعارات المحلية:', err);
+        }
+
+        let permStatus = await PushNotifications.checkPermissions();
+        if (permStatus.receive === 'prompt') {
+          permStatus = await PushNotifications.requestPermissions();
+        }
+        if (permStatus.receive !== 'granted') {
+          console.warn('لم يمنح المستخدم إذن الإشعارات.');
+          return;
+        }
+
+        // --- إضافة المستمعات (Listeners) ---
+
+        // أ. عند نجاح التسجيل والحصول على التوكن
+        PushNotifications.addListener('registration', (token: Token) => {
+          console.log('✅ FCM Token registered successfully');
+          updateTokenToServer(token.value);
+        });
+
+        // ب. عند حدوث خطأ في التسجيل
+        PushNotifications.addListener('registrationError', (error: any) => {
+          console.warn('فشل تسجيل الإشعارات');
+        });
+
+        // ج. عند استقبال إشعار والتطبيق في الواجهة الأمامية (foreground)
+        PushNotifications.addListener('pushNotificationReceived', async (notification) => {
+          console.log('🔔 Foreground notification received:', notification);
+          const title = notification.title || notification.data?.title || 'إشعار جديد';
+          const body = notification.body || notification.data?.body || '';
+          console.log('📱 Showing notification:', { title, body });
+
+          toast({
+            title,
+            description: body,
+            duration: 6000,
+          });
+
+          try {
+            const notificationId = Number(`${Date.now()}`.slice(-6));
+            console.log('📤 Scheduling local notification with ID:', notificationId);
+            await LocalNotifications.schedule({
+              notifications: [
+                {
+                  title,
+                  body,
+                  id: notificationId,
+                  channelId: 'default',
+                  extra: notification.data || {},
+                  schedule: { at: new Date(Date.now() + 100) },
+                  sound: 'default',
+                  smallIcon: 'ic_stat_notify', // Important for Android
+                },
+              ],
+            });
+            console.log('✅ Local notification scheduled successfully');
+          } catch (err) {
+            console.error('❌ Failed to show local notification:', err);
+          }
+        });
+
+        // ⭐ د. عند الضغط على الإشعار (توجيه مباشر دائماً إلى صفحة PhoneFound)
+        PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
+          console.log('Push notification action performed:', action);
+          const { notification } = action;
+          const data = notification.data || {};
+          // توجيه دائماً إلى صفحة PhoneFound مع IMEI وfinderId إن وجدا
+          let url = '/phone-found';
+          if (data.imei) {
+            url += `/${data.imei}`;
+          }
+          if (data.finderId) {
+            url += `?finderId=${data.finderId}`;
+          }
+          console.log(`توجيه إجباري إلى صفحة العثور على الهاتف: ${url}`);
+          navigate(url);
+        });
+
+        // يجب إضافة المستمع قبل register حتى لا نفقد حدث التسجيل والتوكن.
+        await PushNotifications.register();
+
+      } catch (e) {
+        console.error("خطأ في إعداد الإشعارات:", e);
+      }
+    };
+
+    setupPushNotifications();
+    const handlePermissionGranted = () => { void setupPushNotifications(); };
+    window.addEventListener('imei-safe-notifications-permission-granted', handlePermissionGranted);
+
+    // 3. وظيفة التنظيف عند إلغاء تحميل المكون
+    return () => {
+      window.removeEventListener('imei-safe-notifications-permission-granted', handlePermissionGranted);
+      console.log('Cleaning up push notification listeners.');
+      if (!(Capacitor.getPlatform && Capacitor.getPlatform() === 'web')) {
+        try {
+      PushNotifications.removeAllListeners(); // يزيل جميع المستمعات التي تم إضافتها في هذا التأثير
+        } catch (e) {
+          console.debug('PushNotifications.removeAllListeners() failed or not available on this platform', e);
+        }
+      }
+    };
+  }, [user, navigate]); // ✅ يعتمد على `user` و `navigate`
+
+  return (
+    <div
+      style={{ 
+        backgroundImage: "url('/assets/images/background.png')", 
+        backgroundSize: 'cover', 
+        backgroundPosition: 'center', 
+        minHeight: '100vh' 
+      }}
+    >
+
+      <>
+        {adToShow && <LoginAdModal ad={adToShow} onClose={hideAd} />}
+        <DeepLinkHandler />
+        <Toaster />
+        <Sonner />
+        <Suspense fallback={<div>Loading...</div>}>
+          <Routes>
+            <Route path="/" element={<SplashScreen />} />
+            <Route path="/index" element={<Index />} />
+            <Route path="/language" element={<LanguageSelect />} />
+            <Route path="/welcome" element={<Welcome />} />
+
+            <Route path="/login" element={<GuestGuard><Login /></GuestGuard>} />
+            <Route path="/signup" element={<GuestGuard><Signup /></GuestGuard>} />
+            <Route path="/forgot-password" element={<GuestGuard><ForgotPassword /></GuestGuard>} />
+
+            <Route path="/dashboard" element={<AuthGuard><Dashboard /></AuthGuard>} />
+            <Route path="/report" element={<AuthGuard><ReportPhone /></AuthGuard>} />
+            <Route path="/search" element={<AuthGuard><SearchIMEI /></AuthGuard>} />
+            <Route path="/original-phone-guide" element={<AuthGuard><OriginalPhoneGuide /></AuthGuard>} />
+            <Route path="/phone-safety-tips" element={<AuthGuard><PhoneSafetyTips /></AuthGuard>} />
+            <Route path="/phone/:id" element={<PhoneDetails />} />
+            <Route path="/ownership-transfer" element={<OwnershipTransfer />} />
+
+            <Route path="/pay/:id" element={<AuthGuard><PayToUnlock /></AuthGuard>} />
+            <Route path="/register-phone" element={<AuthGuard><RegisterPhone /></AuthGuard>} />
+            <Route path="/transfer-history" element={<AuthGuard><TransferHistory /></AuthGuard>} />
+            <Route path="/create-advertisement" element={<AuthGuard><CreateAdvertisement /></AuthGuard>} />
+            <Route path="/business-offers" element={<AuthGuard><BusinessOffers /></AuthGuard>} />
+            <Route path="/my-store" element={<AuthGuard><MyStore /></AuthGuard>} />
+            <Route path="/my-store/redemptions" element={<AuthGuard><StoreRedemptionsPage /></AuthGuard>} />
+            <Route path="/publish-ad" element={<AuthGuard><PublishAd /></AuthGuard>} />
+            <Route path="/special-ad" element={<AuthGuard><SpecialAd /></AuthGuard>} />
+            <Route path="/webview" element={<AuthGuard><WebViewPage /></AuthGuard>} />
+            {/* مسار العرووف لعرض الصورة الكاملة */}
+            <Route path="/offersgallery" element={<AuthGuard><OffersGallery /></AuthGuard>} />
+            <Route path="/myads" element={<AuthGuard><MyAds /></AuthGuard>} />
+            <Route path="/payment-success" element={<PaymentSuccess />} />
+            <Route path="/payment-failed" element={<PaymentFailed />} />
+            <Route path="/paymob/redirect-success" element={<PaymobRedirectSuccess />} />
+            <Route path="/paymob/redirect-failed" element={<PaymobRedirectFailed />} />
+            <Route path="/business-signup" element={<BusinessSignup />} />
+            <Route path="/businesstransfer" element={<AuthGuard><BusinessTransfer /></AuthGuard>} />
+            <Route path="/business-profile-complete" element={<AuthGuard><BusinessProfileComplete /></AuthGuard>} />
+            <Route path="/reset" element={<Reset />} />
+            <Route path="/reset-register" element={<AuthGuard><ResetRegister /></AuthGuard>} />
+            <Route path="/BusinessTransferbuy" element={<AuthGuard><BusinessTransferBuy /></AuthGuard>} />
+            <Route path="/challenge-game" element={<AuthGuard><ChallengeGamePage /></AuthGuard>} />
+            <Route path="/BusinessTransfersell" element={<AuthGuard><BusinessTransferSell /></AuthGuard>} />
+            <Route path="/phone-found/:imei" element={<PhoneFound />} />
+            <Route path="/phone-found" element={<PhoneFound />} />
+            <Route path="/found/:qrToken" element={<FoundByQrToken />} />
+            <Route path="/phone-card/:id" element={<AuthGuard><RecoveryCard /></AuthGuard>} />
+            <Route path="/recovery-cards" element={<AuthGuard><RecoveryCards /></AuthGuard>} />
+            <Route path="/phones-for-sale" element={<AuthGuard><PhonesForSale /></AuthGuard>} /> {/* Add the new route */}
+            <Route path="/seller-dashboard" element={<AuthGuard><SellerDashboard /></AuthGuard>} />
+            <Route path="/add-phone" element={<AuthGuard><AddPhoneForm /></AuthGuard>} />
+            <Route path="/add-accessories" element={<AuthGuard><AddAccessoriesForm /></AuthGuard>} />
+            <Route path="/edit-phone/:id" element={<AuthGuard><EditPhoneListing /></AuthGuard>} />
+            <Route path="/accessories-for-sale" element={<AuthGuard><AccessoriesForSalePage /></AuthGuard>} />
+            <Route path="/edit-accessory/:id" element={<AuthGuard><EditAccessoryListing /></AuthGuard>} />
+            <Route path="/product/:id" element={<AuthGuard><React.Suspense fallback={null}><ProductDetails /></React.Suspense></AuthGuard>} />
+            <Route path="/privacy-policy" element={<AuthGuard><PrivacyPolicy /></AuthGuard>} />
+            <Route path="/terms-of-use" element={<AuthGuard><TermsOfUse /></AuthGuard>} />
+            <Route path="/favorites" element={<Favorites />} />
+            <Route path="*" element={<NotFound />} />
+            <Route path="/profile-menu" element={<AuthGuard><ProfileMenuPage /></AuthGuard>} />
+            <Route path="/notifications" element={<AuthGuard><NotificationsPage /></AuthGuard>} />
+            <Route path="/rewards" element={<AuthGuard><RewardsPage /></AuthGuard>} />
+            <Route path="/daily-reward" element={<AuthGuard><RewardDailyPage /></AuthGuard>} />
+            <Route path="/rewards-categories" element={<AuthGuard><RewardCategoriesPage /></AuthGuard>} />
+            <Route path="/rewards-shops/:categoryId" element={<AuthGuard><RewardShopsPage /></AuthGuard>} />
+            <Route path="/reward-offer/:offerId" element={<AuthGuard><RewardOfferDetailsPage /></AuthGuard>} />
+            <Route path="/reward-confirm/:offerId" element={<AuthGuard><RewardConfirmationPage /></AuthGuard>} />
+            <Route path="/reward-success/:redemptionId" element={<AuthGuard><RewardSuccessPage /></AuthGuard>} />
+            <Route path="/rewards-history" element={<AuthGuard><RewardHistoryPage /></AuthGuard>} />
+          </Routes>
+        </Suspense>
+      </>
+    </div>
+  );
+};
+
+
+// =================================================================
+// المكون الرئيسي أصبح بسيطاً ومسؤولاً فقط عن تقديم Providers
+// =================================================================
+const App = () => {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <LanguageProvider>
+        <AuthProvider> {/* ✅ AuthProvider يوفر السياق لـ AppCore */}
+          <AdProvider>
+            <AdModalProvider>
+              <TooltipProvider>
+                <AppCore /> {/* ✅ هنا يتم تقديم المكون الذي يحتوي المنطق */}
+              </TooltipProvider>
+            </AdModalProvider>
+          </AdProvider>
+        </AuthProvider>
+      </LanguageProvider>
+    </QueryClientProvider>
+  );
+};
+
+export default App;

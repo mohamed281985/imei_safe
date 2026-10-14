@@ -1,0 +1,96 @@
+.product-details-glass-bg {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #b2e0ea 0%, #e0f7fa 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 30px;
+}
+
+.product-details-card {
+  background: rgba(255, 255, 255, 0.6);
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+  backdrop-filter: blur(8px);
+  border-radius: 24px;
+  padding: 32px 24px;
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.product-details-image {
+  width: 100%;
+  max-width: 320px;
+  border-radius: 16px;
+  margin-bottom: 16px;
+}
+
+.product-details-title {
+  font-size: 1.6rem;
+  font-weight: bold;
+  margin-bottom: 8px;
+  color: #222;
+  text-align: center;
+}
+
+.product-details-status {
+  background: #4dd0e1;
+  color: #fff;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 1rem;
+  margin-bottom: 8px;
+}
+
+.product-details-price {
+  color: #31a05e;
+  font-size: 1.4rem;
+  font-weight: bold;
+  margin-bottom: 12px;
+}
+
+.product-details-info {
+  width: 100%;
+  margin-bottom: 1px;
+  background: rgba(255,255,255,0.8);
+  border-radius: 12px;
+  padding: 8px;
+  font-size: 1rem;
+  color: #333;
+}
+
+.product-details-battery {
+  margin-bottom: 8px;
+  font-size: 1rem;
+  color: #333;
+}
+
+.product-details-description {
+  margin-bottom: 12px;
+  font-size: 1rem;
+  color: #444;
+  text-align: center;
+}
+
+.product-details-seller {
+  margin-bottom: 16px;
+  font-size: 1rem;
+  color: #333;
+  text-align: center;
+}
+
+.product-details-buy-btn {
+  background: #2196f3;
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  padding: 12px 32px;
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.product-details-buy-btn:hover {
+  background: #1976d2;
+}

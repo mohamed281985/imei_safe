@@ -1,0 +1,20 @@
+# Render deployment configuration for the paymop-server
+# Edit `repo` to point to your repository and set environment variables
+# via the Render dashboard (DO NOT commit secrets into the repo).
+services:
+  - type: web
+    name: paymop-server
+    env: node
+    repo: https://github.com/<your-org>/<your-repo>
+    branch: main
+    # Run build/install from the repository root but target the paymop-server folder
+    rootDir: .
+    buildCommand: npm install --prefix paymop-server
+    startCommand: npm --prefix paymop-server start
+    plan: free
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Add other placeholders here; set real secrets in Render dashboard
+      - key: ENCRYPTION_KEY
+        value: "<REPLACE_IN_RENDER_DASHBOARD>"

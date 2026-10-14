@@ -1,0 +1,15 @@
+/* تحسين مظهر حقول الإدخال */
+.input-field {
+  @apply bg-white text-gray-800 rounded-md border border-imei-cyan border-opacity-30
+       px-4 py-2 focus:outline-none focus:border-imei-cyan focus:border-opacity-80
+       focus:ring-1 focus:ring-imei-cyan;
+}
+
+/* تحسين مظهر الحقول على الأجهزة المحمولة */
+@media (max-width: 768px) {
+  .input-field {
+    @apply bg-white text-gray-800 rounded-md border border-imei-cyan border-opacity-30
+         px-4 py-2 focus:outline-none focus:border-imei-cyan focus:border-opacity-80
+         focus:ring-1 focus:ring-imei-cyan;
+  }
+}

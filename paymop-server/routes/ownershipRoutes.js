@@ -1,0 +1,1692 @@
+import bcrypt from 'bcrypt';
+import { validateImageFile } from '../utils/imageValidator.js';
+import { SECURITY_CONFIG } from '../config/security.js';
+import crypto from 'crypto';
+import { createOrRefreshRecoveryCard, normalizeStoragePath } from '../utils/qrCardUtils.js';
+import { isImeiAllowed } from '../utils/imeiValidator.js';
+
+const decryptedRequestCounts = {};
+
+export function registerOwnershipRoutes({
+  app,
+  supabase,
+  verifyJwtToken,
+  verifyOwnerLimiter,
+  sendError,
+  decryptField,
+  normalizeDigitsOnly,
+  maskName,
+  maskPhoneNumber,
+  maskIdLast6,
+  encryptAES,
+  hashPasswordForStorage,
+  logAudit: rawLogAudit,
+  checkAuthBlocked,
+  recordAuthFailure,
+  clearAuthFailures,
+  sendFCMNotificationV1
+}) {
+const getImeiHash = (imei) => {
+  const normalized = normalizeDigitsOnly(imei);
+  if (!normalized) return null;
+
+  return crypto
+    .createHash("sha256")
+    .update(normalized)
+    .digest("hex");
+};
+  const logAudit = (config) => rawLogAudit({ supabase, ...config });
+  app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
+    try {
+      const { imei } = req.body;
+      const userId = req.user.id;
+      if (!imei) return res.status(400).json({ error: 'IMEI required' });
+      if (!isImeiAllowed(imei, req.user?.role)) {
+        return res.status(400).json({ error: 'invalid_imei', message: 'Enter a valid 15-digit IMEI' });
+      }
+
+      const { data: reports, error: reportError } = await supabase
+        .from('phone_reports')
+        .select('imei, report_mode, expiry')
+        .eq('status', 'active');
+
+      if (reportError) throw reportError;
+
+      const normalizedIncoming = normalizeDigitsOnly(imei);
+      const activeReport = reports
+        ? reports.find((r) => {
+          // البلاغ السريع لا يمنع إنشاء بلاغ عادي لنفس الهاتف.
+          if (r.report_mode === 'quick') return false;
+          return normalizeDigitsOnly(decryptField(r.imei)) === normalizedIncoming;
+        })
+        : null;
+
+      // ✅ PERFORMANCE: Fetch only the lightweight columns needed to locate the
+      // matching row (instead of pulling every column, including large image/JSON
+      // fields, for every registered phone just to compare IMEIs). The full row is
+      // fetched separately below, only once a match is found. This does not change
+      // the matching logic or the response shape in any way.
+      const { data: phoneImeiRows, error: phoneImeiError } = await supabase
+        .from('registered_phones')
+        .select('id, imei, user_id');
+      if (phoneImeiError) throw phoneImeiError;
+
+      if (process.env.NODE_ENV === 'development') {
+        try {
+          const decryptedList = (phoneImeiRows || []).map((p) => ({
+            id: p.id,
+            user_id: p.user_id,
+            imei_decrypted: decryptField(p.imei)
+          }));
+          console.log('[IMEI-MASKED-INFO][DEBUG] incoming imei:', imei);
+          console.log('[IMEI-MASKED-INFO][DEBUG] decrypted registered_phones sample (first 20):', decryptedList.slice(0, 20));
+        } catch (dbgErr) {
+          console.error('[IMEI-MASKED-INFO][DEBUG] failed to decrypt sample list:', dbgErr);
+        }
+      }
+
+      const matchedPhoneRow = phoneImeiRows
+        ? phoneImeiRows.find((p) => normalizeDigitsOnly(decryptField(p.imei)) === normalizedIncoming)
+        : null;
+
+      let registeredPhone = null;
+      if (matchedPhoneRow) {
+        const { data: fullPhone, error: fullPhoneError } = await supabase
+          .from('registered_phones')
+          .select('*, receipt_image_url')
+          .eq('id', matchedPhoneRow.id)
+          .maybeSingle();
+        if (fullPhoneError) throw fullPhoneError;
+        registeredPhone = fullPhone || null;
+      }
+
+      if (activeReport) {
+        if (registeredPhone) {
+          const isOwner = userId && registeredPhone.user_id === userId;
+          if (process.env.NODE_ENV === 'development') {
+            console.log('[IMEI-MASKED-INFO][REPORT+REG]', {
+              imei,
+              userId,
+              registeredPhoneUserId: registeredPhone.user_id,
+              isOwner,
+              status: registeredPhone.status
+            });
+          }
+
+          if (registeredPhone.status === 'transferred') {
+            if (userId && registeredPhone.user_id === userId) {
+              const ownerName = decryptField(registeredPhone.owner_name) || registeredPhone.owner_name || '';
+              const phoneNumber = decryptField(registeredPhone.phone_number) || registeredPhone.phone_number || '';
+              const idLast6 = decryptField(registeredPhone.id_last6) || registeredPhone.id_last6 || '';
+              const phoneType = registeredPhone.phone_type || '';
+              const phoneImageUrl = registeredPhone.phone_image_url || '';
+              const countryCodeRaw = decryptField(registeredPhone.country_key) || registeredPhone.country_key || registeredPhone.country_code || registeredPhone.countryKey || '';
+              const maskedCountryCode = countryCodeRaw ? (String(countryCodeRaw).slice(0, 1) + '*'.repeat(Math.max(0, String(countryCodeRaw).length - 1))) : '';
+              return res.json({
+                found: true,
+                masked: false,
+                isRegistered: true,
+                isOwner: true,
+                isTransferred: true,
+                hasActiveReport: true,
+                receipt_image_url: registeredPhone.receipt_image_url,
+                owner_name: ownerName,
+                phone_number: phoneNumber,
+                id_last6: idLast6,
+                country_code: countryCodeRaw,
+                maskedCountryCode: maskedCountryCode,
+                maskedOwnerName: maskName(ownerName),
+                maskedPhoneNumber: maskPhoneNumber(phoneNumber),
+                maskedIdLast6: maskIdLast6(idLast6 || ''),
+                phone_type: phoneType,
+                phone_image_url: phoneImageUrl
+              });
+            }
+
+            console.log('[IMEI-MASKED-INFO] transferred: returning masked transferred info');
+            const decryptedPhoneNumber = decryptField(registeredPhone.phone_number);
+            const decryptedIdLast6 = decryptField(registeredPhone.id_last6);
+            const decryptedOwnerName = decryptField(registeredPhone.owner_name) || registeredPhone.owner_name || '';
+            const countryCodeRaw = decryptField(registeredPhone.country_key) || registeredPhone.country_key || registeredPhone.country_code || registeredPhone.countryKey || '';
+            const maskedCountryCode = countryCodeRaw ? (String(countryCodeRaw).slice(0, 1) + '*'.repeat(Math.max(0, String(countryCodeRaw).length - 1))) : '';
+            const maskedPhoneDetails = {
+              maskedOwnerName: maskName(decryptedOwnerName),
+              maskedPhoneNumber: maskPhoneNumber(decryptedPhoneNumber),
+              maskedIdLast6: maskIdLast6(decryptedIdLast6 || ''),
+              maskedCountryCode: maskedCountryCode,
+              phone_type: registeredPhone.phone_type || '',
+              phone_image_url: registeredPhone.phone_image_url || ''
+            };
+            return res.json({
+              found: true,
+              masked: true,
+              isOtherUser: true,
+              hasActiveReport: true,
+              isTransferred: true,
+              isRegistered: true,
+              receipt_image_url: registeredPhone.receipt_image_url,
+              country_code: countryCodeRaw,
+              ...maskedPhoneDetails
+            });
+          }
+
+          const ownerName = decryptField(registeredPhone.owner_name) || registeredPhone.owner_name || '';
+          const phoneNumber = decryptField(registeredPhone.phone_number) || registeredPhone.phone_number || '';
+          const idLast6 = decryptField(registeredPhone.id_last6) || registeredPhone.id_last6 || '';
+          const phoneType = registeredPhone.phone_type || '';
+          const phoneImageUrl = registeredPhone.phone_image_url || '';
+
+          const countryCodeRaw = decryptField(registeredPhone.country_key) || registeredPhone.country_key || registeredPhone.country_code || registeredPhone.countryKey || '';
+          const maskedCountryCode = countryCodeRaw ? (String(countryCodeRaw).slice(0, 1) + '*'.repeat(Math.max(0, String(countryCodeRaw).length - 1))) : '';
+          const response = {
+            found: true,
+            masked: false,
+            isRegistered: true,
+            isOwner,
+            hasActiveReport: true,
+            receipt_image_url: registeredPhone.receipt_image_url,
+            country_code: countryCodeRaw,
+            maskedCountryCode: maskedCountryCode,
+            maskedOwnerName: maskName(ownerName),
+            maskedPhoneNumber: maskPhoneNumber(phoneNumber),
+            maskedIdLast6: maskIdLast6(idLast6),
+            phone_type: phoneType,
+            phone_image_url: phoneImageUrl
+          };
+          if (process.env.NODE_ENV === 'development') {
+            console.log('[IMEI-MASKED-INFO] Response:', response);
+          }
+          return res.json(response);
+        }
+
+        // Attempt to include caller's country code for autofill when phone is not registered
+        let callerCountryKey = null;
+        try {
+          const { data: urow } = await supabase.from('users').select('country_code').eq('id', userId).maybeSingle();
+          if (urow) callerCountryKey = urow.country_code || urow.country_key || null;
+        } catch (e) {
+          console.warn('[IMEI-MASKED-INFO] failed to fetch caller country key:', e);
+        }
+
+        return res.json({ found: true, masked: false, isRegistered: false, isOwner: false, hasActiveReport: true, country_code: callerCountryKey });
+      }
+
+      if (registeredPhone) {
+        const isOwner = userId && registeredPhone.user_id === userId;
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[IMEI-MASKED-INFO][REG ONLY]', {
+            imei,
+            userId,
+            registeredPhoneUserId: registeredPhone.user_id,
+            isOwner,
+            status: registeredPhone.status
+          });
+        }
+
+        if (registeredPhone.status === 'transferred') {
+          if (userId && registeredPhone.user_id === userId) {
+            const ownerName = decryptField(registeredPhone.owner_name) || registeredPhone.owner_name || '';
+            const phoneNumber = decryptField(registeredPhone.phone_number) || registeredPhone.phone_number || '';
+            const idLast6 = decryptField(registeredPhone.id_last6) || registeredPhone.id_last6 || '';
+            const phoneType = registeredPhone.phone_type || '';
+            const phoneImageUrl = registeredPhone.phone_image_url || '';
+            const countryCodeRaw = decryptField(registeredPhone.country_key) || registeredPhone.country_key || registeredPhone.country_code || registeredPhone.countryKey || '';
+            const maskedCountryCode = countryCodeRaw ? (String(countryCodeRaw).slice(0, 1) + '*'.repeat(Math.max(0, String(countryCodeRaw).length - 1))) : '';
+            return res.json({
+              found: true,
+              masked: false,
+              isRegistered: true,
+              isOwner: true,
+              isTransferred: true,
+              hasActiveReport: false,
+              receipt_image_url: registeredPhone.receipt_image_url,
+              owner_name: ownerName,
+              phone_number: phoneNumber,
+              id_last6: idLast6,
+              country_code: countryCodeRaw,
+              maskedCountryCode: maskedCountryCode,
+              maskedOwnerName: maskName(ownerName),
+              maskedPhoneNumber: maskPhoneNumber(phoneNumber),
+              maskedIdLast6: maskIdLast6(idLast6 || ''),
+              phone_type: phoneType,
+              phone_image_url: phoneImageUrl
+            });
+          }
+
+          console.log('[IMEI-MASKED-INFO] transferred: returning masked transferred info');
+          const decryptedPhoneNumber = decryptField(registeredPhone.phone_number);
+          const decryptedIdLast6 = decryptField(registeredPhone.id_last6);
+          const maskedOwnerRaw = (() => {
+            try {
+              return decryptField(registeredPhone.owner_name) || registeredPhone.owner_name || '';
+            } catch {
+              return registeredPhone.owner_name || '';
+            }
+          })();
+          const countryCodeRaw = decryptField(registeredPhone.country_key) || registeredPhone.country_key || registeredPhone.country_code || registeredPhone.countryKey || '';
+          const maskedCountryCode = countryCodeRaw ? (String(countryCodeRaw).slice(0, 1) + '*'.repeat(Math.max(0, String(countryCodeRaw).length - 1))) : '';
+          const maskedPhoneDetails = {
+            maskedOwnerName: maskName(maskedOwnerRaw),
+            maskedPhoneNumber: maskPhoneNumber(decryptedPhoneNumber),
+            maskedIdLast6: maskIdLast6(decryptedIdLast6 || ''),
+            maskedCountryCode: maskedCountryCode,
+            phone_type: registeredPhone.phone_type || '',
+            phone_image_url: registeredPhone.phone_image_url || ''
+          };
+          return res.json({
+            found: true,
+            masked: true,
+            isOtherUser: true,
+            isTransferred: true,
+            isRegistered: true,
+            hasActiveReport: false,
+            receipt_image_url: registeredPhone.receipt_image_url,
+            country_code: countryCodeRaw,
+            ...maskedPhoneDetails
+          });
+        }
+
+        const ownerName = decryptField(registeredPhone.owner_name) || registeredPhone.owner_name || '';
+        const phoneNumber = decryptField(registeredPhone.phone_number) || registeredPhone.phone_number || '';
+        const idLast6 = decryptField(registeredPhone.id_last6) || registeredPhone.id_last6 || '';
+        const phoneType = registeredPhone.phone_type || '';
+        const phoneImageUrl = registeredPhone.phone_image_url || '';
+
+        const countryCodeRaw = decryptField(registeredPhone.country_key) || registeredPhone.country_key || registeredPhone.country_code || registeredPhone.countryKey || '';
+        const maskedCountryCode = countryCodeRaw ? (String(countryCodeRaw).slice(0, 1) + '*'.repeat(Math.max(0, String(countryCodeRaw).length - 1))) : '';
+        const response = {
+          found: true,
+          masked: true,
+          isOwner,
+          isRegistered: true,
+          hasActiveReport: false,
+          receipt_image_url: registeredPhone.receipt_image_url,
+          country_code: countryCodeRaw,
+          maskedCountryCode: maskedCountryCode,
+          maskedOwnerName: maskName(ownerName),
+          maskedPhoneNumber: maskPhoneNumber(phoneNumber),
+          maskedIdLast6: maskIdLast6(idLast6),
+          phone_type: phoneType,
+          phone_image_url: phoneImageUrl
+        };
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[IMEI-MASKED-INFO] Response:', response);
+        }
+        return res.json(response);
+      }
+
+      // Not registered: include caller country code to assist client autofill
+      console.log('[IMEI-MASKED-INFO] Not registered: found=false');
+      let callerCountryKey2 = null;
+      try {
+        const { data: urow } = await supabase.from('users').select('country_code').eq('id', userId).maybeSingle();
+        if (urow) callerCountryKey2 = urow.country_code || urow.country_key || null;
+      } catch (e) {
+        console.warn('[IMEI-MASKED-INFO] failed to fetch caller country key:', e);
+      }
+      return res.json({ found: false, masked: false, isOwner: false, isRegistered: false, hasActiveReport: false, country_code: callerCountryKey2 });
+    } catch (error) {
+      console.error('Error in imei-masked-info:', error);
+      return res.status(500).json({ error: 'Server error', details: error?.message || '' });
+    }
+  });
+
+  app.post('/api/report-details-decrypted', verifyJwtToken, async (req, res) => {
+    try {
+      const userId = req.user.id;
+      const now = Date.now();
+      const windowMs = 60 * 60 * 1000;
+      const limit = 10;
+      if (!decryptedRequestCounts[userId]) decryptedRequestCounts[userId] = [];
+      decryptedRequestCounts[userId] = decryptedRequestCounts[userId].filter((ts) => now - ts < windowMs);
+      if (decryptedRequestCounts[userId].length >= limit) {
+        try {
+          await logAudit({
+            userId: req.user?.id || null,
+            action: 'rate_limit_exceeded',
+            resourceType: 'phone_report',
+            resourceId: null,
+            details: { reason: 'Rate limit exceeded in report-details-decrypted' },
+            ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed',
+            errorMessage: 'Rate limit exceeded'
+          });
+        } catch (e) {
+          console.warn('/api/report-details-decrypted rate-limit audit failed:', e?.message || e);
+        }
+        return res.status(429).json({ error: 'Rate limit exceeded' });
+      }
+      decryptedRequestCounts[userId].push(now);
+
+      const { reportId, id } = req.body;
+      const targetId = reportId || id;
+      if (!targetId) return res.status(400).json({ error: 'reportId is required' });
+
+      const { data: report, error } = await supabase
+        .from('phone_reports')
+        .select('*')
+        .eq('id', targetId)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Error fetching report for decrypted details:', error);
+        return res.status(500).json({ error: 'Database error' });
+      }
+      if (!report) return res.status(404).json({ error: 'Report not found' });
+      if (req.user.id !== report.user_id) {
+        try {
+          await logAudit({
+            userId: req.user?.id || null,
+            action: 'forbidden_access',
+            resourceType: 'phone_report',
+            resourceId: report?.id || null,
+            details: { reason: 'Forbidden: only owner can view decrypted details' },
+            ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed',
+            errorMessage: 'Forbidden: only owner can view decrypted details'
+          });
+        } catch (e) {
+          console.warn('/api/report-details-decrypted forbidden audit failed:', e?.message || e);
+        }
+        return res.status(403).json({ error: 'Forbidden: only owner can view decrypted details' });
+      }
+
+      const decrypted = {
+        id: report.id,
+        imei: decryptField(report.imei),
+        owner_name: decryptField(report.owner_name) || report.owner_name,
+        phone_number: decryptField(report.phone_number) || report.phone_number,
+        phone_type: decryptField(report.phone_type) || report.phone_type,
+        loss_location: decryptField(report.loss_location) || report.loss_location,
+        loss_time: report.loss_time || null,
+        id_last6: decryptField(report.id_last6) || report.id_last6,
+        email: decryptField(report.email) || report.email,
+        fcm_token: report.fcm_token || null,
+        report_date: report.report_date || null,
+        status: report.status || null,
+        receipt_image_url: report.receipt_image_url || null,
+        finder_phone: decryptField(report.finder_phone) || report.finder_phone || null
+      };
+
+      try {
+        await logAudit({
+          userId: req.user?.id || null,
+          action: 'decrypt_report_details',
+          resourceType: 'phone_report',
+          resourceId: report?.id || null,
+          oldValues: null,
+          newValues: null,
+          details: { endpoint: '/api/report-details-decrypted' },
+          ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+          userAgent: req.headers['user-agent'] || null,
+          status: 'success'
+        });
+      } catch (e) {
+        console.warn('/api/report-details-decrypted audit failed:', e?.message || e);
+      }
+
+      return res.json({ success: true, ...decrypted, data: decrypted });
+    } catch (err) {
+      console.error('Error in /api/report-details-decrypted:', err);
+      return res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  app.post('/api/verify-seller-password', verifyJwtToken, async (req, res) => {
+    try {
+      const { imei, password } = req.body;
+      const userId = req.user?.id;
+
+      // ✅ SECURITY: لا نطبع IMEI الفعلي إلا في وضع التطوير
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[verify-seller-password] userId:', userId, 'imei:', imei, 'password:', !!password);
+      }
+
+      if (!userId) {
+        try {
+          await logAudit({
+            userId: req.user?.id || null,
+            action: 'unauthorized_access',
+            resourceType: 'registered_phone',
+            resourceId: null,
+            details: { reason: 'Unauthorized' },
+            ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed',
+            errorMessage: 'Unauthorized'
+          });
+        } catch (e) {
+          console.warn('/api/verify-seller-password unauthorized audit failed:', e?.message || e);
+        }
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      if (!imei || !password) return res.status(400).json({ error: 'imei and password required' });
+
+      const userKey = req.user && req.user.id ? `uid:${req.user.id}` : `ip:${req.ip}`;
+      const blocked = checkAuthBlocked(userKey);
+      if (blocked.blocked) {
+        const retryAfter = Math.ceil((blocked.retryAfterMs || 0) / 1000);
+        try {
+          await logAudit({
+            userId: req.user?.id || null,
+            action: 'rate_limit_exceeded',
+            resourceType: 'registered_phone',
+            resourceId: null,
+            details: { reason: 'Rate limit exceeded', retryAfter },
+            ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed',
+            errorMessage: 'Rate limit exceeded'
+          });
+        } catch (e) {
+          console.warn('/api/verify-seller-password rate-limit audit failed:', e?.message || e);
+        }
+        return res.status(429).json({ ok: false, error: 'Rate limit exceeded', retryAfter });
+      }
+
+      const imeiHash = getImeiHash(imei);
+
+      const { data: registeredPhone, error } = await supabase
+        .from('registered_phones')
+        .select('*')
+        .eq('imei_hash', imeiHash)
+        .maybeSingle();
+
+      if (error) throw error;
+
+     if (!registeredPhone) return res.status(404).json({ ok: false, error: 'Phone not found' });
+      if (registeredPhone.user_id !== req.user.id) {
+        try {
+          await logAudit({
+            userId: req.user?.id || null,
+            action: 'forbidden_access',
+            resourceType: 'registered_phone',
+            resourceId: registeredPhone?.id || null,
+            details: { reason: 'Not owner' },
+            ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed',
+            errorMessage: 'Not owner'
+          });
+        } catch (e) {
+          console.warn('/api/verify-seller-password forbidden audit failed:', e?.message || e);
+        }
+        return res.status(403).json({ ok: false, error: 'Not owner' });
+      }
+
+      const passwordMatched = registeredPhone.password
+        ? await bcrypt.compare(String(password), String(registeredPhone.password))
+        : false;
+      if (!passwordMatched) {
+        recordAuthFailure(userKey);
+        try {
+          await logAudit({
+            userId: req.user?.id || null,
+            action: 'verify_seller_password',
+            resourceType: 'registered_phone',
+            resourceId: registeredPhone?.id || null,
+            details: { reason: 'Wrong Password', imei_last_4: String(imei || '').slice(-4) },
+            ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed',
+            errorMessage: 'Wrong Password'
+          });
+        } catch (e) {
+          console.warn('/api/verify-seller-password wrong-password audit failed:', e?.message || e);
+        }
+        return res.json({ ok: false });
+      }
+      clearAuthFailures(userKey);
+
+      try {
+        await logAudit({
+          userId: req.user?.id || null,
+          action: 'verify_seller_password',
+          resourceType: 'registered_phone',
+          resourceId: registeredPhone?.id || null,
+          oldValues: null,
+          newValues: null,
+          details: { imei_last_4: String(imei || '').slice(-4) },
+          ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+          userAgent: req.headers['user-agent'] || null,
+          status: 'success'
+        });
+      } catch (e) {
+        console.warn('/api/verify-seller-password success audit failed:', e?.message || e);
+      }
+
+      return res.json({ ok: true });
+    } catch (err) {
+      console.error('verify-seller-password error:', err);
+      return res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  app.post('/api/transfer-ownership', verifyJwtToken, async (req, res) => {
+    try {
+      const {
+        imei,
+        sellerPassword,
+        newOwner,
+        new_receipt_image_url,
+        receiptImage
+      } = req.body;
+      let uploadedReceiptPath = null;
+      if (!isImeiAllowed(imei, req.user?.role)) {
+        return res.status(400).json({ error: 'invalid_imei', message: 'Enter a valid 15-digit IMEI' });
+      }
+
+      if (receiptImage) {
+        try {
+          const matches = receiptImage.match(/^data:(.+);base64,(.+)$/);
+
+          if (matches) {
+            const mimeType = matches[1];
+            const base64Data = matches[2];
+
+            const buffer = Buffer.from(base64Data, 'base64');
+
+            const fileId = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}_${Math.floor(Math.random() * 1e9)}`;
+            const fileName = `${fileId}_phone_${Date.now()}.jpg`;
+            const filePath = `${fileName}`; // store at bucket root to match phone image naming
+
+            // Upload receipts using the same bucket as phone images so filenames/locations match
+            const { error: uploadError } = await supabase.storage
+              .from('registerphone')
+              .upload(filePath, buffer, {
+                contentType: mimeType,
+                upsert: true
+              });
+
+            if (uploadError) {
+              console.error('Receipt upload failed:', uploadError);
+            } else {
+              uploadedReceiptPath = filePath;
+            }
+          }
+        } catch (e) {
+          console.error('Receipt upload exception:', e);
+        }
+      }
+      const userId = req.user?.id;
+
+      if (!userId) {
+        try {
+          await logAudit({
+            userId: req.user?.id || null,
+            action: 'unauthorized_access',
+            resourceType: 'registered_phone',
+            resourceId: null,
+            details: { reason: 'Unauthorized: No user ID' },
+            ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed',
+            errorMessage: 'Unauthorized: No user ID'
+          });
+        } catch (e) {
+          console.warn('/api/transfer-ownership unauthorized audit failed:', e?.message || e);
+        }
+        return res.status(401).json({ error: 'Unauthorized: No user ID' });
+      }
+      if (!imei || !sellerPassword || !newOwner) {
+        return res.status(400).json({ error: 'imei, sellerPassword and newOwner required' });
+      }
+
+      const imeiHash = getImeiHash(imei);
+
+      const { data: registeredPhone, error } = await supabase
+        .from('registered_phones')
+        .select('*')
+        .eq('imei_hash', imeiHash)
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!registeredPhone) return res.status(404).json({ error: 'Phone not found' });
+
+      console.log('[transfer-ownership] registeredPhone (raw) for imei=', imei, {
+        id: registeredPhone?.id,
+        status: registeredPhone?.status,
+        user_id: registeredPhone?.user_id
+      });
+
+      if (registeredPhone.user_id !== userId) {
+        try {
+          await logAudit({
+            userId: req.user?.id || null,
+            action: 'forbidden_access',
+            resourceType: 'registered_phone',
+            resourceId: registeredPhone?.id || null,
+            details: { reason: 'Forbidden: only current owner can transfer' },
+            ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed',
+            errorMessage: 'Forbidden: only current owner can transfer'
+          });
+        } catch (e) {
+          console.warn('/api/transfer-ownership forbidden audit failed:', e?.message || e);
+        }
+        return res.status(403).json({ error: 'Forbidden: only current owner can transfer' });
+      }
+
+      const userKey = req.user && req.user.id ? `uid:${req.user.id}` : `ip:${req.ip}`;
+      const blocked = checkAuthBlocked(userKey);
+      if (blocked.blocked) {
+        const retryAfter = Math.ceil((blocked.retryAfterMs || 0) / 1000);
+        try {
+          await logAudit({
+            userId: req.user?.id || null,
+            action: 'rate_limit_exceeded',
+            resourceType: 'registered_phone',
+            resourceId: registeredPhone?.id || null,
+            details: { reason: 'Rate limit exceeded', retryAfter },
+            ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed',
+            errorMessage: 'Rate limit exceeded'
+          });
+        } catch (e) {
+          console.warn('/api/transfer-ownership rate-limit audit failed:', e?.message || e);
+        }
+        return res.status(429).json({ error: 'Rate limit exceeded', retryAfter });
+      }
+
+      const sellerPasswordMatched = registeredPhone.password
+        ? await bcrypt.compare(String(sellerPassword), String(registeredPhone.password))
+        : false;
+      if (!sellerPasswordMatched) {
+        recordAuthFailure(userKey);
+        try {
+          await logAudit({
+            userId: req.user?.id || null,
+            action: 'verify_seller_password',
+            resourceType: 'registered_phone',
+            resourceId: registeredPhone?.id || null,
+            details: { reason: 'Wrong Password', imei_last_4: String(imei || '').slice(-4) },
+            ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed',
+            errorMessage: 'Wrong Password'
+          });
+        } catch (e) {
+          console.warn('/api/transfer-ownership wrong-password audit failed:', e?.message || e);
+        }
+        return res.status(401).json({ error: 'Incorrect seller password' });
+      }
+      clearAuthFailures(userKey);
+
+      // نقل الملكية لا يحتفظ ببيانات شخصية للبائع أو المشتري.
+      const updateData = {
+        owner_name: '',
+        phone_number: '',
+        country_code: '',
+        id_last6: '',
+        email: ''
+      };
+
+      if (typeof newOwner.phone_type !== 'undefined') updateData.phone_type = newOwner.phone_type;
+      if (typeof newOwner.password !== 'undefined' && newOwner.password) {
+        updateData.password = await hashPasswordForStorage(newOwner.password);
+      }
+
+      // Update receipt image if a new receipt was uploaded
+      if (uploadedReceiptPath) {
+        updateData.receipt_image_url = uploadedReceiptPath;
+      }
+
+      let buyerUserId = null;
+      if (typeof newOwner.user_id !== 'undefined' && newOwner.user_id !== null) {
+        buyerUserId = newOwner.user_id;
+      } else if (newOwner.email) {
+        try {
+          const { data: userRecord, error: userError } = await supabase.from('users').select('id').eq('email', newOwner.email).maybeSingle();
+          if (!userError && userRecord && userRecord.id) buyerUserId = userRecord.id;
+        } catch (e) {
+          console.error('transfer-ownership: failed to lookup buyer user by email in users table', e);
+        }
+      }
+      updateData.user_id = buyerUserId;
+      updateData.status = 'sold';
+
+      if (!buyerUserId) {
+        return res.status(400).json({ error: 'لم يتم العثور على حساب المستخدم الجديد عبر البريد الإلكتروني' });
+      }
+
+      console.log('[transfer-ownership] updateData prepared:', updateData);
+
+      const { data: updated, error: updateErr } = await supabase
+        .from('registered_phones')
+        .update(updateData)
+        .eq('id', registeredPhone.id)
+        .select();
+      if (updateErr) {
+        console.error('transfer-ownership: update registered_phones error:', updateErr);
+        throw updateErr;
+      }
+
+      const updatedPhoneRow = Array.isArray(updated) ? updated[0] : updated;
+      let recoveryCard = null;
+      if (updatedPhoneRow) {
+        try {
+          recoveryCard = await createOrRefreshRecoveryCard(supabase, updatedPhoneRow, { forceRefresh: true });
+        } catch (cardErr) {
+          console.error('transfer-ownership: failed to refresh QR recovery card:', cardErr);
+          return res.status(500).json({ error: 'فشل إنشاء باركود المستخدم الجديد' });
+        }
+      }
+
+      try {
+        // إشعار البائع
+        const { data: sellerRow } = await supabase
+          .from('users')
+          .select('fcm_token, language')
+          .eq('id', userId)
+          .single();
+
+        if (sellerRow?.fcm_token) {
+          // Simple localized messages; if you want to use the full frontend translation files
+          // we can load them separately. For now use these keys to cover supported langs.
+          const notificationTranslations = {
+            en: {
+              ownership_transferred_title: 'Ownership Transferred',
+              ownership_transferred_body: 'Your phone ownership has been successfully transferred.',
+              ownership_received_title: 'Ownership Received',
+              ownership_received_body: 'You are now the new owner of this phone.'
+            },
+            ar: {
+              ownership_transferred_title: 'تم نقل ملكية الهاتف',
+              ownership_transferred_body: 'تم نقل ملكية هاتفك بنجاح إلى المالك الجديد.',
+              ownership_received_title: 'تم استلام ملكية الهاتف',
+              ownership_received_body: 'أصبحت المالك الجديد لهذا الهاتف بنجاح.'
+            },
+            fr: {
+              ownership_transferred_title: 'Transfert de propriété',
+              ownership_transferred_body: "La propriété de votre téléphone a été transférée avec succès.",
+              ownership_received_title: 'Propriété reçue',
+              ownership_received_body: "Vous êtes désormais le nouveau propriétaire de ce téléphone."
+            },
+            hi: {
+              ownership_transferred_title: 'Ownership Transferred',
+              ownership_transferred_body: 'Your phone ownership has been successfully transferred.',
+              ownership_received_title: 'Ownership Received',
+              ownership_received_body: 'You are now the new owner of this phone.'
+            }
+          };
+
+          const userLang = (sellerRow.language || 'en').toString().slice(0, 2).toLowerCase();
+          const dict = notificationTranslations[userLang] || notificationTranslations['en'];
+
+          await sendFCMNotificationV1({
+            token: sellerRow.fcm_token,
+            title: dict.ownership_transferred_title,
+            body: dict.ownership_transferred_body
+          });
+
+          await supabase.from('notifications').insert({
+            user_id: userId,
+            title: dict.ownership_transferred_title,
+            body: dict.ownership_transferred_body,
+            type: 'ownership_transfer'
+          });
+        }
+
+        // إشعار المشتري
+        const buyerUserId = updateData.user_id;
+
+        if (buyerUserId) {
+          const { data: buyerRow } = await supabase
+            .from('users')
+            .select('fcm_token, language')
+            .eq('id', buyerUserId)
+            .single();
+
+          if (buyerRow?.fcm_token) {
+            const buyerTitle =
+              buyerRow.language === 'en'
+                ? 'Ownership Received'
+                : 'تم استلام ملكية الهاتف';
+
+            const buyerBody =
+              buyerRow.language === 'en'
+                ? 'You are now the new owner of this phone.'
+                : 'أصبحت المالك الجديد لهذا الهاتف بنجاح.';
+
+            await sendFCMNotificationV1({
+              token: buyerRow.fcm_token,
+              title: buyerTitle,
+              body: buyerBody
+            });
+
+            await supabase.from('notifications').insert({
+              user_id: buyerUserId,
+              title: buyerTitle,
+              body: buyerBody,
+              type: 'ownership_transfer',
+              is_read: false
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Ownership FCM Error:', err);
+      }
+      console.log('[transfer-ownership] registered_phones updated result:', updated);
+
+      const transferRecord = {
+  date: new Date().toISOString(),
+  imei: JSON.stringify(encryptAES(imei)),
+  phone_type: newOwner.phone_type || registeredPhone.phone_type || null,
+  seller_name: '',
+  seller_phone: '',
+  seller_id_last6: '',
+  buyer_name: '',
+  buyer_phone: '',
+  buyer_id_last6: '',
+
+  // أضف هذا السطر
+  seller_receipt_image_url: registeredPhone.receipt_image_url || null,
+
+  // فاتورة المشتري
+  receipt_image:
+    uploadedReceiptPath ||
+    new_receipt_image_url ||
+    registeredPhone.receipt_image_url ||
+    null,
+
+  // صورة الجهاز
+  phone_image: registeredPhone.phone_image_url || null
+};
+
+      const { data: transferInserted, error: transferErr } = await supabase
+        .from('transfer_records')
+        .insert([transferRecord])
+        .select();
+
+      if (transferErr) {
+        console.error('transfer-ownership: failed to insert transfer record', transferErr);
+      }
+
+      await logAudit({
+        userId,
+        action: 'transfer_ownership',
+        resourceType: 'phone',
+        resourceId: registeredPhone.id,
+        oldValues: { owner_masked: 'hidden' },
+        newValues: { owner_masked: 'hidden' },
+        details: { imei_last_4: imei.slice(-4), transferId: transferInserted?.[0]?.id },
+        ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+        userAgent: req.headers['user-agent'] || null,
+        status: 'success'
+      });
+
+      return res.json({
+        success: true,
+        data: updated,
+        transferRecordId: transferInserted?.[0]?.id || null,
+        recoveryCard: recoveryCard ? {
+          phoneId: recoveryCard.id,
+          userId: recoveryCard.user_id,
+          qrToken: recoveryCard.qr_token,
+          deviceCode: recoveryCard.device_code,
+          qrCardUrl: recoveryCard.qr_card_url
+        } : null
+      });
+    } catch (err) {
+      console.error('transfer-ownership error:', err);
+      return sendError(res, 500, 'حدث خطأ في الخادم', err);
+    }
+  });
+
+  app.post('/api/transfer-records', verifyJwtToken, async (req, res) => {
+    try {
+      const { imei } = req.body || {};
+      const userId = req.user?.id;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      if (!imei) return res.status(400).json({ error: 'imei is required' });
+
+      const imeiHash = getImeiHash(imei);
+
+      const { data: ownPhone, error: ownPhonesErr } = await supabase
+        .from('registered_phones')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('imei_hash', imeiHash)
+        .maybeSingle();
+
+      if (ownPhonesErr) throw ownPhonesErr;
+
+      const imeiOwned = !!ownPhone;
+      if (!imeiOwned) return res.status(403).json({ error: 'Not authorized' });
+
+      const { data: records, error } = await supabase
+        .from('transfer_records')
+        .select('*')
+        .order('date', { ascending: false })
+        .limit(1000);
+      if (error) throw error;
+
+      const filtered = (records || []).filter((r) => {
+        const decImei = decryptField(r.imei) || r.imei;
+        return normalizeDigitsOnly(decImei) === normalizeDigitsOnly(imei);
+      });
+
+      const decrypted = filtered.map((r) => ({
+        ...r,
+        imei: decryptField(r.imei) || r.imei,
+        seller_name: decryptField(r.seller_name) || r.seller_name,
+        seller_phone: decryptField(r.seller_phone) || r.seller_phone,
+        seller_id_last6: decryptField(r.seller_id_last6) || r.seller_id_last6,
+        buyer_name: decryptField(r.buyer_name) || r.buyer_name,
+        buyer_phone: decryptField(r.buyer_phone) || r.buyer_phone,
+        buyer_id_last6: decryptField(r.buyer_id_last6) || r.buyer_id_last6
+      }));
+
+      try {
+        const withUrls = [];
+        for (const record of decrypted) {
+          const copy = { ...record };
+
+          try {
+            const phoneImage = copy.phone_image;
+            if (phoneImage && typeof phoneImage === 'string' && !phoneImage.startsWith('http') && !phoneImage.startsWith('data:') && !phoneImage.startsWith('blob:')) {
+              const cleaned = String(phoneImage).replace(/^\/+/, '');
+              const { data: urlData, error: urlErr } = await supabase.storage.from('registerphone').createSignedUrl(cleaned, 300);
+              if (!urlErr && urlData && urlData.signedUrl) copy.phone_image = urlData.signedUrl;
+            }
+          } catch {
+          }
+
+          try {
+            const receiptImage = copy.receipt_image;
+            if (receiptImage && typeof receiptImage === 'string' && !receiptImage.startsWith('http') && !receiptImage.startsWith('data:') && !receiptImage.startsWith('blob:')) {
+              const cleaned = String(receiptImage).replace(/^\/+/, '');
+      
+              let signedUrl = null;
+
+              // أولاً حاول registerphone
+              let { data: urlData } = await supabase.storage
+                .from("registerphone")
+                .createSignedUrl(cleaned, 300);
+
+              if (urlData?.signedUrl) {
+                signedUrl = urlData.signedUrl;
+              } else {
+                // إذا لم يوجد، حاول transfer-assets
+                ({ data: urlData } = await supabase.storage
+                  .from("transfer-assets")
+                  .createSignedUrl(cleaned, 300));
+
+                if (urlData?.signedUrl) {
+                  signedUrl = urlData.signedUrl;
+                }
+              }
+
+              if (signedUrl) {
+                copy.receipt_image = signedUrl;
+              }
+            }
+          } catch {
+          }
+
+          withUrls.push(copy);
+        }
+
+        return res.json({ success: true, data: withUrls });
+      } catch (e) {
+        console.warn('/api/transfer-records/verify-owner: failed to generate signed URLs for images', e?.message || e);
+        return res.json({ success: true, data: decrypted });
+      }
+    } catch (err) {
+      console.error('transfer-records error:', err);
+      return res.status(500).json({ error: 'Server error', details: err?.message || '' });
+    }
+  });
+
+  app.post('/api/transfer-records/verify-owner', verifyOwnerLimiter, async (req, res) => {
+    try {
+      const { imei, ownerPassword, cardLast6 } = req.body || {};
+      if (!imei || !ownerPassword || !cardLast6) return res.status(400).json({ error: 'imei, ownerPassword, and cardLast6 are required' });
+
+      // التحقق من صيغة آخر 6 أرقام من البطاقة
+      if (cardLast6.length !== 6 || !/^\d+$/.test(cardLast6)) {
+        return res.status(400).json({ error: 'cardLast6 must be exactly 6 digits' });
+      }
+      const imeiHash = getImeiHash(imei);
+
+      const { data: matching, error: phonesErr } = await supabase
+        .from('registered_phones')
+        .select('id, user_id, imei, password, id_last6')
+        .eq('imei_hash', imeiHash)
+        .maybeSingle();
+
+      if (phonesErr) throw phonesErr;
+      if (!matching) return res.status(404).json({ error: 'Owner not found for IMEI' });
+
+      const storedHash = matching.password;
+      if (!storedHash) return res.status(400).json({ error: 'No registration password set for this IMEI' });
+
+      // التحقق من كلمة المرور
+      const passwordMatches = await bcrypt.compare(String(ownerPassword), String(storedHash));
+      if (!passwordMatches) return res.status(401).json({ error: 'Invalid owner credentials' });
+
+      // التحقق من آخر 6 أرقام من البطاقة
+      const storedCardLast6 = matching.id_last6 ? decryptField(matching.id_last6) : null;
+      if (!storedCardLast6 || storedCardLast6.slice(-6) !== cardLast6) {
+        return res.status(401).json({ error: 'Invalid card details' });
+      }
+
+      const { data: records, error } = await supabase
+        .from('transfer_records')
+        .select('*')
+        .order('date', { ascending: false })
+        .limit(1000);
+      if (error) throw error;
+
+      const filtered = (records || []).filter((r) => {
+        const decImei = decryptField(r.imei) || r.imei;
+        return normalizeDigitsOnly(decImei) === normalizeDigitsOnly(imei);
+      });
+
+      const decrypted = filtered.map((r) => ({
+        ...r,
+        imei: decryptField(r.imei) || r.imei,
+        seller_name: decryptField(r.seller_name) || r.seller_name,
+        seller_phone: decryptField(r.seller_phone) || r.seller_phone,
+        seller_id_last6: decryptField(r.seller_id_last6) || r.seller_id_last6,
+        buyer_name: decryptField(r.buyer_name) || r.buyer_name,
+        buyer_phone: decryptField(r.buyer_phone) || r.buyer_phone,
+        buyer_id_last6: decryptField(r.buyer_id_last6) || r.buyer_id_last6
+      }));
+
+      return res.json({ success: true, data: decrypted });
+    } catch (err) {
+      console.error('/api/transfer-records/verify-owner error:', err);
+      return res.status(500).json({ error: 'Server error', details: err?.message || '' });
+    }
+  });
+
+  // Endpoint: تحقق مما إذا كان هناك بلاغ "active" ل imei مشفّر (لا يغيّر الحالة)
+  app.post('/api/check-report-active', verifyJwtToken, async (req, res) => {
+    try {
+      const { imei_encrypted } = req.body || {};
+      const userId = req.user?.id;
+      if (!userId) return res.status(401).json({ success: false, error: 'Unauthorized' });
+      if (!imei_encrypted) return res.status(400).json({ success: false, error: 'imei_encrypted is required' });
+
+      const incomingImei = decryptField(imei_encrypted) || null;
+      if (!incomingImei) return res.status(400).json({ success: false, error: 'Invalid imei_encrypted' });
+      const normalizedIncoming = normalizeDigitsOnly(incomingImei);
+
+      const imeiHash = getImeiHash(incomingImei);
+
+      const { data: report, error: fetchErr } = await supabase
+        .from('phone_reports')
+        .select('*')
+        .eq('imei_hash', imeiHash)
+        .maybeSingle();
+
+      if (fetchErr) throw fetchErr;
+
+      const matchingActive = (reports || []).filter((r) => {
+        try {
+          const dec = decryptField(r.imei) || r.imei;
+          return normalizeDigitsOnly(dec) === normalizedIncoming && r.status === 'active';
+        } catch (e) {
+          return false;
+        }
+      });
+
+      const anyMatches = (reports || []).filter((r) => {
+        try {
+          const dec = decryptField(r.imei) || r.imei;
+          return normalizeDigitsOnly(dec) === normalizedIncoming;
+        } catch (e) {
+          return false;
+        }
+      });
+
+      // To avoid relying on possibly stale bulk results, re-query each matching report by id
+      // and use the authoritative status from the DB for the final decision.
+      const idsToCheck = anyMatches.map(r => r.id);
+      let authoritativeActive = false;
+      const refreshedStatuses = [];
+      for (const id of idsToCheck) {
+        try {
+          const { data: single, error: singleErr } = await supabase
+            .from('phone_reports')
+            .select('id,status')
+            .eq('id', id)
+            .maybeSingle();
+          if (singleErr) {
+            console.warn('[check-report-active] failed to re-fetch report', id, singleErr);
+            continue;
+          }
+          refreshedStatuses.push({ id: single.id, status: single.status });
+          if (String(single.status) === 'active') authoritativeActive = true;
+        } catch (e) {
+          console.warn('[check-report-active] exception re-fetching report', id, e);
+        }
+      }
+
+      return res.json({ success: true, active: authoritativeActive, matchingCount: matchingActive.length, anyMatchesCount: anyMatches.length, refreshed: refreshedStatuses });
+    } catch (err) {
+      console.error('check-report-active error:', err);
+      return res.status(500).json({ success: false, error: 'Server error' });
+    }
+  });
+
+  // Endpoint: حل البلاغات بناءً على imei مشفّر (مستخدم في الواجهة عند تأكيد العثور)
+  app.post('/api/resolve-report', verifyJwtToken, async (req, res) => {
+    try {
+      const { imei_encrypted } = req.body || {};
+      const userId = req.user?.id;
+      if (!userId) return res.status(401).json({ success: false, error: 'Unauthorized' });
+      if (!imei_encrypted) return res.status(400).json({ success: false, error: 'imei_encrypted is required' });
+
+      // حاول استخراج قيمة IMEI من الحمولة المشفّرة المرسلة
+      const incomingImei = decryptField(imei_encrypted) || null;
+      if (!incomingImei) return res.status(400).json({ success: false, error: 'Invalid imei_encrypted' });
+      const normalizedIncoming = normalizeDigitsOnly(incomingImei);
+
+      // جلب كل البلاغات الفعالة لمستخدمنا أو عامة للبحث
+      const imeiHash = getImeiHash(incomingImei);
+
+      const { data: report, error: fetchErr } = await supabase
+        .from('phone_reports')
+        .select('*')
+        .eq('imei_hash', imeiHash)
+        .maybeSingle();
+
+      if (fetchErr) throw fetchErr;
+
+      // Diagnostic: show decrypted incoming and a small sample of decrypted report IMEIs
+      // ✅ SECURITY: بناء العينة المفكوكة التشفير وطباعتها يقتصران على وضع التطوير فقط
+      // لتفادي تسريب IMEI ومعرفات المستخدمين في سجلات الإنتاج، ولتجنب فك تشفير غير ضروري.
+      let sampleDecrypted = [];
+      if (process.env.NODE_ENV !== 'production') {
+        try {
+          for (let i = 0; i < Math.min(10, reports.length); i++) {
+            const r = reports[i];
+            try {
+              const dec = decryptField(r.imei) || r.imei;
+              sampleDecrypted.push({ id: r.id, user_id: r.user_id, status: r.status, imei_dec: dec });
+            } catch (e) {
+              sampleDecrypted.push({ id: r.id, user_id: r.user_id, status: r.status, imei_dec: '<decrypt-failed>' });
+            }
+          }
+        } catch (e) {
+          console.warn('[resolve-report] failed to build sampleDecrypted:', e);
+        }
+      }
+
+      const matching = (reports || []).filter((r) => {
+        try {
+          const dec = decryptField(r.imei) || r.imei;
+          // Match active reports for the same IMEI regardless of who created the report
+          return normalizeDigitsOnly(dec) === normalizedIncoming && r.status === 'active';
+        } catch (e) {
+          return false;
+        }
+      });
+
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[resolve-report] normalizedIncoming:', normalizedIncoming, 'matchingCount:', matching.length, 'sampleDecrypted:', sampleDecrypted.slice(0, 5));
+      } else {
+        console.log('[resolve-report] matchingCount:', matching.length);
+      }
+
+      if (!matching || matching.length === 0) {
+        // If no active reports, check if there are reports for this IMEI in other states (e.g., already resolved)
+        const anyMatches = (reports || []).filter((r) => {
+          try {
+            const dec = decryptField(r.imei) || r.imei;
+            return normalizeDigitsOnly(dec) === normalizedIncoming;
+          } catch (e) {
+            return false;
+          }
+        });
+
+        if (anyMatches && anyMatches.length > 0) {
+          // Found reports but none active (likely already resolved) — return informative success so client can continue
+          console.log('[resolve-report] found non-active matches, returning already_resolved');
+          return res.json({ success: true, message: 'already_resolved', data: anyMatches });
+        }
+
+        return res.status(404).json({ success: false, error: 'Report not found' });
+      }
+
+      const ids = matching.map(m => m.id);
+      const { data: updated, error: updateErr } = await supabase
+        .from('phone_reports')
+        .update({ status: 'resolved' })
+        .in('id', ids)
+        .select();
+      if (updateErr) throw updateErr;
+
+      // Audit
+      for (const id of ids) {
+        try {
+          await logAudit({
+            userId,
+            action: 'resolve_report',
+            resourceType: 'phone_report',
+            resourceId: id,
+            oldValues: { status: 'active' },
+            newValues: { status: 'resolved' },
+            ip: req.ip,
+            userAgent: req.headers['user-agent']
+          });
+        } catch (auditErr) {
+          console.warn('resolve-report: audit log failed', auditErr);
+        }
+      }
+
+      return res.json({ success: true, data: updated });
+    } catch (err) {
+      console.error('resolve-report error:', err);
+      return res.status(500).json({ success: false, error: 'Server error' });
+    }
+  });
+
+  app.post('/api/update-phone-status', verifyJwtToken, async (req, res) => {
+    try {
+      const { ids, status, confirmOnly } = req.body;
+      const userId = req.user?.id;
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      if (!ids || !Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids required' });
+      if (!status && !confirmOnly) return res.status(400).json({ error: 'status or confirmOnly required' });
+
+      const isOwnershipConfirmation = Boolean(confirmOnly || status === 'approved');
+      if (isOwnershipConfirmation) {
+        const { data: phones, error: phonesError } = await supabase
+          .from('registered_phones')
+          .select('id, user_id, status, registration_date, last_confirmed_at')
+          .in('id', ids)
+          .eq('user_id', userId);
+
+        if (phonesError) throw phonesError;
+
+        for (const phone of phones || []) {
+          const baseDate = phone.last_confirmed_at || phone.registration_date;
+          const dueAt = new Date(baseDate);
+          dueAt.setMonth(dueAt.getMonth() + 3);
+          const expiryAt = new Date(baseDate);
+          expiryAt.setMonth(expiryAt.getMonth() + 4);
+          const now = Date.now();
+
+          if (Number.isNaN(dueAt.getTime()) || now < dueAt.getTime()) {
+            return res.status(409).json({
+              success: false,
+              error: 'لا يمكن تأكيد الملكية قبل مرور ثلاثة أشهر من آخر تأكيد',
+              confirmationDueAt: Number.isNaN(dueAt.getTime()) ? null : dueAt.toISOString()
+            });
+          }
+
+          if (!Number.isNaN(expiryAt.getTime()) && now >= expiryAt.getTime()) {
+            await supabase
+              .from('registered_phones')
+              .update({ status: 'transferred' })
+              .eq('id', phone.id)
+              .eq('user_id', userId);
+            return res.status(409).json({
+              success: false,
+              error: 'انتهت مهلة تأكيد الملكية وأصبح الهاتف متاحًا للتسجيل من جديد',
+              ownershipExpired: true
+            });
+          }
+        }
+      }
+
+      // Build update payload. Only an ownership confirmation refreshes the
+      // confirmation clock; unrelated status changes must not extend it.
+      const updatePayload = {};
+      if (isOwnershipConfirmation) {
+        updatePayload.last_confirmed_at = new Date().toISOString();
+      }
+      if (!confirmOnly) {
+        updatePayload.status = status;
+      }
+
+      console.log('[update-phone-status] userId:', userId, 'ids:', ids, 'status:', status, 'confirmOnly:', !!confirmOnly);
+      const { data, error } = await supabase
+        .from('registered_phones')
+        .update(updatePayload)
+        .in('id', ids)
+        .eq('user_id', userId)
+        .select();
+
+      if (error) throw error;
+
+      try {
+        // Audit log for ownership updates
+        for (const updated of data || []) {
+          await logAudit({
+            userId,
+            action: status === 'approved' ? 'confirm_ownership' : 'update_phone_status',
+            resourceType: 'registered_phone',
+            resourceId: updated.id,
+            newValues: { status: updatePayload.status, last_confirmed_at: updatePayload.last_confirmed_at || null },
+            ip: req.ip,
+            userAgent: req.headers['user-agent']
+          });
+        }
+      } catch (auditErr) {
+        console.warn('Failed to write audit for update-phone-status:', auditErr);
+      }
+
+      return res.json({ success: true, data });
+    } catch (err) {
+      console.error('update-phone-status error:', err);
+      return res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  app.post('/api/reset-registered-phone-password', verifyJwtToken, async (req, res) => {
+    try {
+      const { imei, newPassword } = req.body;
+      if (!imei || !newPassword) return res.status(400).json({ error: 'imei and newPassword required' });
+      const imeiHash = getImeiHash(imei);
+
+      const { data: found, error } = await supabase
+        .from('registered_phones')
+        .select('id, imei, email, user_id')
+        .eq('imei_hash', imeiHash)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (!found) return res.status(404).json({ error: 'Phone not found' });
+
+      const userKey = req.user && req.user.id ? `uid:${req.user.id}` : `ip:${req.ip}`;
+      const blocked = checkAuthBlocked(userKey);
+      if (blocked.blocked) {
+        const retryAfter = Math.ceil((blocked.retryAfterMs || 0) / 1000);
+        try {
+          await logAudit({
+            userId: req.user?.id || null,
+            action: 'rate_limit_exceeded',
+            resourceType: 'registered_phone',
+            resourceId: found?.id || null,
+            details: { reason: 'Rate limit exceeded', retryAfter },
+            ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed',
+            errorMessage: 'Rate limit exceeded'
+          });
+        } catch (e) {
+          console.warn('/api/reset-registered-phone-password rate-limit audit failed:', e?.message || e);
+        }
+        return res.status(429).json({ error: 'Rate limit exceeded', retryAfter });
+      }
+
+      // Compare decrypted stored email (if encrypted) with authenticated user's email
+      const storedEmail = (typeof found.email === 'string') ? (decryptField(found.email) || found.email) : (decryptField(found.email) || null);
+      if ((storedEmail && storedEmail !== req.user.email) && found.user_id !== req.user.id) {
+        recordAuthFailure(userKey);
+        try {
+          await logAudit({
+            userId: req.user?.id || null,
+            action: 'forbidden_access',
+            resourceType: 'registered_phone',
+            resourceId: found?.id || null,
+            details: { reason: 'Not authorized to reset password for this phone' },
+            ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+            userAgent: req.headers['user-agent'] || null,
+            status: 'failed',
+            errorMessage: 'Not authorized to reset password for this phone'
+          });
+        } catch (e) {
+          console.warn('/api/reset-registered-phone-password forbidden audit failed:', e?.message || e);
+        }
+        return res.status(403).json({ error: 'Not authorized to reset password for this phone' });
+      }
+
+      const hashed = await hashPasswordForStorage(newPassword);
+      const { data: updated, error: updateErr } = await supabase
+        .from('registered_phones')
+        .update({ password: hashed })
+        .eq('id', found.id)
+        .select();
+      if (updateErr) throw updateErr;
+
+      clearAuthFailures(userKey);
+
+      await logAudit({
+        userId: req.user?.id,
+        action: 'reset_registered_phone_password',
+        resourceType: 'registered_phone',
+        resourceId: found.id,
+        oldValues: null,
+        newValues: null,
+        details: { imei_last_4: decryptField(found.imei).slice(-4) },
+        ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+        userAgent: req.headers['user-agent'] || null,
+        status: 'success'
+      });
+
+      return res.json({ success: true, data: updated });
+    } catch (err) {
+      console.error('reset-registered-phone-password error:', err);
+      return res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // التحقق من بيانات المشتري - يتأكد إن الاسم والإيميل ورقم الهاتف يطابقون الحساب المسجل
+  app.post('/api/validate-buyer-data', verifyJwtToken, async (req, res) => {
+    try {
+      const { buyerEmail, buyerName, buyerPhone, buyerCountryCode } = req.body;
+      if (!buyerEmail) {
+        return res.status(400).json({ error: 'buyerEmail is required' });
+      }
+
+      const normalizedEmail = String(buyerEmail || '').trim().toLowerCase();
+
+      // البحث عن المستخدم بالإيميل في جدول users
+      const { data: users, error: userError } = await supabase
+        .from('users')
+        .select('id, full_name, email, phone')
+        .ilike('email', normalizedEmail)
+        .limit(5);
+
+      if (userError) {
+        console.error('[validate-buyer-data] Error fetching users:', userError);
+        return res.status(500).json({ error: 'Database error' });
+      }
+
+      // لو مفيش حساب بالإيميل ده → نسمح بالمتابعة (مشتري جديد)
+      if (!users || users.length === 0) {
+        return res.status(404).json({ error: 'buyer_not_found', valid: false });
+      }
+
+      const buyerUser = users[0];
+
+      // فك تشفير البيانات للمقارنة
+      const dbFullName = decryptField(buyerUser.full_name) || buyerUser.full_name || '';
+      const dbPhone = decryptField(buyerUser.phone) || buyerUser.phone || '';
+
+      // تطبيع النصوص للمقارنة
+      const normalizeForCompare = (s) => String(s || '').trim().toLowerCase().replace(/[\s\-()]/g, '');
+      const normalizePhone = (s) => String(s || '').replace(/\D/g, '');
+
+      const nameMatch = !buyerName || normalizeForCompare(dbFullName).includes(normalizeForCompare(buyerName)) || normalizeForCompare(buyerName).includes(normalizeForCompare(dbFullName));
+
+      const incomingPhone = normalizePhone(String(buyerPhone || ''));
+      const dbPhoneClean = normalizePhone(dbPhone);
+      const phoneMatch = !buyerPhone || dbPhoneClean.endsWith(incomingPhone.slice(-8)) || incomingPhone.endsWith(dbPhoneClean.slice(-8));
+
+      if (nameMatch && phoneMatch) {
+        return res.json({ valid: true, message: 'Buyer data matches registered account' });
+      }
+
+      // البيانات لا تطابق
+      return res.json({
+        valid: false,
+        error: 'buyer_data_mismatch',
+        message: 'الاسم أو رقم الهاتف لا يطابق بيانات الحساب المسجل بهذا البريد الإلكتروني'
+      });
+    } catch (err) {
+      console.error('[validate-buyer-data] error:', err);
+      return res.status(500).json({ error: 'Server error' });
+    }
+  });
+
+  // Upload receipt image to transfer-assets bucket (server-side with proper auth)
+  app.post('/api/upload-receipt', verifyJwtToken, async (req, res) => {
+    try {
+      const { receiptImage } = req.body;
+      const userId = req.user?.id;
+
+      if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+      if (!receiptImage) return res.status(400).json({ error: 'receiptImage is required' });
+
+      // Parse base64 data URI
+      const matches = receiptImage.match(/^data:(.+);base64,(.+)$/);
+      if (!matches) {
+        return res.status(400).json({ error: 'Invalid base64 data URI format' });
+      }
+
+      const base64Data = matches[2];
+      const buffer = Buffer.from(base64Data, 'base64');
+
+      // ✅ SECURITY: This endpoint previously had NO file size limit at all and
+      // trusted the client-supplied MIME type blindly. Now the real file content
+      // is verified via magic numbers and the configured max size is enforced.
+      const validation = validateImageFile(buffer, buffer.length, SECURITY_CONFIG.FILE_UPLOAD.MAX_SIZE_BYTES);
+      if (!validation.isValid) {
+        return res.status(400).json({ error: validation.error || 'Invalid image file' });
+      }
+      const safeContentType = validation.mimeType;
+
+      // Generate unique filename matching phone image naming: <uuid>_phone_<timestamp>.jpg
+      const fileId = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}_${Math.floor(Math.random() * 1e9)}`;
+      const fileName = `${fileId}_phone_${Date.now()}.jpg`;
+      const filePath = `${fileName}`;
+
+      // Upload to registerphone bucket so saved receipts look like phone images
+      const { error: uploadError } = await supabase.storage
+        .from('registerphone')
+        .upload(filePath, buffer, {
+          contentType: safeContentType,
+          upsert: true
+        });
+
+      if (uploadError) {
+        console.error('[upload-receipt] Supabase storage error:', uploadError);
+        return res.status(500).json({ error: 'Failed to upload receipt to storage', details: uploadError.message });
+      }
+
+      // Return the path only (client will request signed URL when needed)
+      return res.json({ success: true, path: filePath });
+    } catch (err) {
+      console.error('[upload-receipt] error:', err);
+      return res.status(500).json({ error: 'Server error', details: err?.message || '' });
+    }
+  });
+
+  // POST /api/ownership-verification-request - Submit ownership verification with box image
+  app.post('/api/ownership-verification-request', verifyJwtToken, async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const { phone_id, imei_encrypted, box_image_path } = req.body || {};
+
+      console.log('[ownership-verification-request] Received:', { phone_id, imei_encrypted: !!imei_encrypted, box_image_path });
+
+      if (!phone_id || !imei_encrypted || !box_image_path) {
+        return res.status(400).json({ error: 'Missing required fields: phone_id, imei_encrypted, box_image_path' });
+      }
+
+      // Parse encrypted IMEI object
+      let imeiEncObj;
+      try {
+        imeiEncObj = typeof imei_encrypted === 'string' ? JSON.parse(imei_encrypted) : imei_encrypted;
+        if (!imeiEncObj || !imeiEncObj.encryptedData || !imeiEncObj.iv) {
+          throw new Error('Invalid encrypted IMEI structure');
+        }
+      } catch (parseErr) {
+        console.error('Failed to parse imei_encrypted:', parseErr);
+        return res.status(400).json({ error: 'Invalid imei_encrypted format' });
+      }
+
+      // Decrypt IMEI for hashing
+      let decryptedImei = '';
+      try {
+        decryptedImei = decryptField(imeiEncObj);
+      } catch (decErr) {
+        console.error('Failed to decrypt IMEI:', decErr);
+        return res.status(500).json({ error: 'Failed to decrypt IMEI' });
+      }
+
+      // Create IMEI hash for the record
+      const normalizeDigitsOnly = (s) => {
+        if (!s) return '';
+        return String(s).replace(/\D/g, '');
+      };
+
+      const getImeiHash = (imei) => {
+        const normalized = normalizeDigitsOnly(imei);
+        if (!normalized) return null;
+        return crypto.createHash('sha256').update(normalized).digest('hex');
+      };
+
+      const imeiHash = getImeiHash(decryptedImei);
+      if (!imeiHash) {
+        return res.status(400).json({ error: 'Invalid IMEI' });
+      }
+
+      // Encrypt IMEI for storage (using server-side encryption)
+      let encryptedImeiForStorage;
+      try {
+        encryptedImeiForStorage = encryptAES(decryptedImei);
+      } catch (encErr) {
+        console.error('Failed to encrypt IMEI for storage:', encErr);
+        return res.status(500).json({ error: 'Failed to encrypt data' });
+      }
+
+      // Insert into ownership_verification_requests table
+      const insertData = {
+        user_id: userId,
+        imei: encryptedImeiForStorage,
+        imei_hash: imeiHash,
+        phone_image: box_image_path,
+        status: 'pending',
+        created_at: new Date().toISOString()
+      };
+
+      console.log('[ownership-verification-request] Inserting data:', { user_id: userId, imei_hash: imeiHash, phone_image: box_image_path });
+
+      const { data: inserted, error: insertErr } = await supabase
+        .from('ownership_verification_requests')
+        .insert([insertData])
+        .select('id')
+        .single();
+
+      if (insertErr) {
+        console.error('Failed to insert ownership verification request:', insertErr);
+        return res.status(500).json({ error: 'Failed to create verification request', details: insertErr.message });
+      }
+
+      // Log audit
+      try {
+        await logAudit({
+          userId,
+          action: 'submit_ownership_verification',
+          resource: 'ownership_verification_requests',
+          resourceId: inserted.id,
+          status: 'success',
+          details: { imei_hash: imeiHash, phone_id }
+        });
+      } catch (auditErr) {
+        console.warn('Audit logging failed for ownership verification:', auditErr?.message || auditErr);
+      }
+
+      return res.json({ success: true, id: inserted.id });
+    } catch (err) {
+      console.error('Error in /api/ownership-verification-request:', err);
+      return res.status(500).json({ error: 'Server error', details: err?.message || '' });
+    }
+  });
+}

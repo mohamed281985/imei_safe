@@ -1,0 +1,1257 @@
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
+import axiosInstance from '@/services/axiosInterceptor';
+import { useAuth } from '@/contexts/AuthContext';
+import { Upload, X, Loader2, Star, Zap, MapPin, Clock, Eye, Gift, CalendarDays, Store, Phone, MapPinned, Smartphone, Database, Palette, FileText, ImagePlus, ChevronRight, ChevronLeft, CheckCircle2, Wallet, ShieldCheck } from 'lucide-react';
+import { useLanguage } from '@/contexts/LanguageContext';
+import { ACCESSORY_CATEGORIES } from '@/constants/accessoryCategories';
+
+import { useGeolocated } from 'react-geolocated';
+import { useToast } from '@/hooks/use-toast';
+import AdsOfferSlider from '@/components/advertisements/AdsOfferSlider';
+import PackageBadge from '@/components/PackageBadge';
+import CountrySelector from '@/components/CountrySelector';
+import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
+
+// Fix for Leaflet marker icons in React
+// @ts-ignore
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon-2x.png',
+  iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
+});
+
+// Component to update map view when coordinates change
+const MapUpdater: React.FC<{ center: [number, number] }> = ({ center }) => {
+  const map = useMap();
+  React.useEffect(() => {
+    map.setView(center, map.getZoom());
+  }, [center, map]);
+  return null;
+};
+interface AccessoryFormData {
+  title: string;
+  category: string;
+  brand: string;
+  compatibility: string;
+  description: string;
+  price: string;
+  condition: 'new' | 'used';
+  warranty_months: string;
+  city: string;
+  country?: string;
+  country_code?: string;
+  contact_methods: {
+    phone?: string;
+  };
+  store_name: string;
+}
+
+const AddAccessoriesForm: React.FC = () => {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const { t } = useLanguage();
+  const [loading, setLoading] = useState(false);
+  const [images, setImages] = useState<File[]>([]);
+  const [imagesPreviews, setImagesPreviews] = useState<string[]>([]);
+  const [error, setError] = useState('');
+  const [isFeatureModalOpen, setIsFeatureModalOpen] = useState(false);
+  const [promotionPrices, setPromotionPrices] = useState<Record<string, number>>({});
+  const [availableDurations, setAvailableDurations] = useState<string[]>([]);
+  const [selectedDuration, setSelectedDuration] = useState('7');
+  const [promotionPrice, setPromotionPrice] = useState<number | null>(null);
+  const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
+
+  // متغيرات مدة الإعلان
+  const [sellDurations, setSellDurations] = useState<number[]>([]);
+  const [selectedSellDuration, setSelectedSellDuration] = useState<number>(7);
+
+  // متغيرات الباقة
+  const [currentUserRole, setCurrentUserRole] = useState<string>(user?.role || 'free_user');
+  const [packagePublishAdsCount, setPackagePublishAdsCount] = useState<number | null>(null);
+  const [publishedAdsCount, setPublishedAdsCount] = useState<number | null>(null);
+  const [packageDaysRemaining, setPackageDaysRemaining] = useState<number | null>(null);
+  const [isPlanLoading, setIsPlanLoading] = useState(false);
+  const { coords } = useGeolocated({
+    positionOptions: {
+      enableHighAccuracy: true,
+    },
+    userDecisionTimeout: 5000,
+  });
+  const [currentStep, setCurrentStep] = useState(0);
+  const [countryAutoFilled, setCountryAutoFilled] = useState(false);
+  const DRAFT_KEY = 'add-accessory-form-draft-v2';
+
+  // ⭐ جلب دور المستخدم من قاعدة البيانات عند تحميل الصفحة
+  useEffect(() => {
+    const fetchUserRole = async () => {
+      if (!user?.id) return;
+
+      try {
+        const { data, error } = await supabase
+          .from('users')
+          .select('role')
+          .eq('id', user.id)
+          .single();
+
+        if (error) {
+          console.error('Error fetching user role:', error);
+        } else if (data?.role) {
+          console.log('Fetched user role:', data.role);
+          setCurrentUserRole(data.role);
+        }
+      } catch (err) {
+        console.error('Unexpected error fetching user role:', err);
+      }
+    };
+
+    fetchUserRole();
+  }, [user?.id]);
+
+  // ⭐ جلب معلومات الباقة من قاعدة البيانات
+  useEffect(() => {
+    const fetchPackageInfo = async () => {
+      if (!user?.id) return;
+      setIsPlanLoading(true);
+
+      try {
+        // جلب دور المستخدم وتاريخ انتهاء الباقة
+        const { data: userData, error: userError } = await supabase
+          .from('users')
+          .select('role, expires_at')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (userError) {
+          console.error('Error fetching user package info:', userError);
+          return;
+        }
+
+        if (!userData) {
+          return;
+        }
+
+        // تحديد نوع الباقة
+        const rawRole = String(userData.role || '').toLowerCase().trim();
+        const normalizedRole = rawRole.replace(/[\s\-]+/g, '_');
+        const basePlan = normalizedRole.split('_')[0];
+
+        // حساب الأيام المتبقية
+        let daysRemaining = 0;
+        if (userData.expires_at) {
+          const expiryDate = new Date(userData.expires_at);
+          const today = new Date();
+          const diffTime = expiryDate.getTime() - today.getTime();
+          daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        }
+
+        setPackageDaysRemaining(Math.max(0, daysRemaining));
+
+        // جلب عدد الإعلانات المنشورة
+        const { count: publishedCount, error: adsError } = await supabase
+          .from('accessories')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id);
+
+        if (adsError) {
+          console.error('Error fetching published ads count:', adsError);
+          return;
+        }
+
+        setPublishedAdsCount(publishedCount || 0);
+
+        // جلب معلومات الباقة من جدول plans
+        let plan = null;
+        const normalizedFull = normalizedRole || String(user?.role || '').toLowerCase().trim().replace(/[\s\-]+/g, '_');
+
+        // محاولة البحث عن الباقة
+        if (normalizedFull) {
+          const exact = await supabase.from('plans').select('*').eq('type', normalizedFull).maybeSingle();
+          plan = exact.data;
+        }
+
+        if (!plan && normalizedFull) {
+          const res2 = await supabase.from('plans').select('*').ilike('type', `%${normalizedFull}%`).maybeSingle();
+          plan = res2.data;
+        }
+
+        if (!plan) {
+          const res3 = await supabase.from('plans').select('*').ilike('type', `%${basePlan}%`).maybeSingle();
+          plan = res3.data;
+        }
+
+        // إذا لم يتم العثور على الباقة، جلب جميع الباقات والمطابقة محلياً
+        if (!plan) {
+          const allRes = await supabase.from('plans').select('*');
+          const list = allRes.data || [];
+          const found = list.find((r: any) => {
+            const typ = String(r.type || '').toLowerCase().trim();
+            return (
+              (normalizedFull && typ.includes(normalizedFull)) ||
+              (basePlan && typ.includes(basePlan))
+            );
+          });
+          plan = found || null;
+        }
+
+        // استخراج عدد الإعلانات المسموح بها
+        const publishVal = plan?.Publish_Ad ?? plan?.publish_ad ?? plan?.publishAd ?? plan?.publish_ads ?? plan?.publishAds ?? null;
+        const publishAdsCount = publishVal != null ? Number(publishVal) : 0;
+        setPackagePublishAdsCount(publishAdsCount);
+
+      } catch (err) {
+        console.error('Error fetching package info:', err);
+      } finally {
+        setIsPlanLoading(false);
+      }
+    };
+
+    fetchPackageInfo();
+  }, [user?.id, user?.role]);
+
+  // Fetch promotion prices
+  useEffect(() => {
+    const fetchPromotionPrices = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('ads_price')
+          .select('duration_days, amount')
+          .eq('type', 'promotions');
+
+        if (error) throw error;
+
+        if (data) {
+          const pricesMap = data.reduce((acc, price) => {
+            acc[price.duration_days] = price.amount;
+            return acc;
+          }, {} as Record<string, number>);
+
+          const durations = data.map(item => item.duration_days.toString()).sort((a, b) => parseInt(a) - parseInt(b));
+          setAvailableDurations(durations);
+          setPromotionPrices(pricesMap);
+
+          const defaultDuration = durations.includes('7') ? '7' : durations[0] || '';
+          setSelectedDuration(defaultDuration);
+          setPromotionPrice(pricesMap[defaultDuration] || null);
+        }
+      } catch (error) {
+        console.debug('Error fetching promotion prices:', error);
+      }
+    };
+
+    fetchPromotionPrices();
+  }, []);
+
+  // Fetch sell durations for accessories
+  useEffect(() => {
+    const fetchSellDurations = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('ads_price')
+          .select('duration_days')
+          .eq('type', 'sell_phone')
+          .order('duration_days', { ascending: true });
+
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          const durations = data.map(item => item.duration_days).filter((d): d is number => d != null);
+          setSellDurations(durations);
+          if (durations.length > 0 && !durations.includes(selectedSellDuration)) {
+            setSelectedSellDuration(durations[0]);
+          }
+        }
+      } catch (error) {
+        console.debug('Error fetching sell durations:', error);
+      }
+    };
+
+    fetchSellDurations();
+  }, []);
+
+  // عند مغادرة الصفحة: حذف المسودة من التخزين المحلي لتفادي استعادتها لاحقًا
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      try {
+        localStorage.removeItem(DRAFT_KEY);
+      } catch (e) {
+        /* ignore */
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      try {
+        localStorage.removeItem(DRAFT_KEY);
+      } catch (e) {
+        /* ignore */
+      }
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []);
+
+  // Update price when duration changes
+    // Update price when duration changes
+  useEffect(() => {
+    setPromotionPrice(promotionPrices[selectedDuration] || null);
+  }, [selectedDuration, promotionPrices]);
+
+  // bonus logic removed: package/role will drive promotions
+
+
+  // جلب اسم المتجر ورقم الهاتف من جدول businesses عند تحميل المكون
+    // جلب اسم المتجر ورقم الهاتف من جدول businesses عند تحميل المكون
+  useEffect(() => {
+    const fetchUserData = async () => {
+      if (!user) return;
+
+      const isBusiness = user.role && ['business', 'free_business', 'gold_business', 'silver_business'].includes(user.role);
+
+      if (isBusiness) {
+        // منطق المستخدم التجاري - استخدام server endpoint لفك التشفير
+        try {
+          const response = await axiosInstance.get('/api/decrypted-user');
+          const data = response.data?.business;
+
+          let country = data?.countries || data?.country || '';
+          // fallback: read directly from users table if decrypted-user didn't include it
+          if (!country) {
+            try {
+              const { data: userRow, error: userErr } = await supabase
+                .from('users')
+                .select('countries')
+                .eq('id', user.id)
+                .maybeSingle();
+              if (!userErr && userRow?.countries) country = userRow.countries;
+            } catch (e) {
+              /* ignore */
+            }
+          }
+
+          const safeCity = (data?.address || '').toString().trim();
+          const safeCountry = (country || '').toString().trim();
+          const safeCountryCode = (data?.country_code || '').toString().trim();
+
+          setCountryAutoFilled(Boolean(safeCountry));
+          setFormData(prev => ({
+            ...prev,
+            store_name: data?.store_name || '',
+            city: safeCity,
+            country: safeCountry,
+            country_code: safeCountryCode,
+            contact_methods: { ...prev.contact_methods, phone: data?.phone || '' }
+          }));
+        } catch (err) {
+          console.debug('Error fetching business data:', err);
+        }
+      } else {
+        // منطق المستخدم العادي
+        try {
+          const response = await axiosInstance.get('/api/decrypted-user');
+          const data = response.data?.user;
+
+          let country = data?.countries || data?.country || '';
+          if (!country) {
+            try {
+              const { data: userRow, error: userErr } = await supabase
+                .from('users')
+                .select('countries')
+                .eq('id', user.id)
+                .maybeSingle();
+              if (!userErr && userRow?.countries) country = userRow.countries;
+            } catch (e) {
+              /* ignore */
+            }
+          }
+
+          const safeCountry = (country || '').toString().trim();
+          const safeCountryCode = (data?.country_code || '').toString().trim();
+
+          setCountryAutoFilled(Boolean(safeCountry));
+          setFormData(prev => ({
+            ...prev,
+            store_name: data?.full_name || '',
+            city: '',
+            country: safeCountry,
+            country_code: safeCountryCode,
+            contact_methods: { ...prev.contact_methods, phone: data?.phone || '' }
+          }));
+        } catch (err) {
+          console.debug('Error fetching user data:', err);
+        }
+      }
+    };
+
+    fetchUserData();
+  }, [user]);
+  const [formData, setFormData] = useState<AccessoryFormData>({
+    title: '',
+    category: '',
+    brand: '',
+    compatibility: '',
+    description: '',
+    price: '',
+    condition: 'new',
+    warranty_months: '0',
+    city: '',
+    country: '',
+    country_code: '',
+    contact_methods: {},
+    store_name: ''
+  });
+
+  // استرجاع المسودة المحفوظة تلقائياً
+  useEffect(() => {
+    try {
+      const savedDraft = localStorage.getItem(DRAFT_KEY);
+      const parsed = savedDraft ? JSON.parse(savedDraft) : null;
+
+      // Always start from step 1 (index 0) when entering the accessory page
+      setCurrentStep(0);
+
+      // Preserve only basic info (step 1) if present; clear data for steps 2-4
+      const preservedBasic = parsed?.formData
+        ? {
+            store_name: parsed.formData.store_name || '',
+            city: parsed.formData.city || '',
+            country: parsed.formData.country || '',
+            country_code: parsed.formData.country_code || '',
+            contact_methods: { ...(parsed.formData.contact_methods || {}) },
+          }
+        : {};
+
+      setFormData(prev => ({
+        ...prev,
+        ...preservedBasic,
+        // Clear accessory info (step 2)
+        category: '',
+        brand: '',
+        compatibility: '',
+        price: '',
+        condition: 'new',
+        warranty_months: '0',
+        // Clear description & title (step 3)
+        title: '',
+        description: '',
+      }));
+
+      // Clear images (step 4)
+      setImages([]);
+      setImagesPreviews([]);
+    } catch (e) {
+      console.warn('Could not restore accessory form draft', e);
+    }
+  }, []);
+
+  // حفظ تلقائي للمسودة أثناء الإدخال
+  useEffect(() => {
+    const payload = {
+      formData,
+      currentStep,
+      savedAt: Date.now(),
+    };
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(payload));
+  }, [formData, currentStep]);
+
+  const clearDraft = () => localStorage.removeItem(DRAFT_KEY);
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length + images.length > 10) {
+      setError(t('max_images_limit_10'));
+      return;
+    }
+
+    setImages(prev => [...prev, ...files]);
+    
+    // إنشاء previews للصور
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagesPreviews(prev => [...prev, reader.result as string]);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const removeImage = (index: number) => {
+    setImages(prev => prev.filter((_, i) => i !== index));
+    setImagesPreviews(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+
+    try {
+      setLoading(true);
+      setError('');
+
+      // Validate required fields and images before creating
+      if (!formData.title || !formData.category || !formData.price || images.length === 0) {
+        setError(t('complete_required_fields_and_upload_image'));
+        setLoading(false);
+        return;
+      }
+
+      // التحقق من الباقة
+      if (packagePublishAdsCount !== null && publishedAdsCount !== null && publishedAdsCount >= packagePublishAdsCount) {
+        setError(t('package_ads_limit_reached'));
+        setShowUpgradePrompt(true);
+        setLoading(false);
+        return;
+      }
+
+      // 1. إنشاء الإكسسوار عبر السيرفر (سيقوم السيرفر بتشفير الحقول الحساسة)
+      const createPayload = {
+        title: formData.title,
+        category: formData.category,
+        brand: formData.brand,
+        compatibility: formData.compatibility,
+        description: formData.description,
+        price: parseFloat(formData.price) || 0,
+        condition: formData.condition,
+        warranty_months: parseInt(formData.warranty_months),
+        city: formData.city,
+        countries: formData.country,
+        country_code: formData.country_code,
+        contact_methods: formData.contact_methods,
+        store_name: formData.store_name,
+        latitude: coords?.latitude,
+        longitude: coords?.longitude,
+        role: currentUserRole || user?.role,
+        status: 'pending',
+        duration_days: selectedSellDuration,
+      };
+
+      const createResp = await axiosInstance.post('/api/create-accessory', createPayload);
+      if (!createResp?.data || !createResp.data.success) {
+        throw createResp?.data?.error || new Error('create-accessory failed');
+      }
+      const accessoryData = createResp.data.accessory;
+      // 2. رفع الصور
+      if (images.length > 0) {
+        for (let i = 0; i < images.length; i++) {
+          const file = images[i];
+          const fileExt = file.name.split('.').pop();
+          const filePath = `${user.id}/${accessoryData.id}/${Math.random()}.${fileExt}`;
+
+          const { error: uploadError } = await supabase.storage
+            .from('accessory-images')
+            .upload(filePath, file);
+
+          if (uploadError) {
+            await axiosInstance.post('/api/delete-accessory-if-failed', { accessoryId: accessoryData.id });
+            throw uploadError;
+          }
+
+          // الحصول على URL العام للصورة
+          const { data: { publicUrl } } = supabase.storage
+            .from('accessory-images')
+            .getPublicUrl(filePath);
+
+          // إضافة مسار الصورة عبر السيرفر (يتحقق من الملكية ويدرج السجل باستخدام service role)
+          try {
+            await axiosInstance.post('/api/insert-accessory-image', {
+              accessoryId: accessoryData.id,
+              imageUrl: publicUrl,
+              main_image: i === 0,
+              order: i,
+            });
+          } catch (imgErr) {
+            await axiosInstance.post('/api/delete-accessory-if-failed', { accessoryId: accessoryData.id });
+            throw imgErr;
+          }
+        }
+      }
+
+      // --- بداية منطق الدفع للإعلان العادي (منسوخ من AddPhoneForm) ---
+      const { data: normalPriceData, error: normalPriceError } = await supabase
+        .from('ads_price')
+        .select('amount')
+        .eq('type', 'normal')
+        .eq('duration_days', 1)
+        .maybeSingle();
+
+      if (normalPriceError && normalPriceError.code !== 'PGRST116') {
+        throw normalPriceError;
+      }
+
+      const normalPrice = normalPriceData?.amount || 0;
+
+      // bonus system removed: always follow normal payment path or upgrade via package
+      if (normalPrice > 0) {
+        const { data: paymentData, error: paymentError } = await supabase.from('ads_payment').insert({
+          user_id: user.id,
+          accessory_id: accessoryData.id,
+          phone_id: null,
+          amount: normalPrice,
+          duration_days: 1,
+          is_paid: false,
+          payment_status: 'pending',
+          type: 'normal',
+          transaction: 'ad_posting',
+          payment_date: new Date().toISOString(),
+          image_url: null,
+        }).select().single();
+
+        if (paymentError) throw paymentError;
+
+        toast({ title: t('ad_created'), description: t('please_pay_fee', { price: normalPrice }), variant: "default" });
+        navigate(`/payment/${paymentData.id}`);
+        return; // توجيه للدفع مباشرة
+      }
+      // --- نهاية منطق الدفع للإعلان العادي ---
+
+      // If we reached here, no external payment redirect happened — publish the accessory
+      const { error: publishErr2 } = await supabase.from('accessories').update({ status: 'pending' }).eq('id', accessoryData.id);
+      if (publishErr2) console.warn('failed to set accessory pending', publishErr2);
+
+      clearDraft();
+      navigate('/seller-dashboard');
+
+    } catch (err) {
+      console.debug('Error adding accessory:', err);
+      setError(t('error_adding_accessory'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmitAndFeature = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) {
+      toast({ title: t('error'), description: t('must_be_logged_in'), variant: "destructive" });
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    // Validate required fields and images before creating
+    if (!formData.title || !formData.category || !formData.price || images.length === 0) {
+      setError(t('complete_required_fields_and_upload_image'));
+      setLoading(false);
+      return;
+    }
+
+    // التحقق من الباقة
+    if (packagePublishAdsCount !== null && publishedAdsCount !== null && publishedAdsCount >= packagePublishAdsCount) {
+      setError(t('package_ads_limit_reached'));
+      setShowUpgradePrompt(true);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      // 1. Create the accessory record first
+      const createPayload = {
+        title: formData.title,
+        category: formData.category,
+        brand: formData.brand,
+        compatibility: formData.compatibility,
+        description: formData.description,
+        price: parseFloat(formData.price) || 0,
+        condition: formData.condition,
+        warranty_months: parseInt(formData.warranty_months),
+        city: formData.city,
+        countries: formData.country,
+        country_code: formData.country_code,
+        contact_methods: formData.contact_methods,
+        store_name: formData.store_name,
+        status: 'pending',
+        latitude: coords?.latitude,
+        longitude: coords?.longitude,
+        role: currentUserRole || user?.role,
+        duration_days: selectedSellDuration,
+      };
+
+      const createResp = await axiosInstance.post('/api/create-accessory', createPayload);
+      if (!createResp?.data || !createResp.data.success) {
+        throw createResp?.data?.error || new Error('create-accessory failed');
+      }
+      const accessoryData = createResp.data.accessory;
+
+      // 2. Upload images
+      // 2. Upload images
+      for (let i = 0; i < images.length; i++) {
+        const file = images[i];
+        const fileExt = file.name.split('.').pop();
+        const filePath = `${user.id}/${accessoryData.id}/${Math.random()}.${fileExt}`;
+        const { error: uploadError } = await supabase.storage.from('accessory-images').upload(filePath, file);
+        if (uploadError) {
+          await axiosInstance.post('/api/delete-accessory-if-failed', { accessoryId: accessoryData.id });
+          throw uploadError;
+        }
+        const { data: { publicUrl } } = supabase.storage.from('accessory-images').getPublicUrl(filePath);
+          try {
+            await axiosInstance.post('/api/insert-accessory-image', { accessoryId: accessoryData.id, imageUrl: publicUrl, main_image: i === 0, order: i });
+          } catch (imgErr) {
+            await axiosInstance.post('/api/delete-accessory-if-failed', { accessoryId: accessoryData.id });
+            throw imgErr;
+          }
+      }
+
+      // 3. Now that the accessory is created, apply the feature promotion directly
+      if (!user || !accessoryData.id || promotionPrice === null) {
+        throw new Error(t('cannot_feature_ad_incomplete_data'));
+      }
+
+      // Role-based feature handling: use `role` instead of bonus system
+      const role = user?.role || 'free';
+      if (role.includes('gold') || role.includes('silver') || role.includes('business')) {
+        // privileged roles: directly mark as promoted
+        const { error: updateAccessoryError } = await supabase.from('accessories').update({ type: 'promotions' }).eq('id', accessoryData.id);
+        if (updateAccessoryError) throw updateAccessoryError;
+
+        const { error: publishErr } = await supabase.from('accessories').update({ status: 'pending' }).eq('id', accessoryData.id);
+        if (publishErr) console.warn('failed to set accessory pending after promotion', publishErr);
+
+        setIsFeatureModalOpen(false);
+        toast({ title: t('ad_published_and_featured_successfully'), description: t('ad_published_successfully') || '', variant: 'default' });
+        clearDraft();
+        navigate('/seller-dashboard');
+        return;
+      }
+
+      // Non-privileged users: open upgrade prompt to purchase package
+      setShowUpgradePrompt(true);
+      setIsFeatureModalOpen(false);
+      setLoading(false);
+      return;
+
+    } catch (err: any) {
+      console.debug('Error in handleSubmitAndFeature for accessory:', err);
+      setError(err.message || t('error_publishing_and_featuring_ad'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleInputChange = async (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+  ) => {
+    const { name, value } = e.target;
+    if (name.startsWith('contact_methods.')) {
+      const methodName = name.split('.')[1];
+      setFormData(prev => ({
+        ...prev,
+        contact_methods: {
+          ...prev.contact_methods,
+          [methodName]: value
+        }
+      }));
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        [name]: value
+      }));
+    }
+  };
+
+  const steps = [
+    { title: t('accessory_step_basic'), icon: Store },
+    { title: t('accessory_step_info'), icon: Smartphone },
+    { title: t('accessory_step_description'), icon: FileText },
+    { title: t('accessory_step_images_preview'), icon: ImagePlus },
+  ];
+  const totalSteps = steps.length;
+  const atLastStep = currentStep === totalSteps - 1;
+  
+  // Updated field class with larger font and bold text
+  const fieldClass =
+    'w-full rounded-2xl border border-blue-300/50 bg-white px-4 py-3 text-base font-bold text-slate-800 shadow-[0_2px_10px_rgba(37,99,235,0.08)] outline-none transition-all duration-300 placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-200/60 focus:shadow-[0_6px_18px_rgba(37,99,235,0.18)]';
+    
+  const cardClass =
+    'rounded-3xl border border-white/70 bg-white/70 backdrop-blur-xl p-5 sm:p-6 shadow-[0_10px_30px_rgba(15,23,42,0.08)] transition-all duration-500';
+
+  const nextStep = () => {
+    const missingStepFields = (currentStep === 1 && (!formData.category.trim() || !formData.price.trim()))
+      || (currentStep === 2 && (!formData.title.trim() || !formData.description.trim()))
+      || (currentStep === 3 && images.length === 0);
+    if (missingStepFields) {
+      setError(t('required_fields'));
+      toast({ title: t('error'), description: t('required_fields'), variant: 'destructive' });
+      return;
+    }
+    setCurrentStep(prev => Math.min(prev + 1, totalSteps - 1));
+  };
+
+  const prevStep = () => {
+    setCurrentStep(prev => Math.max(prev - 1, 0));
+  };
+
+  return (
+    <>
+      <div dir="rtl" className="min-h-screen bg-[#f4f8ff] px-4 py-5 sm:py-8">
+        <div className="mx-auto w-full max-w-3xl">
+          <div className="mb-5 rounded-3xl border border-white/70 bg-blue-600 p-5 text-white shadow-[0_12px_30px_rgba(37,99,235,0.35)]">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-xl font-bold sm:text-2xl">{t('add_new_accessory')}</h1>
+                <p className="mt-1 text-sm text-blue-100">{t('add_accessory_wizard_subtitle')}</p>
+              </div>
+              {!isPlanLoading && <PackageBadge user={user} />}
+            </div>
+          </div>
+
+          {/* زر ترقية الباقة */}
+          {!isPlanLoading && (packagePublishAdsCount === 0 || (packagePublishAdsCount !== null && publishedAdsCount !== null && publishedAdsCount >= packagePublishAdsCount)) && (
+            <div className="mb-5 text-left">
+              <button
+                type="button"
+                onClick={() => setShowUpgradePrompt(true)}
+                className="rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-orange-200 transition hover:bg-orange-600"
+              >
+                {t('upgrade_package')}
+              </button>
+            </div>
+          )}
+
+          <div className="mb-5 rounded-[28px] border-2 border-blue-300 bg-gradient-to-br from-blue-100 via-white to-cyan-100 p-4 shadow-lg sm:p-5">
+            <div className="mb-3 h-1.5 rounded-full bg-slate-200">
+              <div className="h-1.5 rounded-full bg-blue-600 transition-all duration-500" style={{ width: `${(currentStep / (totalSteps - 1)) * 100}%` }} />
+            </div>
+            <div className="grid grid-cols-4 gap-2">
+              {steps.map((step, index) => {
+                const Icon = step.icon;
+                const active = index === currentStep;
+                const done = index < currentStep;
+                return (
+                  <button
+                    key={step.title}
+                    type="button"
+                    onClick={() => index <= currentStep && setCurrentStep(index)}
+                    className={`group rounded-2xl border px-2 py-3 text-center transition-all duration-300 ${
+                      active
+                        ? 'border-blue-500 bg-blue-600 text-white shadow-lg shadow-blue-200'
+                        : done
+                        ? 'border-orange-300 bg-orange-100 text-orange-800 shadow-sm'
+                        : 'border-slate-300 bg-slate-100 text-slate-700'
+                    }`}
+                  >
+                    <div className="mx-auto mb-1 flex h-10 w-10 items-center justify-center rounded-full bg-white/35">
+                      {done ? <CheckCircle2 className="h-5 w-5 text-orange-500" /> : <Icon className={`h-5 w-5 ${active ? 'text-orange-200' : 'text-orange-500'}`} />}
+                    </div>
+                    <p className="text-[10px] font-semibold leading-tight sm:text-[11px]">{step.title}</p>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {error && (
+            <div className="mb-4 flex items-start rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-red-700 shadow-sm">
+              <X className="ml-2 mt-0.5 h-4 w-4 shrink-0" />
+              <p className="text-sm font-bold">{error}</p>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className={`${cardClass} ${currentStep === 0 ? 'opacity-100 translate-y-0' : 'hidden opacity-0 -translate-y-1'}`}>
+              <div className="mb-4 flex items-center gap-2 text-slate-800">
+                <Store className="h-5 w-5 text-orange-500" />
+                <h2 className="text-lg font-bold">{`1. ${t('accessory_step_basic')}`}</h2>
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-base font-bold text-slate-700">
+                    <Store className="h-4 w-4 text-orange-500" />
+                    {t('store_name')}
+                  </label>
+                  <input name="store_name" value={formData.store_name} readOnly className={fieldClass} placeholder={t('fetched_automatically')} />
+                </div>
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-base font-bold text-slate-700">
+                    <Phone className="h-4 w-4 text-orange-500" />
+                    {t('phone_number')}
+                  </label>
+                  <div className="relative">
+                    <Phone className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-orange-500" />
+                    <input name="contact_methods.phone" value={formData.contact_methods.phone || ''} readOnly dir="ltr" className={`${fieldClass} pl-10`} placeholder={t('fetched_automatically')} />
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-base font-bold text-slate-700">
+                    <Phone className="h-4 w-4 text-orange-500" />
+                    {t('country_code')}
+                  </label>
+                  <input
+                    name="country_code"
+                    value={formData.country_code || ''}
+                    onChange={handleInputChange}
+                    dir="ltr"
+                    readOnly={Boolean(formData.country_code)}
+                    className={fieldClass}
+                    placeholder={formData.country_code ? '' : '+20'}
+                    inputMode="tel"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-base font-bold text-slate-700">
+                    <MapPin className="h-4 w-4 text-orange-500" />
+                    {t('region')}
+                  </label>
+                  <input
+                    name="city"
+                    value={formData.city}
+                    onChange={(e) => setFormData(prev => ({ ...prev, city: e.target.value }))}
+                    className={fieldClass}
+                    placeholder=""
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-base font-bold text-slate-700">
+                    <MapPin className="h-4 w-4 text-orange-500" />
+                    {t('country')}
+                  </label>
+                  {countryAutoFilled ? (
+                    <input
+                      name="country"
+                      value={formData.country || ''}
+                      readOnly
+                      className={fieldClass}
+                      placeholder=""
+                    />
+                  ) : (
+                    <CountrySelector
+                      value={formData.country || ''}
+                      onChange={(country) => setFormData(prev => ({ ...prev, country }))}
+                    />
+                  )}
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="mb-1 flex items-center gap-1 text-base font-bold text-slate-700">
+                    <MapPinned className="h-4 w-4 text-orange-500" />
+                    {t('store_location_on_map')}
+                  </label>
+                  <div className="overflow-hidden rounded-2xl border border-blue-300/50 bg-white shadow-[0_2px_10px_rgba(37,99,235,0.08)]">
+                    {coords ? (
+                      <div className="h-48 w-full">
+                        <MapContainer
+                          center={[coords.latitude, coords.longitude]}
+                          zoom={13}
+                          scrollWheelZoom={false}
+                          className="h-full w-full"
+                          attributionControl={false}
+                        >
+                          <TileLayer
+                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                          />
+                          <Marker position={[coords.latitude, coords.longitude]} />
+                          <MapUpdater center={[coords.latitude, coords.longitude]} />
+                        </MapContainer>
+                      </div>
+                    ) : (
+                      <div className="flex h-48 items-center justify-center text-sm font-bold text-slate-500">{t('loading_map_location')}</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className={`${cardClass} ${currentStep === 1 ? 'opacity-100 translate-y-0' : 'hidden opacity-0 -translate-y-1'}`}>
+              <div className="mb-4 flex items-center gap-2 text-slate-800">
+                <Smartphone className="h-5 w-5 text-orange-500" />
+                <h2 className="text-lg font-bold">{`2. ${t('accessory_step_info')}`}</h2>
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-base font-bold text-slate-700">
+                    <Database className="h-4 w-4 text-orange-500" />
+                    {t('category_required')}
+                  </label>
+                  <select
+                    name="category"
+                    required
+                    value={formData.category}
+                    onChange={handleInputChange}
+                    className={`${fieldClass} min-w-0 max-w-full text-sm sm:text-base`}
+                  >
+                    <option value="">{t('category_placeholder')}</option>
+                    {ACCESSORY_CATEGORIES.map(category => (
+                      <option key={category.value} value={category.value}>
+                        {t(category.labelKey)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-base font-bold text-slate-700">
+                    <Palette className="h-4 w-4 text-orange-500" />
+                    {t('brand_optional')}
+                  </label>
+                  <input type="text" name="brand" value={formData.brand} onChange={handleInputChange} className={fieldClass} placeholder={t('brand_placeholder')} />
+                </div>
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-base font-bold text-slate-700">
+                    <ShieldCheck className="h-4 w-4 text-orange-500" />
+                    {t('compatible_devices_optional')}
+                  </label>
+                  <input type="text" name="compatibility" value={formData.compatibility} onChange={handleInputChange} className={fieldClass} placeholder={t('compatibility_placeholder')} />
+                </div>
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-base font-bold text-slate-700">
+                    <Wallet className="h-4 w-4 text-orange-500" />
+                    {t('price_egp_required')}
+                  </label>
+                  <input type="number" name="price" required min="0" value={formData.price} onChange={handleInputChange} className={fieldClass} placeholder={t('price_placeholder')} />
+                </div>
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-base font-bold text-slate-700">
+                    <CheckCircle2 className="h-4 w-4 text-orange-500" />
+                    {t('condition_required')}
+                  </label>
+                  <select name="condition" required value={formData.condition} onChange={handleInputChange} className={fieldClass}>
+                    <option value="new">{t('new')}</option>
+                    <option value="used">{t('used')}</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-base font-bold text-slate-700">
+                    <CalendarDays className="h-4 w-4 text-orange-500" />
+                    {t('warranty_months_label')}
+                  </label>
+                  <input type="number" name="warranty_months" min="0" value={formData.warranty_months} onChange={handleInputChange} className={fieldClass} placeholder={t('warranty_placeholder')} />
+                </div>
+              </div>
+            </div>
+
+            <div className={`${cardClass} ${currentStep === 2 ? 'opacity-100 translate-y-0' : 'hidden opacity-0 -translate-y-1'}`}>
+              <div className="mb-4 flex items-center gap-2 text-slate-800">
+                <FileText className="h-5 w-5 text-orange-500" />
+                <h2 className="text-lg font-bold">{`3. ${t('accessory_step_description')}`}</h2>
+              </div>
+              <div className="grid grid-cols-1 gap-4">
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-base font-bold text-slate-700">
+                    <FileText className="h-4 w-4 text-orange-500" />
+                    {t('ad_title_required')}
+                  </label>
+                  <input type="text" name="title" required value={formData.title} onChange={handleInputChange} className={fieldClass} placeholder={t('ad_title_placeholder')} />
+                </div>
+                <div>
+                  <label className="mb-1 flex items-center gap-1 text-base font-bold text-slate-700">
+                    <FileText className="h-4 w-4 text-orange-500" />
+                    {t('description_required')}
+                  </label>
+                  <textarea name="description" required rows={4} value={formData.description} onChange={handleInputChange} className={fieldClass} placeholder={t('description_placeholder_accessory')} />
+                </div>
+              </div>
+            </div>
+
+            <div className={`${cardClass} ${currentStep === 3 ? 'opacity-100 translate-y-0' : 'hidden opacity-0 -translate-y-1'}`}>
+              <div className="mb-4 flex items-center gap-2 text-slate-800">
+                <ImagePlus className="h-5 w-5 text-orange-500" />
+                <h2 className="text-lg font-bold">{`4. ${t('accessory_step_images_preview')}`}</h2>
+              </div>
+
+              <div className="mb-4 rounded-2xl border border-dashed border-blue-200 bg-blue-50/50 p-4 text-center">
+                <Upload className="mx-auto mb-2 h-6 w-6 text-orange-500" />
+                <label htmlFor="images" className="cursor-pointer text-base font-bold text-blue-700">{t('choose_images')}</label>
+                <input id="images" name="images" type="file" multiple accept="image/*" className="sr-only" onChange={handleImageChange} required={images.length === 0} />
+                <p className="mt-1 text-xs text-slate-500">{t('image_upload_info')}</p>
+              </div>
+
+              {imagesPreviews.length > 0 && (
+                <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {imagesPreviews.map((preview, index) => (
+                    <div key={index} className="group relative overflow-hidden rounded-2xl border border-white/60 bg-white shadow-sm">
+                      <img src={preview} alt={`Preview ${index + 1}`} className="h-28 w-full object-cover transition-transform duration-300 group-hover:scale-105" />
+                      <button type="button" onClick={() => removeImage(index)} className="absolute left-2 top-2 rounded-full bg-black/60 p-1 text-white transition hover:bg-black">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+                <h3 className="mb-3 text-base font-bold text-slate-800">{t('final_ad_preview')}</h3>
+                <div className="space-y-1 text-base font-bold text-slate-600">
+                  <p><span className="font-bold text-slate-800">{t('preview_title_label')}:</span> {formData.title || '—'}</p>
+                  <p><span className="font-bold text-slate-800">{t('preview_store_label')}:</span> {formData.store_name || '—'}</p>
+                  <p>
+                    <span className="font-bold text-slate-800">{t('preview_category_label')}:</span>{' '}
+                    {t(ACCESSORY_CATEGORIES.find(category => category.value === formData.category)?.labelKey || formData.category || '—')}
+                  </p>
+                  <p><span className="font-bold text-slate-800">{t('preview_price_label')}:</span> {formData.price ? `${formData.price} ${t('currency_short')}` : '—'}</p>
+                  <p><span className="font-bold text-slate-800">{t('preview_location_label')}:</span> {formData.city || '—'}</p>
+                </div>
+
+                {/* Ad duration preview */}
+                <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50 p-3 text-base font-bold text-slate-700">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-sm text-slate-600">{t('ad_duration_label') || 'مدة الإعلان'}</div>
+                      <div className="mt-1 font-bold text-orange-500">{selectedSellDuration} {t('days') || 'يوم'}</div>
+                    </div>
+                    <div className="text-right">
+                      {sellDurations && sellDurations.length > 0 ? (
+                        <select
+                          value={selectedSellDuration}
+                          onChange={(e) => setSelectedSellDuration(Number(e.target.value))}
+                          className="rounded-md border p-1 text-base font-bold"
+                        >
+                          {sellDurations.map(d => (
+                            <option key={d} value={d}>{d} {t('days')}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <div className="text-sm text-slate-500">{t('loading') || 'جاري التحميل...'}</div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-2 text-sm text-slate-600">
+                    <span className="font-bold">{t('expires_on') || 'ينتهي بتاريخ'}:</span>{' '}
+                    {new Date(Date.now() + selectedSellDuration * 24 * 60 * 60 * 1000).toLocaleDateString()}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between rounded-2xl border border-white/70 bg-white/70 p-3 backdrop-blur-xl shadow-sm">
+              <button
+                type="button"
+                onClick={prevStep}
+                disabled={currentStep === 0}
+                className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-4 py-2 text-base font-bold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <ChevronRight className="h-4 w-4" />
+                {t('previous')}
+              </button>
+
+              {!atLastStep ? (
+                <button
+                  type="button"
+                  onClick={nextStep}
+                  className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-l from-blue-600 to-blue-500 px-5 py-2 text-base font-bold text-white shadow-[0_10px_20px_rgba(37,99,235,0.35)] transition hover:from-blue-700 hover:to-blue-600"
+                >
+                  {t('next')}
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-l from-blue-600 to-blue-500 px-5 py-2 text-base font-bold text-white shadow-[0_10px_20px_rgba(37,99,235,0.35)] transition hover:from-blue-700 hover:to-blue-600 disabled:opacity-50"
+                >
+                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : t('publish_ad_now')}
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+          </form>
+        </div>
+      </div>
+    {/* نافذة الترقية عند عدم وجود رصيد بونص كافٍ */}
+    {showUpgradePrompt && (
+      <div className="fixed inset-0 bg-gray-600/60 backdrop-blur-lg z-[100] flex flex-col items-center justify-center p-4">
+        <button
+          onClick={() => setShowUpgradePrompt(false)}
+          className="absolute top-5 right-5 text-white bg-black/50 rounded-full p-2 z-10"
+        >
+          <X size={24} />
+        </button>
+        <AdsOfferSlider isUpgradePrompt={true} onClose={() => setShowUpgradePrompt(false)} />
+      </div>
+    )}
+    {isFeatureModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 backdrop-blur-sm flex justify-center items-center z-50 p-4" onClick={() => setIsFeatureModalOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg transform transition-all" onClick={(e) => e.stopPropagation()}>
+            <div className="relative p-6 sm:p-8 text-center max-h-[80vh] overflow-y-auto">
+              <button
+                onClick={() => setIsFeatureModalOpen(false)}
+                className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                ✨ {t('make_ad_top')}
+              </h2>
+              <p className="text-base font-bold text-gray-600 mb-6">
+                {t('featured_ad_service_description')}
+              </p>
+
+              <div className="text-right space-y-4 text-base font-bold text-gray-700 mb-8 px-1">
+                <p>
+                  {t('featured_ad_benefits')}
+                </p>
+                <h3 className="font-bold text-lg pt-2">{t('what_you_get')}</h3>
+                <ul className="space-y-3">
+                  <li className="flex items-start">
+                    <Star className="w-5 h-5 text-orange-500 ml-3 flex-shrink-0 mt-0.5" />
+                    <span><span className="font-bold">{t('ad_at_top')}</span> {t('first_seen_by_buyer')}</span>
+                  </li>
+                  <li className="flex items-start">
+                    <MapPin className="w-5 h-5 text-red-500 ml-3 flex-shrink-0 mt-0.5" />
+                    <span><span className="font-bold">{t('precise_location_targeting')}</span> {t('reach_nearby_buyers')}</span>
+                  </li>
+                  <li className="flex items-start">
+                    <Clock className="w-5 h-5 text-blue-500 ml-3 flex-shrink-0 mt-0.5" />
+                    <span><span className="font-bold">{t('seven_days_validity')}</span> {t('full_week_featured')}</span>
+                  </li>
+                  <li className="flex items-start">
+                    <Eye className="w-5 h-5 text-blue-500 ml-3 flex-shrink-0 mt-0.5" />
+                    <span><span className="font-bold">{t('more_views_attention')}</span> {t('attract_serious_buyers')}</span>
+                  </li>
+                  <li className="flex items-start">
+                    <Zap className="w-5 h-5 text-orange-500 ml-3 flex-shrink-0 mt-0.5" />
+                    <span><span className="font-bold">{t('increase_selling_speed')}</span> {t('dont_miss_opportunity')}</span>
+                  </li>
+                </ul>
+              </div>
+
+              <div className="mb-4">
+                <PackageBadge user={user} />
+              </div>
+
+              <div className="text-right space-y-2 text-base font-bold text-gray-700 mb-6">
+                <h3 className="font-bold text-lg">{t('select_feature_duration')}</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  {availableDurations.map((days) => (
+                    <label key={days} htmlFor={`promo_${days}`} className={`relative flex flex-col items-center justify-center rounded-lg border-2 p-3 cursor-pointer transition-all ${selectedDuration === days ? 'border-orange-500 bg-orange-50 ring-2 ring-orange-200' : 'border-gray-200 bg-white'}`}>
+                      <input type="radio" id={`promo_${days}`} name="promotion_duration" value={days} checked={selectedDuration === days} onChange={(e) => setSelectedDuration(e.target.value)} className="sr-only" />
+                      <div className="flex items-center gap-2">
+                        <CalendarDays className="w-5 h-5 text-gray-600" />
+                        <span className="text-base font-bold text-gray-800">{days} {t('days')}</span>
+                      </div>
+                      <span className="text-base font-bold text-orange-600 mt-1">{promotionPrices[days] || 0} {t('currency_short')}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-4 p-3 bg-gray-100 border border-gray-200 rounded-lg text-center">
+                <p className="text-base font-bold text-gray-800">
+                  {t('total')}: <span className="text-xl font-bold text-gray-900">{promotionPrice || 0} {t('currency')}</span>
+                </p>
+              </div>
+
+              <p className="text-base font-bold text-gray-800 mb-6">
+              ✨ {t('dont_let_ad_get_lost')}
+              </p>
+
+              <button
+                onClick={handleSubmitAndFeature}
+                disabled={loading}
+                className="w-full inline-flex items-center justify-center px-8 py-4 border border-transparent text-lg font-bold rounded-xl shadow-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 transition-all transform hover:scale-105"
+              >
+                {loading ? <Loader2 className="animate-spin h-6 w-6" /> : (t('feature_now') || t('feature_now_with_bonus'))}
+              </button>
+
+            </div>
+          </div>
+        </div>
+    )}
+    </>
+  );
+};
+
+export default AddAccessoriesForm;

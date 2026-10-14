@@ -1,0 +1,558 @@
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
+import { Link, useLocation } from 'react-router-dom';
+import PageContainer from '@/components/PageContainer';
+import AppNavbar from '@/components/AppNavbar';
+import { useLanguage } from '../contexts/LanguageContext';
+import { useAuth } from '../contexts/AuthContext';
+import { useTranslation } from 'react-i18next';
+import { Crown, Heart, Smartphone, Search, Star } from 'lucide-react';
+import { useGeolocated } from 'react-geolocated';
+import { ACCESSORY_CATEGORIES } from '@/constants/accessoryCategories';
+
+interface Accessory {
+    id: string;
+    title: string;
+    price: number;
+    condition: 'new' | 'used';
+    store_name?: string;
+    accessory_images: { image_path: string; main_image: boolean }[];
+    role?: string;
+    seller_id?: string;
+    user_id?: string;
+    latitude?: number;
+    longitude?: number;
+    distance?: number;
+    category?: string;
+    brand?: string;
+    created_at?: string; // Added created_at property
+    type?: 'promotions' | 'normal';
+}
+
+const getAccessoryMainImage = (accessory: any): string | null => {
+    if (!accessory?.accessory_images?.length) return null;
+    const mainImage = accessory.accessory_images.find((img: any) => img.main_image);
+    return mainImage?.image_path || accessory.accessory_images[0]?.image_path || null;
+};
+
+const getTransformedImageUrl = (originalUrl: string | null | undefined): string => {
+    if (!originalUrl) {
+        return '/placeholder-phone.png';
+    }
+    try {
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        if (!supabaseUrl) return '/placeholder-phone.png';
+        if (originalUrl.startsWith('http')) return originalUrl;
+        return `${supabaseUrl}/storage/v1/object/public/accessory-images/${originalUrl}`;
+    } catch (e) {
+        console.debug('Error processing image URL:', e);
+        return '/placeholder-phone.png';
+    }
+};
+
+function deg2rad(deg: number) {
+    return deg * (Math.PI / 180);
+}
+
+function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+    const R = 6371;
+    const dLat = deg2rad(lat2 - lat1);
+    const dLon = deg2rad(lon2 - lon1);
+    const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+}
+
+const normalizeAccessoryCategory = (category: string | undefined) => {
+    const normalized = String(category || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+
+    if (['smartwatch', 'smart_watch', 'smartwatches', 'smart_watches', 'ساعات_ذكية', 'ساعة_ذكية'].includes(normalized)) {
+        return 'smartwatches';
+    }
+
+    return normalized;
+};
+
+const AccessoriesForSalePage: React.FC = () => {
+    const { t } = useLanguage();
+    const { i18n } = useTranslation();
+    const location = useLocation();
+    const { user } = useAuth();
+    const categoryFilter = normalizeAccessoryCategory(new URLSearchParams(location.search).get('category') || '');
+    const [userCurrencySymbol, setUserCurrencySymbol] = useState(t('currency_short') || 'EGP');
+    const [accessories, setAccessories] = useState<Accessory[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [selectedCondition, setSelectedCondition] = useState('all');
+    const [priceRange, setPriceRange] = useState({ min: '', max: '' });
+    const [sortBy, setSortBy] = useState('newest');
+    const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
+    const [userCity, setUserCity] = useState<string>(''); // إضافة حالة لحقل المدينة
+    const { coords } = useGeolocated({ positionOptions: { enableHighAccuracy: true } });
+
+    useEffect(() => {
+        try {
+            const raw = localStorage.getItem('favorites');
+            setFavoriteIds(raw ? JSON.parse(raw) : []);
+        } catch {
+            setFavoriteIds([]);
+        }
+    }, []);
+
+    const toggleFavorite = (event: React.MouseEvent, id: string) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const next = favoriteIds.includes(id)
+            ? favoriteIds.filter(favoriteId => favoriteId !== id)
+            : [id, ...favoriteIds];
+
+        localStorage.setItem('favorites', JSON.stringify(next));
+        setFavoriteIds(next);
+    };
+
+    useEffect(() => {
+        const fetchAccessories = async () => {
+            setLoading(true);
+
+            // --- جلب عملة المستخدم ---
+            let userCountryName: string | null = null;
+            let currentUserRole: string | undefined;
+            if (user?.id) {
+                const { data: userData } = await supabase
+                    .from('users')
+                    .select('countries, role')
+                    .eq('id', user.id)
+                    .maybeSingle();
+
+                if (userData?.countries) {
+                    const countryName = userData.countries.trim();
+                    const { data: countryData } = await supabase
+                        .from('countries')
+                        .select('currency_symbol')
+                        .ilike('name_en', countryName)
+                        .maybeSingle();
+
+                    if (countryData?.currency_symbol) {
+                        setUserCurrencySymbol(countryData.currency_symbol);
+                    } else if (countryName.toLowerCase() === 'kuwait') {
+                        setUserCurrencySymbol(i18n.language === 'ar' ? 'د.ك' : 'KWD');
+                    }
+                    // set the local variable for filtering below
+                    userCountryName = countryName;
+                }
+                currentUserRole = userData?.role || user?.role;
+            }
+
+            // build query and apply country filter if available
+            let query: any = supabase
+                .from('accessories')
+                .select(`*, accessory_images(image_path, main_image)`)
+                .eq('status', 'active');
+
+            if (userCountryName) {
+                const { data: countryNames } = await supabase
+                    .from('countries')
+                    .select('name_ar, name_en')
+                    .or(`name_ar.ilike.${userCountryName},name_en.ilike.${userCountryName}`)
+                    .maybeSingle();
+                const names = [countryNames?.name_ar, countryNames?.name_en, userCountryName]
+                    .filter(Boolean)
+                    .map(name => String(name).replace(/,/g, ''));
+                query = query.or(names.map(name => `countries.ilike.%${name}%`).join(','));
+            }
+
+            const { data, error } = await query.order('created_at', { ascending: false });
+
+            if (error) {
+                console.debug('Error fetching accessories:', error);
+                setAccessories([]);
+            } else {
+                const fetchedAccessories = data || [];
+                const sellerIds = [...new Set(fetchedAccessories.map((accessory: Accessory) => accessory.seller_id || accessory.user_id).filter(Boolean))];
+                let rolesBySeller: Record<string, string> = {};
+
+                if (sellerIds.length > 0) {
+                    const { data: sellers } = await supabase
+                        .from('users')
+                        .select('id, role')
+                        .in('id', sellerIds);
+                    rolesBySeller = (sellers || []).reduce((roles: Record<string, string>, seller: { id: string; role?: string }) => {
+                        if (seller.role) roles[seller.id] = seller.role;
+                        return roles;
+                    }, {});
+                }
+
+                setAccessories(fetchedAccessories.map((accessory: Accessory) => {
+                    // استخدم الدور المحفوظ داخل سجل الإكسسوار كمصدر أساسي للألوان.
+                    const role = accessory.role
+                        || rolesBySeller[accessory.seller_id || accessory.user_id || '']
+                        || ((accessory.seller_id || accessory.user_id) === user?.id ? currentUserRole : undefined);
+                    const normalizedRole = String(role || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+                    const isPackageRole = ['gold_business', 'silver_business', 'gold_user', 'silver_user'].includes(normalizedRole);
+
+                    return {
+                        ...accessory,
+                        role,
+                        // حافظ على شكل بطاقات الهواتف للإعلانات القديمة أيضًا.
+                        type: accessory.type === 'promotions' || isPackageRole ? 'promotions' : accessory.type,
+                    };
+                }));
+            }
+            setLoading(false);
+        };
+
+        fetchAccessories();
+    }, [user?.id, i18n.language]);
+
+    useEffect(() => {
+        const fetchUserCity = async () => {
+            if (user?.id) {
+                const { data: userData } = await supabase
+                    .from('users')
+                    .select('city')
+                    .eq('id', user.id)
+                    .maybeSingle();
+
+                if (userData?.city) {
+                    setUserCity(userData.city);
+                }
+            }
+        };
+
+        fetchUserCity();
+    }, [user?.id]);
+
+    const handleCityChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const newCity = e.target.value;
+        setUserCity(newCity);
+
+        if (user?.id) {
+            const { error } = await supabase
+                .from('users')
+                .update({ city: newCity })
+                .eq('id', user.id);
+
+            if (error) {
+                console.error('Error updating city:', error);
+            }
+        }
+    };
+
+    const getFilteredAccessories = () => {
+        const filtered = accessories.filter(acc => {
+            const searchString = searchTerm.toLowerCase();
+            const matchesSearch = !searchTerm ||
+                (acc.title && acc.title.toLowerCase().includes(searchString)) ||
+                (acc.brand && acc.brand.toLowerCase().includes(searchString)) ||
+                (acc.category && acc.category.toLowerCase().includes(searchString));
+
+            const matchesCondition = selectedCondition === 'all' || acc.condition === selectedCondition;
+            const matchesCategory = !categoryFilter || normalizeAccessoryCategory(acc.category) === categoryFilter;
+            const matchesPrice = (!priceRange.min || acc.price >= Number(priceRange.min)) &&
+                (!priceRange.max || acc.price <= Number(priceRange.max));
+
+            return matchesSearch && matchesCondition && matchesCategory && matchesPrice;
+        });
+
+        return filtered.sort((a, b) => {
+            // 1. ترتيب الباقة: Gold ثم Silver ثم باقي الإعلانات
+            const getRolePriority = (role: string | undefined) => {
+                const normalizedRole = String(role || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+                if (normalizedRole.startsWith('gold')) return 1;
+                if (normalizedRole.startsWith('silver')) return 2;
+                return 3;
+            };
+            const priorityA = getRolePriority(a.role);
+            const priorityB = getRolePriority(b.role);
+            if (priorityA !== priorityB) {
+                return priorityA - priorityB;
+            }
+
+            // 2. داخل نفس الباقة، الإعلانات المميزة أولاً
+            const isAPromoted = a.type === 'promotions';
+            const isBPromoted = b.type === 'promotions';
+            if (isAPromoted && !isBPromoted) return -1;
+            if (isBPromoted && !isAPromoted) return 1;
+
+            // 3. بعد ذلك، تطبيق الترتيب المطلوب من قبل المستخدم
+            if (sortBy === 'price-asc') return a.price - b.price;
+            if (sortBy === 'price-desc') return b.price - a.price;
+            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        });
+    };
+
+    const filteredAccessories = getFilteredAccessories();
+
+    // ⭐ دالة مساعدة لتحديد ألوان الكارت والشارات بناءً على العضوية (نفسها في Dashboard و PhonesForSale)
+    const getCardStyle = (role: string | undefined, type: string | undefined) => {
+        // الحالة الافتراضية (المجاني)
+        let borderColor = 'border-gray-100 shadow-gray-50';
+        let topBar = null;
+        let badge = null;
+
+        // الجولد
+        const normalizedRole = String(role || '').toLowerCase().trim().replace(/[\s-]+/g, '_');
+        const colorRole = normalizedRole === 'customer' ? 'free_user' : normalizedRole;
+
+        if (colorRole.startsWith('gold')) {
+            borderColor = '!border-yellow-400 !shadow-yellow-100';
+            if (type === 'promotions') {
+                topBar = <div className="h-1.5 bg-gradient-to-r from-yellow-400 to-amber-500"></div>;
+                badge = (
+                    <div className="absolute top-1.5 left-1.5 bg-yellow-400/90 backdrop-blur-[2px] text-black text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10 flex items-center gap-0.5">
+                        <Star className="w-2.5 h-2.5 text-black" /><span>PRO</span>
+                    </div>
+                );
+            }
+        } 
+        // الفضي (التعديل المطلوب)
+        else if (colorRole.startsWith('silver')) {
+            borderColor = '!border-slate-400 !shadow-slate-200';
+            if (type === 'promotions') {
+                topBar = <div className="h-1.5 bg-gradient-to-r from-gray-300 to-gray-500"></div>;
+                badge = (
+                    <div className="absolute top-1.5 left-1.5 bg-gray-400/90 backdrop-blur-[2px] text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10 flex items-center gap-0.5">
+                        <Star className="w-2.5 h-2.5 text-white" /><span>PRO</span>
+                    </div>
+                );
+            }
+        } 
+        // المجاني (للمميزة فقط)
+        else if (type === 'promotions') {
+            topBar = <div className="h-1.5 bg-gradient-to-r from-blue-500 to-blue-600"></div>;
+            badge = (
+                <div className="absolute top-1.5 left-1.5 bg-blue-600/90 backdrop-blur-[2px] text-white text-[9px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10 flex items-center gap-0.5">
+                    <Star className="w-2.5 h-2.5 text-white" /><span>PRO</span>
+                </div>
+            );
+        }
+
+        return { borderColor, topBar, badge };
+    };
+
+    return (
+        <PageContainer>
+            <AppNavbar />
+            <div className="p-4 mb-10">
+                <div className="mb-4 flex items-center justify-between">
+                    <h1 className="text-xl font-bold text-black">{t('accessories')}</h1>
+                    <Link
+                        to="/favorites"
+                        className="flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-bold text-red-500 shadow-sm transition-colors hover:bg-red-50"
+                    >
+                        <Heart className="h-5 w-5" />
+                        {t('favorites')}
+                    </Link>
+                </div>
+                {/* إضافة حقل إدخال المدينة */}
+                <div className="bg-white/80 backdrop-blur-lg rounded-xl p-3 mb-4 shadow-lg">
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <label htmlFor="user-city" className="text-sm font-medium text-gray-700">
+                            {t('city')}
+                        </label>
+                        {categoryFilter && (
+                            <div className="flex min-w-0 max-w-full items-center gap-2 rounded-lg bg-blue-50 px-3 py-1.5">
+                                <span className="truncate text-sm font-bold text-slate-800">
+                                    {t('accessory_category_filter')}: {t(ACCESSORY_CATEGORIES.find(category => category.value === categoryFilter)?.labelKey || 'accessories')}
+                                </span>
+                                <Link to="/accessories-for-sale" className="shrink-0 text-xs font-bold text-blue-600">
+                                    {t('clear_filter')}
+                                </Link>
+                            </div>
+                        )}
+                    </div>
+                    <input
+                        id="user-city"
+                        type="text"
+                        value={userCity}
+                        onChange={handleCityChange}
+                        className="w-full rounded-2xl border border-blue-300/50 bg-white px-4 py-3 text-sm text-slate-800 shadow-[0_2px_10px_rgba(37,99,235,0.08)] outline-none transition-all duration-300 placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-200/60 focus:shadow-[0_6px_18px_rgba(37,99,235,0.18)]"
+                        placeholder={t('enter_city')}
+                        readOnly={user?.role !== 'normal'} // اجعل الحقل للقراءة فقط إذا لم يكن المستخدم عاديًا
+                    />
+                </div>
+
+                {/* قسم البحث والفلترة */}
+                <div className="bg-white/80 backdrop-blur-lg rounded-xl p-3 mb-4 shadow-lg">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="relative">
+                            <Search className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+                            <input
+                                type="text"
+                                placeholder={t('search_accessories')}
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="w-full pl-3 pr-8 py-1.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-black placeholder:text-gray-400 text-sm"
+                            />
+                        </div>
+
+                        <div className="flex gap-2">
+                            <select
+                                value={selectedCondition}
+                                onChange={(e) => setSelectedCondition(e.target.value)}
+                                className="px-2 py-1.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 text-black text-sm"
+                            >
+                                <option value="all">{t('all_conditions')}</option>
+                                <option value="new">{t('new')}</option>
+                                <option value="used">{t('used')}</option>
+                            </select>
+
+                            <select
+                                value={sortBy}
+                                onChange={(e) => setSortBy(e.target.value)}
+                                className="px-2 py-1.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 text-black text-sm"
+                            >
+                                <option value="newest">{t('newest')}</option>
+                                <option value="price-asc">{t('price_low_to_high')}</option>
+                                <option value="price-desc">{t('price_high_to_low')}</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div className="mt-3 flex gap-3">
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="number"
+                                placeholder={t('price_from')}
+                                value={priceRange.min}
+                                onChange={(e) => setPriceRange(prev => ({ ...prev, min: e.target.value }))}
+                                className="w-28 px-2 py-1.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 text-black placeholder:text-gray-400 text-sm"
+                            />
+                            <span className="text-gray-500 text-sm">{t('to')}</span>
+                            <input
+                                type="number"
+                                placeholder={t('price_to')}
+                                value={priceRange.max}
+                                onChange={(e) => setPriceRange(prev => ({ ...prev, max: e.target.value }))}
+                                className="w-28 px-2 py-1.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 text-black placeholder:text-gray-400 text-sm"
+                            />
+                        </div>
+                    </div>
+                </div>
+
+                {/* عرض النتائج */}
+                {loading ? (
+                    <div className="text-center text-white py-10">{t('loading')}...</div>
+                ) : filteredAccessories.length === 0 ? (
+                    <div className="bg-white/80 backdrop-blur-lg rounded-xl p-8 text-center">
+                        <Smartphone className="w-16 h-16 mx-auto text-gray-400 mb-4" />
+                        <h3 className="text-xl font-bold text-gray-800 mb-2">{t('no_results')}</h3>
+                        <p className="text-gray-600">
+                            {searchTerm || selectedCondition !== 'all' || priceRange.min || priceRange.max
+                                ? t('no_accessories_matching_criteria')
+                                : t('no_accessories_available_now')}
+                        </p>
+                        {(searchTerm || selectedCondition !== 'all' || priceRange.min || priceRange.max) && (
+                            <button
+                                onClick={() => {
+                                    setSearchTerm('');
+                                    setSelectedCondition('all');
+                                    setPriceRange({ min: '', max: '' });
+                                    setSortBy('newest');
+                                }}
+                                className="mt-4 text-blue-600 hover:text-blue-700 font-medium"
+                            >
+                                {t('clear_search_criteria')}
+                            </button>
+                        )}
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 px-2">
+                        {filteredAccessories.map((acc) => {
+                            // ⭐ استخدام دالة getCardStyle
+                            const style = getCardStyle(acc.role, acc.type);
+
+                            return (
+                                <Link
+                                    key={acc.id}
+                                    to={`/product/${acc.id}`}
+                                    className={`relative bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 group flex flex-col h-[280px] border-2 ${style.borderColor} ${acc.type === 'promotions' ? 'shadow-xl' : ''}`}
+                                >
+                                    {/* الشريط العلوي للإعلانات المميزة */}
+                                    {style.topBar}
+
+                                    <button
+                                        type="button"
+                                        onClick={(event) => toggleFavorite(event, acc.id)}
+                                        aria-label={favoriteIds.includes(acc.id) ? t('remove_from_favorites') : t('add_to_favorites')}
+                                        className="absolute left-2 top-2 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-white/95 shadow-md transition-transform hover:scale-105"
+                                    >
+                                        <Heart className={`h-5 w-5 ${favoriteIds.includes(acc.id) ? 'fill-red-500 text-red-500' : 'text-gray-700'}`} />
+                                    </button>
+
+                                    <div className="relative w-full h-[200px] bg-gray-50">
+                                        {getAccessoryMainImage(acc) ? (
+                                            <img
+                                                src={getTransformedImageUrl(getAccessoryMainImage(acc))}
+                                                alt={acc.title}
+                                                className="absolute inset-0 w-full h-full object-cover opacity-0 transition-opacity duration-300"
+                                                loading="lazy"
+                                                onLoad={(e) => {
+                                                    const target = e.target as HTMLImageElement;
+                                                    target.classList.remove('opacity-0');
+                                                    target.classList.add('opacity-100');
+                                                }}
+                                            />
+                                        ) : (
+                                            <div className="w-full h-full flex items-center justify-center bg-gray-100">
+                                                <Smartphone className="w-12 h-12 text-gray-300" />
+                                            </div>
+                                        )}
+                                        {/* Placeholder */}
+                                        {!getAccessoryMainImage(acc) && (
+                                          <div className="phone-placeholder absolute inset-0 flex items-center justify-center transition-opacity duration-300">
+                                            <div className="p-4 rounded-full bg-gray-100">
+                                              <Smartphone className="w-8 h-8 text-gray-400" />
+                                            </div>
+                                          </div>
+                                        )}
+                                        
+                                        {/* شارة PRO */}
+                                        {style.badge}
+
+                                        <div className="absolute top-2 right-2 flex flex-col gap-2">
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="p-2.5 flex flex-col gap-1.5">
+                                        {/* Title */}
+                                        <h3 className="text-lg font-bold text-gray-800 truncate leading-tight mb-0.5">
+                                            {acc.title}
+                                        </h3>
+
+                                        {/* Category and Brand */}
+                                        <div className="flex items-center gap-1.5 text-xs text-gray-500 truncate font-medium">
+                                            {acc.category && (
+                                                <span>
+                                                    {t(ACCESSORY_CATEGORIES.find(category => category.value === normalizeAccessoryCategory(acc.category))?.labelKey || acc.category)}
+                                                </span>
+                                            )}
+                                            {acc.category && acc.brand && <span className="w-0.5 h-0.5 rounded-full bg-gray-400"></span>}
+                                            {acc.brand && <span>{acc.brand}</span>}
+                                        </div>
+
+                                        {/* Price */}
+                                        <div className="mt-0.5 flex items-center justify-between">
+                                            <div className="text-purple-700 font-bold text-lg" dir="ltr">
+                                                {acc.price.toLocaleString(i18n.language === 'ar' ? 'ar-EG' : 'en-US')} <span className="text-sm font-normal text-bold">{userCurrencySymbol}</span>
+                                            </div>
+                                            <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${acc.condition === 'used' ? 'bg-orange-50 text-orange-700 border-orange-100' : 'bg-cyan-50 text-cyan-700 border-cyan-100'}`}>
+                                                {t(acc.condition)}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </Link>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+        </PageContainer>
+    );
+};
+
+export default AccessoriesForSalePage;

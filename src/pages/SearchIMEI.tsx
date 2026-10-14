@@ -1,0 +1,932 @@
+import React, { useState, useCallback, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useLanguage } from '../contexts/LanguageContext';
+import { useTranslation } from 'react-i18next';
+import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '@/hooks/use-toast';
+import { Button } from '@/components/ui/button';
+import { AlertTriangle, Search, Smartphone, FileText, CheckCircle, XCircle, ShieldCheck, MapPin, Clock, Calendar, Hash, Lock, Zap, Database, Target, MessageCircle } from 'lucide-react';
+import PageContainer from '@/components/PageContainer';
+import AppNavbar from '@/components/AppNavbar';
+import BackButton from '@/components/BackButton';
+import PageAdvertisement from '@/components/advertisements/PageAdvertisement';
+import { useScrollToTop } from '../hooks/useScrollToTop';
+import { supabase } from '../lib/supabase';
+import AdsOfferSlider from '@/components/AdsOfferSlider';
+import axiosInstance from '@/services/axiosInterceptor';
+import arTranslations from '../translations/ar';
+import ImeiInput from '@/components/ImeiInput';
+import { useAppUserRole } from '@/hooks/useAppUserRole';
+
+const WelcomeSearch: React.FC = () => {
+  useScrollToTop();
+  const [isSearching, setIsSearching] = useState(false);
+  const { t } = useLanguage();
+  const { i18n } = useTranslation();
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const { user } = useAuth();
+  const userRole = useAppUserRole(user?.id);
+  const [isNotifying, setIsNotifying] = useState(false);
+
+  const [imei, setImei] = useState('');
+  const [searchResult, setSearchResult] = useState<'found' | 'not_found' | null>(null);
+  const [phoneId, setPhoneId] = useState<string | null>(null);
+  const [registeredPhoneDetails, setRegisteredPhoneDetails] = useState<any | null>(null);
+  const [foundReportStatus, setFoundReportStatus] = useState<string | null>(null);
+  const [foundReportDate, setFoundReportDate] = useState<string | null>(null);
+  const [whatsappNumberFromReport, setWhatsappNumberFromReport] = useState<string | null>(null);
+  const [lossLocation, setLossLocation] = useState<string | null>(null);
+  const [lossTime, setLossTime] = useState<string | null>(null);
+  const [hasReachedSearchLimit, setHasReachedSearchLimit] = useState(false);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [userId, setUserId] = useState<string>('');
+  const [whatsappEnabled, setWhatsappEnabled] = useState<boolean>(false);
+  
+  // متغيرات جديدة للتعامل مع ميزة الواتساب
+  const [ownerRole, setOwnerRole] = useState<string | null>(null);
+  const [ownerWhatsAppEnabled, setOwnerWhatsAppEnabled] = useState<boolean>(false);
+  const [ownerWhatsAppNumber, setOwnerWhatsAppNumber] = useState<string | null>(null);
+  const [isCheckingWhatsApp, setIsCheckingWhatsApp] = useState(false);
+  const [hasNotifiedOwner, setHasNotifiedOwner] = useState<boolean>(false);
+
+  // إعادة عرض نتيجة البحث من أعلى الصفحة على الهاتف بعد انتهاء تحديث الواجهة.
+  useEffect(() => {
+    if (searchResult === null || typeof window === 'undefined') return;
+
+    const scrollToResults = () => {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+      document.scrollingElement?.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    };
+
+    const frame = window.requestAnimationFrame(scrollToResults);
+    return () => window.cancelAnimationFrame(frame);
+  }, [searchResult]);
+
+  // التحقق من حد البحث للمستخدم بناءً على أحدث دفع في ads_payment
+  const checkSearchLimit = async (userId: string) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      const response = await axiosInstance.post('/api/check-limit',
+        { type: 'search_imei', consumeBonusOnLimit: true },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+
+      const result = response.data;
+
+      if (result?.usedBonus) {
+        toast({
+          title: t('alert'),
+          description: t('bonus_deducted_can_continue', { amount: result.deductedAmount }),
+          variant: 'default'
+        });
+      }
+
+      if (!result.allowed) {
+        toast({
+          title: t('alert'),
+          description: t('search_limit_exceeded'),
+          variant: 'destructive'
+        });
+        setHasReachedSearchLimit(true);
+        setShowUpgradeModal(true);
+        return false;
+      }
+
+      if (result.isLastUsage) {
+        toast({
+          title: t('alert'),
+          description: t('last_search_allowed'),
+          variant: 'default'
+        });
+      }
+
+      setHasReachedSearchLimit(false);
+      return true;
+    } catch (error) {
+      toast({
+        title: t('error'),
+        description: t('search_limit_check_error'),
+        variant: 'destructive'
+      });
+      return false;
+    }
+  };
+
+  // تحديث عدد عمليات البحث المستخدمة
+  const updateSearchUsage = async (userId: string) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      await axiosInstance.post('/api/increment-usage',
+        { type: 'search_imei' },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+    } catch (error) {
+      // تم تجاهل الخطأ في تحديث استخدام البحث
+    }
+  };
+
+  const handleResetSearch = () => {
+    setSearchResult(null);
+    setImei('');
+    setPhoneId(null);
+    setRegisteredPhoneDetails(null);
+    setFoundReportStatus(null);
+    setFoundReportDate(null);
+    setLossLocation(null);
+    setLossTime(null);
+    setWhatsappNumberFromReport(null);
+    setWhatsappEnabled(false);
+    // إعادة تعيين متغيرات الواتساب
+    setOwnerRole(null);
+    setOwnerWhatsAppEnabled(false);
+    setOwnerWhatsAppNumber(null);
+    setHasNotifiedOwner(false);
+  };
+
+  const handleImeiChange = useCallback((value: string) => setImei(value), []);
+
+  // دالة جديدة للتحقق من إعدادات الواتساب للمالك
+  const checkOwnerWhatsAppSettings = async (imeiParam?: string) => {
+    const idToUse = imeiParam || phoneId;
+    if (!idToUse) return;
+
+    setIsCheckingWhatsApp(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      // جلب بيانات المالك من جدول phone_reports
+      const response = await axiosInstance.post('/api/get-owner-details-by-imei',
+        { imei: idToUse },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+
+      const result = response.data;
+
+      // التحقق من دور المستخدم وإعدادات الواتساب
+      if (result) {
+        setOwnerRole(result.role || null);
+        setOwnerWhatsAppEnabled(result.whatsapp_enabled || false);
+
+        // إذا كان الدور مناسباً والواتساب مفعلاً، جلب رقم الواتساب
+        if ((result.role === 'gold_business' || result.role === 'gold_user') && result.whatsapp_enabled) {
+          // الخادم يجب أن يعيد الرقم مفكوك التشفير. لا نفك التشفير في الواجهة الأمامية.
+          setOwnerWhatsAppNumber(result.whatsapp_number || null);
+        }
+      }
+    } catch (error) {
+      console.error('Error checking owner WhatsApp settings:', error);
+      toast({
+        title: t('error'),
+        description: t('error_checking_whatsapp_settings'),
+        variant: 'destructive'
+      });
+    } finally {
+      setIsCheckingWhatsApp(false);
+    }
+  };
+
+  const handleNotifyOwner = async () => {
+    // Debug: تحقق من القيم قبل التحقق
+    console.debug('handleNotifyOwner: user =', user, 'phoneId =', phoneId);
+    if (!phoneId || !user || !user.id) {
+      toast({ title: t('error'), description: t('must_login_to_contact_owner'), variant: 'destructive' });
+      return;
+    }
+
+    setIsNotifying(true);
+    let notificationSent = false;
+    let emailSent = false;
+
+    try {
+      // 1. جلب رقم هاتف المستخدم الحالي (الواجد)
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      const response = await axiosInstance.post('/api/get-finder-phone',
+        { userId: user.id },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+      const { finderPhone, error } = response.data;
+
+      if (error || !finderPhone) {
+        throw new Error(error || t('finder_phone_fetch_failed'));
+      }
+
+      // 2. تحديث جدول phone_reports بوضع رقم هاتف الواجد المشفر في عمود finder_phone باستخدام IMEI
+      const updateResponse = await axiosInstance.post('/api/update-finder-phone-by-imei',
+        {
+          imei: phoneId,
+          finderPhone: finderPhone
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+      const updateResult = updateResponse.data;
+
+      if (!updateResponse.status || !updateResult.success) {
+        toast({ title: t('alert_warning'), description: t('phone_found_but_not_saved'), variant: 'destructive' });
+      } else {
+
+        // حفظ البيانات في جدول notifications
+        try {
+          // جلب email لصاحب الهاتف من phone_reports باستخدام imei
+          let ownerEmailForNotification = null;
+          try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const token = session?.access_token;
+            const response = await axiosInstance.post('/api/get-owner-email-by-imei',
+              { imei: phoneId },
+              {
+                headers: {
+                  'Authorization': `Bearer ${token}`
+                }
+              }
+            );
+            const result = response.data;
+            if (response.status !== 200 || !result?.email) {
+              throw new Error(result?.error || t('phone_not_found_in_database'));
+            }
+            ownerEmailForNotification = result.email;
+          } catch (err) {
+            console.debug('Error finding email for notification:', err);
+            throw new Error(t('finder_email_fetch_failed'));
+          }
+
+          // الخادم يتكفل بإنشاء الإشعار في جدول notifications باستخدام service role
+          // لا نحتاج لإنشاء إشعار من الواجهة الأمامية (RLS يمنع ذلك)
+        } catch (saveError) {
+          if (saveError instanceof Error) {
+            toast({
+              title: t('error'),
+              description: t('notification_save_error', { error: saveError.message }),
+              variant: 'destructive'
+            });
+          }
+        }
+
+        notificationSent = updateResult.success || updateResult.ok;
+        emailSent = updateResult.success || updateResult.ok;
+
+        if (notificationSent || emailSent) {
+          toast({ title: t('notification_sent'), description: t('owner_notified_success') });
+          // بعد نجاح الإبلاغ، تحقق من إعدادات الواتساب وأظهر الزر
+          setHasNotifiedOwner(true);
+          checkOwnerWhatsAppSettings(phoneId);
+        } else {
+          toast({ title: t('cannot_send_alert'), description: t('no_valid_owner_contact'), variant: 'destructive' });
+        }
+      }
+    } catch (error) {
+      toast({ title: t('error'), description: error.message || t('error_notifying_owner'), variant: 'destructive' });
+    } finally {
+      setIsNotifying(false);
+    }
+  };
+
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!imei) {
+      toast({
+        title: t('error'),
+        description: t('please_enter_imei'),
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    if (!/^\d{15}$/.test(imei)) {
+      toast({
+        title: t('error'),
+        description: t('invalid_imei'),
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    // ملاحظة أمنية: التحقق من صحة الـ IMEI يتم هنا في الواجهة الأمامية لتحسين تجربة المستخدم
+    // ولكن يجب أيضاً التحقق من صحة الـ IMEI في الخادم لضمان أمان البيانات
+    // الخادم يجب أن يرفض أي IMEI لا يطابق النمط المطلوب
+
+    // التحقق من تسجيل الدخول
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      setUserId(user.id);
+    }
+    if (!user) {
+      toast({
+        title: t('error'),
+        description: t('login_required_first'),
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    // التحقق من حد البحث
+    const canSearch = await checkSearchLimit(user.id);
+    if (!canSearch) return;
+
+    setIsSearching(true);
+
+    try {
+      setSearchResult(null);
+      setRegisteredPhoneDetails(null);
+      setPhoneId(null);
+      setFoundReportStatus(null);
+      setFoundReportDate(null);
+      
+      // إعادة تعيين متغيرات الواتساب
+      setOwnerRole(null);
+      setOwnerWhatsAppEnabled(false);
+      setOwnerWhatsAppNumber(null);
+      setHasNotifiedOwner(false);
+
+      // مخاطبة السيرفر عبر API
+      // ملاحظة: استخدم https://imei-safe.me للإنتاج أو http://10.0.2.2:3000 للمحاكي
+      // ملاحظة أمنية: لا نرسل userId في جسم الطلب لتجنب ثغرة IDOR
+      // الخادم سيستخرج userId من التوكن المرسل في الترويسة
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      const response = await axiosInstance.post('/api/search-imei',
+        { imei: imei },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+      const result = response.data;
+
+      // تحديث عدد عمليات البحث
+      await updateSearchUsage(user.id);
+
+      // معالجة النتائج حسب ما يرجعه السيرفر فقط
+      if (result.found) {
+        setPhoneId(result.imei || imei); // عيّن phoneId دائماً
+        setSearchResult('found');
+        // تخزين فقط الحالة والتاريخ الضروريين للعرض
+        setFoundReportStatus(result.status || '');
+        setFoundReportDate(result.report_date || '');
+        setLossLocation(result.loss_location || '');
+        setLossTime(result.loss_time || '');
+        // جلب رقم الواتساب المخزن (anther_number) من البلاغ
+        if (result.whatsapp_number) {
+          setWhatsappNumberFromReport(result.whatsapp_number);
+        }
+        // تعيين حالة الواتساب من البلاغ
+        setWhatsappEnabled(result.whatsapp || false);
+        if (result.registeredPhone) {
+          setRegisteredPhoneDetails({
+            imei: result.imei || imei,
+            registration_date: result.registeredPhone.registration_date,
+            status: result.registeredPhone.status,
+            phone_image_url: result.registeredPhone.phone_image_url || result.phone_image_url,
+            phone_type: result.registeredPhone.phone_type || result.phone_type,
+          });
+        }
+        
+        // لا نتحقق من الواتساب عند البحث - يظهر فقط بعد إبلاغ المالك
+      } else if (result.registeredPhone || result.registered || result.isRegistered) {
+        // Normalize registered phone data: the API may return different shapes
+        const rp = result.registeredPhone
+          ? result.registeredPhone
+          : {
+            imei: result.imei || imei,
+            registration_date: result.registration_date || result.registered_at || null,
+            status: result.status || 'registered',
+          };
+
+        setPhoneId(rp.imei || imei); // عيّن phoneId دائماً
+        setRegisteredPhoneDetails({
+          imei: rp.imei,
+          registration_date: rp.registration_date,
+          status: rp.status,
+          phone_image_url: rp.phone_image_url || result.phone_image_url,
+          phone_type: rp.phone_type || result.phone_type,
+        });
+        setSearchResult('not_found');
+      } else {
+        setPhoneId(imei); // حتى لو لم يوجد، عيّن IMEI المدخل
+        setSearchResult('not_found');
+        setRegisteredPhoneDetails(null);
+        toast({
+          title: t('info'),
+          description: t('phone_not_found'),
+        });
+      }
+    } catch (error) {
+      const invalidImei = (error as any)?.response?.data?.error === 'invalid_imei';
+      toast({
+        title: t('error'),
+        description: invalidImei ? t('invalid_imei') : t('error_searching'),
+        variant: 'destructive'
+      });
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // Safe date formatter: returns formatted string or null when invalid
+  const formatDateTime = (val: any) => {
+    if (val === null || val === undefined || val === '') return null;
+    try {
+      const d = typeof val === 'number' ? new Date(val) : new Date(String(val));
+      if (isNaN(d.getTime())) return null;
+      return d.toLocaleString(i18n.language === 'ar' ? 'ar-EG' : 'en-US');
+    } catch (e) {
+      return null;
+    }
+  };
+
+  // دالة للتواصل عبر الواتساب - تفك التشفير من الخادم فقط عند الضغط
+  const handleWhatsAppContact = async () => {
+    if (!phoneId) {
+      toast({ title: t('error'), description: t('imei_not_available'), variant: 'destructive' });
+      return;
+    }
+
+    setIsCheckingWhatsApp(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      // Use our owner-details endpoint to get decrypted whatsapp number from anther_number
+      const response = await axiosInstance.post(
+        '/api/get-owner-details-by-imei',
+        { imei: phoneId },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      const result = response.data || {};
+      const number = result.whatsapp_number || whatsappNumberFromReport || ownerWhatsAppNumber;
+      if (number) {
+        const cleanNumber = String(number).replace(/\D/g, '');
+        const whatsappUrl = `https://wa.me/${cleanNumber}`;
+        window.open(whatsappUrl, '_blank');
+      } else {
+        toast({ title: t('error'), description: t('whatsapp_number_not_available'), variant: 'destructive' });
+      }
+    } catch (error: any) {
+      const errorMsg = error?.response?.data?.error || t('error_opening_whatsapp');
+      toast({ title: t('error'), description: errorMsg, variant: 'destructive' });
+    } finally {
+      setIsCheckingWhatsApp(false);
+    }
+  };
+
+  return (
+    <PageContainer fullWidth={searchResult !== null}>
+      <AppNavbar />
+      {searchResult === null && <PageAdvertisement pageName="welcomesearch" />}
+
+      <div className={`min-h-screen bg-slate-50 pb-6 ${searchResult !== null ? 'w-full' : ''}`}>
+        <div className={`container mx-auto px-2 py-6 ${searchResult !== null ? 'max-w-none' : 'max-w-4xl'}`}>
+          {/* Header Section */}
+          <div
+            className="mb-4 flex items-center pt-3"
+            style={{
+              background: 'linear-gradient(to top, #053060 0%, #0a4d8c 100%)',
+              padding: '0.3rem',
+              borderRadius: '1rem',
+              marginTop: '1rem',
+            }}
+          >
+            <BackButton to="/dashboard" className="mr-4" />
+            <div className="flex-1 text-center">
+              <h1 className="text-2xl font-bold text-white">
+                {t('search_imei')}
+              </h1>
+            </div>
+          </div>
+
+          {/* Search Card */}
+          {searchResult !== 'found' && (
+            <div className="rounded-[28px] border-2 border-blue-300 bg-gradient-to-br from-blue-100 via-white to-cyan-100 p-5 shadow-lg mb-8">
+              <div className="mb-6 text-center">
+                <h2 className="text-2xl font-bold text-blue-600 mb-2">
+                  {t('search_imei_title')}
+                </h2>
+                <p className="text-blue-600">
+                  {t('search_imei_description')}
+                </p>
+              </div>
+
+
+              <form onSubmit={handleSearch} className="space-y-6">
+                <ImeiInput
+                  value={imei}
+                  userRole={userRole}
+                  onValueChange={handleImeiChange}
+                  placeholder={t('enter_imei_placeholder')}
+                  className="w-full py-4 bg-slate-50 border-2 border-slate-200 rounded-xl text-blue-600 focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 transition-all duration-300"
+                />
+
+                <Button
+                  type="submit"
+                  className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#f97316] text-lg font-bold text-white shadow-lg shadow-orange-500/30 transition-colors hover:bg-[#ea580c] active:bg-[#c2410c] disabled:bg-[#f97316] disabled:opacity-100"
+                  disabled={isSearching || !imei}
+                  aria-busy={isSearching}
+                >
+
+                  {isSearching ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                      <span>{t('searching')}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Search className="w-5 h-5" />
+                      <span>{t('search')}</span>
+                    </>
+                  )}
+                </Button>
+              </form>
+            </div>
+          )}
+
+          {/* Empty State - تم إزالة هذا القسم بالكامل */}
+
+          {/* Features Grid - تم تعديل هذا القسم ليظهر فقط قبل البحث */}
+          {searchResult === null && (
+            <div className="grid grid-cols-2 gap-4 mt-8 w-full">
+              {[
+                { icon: Lock, title: t('data_protection'), desc: t('data_protection_desc') },
+                { icon: Zap, title: t('instant_results'), desc: t('instant_results_desc') },
+                { icon: Database, title: t('trusted_database'), desc: t('reliable_database_desc') },
+                { icon: Target, title: t('high_accuracy'), desc: t('high_accuracy_desc') }
+              ].map((feature, index) => (
+                <div key={index} className="bg-gradient-to-br from-white to-slate-50 rounded-xl p-6 shadow-xl border border-slate-100 hover:shadow-lg hover:border-orange-200 transition-all duration-300">
+                  <div className="bg-gradient-to-br from-orange-500 to-orange-600 w-14 h-14 rounded-xl flex items-center justify-center mb-4 shadow-md">
+                    <feature.icon size={24} className="text-white" />
+                  </div>
+                  <h4 className="font-bold text-blue-600 mb-2 text-lg">{feature.title}</h4>
+                  <p className="text-sm text-blue-600 leading-relaxed">{feature.desc}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Search Results Section */}
+          {searchResult !== null && (
+            <div className="space-y-6">
+
+              {/* Found Phone Card */}
+              {searchResult === 'found' && foundReportStatus && (
+                <div className={`bg-white rounded-2xl shadow-lg overflow-hidden border ${foundReportStatus === 'resolved' ? 'border-green-100' : 'border-red-100'}`}>
+                  {/* Header */}
+                  <div className={`pt-6 pb-4 px-6 flex flex-col items-center ${foundReportStatus === 'resolved' ? 'bg-green-600' : 'bg-red-600'}`}>
+                    <div className={`${foundReportStatus === 'resolved' ? 'bg-green-400' : 'bg-red-400'} p-4 rounded-full mb-3`}>
+                      {foundReportStatus === 'resolved' ? (
+                        <CheckCircle size={32} className="text-green-600" />
+                      ) : (
+                        <AlertTriangle size={32} className="text-white" />
+                      )}
+                    </div>
+                    <h3 className={`text-2xl font-bold mb-1 ${foundReportStatus === 'resolved' ? 'text-white' : 'text-white'}`}>
+                      {foundReportStatus === 'resolved' ? t('phone_found') : t('phone_lost')}
+                    </h3>
+                  </div>
+
+                  {/* Details */}
+                  <div className="p-4 bg-white">
+                    <div className="flex flex-col gap-4">
+                      {/* صف رقم IMEI */}
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center flex-shrink-0">
+                          <Hash size={24} className="text-slate-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-slate-500 font-bold mb-1">IMEI</p>
+                          <p className="text-base font-bold text-blue-600 truncate">
+                            {phoneId ? phoneId : 'N/A'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* صف حالة البلاغ */}
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center flex-shrink-0">
+                          <AlertTriangle size={24} className="text-slate-600" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-sm text-slate-500 font-bold mb-1">{t('report_status')}</p>
+                          <p className={`text-base font-bold ${foundReportStatus === 'resolved' ? 'text-green-600' : 'text-red-600'}`}>
+                            {foundReportStatus === 'resolved' ? t('resolved') : t('active')}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* صف بعمودين: وقت الفقد ووقت البلاغ */}
+                      <div className="grid grid-cols-2 gap-4">
+                        {/* وقت الفقد */}
+                        {lossTime ? (
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center flex-shrink-0">
+                              <Clock size={24} className="text-slate-600" />
+                            </div>
+                            <div className="flex-1">
+                              <p className="text-sm text-slate-500 font-bold mb-1">{t('loss_time')}</p>
+                              <p className="text-base font-bold text-blue-600">
+                                {new Date(lossTime).toLocaleTimeString(i18n.language === 'ar' ? 'ar-EG' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                              </p>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {/* وقت البلاغ */}
+                        {foundReportDate ? (
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center flex-shrink-0">
+                              <Clock size={24} className="text-slate-600" />
+                            </div>
+                            <div className="flex-1">
+                              <p className="text-sm text-slate-500 font-bold mb-1">{t('report_time')}</p>
+                              <p className="text-base font-bold text-blue-600">
+                                {new Date(foundReportDate).toLocaleTimeString(i18n.language === 'ar' ? 'ar-EG' : 'en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                              </p>
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+
+                      {/* صف بعمودين: تاريخ الفقد وتاريخ البلاغ */}
+                      <div className="grid grid-cols-2 gap-4">
+                        {/* تاريخ الفقد */}
+                        {lossTime ? (
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center flex-shrink-0">
+                              <Calendar size={24} className="text-slate-600" />
+                            </div>
+                            <div className="flex-1">
+                              <p className="text-sm text-slate-500 font-bold mb-1">{t('loss_date')}</p>
+                              <p className="text-base font-bold text-blue-600">
+                                {new Date(lossTime).toLocaleDateString(i18n.language === 'ar' ? 'ar-EG' : 'en-US')}
+                              </p>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {/* تاريخ البلاغ */}
+                        {foundReportDate ? (
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center flex-shrink-0">
+                              <Calendar size={24} className="text-slate-600" />
+                            </div>
+                            <div className="flex-1">
+                              <p className="text-sm text-slate-500 font-bold mb-1">{t('report_date')}</p>
+                              <p className="text-base font-bold text-blue-600">
+                                {new Date(foundReportDate).toLocaleDateString(i18n.language === 'ar' ? 'ar-EG' : 'en-US')}
+                              </p>
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+
+                      {/* صف مكان الفقد */}
+                      {lossLocation ? (
+                        <div className="flex items-center gap-3 bg-white/60 p-3 rounded-xl border border-red-100 shadow-sm">
+                          <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center flex-shrink-0">
+                            <MapPin size={24} className="text-slate-600" />
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-sm text-slate-500 font-bold mb-1">{t('loss_location')}</p>
+                            <p className="text-base font-bold text-blue-600">{lossLocation}</p>
+                          </div>
+                        </div>
+                      ) : null}
+
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Registered Phone Card */}
+              {searchResult === 'not_found' && registeredPhoneDetails && (
+                <>
+                  {registeredPhoneDetails.status === 'transferred' || registeredPhoneDetails.status === 'sold' ? (
+                    <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-slate-100">
+                      <div className="bg-green-50 pt-6 pb-4 px-6 flex flex-col items-center">
+                        <div className="bg-green-100 p-4 rounded-full mb-3">
+                          <ShieldCheck size={32} className="text-green-600" />
+                        </div>
+                        <h3 className="text-xl font-bold text-center mb-2 text-blue-600">
+                          {t('this_phone_is_registered_in_our_system_since')}{' '}
+                          {formatDateTime(registeredPhoneDetails.registration_date) || t('not_available')}{' '}
+                          {t('and_no_report_has_been_filed_yet')}
+                        </h3>
+                      </div>
+
+                      {/* Phone Image - تم تعديل هذا القسم لتقليل ارتفاع الصورة */}
+                      {registeredPhoneDetails.phone_image_url && (
+                        <div className="p-3 flex flex-col items-center">
+                          <p className="text-blue-600 font-bold mb-2">{t('phone_image_label')}</p>
+                          <img
+                            src={registeredPhoneDetails.phone_image_url}
+                            alt={t('phone_image_label')}
+                            className="w-full max-w-xs h-32 object-contain rounded-xl border-2 border-slate-200 shadow-sm"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Crect fill=%22%23ddd%22 width=%22100%22 height=%22100%22/%3E%3Crect x=%225%22 y=%225%22 width=%2290%22 height=%2290%22 fill=%22%23eee%22/%3E%3Ctext x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 font-family=%22sans-serif%22 font-size=%2214%22 fill=%22%23999%22%3ENo Image%3C/text%3E%3C/svg%3E';
+                            }}
+                          />
+                        </div>
+                      )}
+
+                      {/* Phone Type */}
+                      {registeredPhoneDetails.phone_type && (
+                        <div className="px-6 pb-6 text-center">
+                          <p className="text-blue-600 font-bold">{t('phone_type_label')}: <span className="font-normal">{registeredPhoneDetails.phone_type}</span></p>
+                        </div>
+                      )}
+                    </div>
+                  ) : registeredPhoneDetails.status === 'pending' ? (
+                    <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-slate-100">
+                      <div className="bg-yellow-50 pt-6 pb-4 px-6 flex flex-col items-center">
+                        <div className="bg-yellow-100 p-4 rounded-full mb-3">
+                          <AlertTriangle size={32} className="text-yellow-600" />
+                        </div>
+                        <h3 className="text-xl font-bold text-center mb-2 text-blue-600">
+                          {t('this_phone_is_registered_in_our_system_since')}{' '}
+                          {formatDateTime(registeredPhoneDetails.registration_date) || t('not_available')}{' '}
+                          {t('and_it_is_under_review_please_check_purchase_invoice')}
+                        </h3>
+                      </div>
+
+                      {/* Phone Image - تم تعديل هذا القسم لتقليل ارتفاع الصورة */}
+                      {registeredPhoneDetails.phone_image_url && (
+                        <div className="p-3 flex flex-col items-center">
+                          <p className="text-blue-600 font-bold mb-2">{t('phone_image_label')}</p>
+                          <img
+                            src={registeredPhoneDetails.phone_image_url}
+                            alt={t('phone_image_label')}
+                            className="w-full max-w-xs h-32 object-contain rounded-xl border-2 border-slate-200 shadow-sm"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Crect fill=%22%23ddd%22 width=%22100%22 height=%22100%22/%3E%3Ctext x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 font-family=%22sans-serif%22 font-size=%2214%22 fill=%22%23999%22%3ENo Image%3C/text%3E%3C/svg%3E';
+                            }}
+                          />
+                        </div>
+                      )}
+
+                      {/* Phone Type */}
+                      {registeredPhoneDetails.phone_type && (
+                        <div className="px-6 pb-6 text-center">
+                          <p className="text-blue-600 font-bold">{t('phone_type_label')}: <span className="font-normal">{registeredPhoneDetails.phone_type}</span></p>
+                        </div>
+                      )}
+                    </div>
+                  ) : registeredPhoneDetails.status === 'rejected' ? (
+                    <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-slate-100">
+                      <div className="bg-red-10 pt-6 pb-4 px-6 flex flex-col items-center">
+                        <div className="bg-red-100 p-4 rounded-full mb-3">
+                          <XCircle size={32} className="text-red-600" />
+                        </div>
+                        <h3 className="text-xl font-bold text-center mb-2 text-blue-600">
+                          {t('this_phone_registration_has_been_rejected_due_to_incorrect_data')}
+                        </h3>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-white rounded-2xl shadow-lg overflow-hidden border border-slate-100">
+                      <div className="bg-green-50 pt-6 pb-4 px-6 flex flex-col items-center">
+                        <div className="bg-green-100 p-4 rounded-full mb-3">
+                          <ShieldCheck size={32} className="text-green-600" />
+                        </div>
+                        <h3 className="text-xl font-bold text-center mb-2 text-blue-600">
+                          {t('this_phone_is_registered_in_our_system_since')}{' '}
+                          {formatDateTime(registeredPhoneDetails.registration_date) || t('not_available')}{' '}
+                          {t('and_no_report_has_been_filed_yet')}
+                        </h3>
+                      </div>
+
+                      {/* Phone Image - تم تعديل هذا القسم لتقليل ارتفاع الصورة */}
+                      {registeredPhoneDetails.phone_image_url && (
+                        <div className="p-3 flex flex-col items-center">
+                          <p className="text-blue-600 font-bold mb-2">{t('phone_image_label')}</p>
+                          <img
+                            src={registeredPhoneDetails.phone_image_url}
+                            alt={t('phone_image_label')}
+                            className="w-full max-w-xs h-32 object-contain rounded-xl border-2 border-slate-200 shadow-sm"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Crect fill=%22%23ddd%22 width=%22100%22 height=%22100%22/%3E%3Ctext x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 font-family=%22sans-serif%22 font-size=%2214%22 fill=%22%23999%22%3ENo Image%3C/text%3E%3C/svg%3E';
+                            }}
+                          />
+                        </div>
+                      )}
+
+                      {/* Phone Type */}
+                      {registeredPhoneDetails.phone_type && (
+                        <div className="px-6 pb-6 text-center">
+                          <p className="text-blue-600 font-bold">{t('phone_type_label')}: <span className="font-normal">{registeredPhoneDetails.phone_type}</span></p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Report Image for Active Status */}
+              {searchResult === 'found' && foundReportStatus === 'active' && (
+                <div className="bg-white rounded-xl p-4 shadow-xl border border-slate-100">
+                  <h3 className="text-lg font-bold text-blue-600 mb-2">{t('report_and_box_image')}</h3>
+                  <div className="relative">
+                    <div className="w-full h-auto rounded-lg bg-slate-50 flex items-center justify-center" style={{ minHeight: '100px' }}>
+                      <p className="text-slate-600 text-center p-2 text-sm font-bold">
+                        {t('privacy_notice_search')}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Notify Owner Button - تم تعديله لإظهار خيارات متعددة */}
+              {searchResult === 'found' && foundReportStatus === 'active' && (
+                <div className="flex flex-col sm:flex-row gap-3 w-full">
+                  {/* زر إرسال إشعار للمالك */}
+                  <Button
+                    onClick={handleNotifyOwner}
+                    className="flex-1 h-14 bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white transition-all duration-300 text-lg font-bold shadow-lg shadow-orange-500/30 rounded-xl flex items-center justify-center gap-2"
+                    disabled={isNotifying}
+                  >
+                    {isNotifying ? (
+                      <>
+                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                        <span>{t('processing')}</span>
+                      </>
+                    ) : (
+                      t('notify_owner')
+                    )}
+                  </Button>
+                  
+                  {/* زر الواتساب - يظهر فقط بعد إبلاغ المالك بنجاح وإذا كان الواتساب مفعّلاً */}
+                  {hasNotifiedOwner && ownerWhatsAppEnabled && (ownerRole === 'gold_business' || ownerRole === 'gold_user') && (
+                    <Button
+                      onClick={handleWhatsAppContact}
+                      className="flex-1 h-14 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white transition-all duration-300 text-lg font-bold shadow-lg shadow-green-500/30 rounded-xl flex items-center justify-center gap-2"
+                      disabled={isCheckingWhatsApp}
+                    >
+                      {isCheckingWhatsApp ? (
+                        <>
+                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                          <span>{t('processing')}</span>
+                        </>
+                      ) : (
+                        <>
+                          <div className="w-6 h-6 rounded-full bg-white flex items-center justify-center mr-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" className="lucide lucide-message-circle text-green-600"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"></path></svg>
+                          </div>
+                          <span>تواصل مع صاحب الهاتف</span>
+                        </>
+                      )}
+                    </Button>
+                  )}
+                </div>
+              )}
+
+              {/* Not Registered Phone */}
+              {searchResult === 'not_found' && !registeredPhoneDetails && (
+                <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
+                  <p className="text-blue-600 text-lg text-center font-bold">
+                    {t('phone_not_registered_register_now')}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Upgrade Modal */}
+      {showUpgradeModal && (
+        <AdsOfferSlider onClose={() => setShowUpgradeModal(false)} userId={userId} isUpgradePrompt={true} />
+      )}
+    </PageContainer>
+  );
+};
+
+export default WelcomeSearch;
