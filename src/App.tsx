@@ -130,7 +130,14 @@ const queryClient = new QueryClient();
 const AppCore = () => {
   const navigate = useNavigate();
   const { adToShow, hideAd } = useAdModal();
-  const { user } = useAuth();
+  const { user, rejectedAccountProfile, needsProfileCompletion } = useAuth();
+  const location = useLocation();
+
+  useEffect(() => {
+    if (user && needsProfileCompletion && location.pathname !== '/business-profile-complete') {
+      navigate('/business-profile-complete', { replace: true });
+    }
+  }, [user, needsProfileCompletion, location.pathname, navigate]);
 
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
@@ -392,7 +399,7 @@ const AppCore = () => {
     >
 
       <>
-        {adToShow && <LoginAdModal ad={adToShow} onClose={hideAd} />}
+        {adToShow && !rejectedAccountProfile && <LoginAdModal ad={adToShow} onClose={hideAd} />}
         <DeepLinkHandler />
         <Toaster />
         <Sonner />

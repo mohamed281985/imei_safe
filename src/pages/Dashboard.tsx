@@ -204,7 +204,7 @@ const START_DATE = new Date('2025-01-01').getTime();
 const Dashboard: React.FC = () => {
   useScrollToTop();
   const { t, language } = useLanguage();
-  const { user, isFirstLogin, clearFirstLogin } = useAuth();
+  const { user, isFirstLogin, clearFirstLogin, rejectedAccountProfile } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -1617,7 +1617,7 @@ const Dashboard: React.FC = () => {
 
       <Suspense fallback={<div>Loading...</div>}>
         <AdPopupModal
-          isOpen={isAdModalOpen}
+          isOpen={isAdModalOpen && !rejectedAccountProfile}
           onClose={() => {
             setIsAdModalOpen(false);
             if (showOwnershipConfirmationAfterAd) {

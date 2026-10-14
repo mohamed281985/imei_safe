@@ -70,56 +70,63 @@ const RejectedAccountResubmissionDialog: React.FC = () => {
   return (
     <Dialog open={Boolean(rejectedAccountProfile)} onOpenChange={() => undefined}>
       <DialogContent
-        className="max-h-[92dvh] w-[calc(100vw-1rem)] max-w-xl overflow-y-auto border-rose-200 p-0 text-right [&>button]:hidden"
+        className="max-h-[92dvh] w-[calc(100vw-1rem)] max-w-xl overflow-y-auto border-sky-200 bg-white p-0 text-right text-gray-900 [&>button]:hidden"
         dir="rtl"
         onEscapeKeyDown={(event) => event.preventDefault()}
         onInteractOutside={(event) => event.preventDefault()}
       >
-        <DialogHeader className="border-b border-rose-100 bg-rose-50 p-5 sm:p-6">
+        <DialogHeader className="border-b border-sky-100 bg-gradient-to-l from-sky-50 via-white to-amber-50/70 p-5 sm:p-6">
           <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-700">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sky-800 ring-1 ring-sky-200">
               <AlertTriangle className="h-5 w-5" />
             </div>
             <div className="space-y-1">
-              <DialogTitle className="text-lg font-bold text-rose-950">تم رفض الحساب</DialogTitle>
-              <DialogDescription className="text-sm leading-6 text-rose-900">
+              <DialogTitle className="text-lg font-bold text-sky-950">تم رفض الحساب</DialogTitle>
+              <DialogDescription className="text-sm leading-6 text-gray-700">
                 لا يمكن استخدام التطبيق قبل تعديل البيانات وإرسالها للمراجعة مرة أخرى.
               </DialogDescription>
             </div>
           </div>
           {rejectedAccountProfile?.rejection_reason && (
-            <div className="mt-4 rounded-md border border-rose-200 bg-white p-3">
-              <p className="mb-1 text-xs font-semibold text-rose-700">سبب الرفض</p>
-              <p className="whitespace-pre-wrap text-sm leading-6 text-rose-950">{rejectedAccountProfile.rejection_reason}</p>
+            <div className="mt-4 flex gap-3 rounded-lg border border-amber-200 border-r-4 border-r-orange-500 bg-white p-4 shadow-sm">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-100 text-orange-700">
+                <AlertTriangle className="h-4 w-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="mb-1 text-sm font-bold text-orange-800">سبب رفض الحساب</p>
+                <p className="max-h-28 overflow-y-auto break-words whitespace-pre-wrap text-sm leading-6 text-gray-800">
+                  {rejectedAccountProfile.rejection_reason}
+                </p>
+              </div>
             </div>
           )}
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4 p-5 sm:p-6">
+        <form onSubmit={handleSubmit} className="space-y-4 bg-gradient-to-b from-white via-white to-sky-50/70 p-5 text-gray-900 sm:p-6">
           <div className="space-y-1.5">
-            <label htmlFor="resubmit-email" className="text-sm font-medium">البريد الإلكتروني</label>
-            <Input id="resubmit-email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} disabled={isSubmitting} />
+            <label htmlFor="resubmit-email" className="text-sm font-semibold text-gray-800">البريد الإلكتروني</label>
+            <Input id="resubmit-email" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} disabled={isSubmitting} className="border-amber-300 bg-white text-gray-900 placeholder:text-gray-500 focus-visible:ring-orange-500" />
           </div>
           <div className="space-y-1.5">
-            <label htmlFor="resubmit-full-name" className="text-sm font-medium">الاسم رباعي</label>
-            <Input id="resubmit-full-name" autoComplete="name" required value={fullName} onChange={(event) => setFullName(event.target.value)} disabled={isSubmitting} />
+            <label htmlFor="resubmit-full-name" className="text-sm font-semibold text-gray-800">الاسم رباعي</label>
+            <Input id="resubmit-full-name" autoComplete="name" required value={fullName} onChange={(event) => setFullName(event.target.value)} disabled={isSubmitting} className="border-amber-300 bg-white text-gray-900 placeholder:text-gray-500 focus-visible:ring-orange-500" />
           </div>
           <div className="space-y-1.5">
-            <label htmlFor="resubmit-phone" className="text-sm font-medium">رقم الهاتف ورمز الدولة</label>
+            <label htmlFor="resubmit-phone" className="text-sm font-semibold text-gray-800">رقم الهاتف ورمز الدولة</label>
             <div className="flex flex-col gap-2 sm:flex-row">
-              <CountryCodeSelector value={countryCode} onChange={setCountryCode} disabled={isSubmitting} />
-              <Input id="resubmit-phone" type="tel" inputMode="numeric" autoComplete="tel-national" required value={phone} onChange={(event) => setPhone(event.target.value.replace(/\D/g, '').slice(0, 15))} disabled={isSubmitting} dir="ltr" />
+              <CountryCodeSelector value={countryCode} onChange={setCountryCode} disabled={isSubmitting} colorScheme="warm" />
+              <Input id="resubmit-phone" type="tel" inputMode="numeric" autoComplete="tel-national" required value={phone} onChange={(event) => setPhone(event.target.value.replace(/\D/g, '').slice(0, 15))} disabled={isSubmitting} dir="ltr" className="border-amber-300 bg-white text-gray-900 placeholder:text-gray-500 focus-visible:ring-orange-500" />
             </div>
           </div>
           <div className="space-y-1.5">
-            <label htmlFor="resubmit-id-last6" className="text-sm font-medium">آخر 6 أرقام من البطاقة</label>
-            <Input id="resubmit-id-last6" inputMode="numeric" autoComplete="off" required maxLength={6} value={idLast6} onChange={(event) => setIdLast6(event.target.value.replace(/\D/g, '').slice(0, 6))} disabled={isSubmitting} dir="ltr" />
+            <label htmlFor="resubmit-id-last6" className="text-sm font-semibold text-gray-800">آخر 6 أرقام من البطاقة</label>
+            <Input id="resubmit-id-last6" inputMode="numeric" autoComplete="off" required maxLength={6} value={idLast6} onChange={(event) => setIdLast6(event.target.value.replace(/\D/g, '').slice(0, 6))} disabled={isSubmitting} dir="ltr" className="border-amber-300 bg-white text-gray-900 placeholder:text-gray-500 focus-visible:ring-orange-500" />
           </div>
           <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-between">
-            <Button type="button" variant="outline" disabled={isSubmitting} onClick={async () => { await logout(); navigate('/login', { replace: true }); }}>
-              <LogOut className="ml-2 h-4 w-4" /> تسجيل الخروج
+            <Button type="button" variant="outline" disabled={isSubmitting} onClick={async () => { await logout(); navigate('/login', { replace: true }); }} className="border-sky-700 bg-sky-700 text-white shadow-sm hover:border-sky-800 hover:bg-sky-800 hover:text-white">
+              <LogOut className="ml-2 h-4 w-4 text-white" /> تسجيل الخروج
             </Button>
-            <Button type="submit" disabled={isSubmitting} className="bg-rose-700 hover:bg-rose-800">
+            <Button type="submit" disabled={isSubmitting} className="bg-orange-600 text-white hover:bg-orange-700">
               {isSubmitting && <Loader2 className="ml-2 h-4 w-4 animate-spin" />}
               إرسال للمراجعة مرة أخرى
             </Button>

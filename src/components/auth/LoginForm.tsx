@@ -78,6 +78,11 @@ export function LoginForm({
           toast({ title: 'الحساب قيد المراجعة', description: 'سيتم تفعيل الحساب بعد انتهاء مراجعة البيانات.', variant: 'destructive' });
           return;
         }
+        if (result.error === 'business_pending_review') {
+          setLoginError('النشاط التجاري قيد المراجعة. عاود تسجيل الدخول في وقت لاحق بعد اعتماد الطلب.');
+          toast({ title: 'النشاط التجاري قيد المراجعة', description: 'عاود تسجيل الدخول في وقت لاحق بعد انتهاء المراجعة.', variant: 'destructive' });
+          return;
+        }
 
         // التعامل مع رسالة الخطأ الجديدة من AuthContext
         if (result.error === 'user_banned') {

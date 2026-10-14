@@ -16,9 +16,10 @@ interface Props {
   value: string;
   onChange: (code: string) => void;
   disabled?: boolean;
+  colorScheme?: 'default' | 'warm';
 }
 
-const CountryCodeSelector: React.FC<Props> = ({ value, onChange, disabled }) => {
+const CountryCodeSelector: React.FC<Props> = ({ value, onChange, disabled, colorScheme = 'default' }) => {
   const { t } = useLanguage();
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState(false);
@@ -48,12 +49,13 @@ const CountryCodeSelector: React.FC<Props> = ({ value, onChange, disabled }) => 
 
   // جلب اسم الدولة المختارة
   const selectedCountry = (countries as Country[]).find(c => c.code === value);
+  const isWarm = colorScheme === 'warm';
 
   return (
     <div ref={containerRef} className="relative min-w-[100px] max-w-[180px]">
       <button
         type="button"
-        className={`flex items-center justify-between w-full px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-800 shadow focus:outline-none focus:ring-1 focus:ring-cyan-400 transition-colors ${disabled ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50'}`}
+        className={`flex items-center justify-between w-full px-3 py-1.5 rounded-lg border ${isWarm ? 'border-amber-300 bg-white text-gray-900 focus:ring-orange-400' : 'border-gray-300 bg-white text-gray-800 focus:ring-cyan-400'} shadow focus:outline-none focus:ring-1 transition-colors ${disabled ? 'opacity-60 cursor-not-allowed' : isWarm ? 'hover:bg-amber-50' : 'hover:bg-gray-50'}`}
         onClick={() => !disabled && setOpen((prev) => !prev)}
         disabled={disabled}
         tabIndex={0}
@@ -66,10 +68,10 @@ const CountryCodeSelector: React.FC<Props> = ({ value, onChange, disabled }) => 
         <svg className={`w-3 h-3 ml-1 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
       </button>
       {open && (
-        <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg max-h-64 overflow-y-auto animate-fade-in">
+        <div className={`absolute z-50 mt-1 w-full bg-white border ${isWarm ? 'border-amber-200' : 'border-gray-200'} rounded-xl shadow-lg max-h-64 overflow-y-auto animate-fade-in`}>
           <input
             type="text"
-            className="w-full rounded-t-lg px-2 py-1.5 bg-gray-50 text-gray-800 border-b border-gray-200 focus:outline-none focus:ring-1 focus:ring-cyan-400 text-xs mb-0.5"
+            className={`w-full rounded-t-lg px-2 py-1.5 ${isWarm ? 'bg-amber-50 text-gray-900 border-amber-200 focus:ring-orange-400' : 'bg-gray-50 text-gray-800 border-gray-200 focus:ring-cyan-400'} border-b focus:outline-none focus:ring-1 text-xs mb-0.5`}
             placeholder={t('search_country_or_code')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -84,7 +86,7 @@ const CountryCodeSelector: React.FC<Props> = ({ value, onChange, disabled }) => 
               filteredCountries.map(country => (
                 <li
                   key={country.code}
-                  className={`flex items-center gap-1 px-3 py-2 cursor-pointer hover:bg-cyan-50 transition-colors rounded-lg ${country.code === value ? 'bg-cyan-100 text-cyan-700 font-semibold' : 'text-gray-800'}`}
+                  className={`flex items-center gap-1 px-3 py-2 cursor-pointer ${isWarm ? 'hover:bg-amber-50' : 'hover:bg-cyan-50'} transition-colors rounded-lg ${country.code === value ? isWarm ? 'bg-amber-100 text-orange-800 font-semibold' : 'bg-cyan-100 text-cyan-700 font-semibold' : 'text-gray-800'}`}
                   onClick={() => {
                     onChange(country.code);
                     setOpen(false);

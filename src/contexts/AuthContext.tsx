@@ -283,9 +283,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
 
             if (appUserStatus === 'pending' && !String(appUserRole || userProfile.role || '').toLowerCase().includes('admin')) {
+              toast({
+                title: 'الحساب قيد المراجعة',
+                description: 'تم استلام بياناتك. عاود تسجيل الدخول لاحقًا بعد انتهاء المراجعة.',
+                variant: 'destructive'
+              });
               await logout();
               return;
             }
+
+            const { data: businessProfile, error: businessError } = await supabase
+              .from('businesses')
+              .select('status, store_image_url, license_image_url')
+              .eq('user_id', user.id)
+              .maybeSingle();
+            if (businessError) console.warn('checkAuth: failed to check business review status', businessError);
+            if (businessProfile?.status === 'pending' && !String(appUserRole || userProfile.role || '').toLowerCase().includes('admin')) {
+              toast({
+                title: 'النشاط التجاري قيد المراجعة',
+                description: 'تم استلام بيانات النشاط. عاود تسجيل الدخول في وقت لاحق بعد انتهاء المراجعة.',
+                variant: 'destructive'
+              });
+              await logout();
+              return;
+            }
+
+            setNeedsProfileCompletion(Boolean(
+              businessProfile && (
+                businessProfile.status === 'rejected' ||
+                !businessProfile.store_image_url ||
+                !businessProfile.license_image_url
+              )
+            ));
 
             if (appUserStatus === 'rejected') {
               setRejectedAccountProfile({
@@ -320,21 +349,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             // تحديث عدد الإشعارات غير المقروؤة عند استعادة الجلسة
             refreshNotifications();
 
-            // التحقق من اكتمال بيانات الحساب التجاري عند استعادة الجلسة
-            if (userProfile.role === 'business') {
-              const { data: profile, error: profileError } = await supabase
-                .from('businesses')
-                .select('store_image_url, license_image_url')
-                .eq('user_id', user.id)
-                .maybeSingle();
-
-              if (profileError) console.error("Error fetching business profile on session check:", profileError);
-
-              const isComplete = !!(profile && profile.store_image_url && profile.license_image_url);
-              setNeedsProfileCompletion(!isComplete);
-            } else {
-              setNeedsProfileCompletion(false);
-            }
           } else {
             setUser(null);
             setNeedsProfileCompletion(false);
@@ -360,7 +374,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // الخطوة 1: التحقق من وجود المستخدم وحالته قبل محاولة تسجيل الدخول
       const { data: userProfileData, error: profileError } = await supabase
         .from('users')
-        .select('status')
+        .select('status, role')
         .eq('email', email)
         .single();
 
@@ -386,6 +400,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       if (data.user) {
         const user = data.user;
+        const { data: businessProfile, error: businessProfileError } = await supabase
+          .from('businesses')
+          .select('status, store_image_url, license_image_url')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (businessProfileError) console.warn('Login: failed to check business review status', businessProfileError);
+        if (businessProfile?.status === 'pending') {
+          await logout();
+          return { success: false, error: 'business_pending_review' };
+        }
+
         console.log("User found, login successful", user);
         await syncUserLanguage(user.id);
         const userProfile = {
@@ -433,22 +458,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // تحديث عدد الإشعارات غير المقروؤة
         refreshNotifications();
 
-        // التحقق من اكتمال بيانات الحساب التجاري
-        if (userProfile.role === 'free_business') {
-          const { data: profile, error: profileError } = await supabase
-            .from('businesses')
-            .select('store_image_url, license_image_url')
-            .eq('user_id', user.id)
-            .maybeSingle();
-
-          if (profileError) console.error("Error fetching business profile:", profileError);
-
-          if (!profile || !profile.store_image_url || !profile.license_image_url) {
-            setNeedsProfileCompletion(true);
-            return { success: true, needsProfileCompletion: true };
-          }
-        }
-        setNeedsProfileCompletion(false);
+        const needsBusinessReview = Boolean(businessProfile && (
+          businessProfile.status === 'rejected' ||
+          !businessProfile.store_image_url ||
+          !businessProfile.license_image_url
+        ));
+        setNeedsProfileCompletion(needsBusinessReview);
+        if (needsBusinessReview) return { success: true, needsProfileCompletion: true };
         
         // يتم إضافة تأخير بسيط لضمان أن كائن الجلسة من Supabase قد تم تحديثه بالكامل وأصبح متاحًا قبل محاولة قراءة refresh_token منه.
         setTimeout(async () => {
@@ -699,6 +715,18 @@ return 'success';
           return false;
         }
 
+        const { data: businessProfile, error: businessProfileError } = await supabase
+          .from('businesses')
+          .select('status, store_image_url, license_image_url')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (businessProfileError) console.warn('Biometric login: failed to check business review status', businessProfileError);
+        if (businessProfile?.status === 'pending') {
+          await logout();
+          toast({ title: 'النشاط التجاري قيد المراجعة', description: 'عاود تسجيل الدخول في وقت لاحق بعد انتهاء مراجعة بيانات النشاط.' });
+          return false;
+        }
+
         console.log("Biometric login successful, user:", user);
         await syncUserLanguage(user.id);
         const userProfile = {
@@ -745,14 +773,11 @@ return 'success';
         // تحديث عدد الإشعارات غير المقروؤة
         refreshNotifications();
 
-        // 4. التحقق من اكتمال بيانات الحساب التجاري (نفس منطق تسجيل الدخول العادي)
-        if (userProfile.role === 'free_business') {
-          const { data: profile } = await supabase.from('businesses').select('store_image_url, license_image_url').eq('user_id', user.id).maybeSingle();
-          const isComplete = !!(profile && profile.store_image_url && profile.license_image_url);
-          setNeedsProfileCompletion(!isComplete);
-        } else {
-          setNeedsProfileCompletion(false);
-        }
+        setNeedsProfileCompletion(Boolean(businessProfile && (
+          businessProfile.status === 'rejected' ||
+          !businessProfile.store_image_url ||
+          !businessProfile.license_image_url
+        )));
 
         toast({ title: 'تم تسجيل الدخول بنجاح', description: `مرحباً ${userProfile.username}` });
         return true;
