@@ -5877,6 +5877,142 @@ app.post('/api/change-phone', verifyJwtToken, async (req, res) => {
   }
 });
 
+app.get('/api/rejected-account-profile', verifyJwtToken, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { data: userRow, error } = await supabase
+      .from('users')
+      .select('id, email, full_name, phone, country_code, id_last6, status')
+      .eq('id', userId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!userRow) return res.status(404).json({ error: 'User not found' });
+    if (userRow.status !== 'rejected') return res.json({ profile: null });
+
+    const { data: rejectionNotice, error: noticeError } = await supabase
+      .from('notifications')
+      .select('body')
+      .eq('user_id', userId)
+      .eq('type', 'user_rejected')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (noticeError) console.warn('/api/rejected-account-profile notification lookup failed', noticeError);
+
+    const noticeBody = String(rejectionNotice?.body || '').trim();
+    const reasonMatch = noticeBody.match(/(?:Reason:\s*|السبب:\s*)([\s\S]*)$/i);
+    return res.json({
+      profile: {
+        id: userRow.id,
+        status: userRow.status,
+        email: userRow.email || req.user.email || '',
+        full_name: decryptField(userRow.full_name) || '',
+        phone: decryptField(userRow.phone) || '',
+        country_code: userRow.country_code || '+20',
+        id_last6: decryptField(userRow.id_last6) || '',
+        rejection_reason: reasonMatch?.[1]?.trim() || noticeBody
+      }
+    });
+  } catch (error) {
+    console.error('/api/rejected-account-profile error:', error);
+    return sendError(res, 500, 'Failed to load rejected account details', error);
+  }
+});
+
+app.post('/api/resubmit-rejected-account', verifyJwtToken, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, error: 'Unauthorized' });
+
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const fullName = String(req.body?.full_name || '').trim().replace(/\s+/g, ' ');
+    const phone = String(req.body?.phone || '').replace(/\D/g, '');
+    const countryCode = `+${String(req.body?.country_code || '').replace(/\D/g, '')}`;
+    const idLast6 = String(req.body?.id_last6 || '').replace(/\D/g, '');
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ success: false, error: 'invalid_email' });
+    }
+    if (fullName.split(/\s+/).filter(Boolean).length < 4) {
+      return res.status(400).json({ success: false, error: 'full_name_must_have_four_parts' });
+    }
+    if (phone.length < 6 || phone.length > 15 || countryCode === '+') {
+      return res.status(400).json({ success: false, error: 'invalid_phone_or_country_code' });
+    }
+    if (idLast6.length !== 6) {
+      return res.status(400).json({ success: false, error: 'id_last6_must_be_six_digits' });
+    }
+
+    const { data: userRow, error: fetchError } = await supabase
+      .from('users')
+      .select('id, email, status')
+      .eq('id', userId)
+      .maybeSingle();
+    if (fetchError) throw fetchError;
+    if (!userRow) return res.status(404).json({ success: false, error: 'User not found' });
+    if (userRow.status !== 'rejected') {
+      return res.status(409).json({ success: false, error: 'account_is_not_rejected' });
+    }
+
+    const { error: authUpdateError } = await supabase.auth.admin.updateUserById(userId, {
+      email,
+      email_confirm: true
+    });
+    if (authUpdateError) {
+      return res.status(400).json({ success: false, error: authUpdateError.message || 'failed_to_update_email' });
+    }
+
+    const encryptedFields = {
+      full_name: JSON.stringify(encryptObject(fullName)),
+      phone: JSON.stringify(encryptObject(phone)),
+      id_last6: JSON.stringify(encryptObject(idLast6))
+    };
+    const { data: updatedUser, error: updateError } = await supabase
+      .from('users')
+      .update({
+        email,
+        ...encryptedFields,
+        country_code: countryCode,
+        status: 'pending'
+      })
+      .eq('id', userId)
+      .select('id, status')
+      .maybeSingle();
+
+    if (updateError || !updatedUser) {
+      try {
+        if (userRow.email) await supabase.auth.admin.updateUserById(userId, { email: userRow.email, email_confirm: true });
+      } catch (rollbackError) {
+        console.error('/api/resubmit-rejected-account auth email rollback failed:', rollbackError);
+      }
+      if (updateError) throw updateError;
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    try {
+      await logAudit({
+        userId,
+        action: 'resubmit_rejected_account',
+        resourceType: 'user',
+        resourceId: userId,
+        newValues: { email, status: 'pending' },
+        ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
+        userAgent: req.headers['user-agent'] || null,
+        status: 'success'
+      });
+    } catch (auditError) {
+      console.warn('/api/resubmit-rejected-account audit failed:', auditError);
+    }
+
+    return res.json({ success: true, status: updatedUser.status });
+  } catch (error) {
+    console.error('/api/resubmit-rejected-account error:', error);
+    return sendError(res, 500, 'Failed to resubmit account for review', error, { success: false });
+  }
+});
+
 // نقطة نهاية لإعادة تعيين كلمة مرور الهاتف المسجل
 app.post('/api/reset-phone-password', verifyJwtToken, async (req, res) => {
   const { imei, currentPassword, newPassword } = req.body;

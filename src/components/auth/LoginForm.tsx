@@ -73,6 +73,12 @@ export function LoginForm({
           }
         }
       } else {
+        if (result.error === 'account_pending_review') {
+          setLoginError('الحساب قيد المراجعة بعد إعادة إرسال البيانات. يرجى الانتظار حتى اعتماد الحساب.');
+          toast({ title: 'الحساب قيد المراجعة', description: 'سيتم تفعيل الحساب بعد انتهاء مراجعة البيانات.', variant: 'destructive' });
+          return;
+        }
+
         // التعامل مع رسالة الخطأ الجديدة من AuthContext
         if (result.error === 'user_banned') {
             setLoginError(t('account_banned_message'));

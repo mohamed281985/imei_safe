@@ -20,6 +20,7 @@ import AuthGuard from "./components/AuthGuard";
 import { useAdModal } from "./contexts/AdModalContext";
 import LoginAdModal from "./components/advertisements/LoginAdModal";
 import GuestGuard from "./components/GuestGuard";
+import RejectedAccountResubmissionDialog from "./components/auth/RejectedAccountResubmissionDialog";
 import "slick-carousel/slick/slick.css";
 import "slick-carousel/slick/slick-theme.css";
 
@@ -468,6 +469,7 @@ const AppCore = () => {
             <Route path="/rewards-history" element={<AuthGuard><RewardHistoryPage /></AuthGuard>} />
           </Routes>
         </Suspense>
+        <RejectedAccountResubmissionDialog />
       </>
     </div>
   );

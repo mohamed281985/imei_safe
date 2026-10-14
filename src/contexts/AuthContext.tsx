@@ -5,6 +5,23 @@ import { supabase } from '../lib/supabase';
 import { getUnreadNotificationCount } from '../lib/notificationService';
 import { App } from '@capacitor/app'; // استيراد App من Capacitor
 import { useLanguage } from './LanguageContext';
+import axiosInstance from '@/services/axiosInterceptor';
+
+export interface RejectedAccountProfile {
+  id: string;
+  status: 'rejected';
+  email: string;
+  full_name: string;
+  phone: string;
+  country_code: string;
+  id_last6: string;
+  rejection_reason: string;
+}
+
+const fetchRejectedAccountProfile = async (): Promise<RejectedAccountProfile | null> => {
+  const { data } = await axiosInstance.get('/api/rejected-account-profile');
+  return data?.profile?.status === 'rejected' ? data.profile as RejectedAccountProfile : null;
+};
 
 interface User {
   id: string;
@@ -21,6 +38,7 @@ interface AuthContextType {
   isAdmin: boolean;
   isLoading: boolean;
   needsProfileCompletion: boolean;
+  rejectedAccountProfile: RejectedAccountProfile | null;
   unreadNotificationsCount: number;
   isFirstLogin: boolean; // ⭐ حالة جديدة لتتبع أول تسجيل دخول
   clearFirstLogin: () => void; // ⭐ دالة لإعادة تعيين الحالة
@@ -49,6 +67,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [needsProfileCompletion, setNeedsProfileCompletion] = useState<boolean>(false);
+  const [rejectedAccountProfile, setRejectedAccountProfile] = useState<RejectedAccountProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(0);
   const [isFirstLogin, setIsFirstLogin] = useState<boolean>(false); // ⭐ تعريف الحالة
@@ -87,6 +106,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   
   const completeProfile = () => {
     setNeedsProfileCompletion(false);
+    setRejectedAccountProfile(null);
   };
   
   // ⭐ دالة لإعادة تعيين حالة أول تسجيل دخول بعد استخدامها
@@ -246,24 +266,59 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               isAdmin: user.user_metadata.isAdmin || false,
               role: user.user_metadata.role
             };
-            setUser(userProfile);
-            
-            // تحديث عدد الإشعارات غير المقروؤة عند استعادة الجلسة
-            refreshNotifications();
 
-            // Ensure application-level user exists; if missing, call server to create it
+            let appUserStatus: string | null = null;
+            let appUserRole = '';
             try {
-              const { data: appUser, error: appUserErr } = await supabase.from('users').select('id').eq('id', user.id).maybeSingle();
+              const { data: appUser, error: appUserErr } = await supabase
+                .from('users')
+                .select('id, status, role')
+                .eq('id', user.id)
+                .maybeSingle();
               if (appUserErr) console.warn('checkAuth: error checking app users table', appUserErr);
-              if (!appUser) {
-                // create-app-user تم تعطيله بطلب المُشغّل — لا نقوم الآن باستدعاء نقطة النهاية هذه
-                console.log('checkAuth: create-app-user is disabled; skipping server-side create.');
-              } else {
-                console.log('checkAuth: app user exists');
-              }
+              appUserStatus = appUser?.status || null;
+              appUserRole = appUser?.role || '';
             } catch (e) {
               console.warn('checkAuth: app user check error', e);
             }
+
+            if (appUserStatus === 'pending' && !String(appUserRole || userProfile.role || '').toLowerCase().includes('admin')) {
+              await logout();
+              return;
+            }
+
+            if (appUserStatus === 'rejected') {
+              setRejectedAccountProfile({
+                id: user.id,
+                status: 'rejected',
+                email: user.email || '',
+                full_name: '',
+                phone: '',
+                country_code: '+20',
+                id_last6: '',
+                rejection_reason: ''
+              });
+            }
+            setUser(userProfile);
+
+            try {
+              setRejectedAccountProfile(await fetchRejectedAccountProfile());
+            } catch (error) {
+              console.error('checkAuth: failed to load rejected account review', error);
+              setRejectedAccountProfile(appUserStatus === 'rejected' ? {
+                id: user.id,
+                status: 'rejected',
+                email: user.email || '',
+                full_name: '',
+                phone: '',
+                country_code: '+20',
+                id_last6: '',
+                rejection_reason: ''
+              } : null);
+            }
+
+            // تحديث عدد الإشعارات غير المقروؤة عند استعادة الجلسة
+            refreshNotifications();
 
             // التحقق من اكتمال بيانات الحساب التجاري عند استعادة الجلسة
             if (userProfile.role === 'business') {
@@ -314,6 +369,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.log('Login blocked for blocked user:', email);
         return { success: false, error: 'user_blocked' };
       }
+      if (userProfileData && userProfileData.status === 'pending') {
+        return { success: false, error: 'account_pending_review' };
+      }
 
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
@@ -339,6 +397,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           role: user.user_metadata.role
         };
         setUser(userProfile);
+        if (userProfileData?.status === 'rejected') {
+          setRejectedAccountProfile({
+            id: user.id,
+            status: 'rejected',
+            email: user.email || email,
+            full_name: '',
+            phone: '',
+            country_code: '+20',
+            id_last6: '',
+            rejection_reason: ''
+          });
+        }
+        try {
+          setRejectedAccountProfile(await fetchRejectedAccountProfile());
+        } catch (rejectedProfileError) {
+          console.error('Login: failed to load rejected account review', rejectedProfileError);
+          setRejectedAccountProfile(userProfileData?.status === 'rejected' ? {
+            id: user.id,
+            status: 'rejected',
+            email: user.email || email,
+            full_name: '',
+            phone: '',
+            country_code: '+20',
+            id_last6: '',
+            rejection_reason: ''
+          } : null);
+        }
         updateLastActivity();
         localStorage.removeItem('background_timestamp');
         setIsFirstLogin(true); // ⭐ تعيين حالة أول تسجيل دخول
@@ -602,6 +687,18 @@ return 'success';
       const user = sessionData.user;
 
       if (user) {
+        const { data: appUser, error: appUserError } = await supabase
+          .from('users')
+          .select('status, role')
+          .eq('id', user.id)
+          .maybeSingle();
+        if (appUserError) console.warn('Biometric login: failed to check account status', appUserError);
+        if (appUser?.status === 'pending' && !String(appUser.role || '').toLowerCase().includes('admin')) {
+          await logout();
+          toast({ title: 'الحساب قيد المراجعة', description: 'لن تتمكن من استخدام التطبيق حتى انتهاء مراجعة بياناتك.' });
+          return false;
+        }
+
         console.log("Biometric login successful, user:", user);
         await syncUserLanguage(user.id);
         const userProfile = {
@@ -613,6 +710,33 @@ return 'success';
           role: user.user_metadata.role
         };
         setUser(userProfile);
+        if (appUser?.status === 'rejected') {
+          setRejectedAccountProfile({
+            id: user.id,
+            status: 'rejected',
+            email: user.email || '',
+            full_name: '',
+            phone: '',
+            country_code: '+20',
+            id_last6: '',
+            rejection_reason: ''
+          });
+        }
+        try {
+          setRejectedAccountProfile(await fetchRejectedAccountProfile());
+        } catch (rejectedProfileError) {
+          console.error('Biometric login: failed to load rejected account review', rejectedProfileError);
+          setRejectedAccountProfile(appUser?.status === 'rejected' ? {
+            id: user.id,
+            status: 'rejected',
+            email: user.email || '',
+            full_name: '',
+            phone: '',
+            country_code: '+20',
+            id_last6: '',
+            rejection_reason: ''
+          } : null);
+        }
         updateLastActivity();
         setIsFirstLogin(true); // ⭐ تفعيل حالة أول تسجيل دخول
         // إزالة علامة تسجيل الخروج اليدوي عند تسجيل الدخول بنجاح
@@ -653,6 +777,7 @@ return 'success';
     isFirstLogin, // ⭐ تمرير الحالة
     clearFirstLogin, // ⭐ تمرير الدالة
     needsProfileCompletion,
+    rejectedAccountProfile,
     unreadNotificationsCount,
     login,
     loginWithGoogle,

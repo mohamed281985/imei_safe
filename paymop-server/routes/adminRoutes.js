@@ -2693,7 +2693,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       if (error) throw error;
 
       const users = data || [];
-      const rejectedUserIds = users.filter(user => user.status === 'rejected').map(user => user.id);
+      const rejectedUserIds = users.filter(user => ['rejected', 'pending'].includes(user.status)).map(user => user.id);
       const rejectionReasonByUser = new Map();
       if (rejectedUserIds.length) {
         const { data: rejectionNotifications, error: notificationError } = await supabase
@@ -2813,6 +2813,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
         if (activeSet.has(s)) mapped = 'active';
         else if (blockedSet.has(s)) mapped = 'blocked';
         else if (s === 'rejected' || s === 'مرفوض') mapped = 'rejected';
+        else if (s === 'pending' || s === 'قيد المراجعة') mapped = 'pending';
         if (!mapped) return res.status(400).json({ error: 'invalid status value' });
         payload.status = mapped;
       }
@@ -2865,6 +2866,10 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       if (typeof payload.status !== 'undefined' && oldValues.status !== payload.status) {
         const isArabic = String(existingUser.language || '').toLowerCase().startsWith('ar');
         const notificationText = {
+          pending: {
+            title: isArabic ? 'تم استلام طلبك للمراجعة' : 'Your account is under review',
+            body: isArabic ? 'تم استلام بياناتك المحدّثة، وسيتم مراجعتها قريبًا.' : 'Your updated account details were received and will be reviewed soon.'
+          },
           active: {
             title: isArabic ? 'تم قبول الحساب' : 'Account approved',
             body: isArabic ? 'تمت مراجعة حسابك وقبوله بنجاح.' : 'Your account has been reviewed and approved.'
