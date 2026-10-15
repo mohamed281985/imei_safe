@@ -2114,12 +2114,130 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
   // GET /admin/dashboard - summary + recent samples
   app.get('/admin/dashboard', verifyJwtToken, requireAdmin, async (req, res) => {
     try {
-      const [{ data: usersCount }, { data: reportsCount }, { data: adsCount }, { data: transfersCount }] = await Promise.all([
-        supabase.from('users').select('id', { count: 'exact' }),
-        supabase.from('phone_reports').select('id', { count: 'exact' }),
-        supabase.from('phones').select('id', { count: 'exact' }),
-        supabase.from('transfer_records').select('id', { count: 'exact' })
-      ]);
+      const requestedPeriod = String(req.query.period || 'last30days');
+      const requestedYear = Number.parseInt(String(req.query.year || new Date().getFullYear()), 10);
+      const requestedMonth = Number.parseInt(String(req.query.month || new Date().getMonth() + 1), 10);
+      const safeYear = Number.isInteger(requestedYear) && requestedYear >= 2000 && requestedYear <= 2100
+        ? requestedYear
+        : new Date().getFullYear();
+      const safeMonth = Number.isInteger(requestedMonth) && requestedMonth >= 1 && requestedMonth <= 12
+        ? requestedMonth
+        : new Date().getMonth() + 1;
+      const today = new Date();
+      today.setUTCHours(0, 0, 0, 0);
+
+      let bucketMode = 'day';
+      let rangeStart;
+      let rangeEnd;
+      if (requestedPeriod === 'yearly' || requestedPeriod === 'thisYear') {
+        bucketMode = 'month';
+        rangeStart = new Date(Date.UTC(safeYear, 0, 1));
+        rangeEnd = new Date(Date.UTC(safeYear + 1, 0, 1));
+      } else if (requestedPeriod === 'monthly' || requestedPeriod === 'custom') {
+        rangeStart = new Date(Date.UTC(safeYear, safeMonth - 1, 1));
+        rangeEnd = new Date(Date.UTC(safeYear, safeMonth, 1));
+      } else {
+        const dayCount = requestedPeriod === 'last7days' ? 7 : requestedPeriod === 'last90days' ? 90 : 30;
+        rangeStart = new Date(today);
+        rangeStart.setUTCDate(rangeStart.getUTCDate() - dayCount + 1);
+        rangeEnd = new Date(today);
+        rangeEnd.setUTCDate(rangeEnd.getUTCDate() + 1);
+      }
+
+      const buckets = [];
+      if (bucketMode === 'month') {
+        for (let monthIndex = 0; monthIndex < 12; monthIndex += 1) {
+          const date = new Date(Date.UTC(safeYear, monthIndex, 1));
+          buckets.push({ key: date.toISOString().slice(0, 7), name: date.toLocaleDateString('ar-EG', { month: 'short', timeZone: 'UTC' }), value: 0 });
+        }
+      } else {
+        for (let cursor = new Date(rangeStart); cursor < rangeEnd; cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+          const date = new Date(cursor);
+          buckets.push({ key: date.toISOString().slice(0, 10), name: date.toLocaleDateString('ar-EG', { day: 'numeric', month: 'short', timeZone: 'UTC' }), value: 0 });
+        }
+      }
+
+      const metricDefinitions = {
+        users: { table: 'users', dateField: 'created_at' },
+        phones: { table: 'registered_phones', dateField: 'registration_date' },
+        reports: { table: 'phone_reports', dateField: 'report_date' },
+        solvedReports: { table: 'phone_reports', dateField: 'report_date', status: 'resolved' },
+        transfers: { table: 'transfer_records', dateField: 'created_at' },
+        ads: { table: 'phones', dateField: 'created_at' }
+      };
+      const previousRangeEnd = new Date(rangeStart);
+      const previousRangeStart = new Date(rangeStart.getTime() - (rangeEnd.getTime() - rangeStart.getTime()));
+
+      const loadMetric = async ([metric, definition]) => {
+        try {
+          let query = supabase
+            .from(definition.table)
+            .select(definition.status ? `${definition.dateField}, status` : definition.dateField)
+            .gte(definition.dateField, rangeStart.toISOString())
+            .lt(definition.dateField, rangeEnd.toISOString())
+            .limit(10000);
+          if (definition.status) query = query.eq('status', definition.status);
+
+          const buildCountQuery = (from, to) => {
+            let countQuery = supabase.from(definition.table).select('id', { count: 'exact', head: true });
+            countQuery = countQuery.gte(definition.dateField, from.toISOString()).lt(definition.dateField, to.toISOString());
+            if (definition.status) countQuery = countQuery.eq('status', definition.status);
+            return countQuery;
+          };
+
+          const [{ data, error }, { count: totalCount, error: totalError }, { count: currentCount, error: currentError }, { count: previousCount, error: previousError }] = await Promise.all([
+            query,
+            (() => {
+              let totalQuery = supabase.from(definition.table).select('id', { count: 'exact', head: true });
+              if (definition.status) totalQuery = totalQuery.eq('status', definition.status);
+              return totalQuery;
+            })(),
+            buildCountQuery(rangeStart, rangeEnd),
+            buildCountQuery(previousRangeStart, previousRangeEnd)
+          ]);
+          if (error) throw error;
+          if (totalError || currentError || previousError) throw totalError || currentError || previousError;
+
+          const valuesByBucket = new Map(buckets.map(bucket => [bucket.key, bucket]));
+          for (const row of data || []) {
+            const rawDate = row?.[definition.dateField];
+            if (!rawDate) continue;
+            const date = new Date(rawDate);
+            if (Number.isNaN(date.getTime())) continue;
+            const key = bucketMode === 'month' ? date.toISOString().slice(0, 7) : date.toISOString().slice(0, 10);
+            const bucket = valuesByBucket.get(key);
+            if (bucket) bucket.value += 1;
+          }
+
+          const current = Number(currentCount || 0);
+          const previous = Number(previousCount || 0);
+          const percentage = previous === 0
+            ? current === 0 ? 0 : 100
+            : ((current - previous) / previous) * 100;
+          return {
+            metric,
+            series: buckets.map(({ name, value }) => ({ name, value })),
+            total: Number(totalCount || 0),
+            current,
+            trend: `${percentage >= 0 ? '+' : ''}${percentage.toFixed(1)}%`,
+            trendDirection: current < previous ? 'down' : 'up',
+            error: false
+          };
+        } catch (error) {
+          console.warn(`/admin/dashboard: failed to load ${metric} series`, error);
+          return { metric, series: buckets.map(({ name }) => ({ name, value: 0 })), total: 0, error: true };
+        }
+      };
+
+      const metricResults = await Promise.all(Object.entries(metricDefinitions).map(loadMetric));
+      const chartData = Object.fromEntries(metricResults.map(result => [result.metric, result.series]));
+      const chartErrors = Object.fromEntries(metricResults.map(result => [result.metric, result.error]));
+      const stats = Object.fromEntries(metricResults.map(result => [result.metric, {
+        value: result.current || 0,
+        trend: result.trend || '+0.0%',
+        trendDirection: result.trendDirection || 'up',
+        total: result.total
+      }]));
 
       const recentReports = (await supabase.from('phone_reports').select('*').order('report_date', { ascending: false }).limit(10)).data || [];
       const recentAds = (await supabase.from('phones').select('*').order('id', { ascending: false }).limit(10)).data || [];
@@ -2127,12 +2245,9 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       const recentTransfers = (await supabase.from('transfer_records').select('*').order('id', { ascending: false }).limit(10)).data || [];
 
       return res.json({
-        stats: {
-          users: Array.isArray(usersCount) ? usersCount.length : (usersCount ?? 0),
-          reports: Array.isArray(reportsCount) ? reportsCount.length : (reportsCount ?? 0),
-          ads: Array.isArray(adsCount) ? adsCount.length : (adsCount ?? 0),
-          transfer_records: Array.isArray(transfersCount) ? transfersCount.length : (transfersCount ?? 0)
-        },
+        stats,
+        chartData,
+        chartErrors,
         recent: {
           reports: recentReports.map(r => ({ id: r.id, ...decryptDeep(r) })),
           ads: recentAds.map(a => ({ id: a.id, ...decryptDeep(a) })),
