@@ -951,11 +951,19 @@ app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
     }
 
     // 3. التحقق من جدول التسجيل (registered_phones)
-    const { data: registered } = await supabase.from('registered_phones').select('imei, phone_type, user_id');
-    const reg = (registered || []).find(r => {
+    const { data: registered } = await supabase
+      .from('registered_phones')
+      .select('id, imei, phone_type, user_id, registration_date, created_at');
+    const matchingRegistrations = (registered || []).filter(r => {
       const dec = decryptField(r.imei);
       return dec && String(dec).replace(/\D/g, '') === normalizedImei;
     });
+    matchingRegistrations.sort((left, right) => {
+      const leftDate = Date.parse(left.registration_date || left.created_at || '') || 0;
+      const rightDate = Date.parse(right.registration_date || right.created_at || '') || 0;
+      return rightDate - leftDate || Number(right.id || 0) - Number(left.id || 0);
+    });
+    const reg = matchingRegistrations[0] || null;
 
     if (reg) {
       return res.json({
@@ -5753,7 +5761,9 @@ app.post('/api/change-phone', verifyJwtToken, async (req, res) => {
     if (!userId) return res.status(401).json({ success: false, error: 'Unauthorized' });
 
     const { newPhone, last6, password } = req.body || {};
-    if (!newPhone || !last6 || !password) return res.status(400).json({ success: false, error: 'newPhone, last6 and password are required' });
+    if (!newPhone || !last6 || !password) {
+      return res.status(400).json({ success: false, error: 'phone_change_required_fields' });
+    }
 
     // جلب صف التطبيق للمستخدم
     const { data: userRow, error: userErr } = await supabase.from('users').select('*').eq('id', userId).maybeSingle();
@@ -5768,11 +5778,10 @@ app.post('/api/change-phone', verifyJwtToken, async (req, res) => {
     const storedLast6Digits = String(storedLast6Raw).replace(/\D/g, '');
     const providedLast6 = String(last6 || '').replace(/\D/g, '');
     if (!providedLast6 || providedLast6.length !== 6) {
-      return res.status(400).json({ success: false, error: 'Invalid last6 value' });
+      return res.status(400).json({ success: false, error: 'phone_change_invalid_last6' });
     }
     if (!storedLast6Digits || !storedLast6Digits.endsWith(providedLast6) && storedLast6Digits !== providedLast6) {
-      // لا يطابق آخر 6 أرقام
-      return res.status(403).json({ success: false, error: 'Last6 verification failed' });
+      return res.status(403).json({ success: false, error: 'phone_change_last6_mismatch' });
     }
 
     // تحقق من كلمة المرور عن طريق إعادة التوثيق عبر Supabase Auth
@@ -5822,16 +5831,7 @@ app.post('/api/change-phone', verifyJwtToken, async (req, res) => {
       console.warn('/api/change-phone password verification failed', { status: verifyResp.status, email: maskEmail(email), body: txt });
 
       // Try to surface the auth service message when helpful (development), otherwise generic
-      let clientMsg = 'Invalid password';
-      try {
-        const parsed = JSON.parse(txt || '{}');
-        if (parsed && (parsed.error || parsed.msg || parsed.message)) {
-          clientMsg = parsed.error || parsed.msg || parsed.message;
-        }
-      } catch (e) {
-        // not JSON, keep raw txt
-        if (txt) clientMsg = txt;
-      }
+      const clientMsg = 'phone_change_password_incorrect';
 
       // Use the upstream status when it's a 4xx to reflect client error
       const statusToReturn = verifyResp.status && verifyResp.status >= 400 && verifyResp.status < 500 ? verifyResp.status : 401;
@@ -6092,17 +6092,23 @@ app.post('/api/reset-phone-password', verifyJwtToken, async (req, res) => {
     // 1. جلب جميع هواتف المستخدم
     const { data: userPhones, error: fetchError } = await supabase
       .from('registered_phones')
-      .select('id, imei, password, user_id, email')
+      .select('id, imei, password, user_id, email, registration_date, created_at')
       .eq('user_id', userId);
 
     if (fetchError) throw fetchError;
 
     // 2. البحث عن الهاتف المطابق عبر IMEI بعد التطبيع (digits only)
     const normalizedIncomingImei = normalizeDigitsOnly(imei);
-    const targetPhone = (userPhones || []).find((p) => {
+    const matchingUserPhones = (userPhones || []).filter((p) => {
       const storedImei = decryptField(p.imei);
       return normalizeDigitsOnly(storedImei) === normalizedIncomingImei;
     });
+    matchingUserPhones.sort((left, right) => {
+      const leftDate = Date.parse(left.registration_date || left.created_at || '') || 0;
+      const rightDate = Date.parse(right.registration_date || right.created_at || '') || 0;
+      return rightDate - leftDate || Number(right.id || 0) - Number(left.id || 0);
+    });
+    const targetPhone = matchingUserPhones[0] || null;
 
     if (!targetPhone) {
       // Record failed attempt (possible probing)
@@ -6877,13 +6883,19 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
       const imeiHash = crypto.createHash('sha256').update(String(normalizeDigitsOnly(rawImei))).digest('hex');
       const { data: existingPhones, error: existingPhonesError } = await supabase
         .from('registered_phones')
-        .select('id, user_id, status, imei, imei_hash, registration_date, last_confirmed_at')
+        .select('id, user_id, status, imei, imei_hash, registration_date, created_at, last_confirmed_at')
         .eq('imei_hash', imeiHash);
 
       if (existingPhonesError) throw existingPhonesError;
 
-      for (const existingPhone of existingPhones || []) {
-        const { phone: currentPhone } = await expireUnconfirmedPhone(existingPhone);
+      const latestExistingPhone = (existingPhones || []).sort((left, right) => {
+        const leftDate = Date.parse(left.registration_date || left.created_at || '') || 0;
+        const rightDate = Date.parse(right.registration_date || right.created_at || '') || 0;
+        return rightDate - leftDate || Number(right.id || 0) - Number(left.id || 0);
+      })[0];
+
+      if (latestExistingPhone) {
+        const { phone: currentPhone } = await expireUnconfirmedPhone(latestExistingPhone);
         const currentStatus = String(currentPhone.status || '').toLowerCase();
         if (!['transferred', 'sold', 'rejected'].includes(currentStatus)) {
           return res.status(409).json({
@@ -7195,7 +7207,7 @@ app.post('/api/create-phone', verifyJwtToken, async (req, res) => {
       };
 
       const [registeredResult, activeReportsResult, existingListingsResult] = await Promise.all([
-        supabase.from('registered_phones').select('imei, imei_hash, status, user_id'),
+        supabase.from('registered_phones').select('id, imei, imei_hash, status, user_id, registration_date, created_at'),
         supabase.from('phone_reports').select('imei, imei_hash').eq('status', 'active'),
         supabase.from('phones').select('id, imei, status').eq('status', 'active'),
       ]);
@@ -7203,9 +7215,17 @@ app.post('/api/create-phone', verifyJwtToken, async (req, res) => {
       const lookupFailure = registeredResult.error || activeReportsResult.error || existingListingsResult.error;
       if (lookupFailure) return sendError(res, 500, 'تعذر التحقق من حالة رقم IMEI', lookupFailure);
 
-      const blockingRegistration = (registeredResult.data || []).some((row) => (
-        matchesImei(row) && row.user_id !== userId && !['sold', 'transferred', 'rejected'].includes(String(row.status || '').toLowerCase())
-      ));
+      const matchingRegistrations = (registeredResult.data || []).filter(matchesImei);
+      matchingRegistrations.sort((left, right) => {
+        const leftDate = Date.parse(left.registration_date || left.created_at || '') || 0;
+        const rightDate = Date.parse(right.registration_date || right.created_at || '') || 0;
+        return rightDate - leftDate || Number(right.id || 0) - Number(left.id || 0);
+      });
+      const latestRegistration = matchingRegistrations[0] || null;
+      const blockingRegistration = Boolean(latestRegistration &&
+        latestRegistration.user_id !== userId &&
+        !['sold', 'transferred', 'rejected'].includes(String(latestRegistration.status || '').toLowerCase())
+      );
       if (blockingRegistration) {
         return res.status(409).json({ success: false, error: 'imei_already_registered' });
       }
@@ -8047,12 +8067,24 @@ app.post('/api/claim-phone-by-email', verifyJwtToken, async (req, res) => {
 
     const { data: phones, error: fetchError } = await supabase
       .from('registered_phones')
-      .select('id, email, user_id, imei')
-      .is('user_id', null);
+      .select('id, email, user_id, imei, registration_date, created_at')
+      .is('user_id', null)
+      .order('registration_date', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false, nullsFirst: false })
+      .order('id', { ascending: false });
 
     if (fetchError) throw fetchError;
 
-    const targetPhone = phones.find(p => decryptField(p.imei) === imei && decryptField(p.email) === user.email);
+    const matchingPhones = (phones || []).filter(p => (
+      normalizeDigitsOnly(decryptField(p.imei)) === normalizeDigitsOnly(imei) &&
+      normalizeTextForCompare(decryptField(p.email)) === normalizeTextForCompare(user.email)
+    ));
+    matchingPhones.sort((left, right) => {
+      const leftDate = Date.parse(left.registration_date || left.created_at || '') || 0;
+      const rightDate = Date.parse(right.registration_date || right.created_at || '') || 0;
+      return rightDate - leftDate || Number(right.id || 0) - Number(left.id || 0);
+    });
+    const targetPhone = matchingPhones[0] || null;
 
     if (!targetPhone) {
       return res.status(404).json({ error: 'Phone not found or email mismatch' });

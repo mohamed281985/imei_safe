@@ -106,7 +106,7 @@ const getImeiHash = (imei) => {
       // the matching logic or the response shape in any way.
       const { data: phoneImeiRows, error: phoneImeiError } = await supabase
         .from('registered_phones')
-        .select('id, imei, user_id');
+        .select('id, imei, user_id, registration_date, created_at');
       if (phoneImeiError) throw phoneImeiError;
 
       if (process.env.NODE_ENV === 'development') {
@@ -123,9 +123,15 @@ const getImeiHash = (imei) => {
         }
       }
 
-      const matchedPhoneRow = phoneImeiRows
-        ? phoneImeiRows.find((p) => normalizeDigitsOnly(decryptField(p.imei)) === normalizedIncoming)
-        : null;
+      const matchingPhoneRows = (phoneImeiRows || []).filter((p) => (
+        normalizeDigitsOnly(decryptField(p.imei)) === normalizedIncoming
+      ));
+      matchingPhoneRows.sort((left, right) => {
+        const leftDate = Date.parse(left.registration_date || left.created_at || '') || 0;
+        const rightDate = Date.parse(right.registration_date || right.created_at || '') || 0;
+        return rightDate - leftDate || Number(right.id || 0) - Number(left.id || 0);
+      });
+      const matchedPhoneRow = matchingPhoneRows[0] || null;
 
       let registeredPhone = null;
       if (matchedPhoneRow) {
@@ -1086,6 +1092,10 @@ const getImeiHash = (imei) => {
         .from('registered_phones')
         .select('id, user_id, imei, password, id_last6')
         .eq('imei_hash', imeiHash)
+        .order('registration_date', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false, nullsFirst: false })
+        .order('id', { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (phonesErr) throw phonesErr;
@@ -1429,6 +1439,10 @@ const getImeiHash = (imei) => {
         .from('registered_phones')
         .select('id, imei, email, user_id')
         .eq('imei_hash', imeiHash)
+        .order('registration_date', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false, nullsFirst: false })
+        .order('id', { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (error) throw error;

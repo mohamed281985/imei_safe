@@ -183,12 +183,20 @@ export function registerReportRoutes({
         // تطبيع الـ IMEI الوارد (أزل كل غير الأرقام) لمطابقة أكثر مرونة
         const incomingImei = String(data.imei || '').replace(/\D/g, '');
         normalizedReportedImei = incomingImei;
-        const { data: phones } = await supabase.from('registered_phones').select('*');
-        const registeredPhone = phones ? phones.find(p => {
+        const { data: phones } = await supabase
+          .from('registered_phones')
+          .select('*');
+        const matchingPhones = (phones || []).filter(p => {
           const stored = decryptField(p.imei) || '';
           const normalizedStored = String(stored).replace(/\D/g, '');
           return normalizedStored === incomingImei;
-        }) : null;
+        });
+        matchingPhones.sort((left, right) => {
+          const leftDate = Date.parse(left.registration_date || left.created_at || '') || 0;
+          const rightDate = Date.parse(right.registration_date || right.created_at || '') || 0;
+          return rightDate - leftDate || Number(right.id || 0) - Number(left.id || 0);
+        });
+        const registeredPhone = matchingPhones[0] || null;
 
         if (registeredPhone) {
           registeredPhoneForReport = registeredPhone;

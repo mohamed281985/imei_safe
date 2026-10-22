@@ -316,9 +316,13 @@ const TransferHistory: React.FC = () => {
       if (!imeiHash) return false;
       const { data, error } = await supabase
         .from('registered_phones')
-        .select('id')
+        .select('id, registration_date, created_at')
         .eq('user_id', userId)
         .eq('imei_hash', imeiHash)
+        .order('registration_date', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false, nullsFirst: false })
+        .order('id', { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (error) {
@@ -339,8 +343,11 @@ const TransferHistory: React.FC = () => {
       if (!imeiHash) return false;
       const { data, error } = await supabase
         .from('registered_phones')
-        .select('id')
+        .select('id, registration_date, created_at')
         .eq('imei_hash', imeiHash)
+        .order('registration_date', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false, nullsFirst: false })
+        .order('id', { ascending: false })
         .limit(1)
         .maybeSingle();
 

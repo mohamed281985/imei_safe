@@ -256,7 +256,7 @@ if (!limitResult.allowed) {
     // لذلك نجلب البيانات ونفك تشفيرها للمقارنة
     const { data: allPhones, error: regError } = await supabase
       .from('registered_phones')
-      .select('imei, registration_date, status, user_id');
+      .select('id, imei, registration_date, created_at, status, user_id');
 
     if (regError) {
       console.error('Error searching for registered phone:', regError);
@@ -265,7 +265,15 @@ if (!limitResult.allowed) {
 
     // فك تشفير IMEI المخزن ومقارنته مع الـ IMEI المرسل (تطبيع إلى أرقام فقط)
     const normalizedIncoming = normalizeDigitsOnly(imei);
-    const regPhone = allPhones ? allPhones.find(p => normalizeDigitsOnly(decryptField(p.imei)) === normalizedIncoming) : null;
+    const matchingRegisteredPhones = (allPhones || []).filter(p => (
+      normalizeDigitsOnly(decryptField(p.imei)) === normalizedIncoming
+    ));
+    matchingRegisteredPhones.sort((left, right) => {
+      const leftDate = Date.parse(left.registration_date || left.created_at || '') || 0;
+      const rightDate = Date.parse(right.registration_date || right.created_at || '') || 0;
+      return rightDate - leftDate || Number(right.id || 0) - Number(left.id || 0);
+    });
+    const regPhone = matchingRegisteredPhones[0] || null;
 
     // 2. البحث في البلاغات
     const imeiHash = getImeiHash(imei);

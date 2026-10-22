@@ -462,6 +462,10 @@ toast({ title: t('success'), description: t('biometric_enabled_success') });
 
         const normalizedPhone = normalizePhone(phoneVal || '', countryCode || '20');
 
+        if (!phoneVal || !last6 || !pwd) {
+            toast({ title: t('error'), description: t('phone_change_required_fields'), variant: 'destructive' });
+            return;
+        }
         if (!phoneVal || normalizedPhone.length < 7) {
             toast({ title: t('error'), description: t('invalid_phone_number') || 'Invalid phone number', variant: 'destructive' });
             return;
@@ -470,7 +474,7 @@ toast({ title: t('success'), description: t('biometric_enabled_success') });
             toast({ title: t('error'), description: t('enter_last6') || 'Please enter last 6 digits', variant: 'destructive' });
             return;
         }
-        if (!pwd || pwd.length < 6) {
+        if (!pwd) {
             toast({ title: t('error'), description: t('enter_current_password') || 'Please enter your current password', variant: 'destructive' });
             return;
         }
@@ -535,7 +539,19 @@ toast({ title: t('success'), description: t('biometric_enabled_success') });
             setVerificationPassword('');
         } catch (err: any) {
             console.error('Failed to update phone via server:', err);
-            toast({ title: t('error'), description: t('phone_update_failed') || 'فشل تحديث رقم الهاتف', variant: 'destructive' });
+            const errorKeyByCode: Record<string, string> = {
+                phone_change_required_fields: 'phone_change_required_fields',
+                phone_change_invalid_last6: 'phone_change_invalid_last6',
+                phone_change_last6_mismatch: 'phone_change_last6_mismatch',
+                phone_change_password_incorrect: 'phone_change_password_incorrect',
+            };
+            const errorCode = String(err?.message || '');
+            const messageKey = errorKeyByCode[errorCode];
+            toast({
+                title: t('error'),
+                description: messageKey ? t(messageKey) : (t('phone_update_failed') || 'فشل تحديث رقم الهاتف'),
+                variant: 'destructive'
+            });
         } finally {
             setIsUpdatingPhone(false);
         }
@@ -952,12 +968,13 @@ toast({ title: t('success'), description: t('biometric_enabled_success') });
                                     <Input
                                         type="tel"
                                         value={newPhone}
-                                        onChange={(e) => setNewPhone(e.target.value)}
+                                        onChange={(e) => setNewPhone(e.target.value.replace(/\D/g, '').replace(/^0+/, '').slice(0, 15))}
                                         className="flex-1 rounded-lg border-gray-300 focus:border-[#289c8e] focus:ring-[#289c8e]"
                                         placeholder={t('phone_placeholder')}
                                         name={phoneNameRef.current}
-                                        autoComplete="tel"
-                                        inputMode="tel"
+                                        autoComplete="tel-national"
+                                        inputMode="numeric"
+                                        maxLength={15}
                                     />
                                 </div>
                             </div>
