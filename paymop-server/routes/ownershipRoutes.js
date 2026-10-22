@@ -1432,7 +1432,9 @@ const getImeiHash = (imei) => {
   app.post('/api/reset-registered-phone-password', verifyJwtToken, async (req, res) => {
     try {
       const { imei, newPassword } = req.body;
-      if (!imei || !newPassword) return res.status(400).json({ error: 'imei and newPassword required' });
+      if (!imei || !newPassword) {
+        return res.status(400).json({ error: 'required_fields' });
+      }
       const imeiHash = getImeiHash(imei);
 
       const { data: found, error } = await supabase
@@ -1447,7 +1449,7 @@ const getImeiHash = (imei) => {
 
       if (error) throw error;
 
-      if (!found) return res.status(404).json({ error: 'Phone not found' });
+      if (!found) return res.status(404).json({ error: 'phone_not_found' });
 
       const userKey = req.user && req.user.id ? `uid:${req.user.id}` : `ip:${req.ip}`;
       const blocked = checkAuthBlocked(userKey);
@@ -1468,7 +1470,7 @@ const getImeiHash = (imei) => {
         } catch (e) {
           console.warn('/api/reset-registered-phone-password rate-limit audit failed:', e?.message || e);
         }
-        return res.status(429).json({ error: 'Rate limit exceeded', retryAfter });
+        return res.status(429).json({ error: 'rate_limited', retryAfter });
       }
 
       // Compare decrypted stored email (if encrypted) with authenticated user's email
@@ -1490,7 +1492,7 @@ const getImeiHash = (imei) => {
         } catch (e) {
           console.warn('/api/reset-registered-phone-password forbidden audit failed:', e?.message || e);
         }
-        return res.status(403).json({ error: 'Not authorized to reset password for this phone' });
+        return res.status(403).json({ error: 'phone_not_owned' });
       }
 
       const hashed = await hashPasswordForStorage(newPassword);

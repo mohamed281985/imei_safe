@@ -415,7 +415,14 @@ toast({ title: t('success'), description: t('biometric_enabled_success') });
             }
 
             if (!resp.ok) {
-                throw new Error(payload?.error || `فشل تحديث كلمة المرور (${resp.status})`);
+                const errorKeyByCode: Record<string, string> = {
+                    required_fields: 'reset_password_required_fields',
+                    phone_not_found: 'reset_password_phone_not_found',
+                    phone_not_owned: 'reset_password_phone_not_owned',
+                    rate_limited: 'reset_password_rate_limited',
+                };
+                const errorKey = errorKeyByCode[payload?.error];
+                throw new Error(errorKey ? t(errorKey) : (t('reset_password_update_error') || 'حدث خطأ أثناء تحديث كلمة المرور'));
             }
 
             toast({ title: 'نجح', description: 'تم تحديث كلمة المرور بنجاح' });
@@ -425,8 +432,8 @@ toast({ title: t('success'), description: t('biometric_enabled_success') });
         } catch (error) {
             console.error('Error updating password:', error);
             toast({
-                title: 'خطأ',
-                description: (error as Error)?.message || 'حدث خطأ أثناء تحديث كلمة المرور',
+                title: t('error'),
+                description: (error as Error)?.message || t('reset_password_update_error'),
                 variant: 'destructive'
             });
         } finally {
