@@ -682,6 +682,11 @@ const getImeiHash = (imei) => {
         .from('registered_phones')
         .select('*')
         .eq('imei_hash', imeiHash)
+        .eq('user_id', userId)
+        .order('registration_date', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false, nullsFirst: false })
+        .order('id', { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (error) throw error;
@@ -692,25 +697,6 @@ const getImeiHash = (imei) => {
         status: registeredPhone?.status,
         user_id: registeredPhone?.user_id
       });
-
-      if (registeredPhone.user_id !== userId) {
-        try {
-          await logAudit({
-            userId: req.user?.id || null,
-            action: 'forbidden_access',
-            resourceType: 'registered_phone',
-            resourceId: registeredPhone?.id || null,
-            details: { reason: 'Forbidden: only current owner can transfer' },
-            ip: req.headers['x-forwarded-for']?.split(',')[0] || req.ip || null,
-            userAgent: req.headers['user-agent'] || null,
-            status: 'failed',
-            errorMessage: 'Forbidden: only current owner can transfer'
-          });
-        } catch (e) {
-          console.warn('/api/transfer-ownership forbidden audit failed:', e?.message || e);
-        }
-        return res.status(403).json({ error: 'Forbidden: only current owner can transfer' });
-      }
 
       const userKey = req.user && req.user.id ? `uid:${req.user.id}` : `ip:${req.ip}`;
       const blocked = checkAuthBlocked(userKey);
