@@ -821,7 +821,7 @@ const AddPhoneForm: React.FC = () => {
         if (info.hasActiveReport === true) {
           setImeiStatus('reported');
           setError(t('reported_phone_cannot_sell_detail'));
-        } else if ((isBusinessUser || isAdminUser) && info.isRegistered === true) {
+        } else if ((isBusinessUser || isAdminUser) && info.isRegistered === true && info.isOwner !== true) {
           setImeiStatus('registered');
           setError(t('business_imei_already_registered'));
         } else if (info.isRegistered === false || registeredToAnotherUser) {

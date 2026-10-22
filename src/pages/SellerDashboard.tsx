@@ -212,6 +212,7 @@ console.log("phonesData", JSON.stringify(phonesData, null, 2));
       });
 
       const allProducts = [...transformedPhones, ...transformedAccessories]
+        .filter(product => String(product.status || '').toLowerCase() !== 'deleted')
         .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
       setProducts(allProducts);

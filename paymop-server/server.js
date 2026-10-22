@@ -7195,7 +7195,7 @@ app.post('/api/create-phone', verifyJwtToken, async (req, res) => {
       };
 
       const [registeredResult, activeReportsResult, existingListingsResult] = await Promise.all([
-        supabase.from('registered_phones').select('imei, imei_hash, status'),
+        supabase.from('registered_phones').select('imei, imei_hash, status, user_id'),
         supabase.from('phone_reports').select('imei, imei_hash').eq('status', 'active'),
         supabase.from('phones').select('id, imei, status').eq('status', 'active'),
       ]);
@@ -7204,7 +7204,7 @@ app.post('/api/create-phone', verifyJwtToken, async (req, res) => {
       if (lookupFailure) return sendError(res, 500, 'تعذر التحقق من حالة رقم IMEI', lookupFailure);
 
       const blockingRegistration = (registeredResult.data || []).some((row) => (
-        matchesImei(row) && !['sold', 'transferred', 'rejected'].includes(String(row.status || '').toLowerCase())
+        matchesImei(row) && row.user_id !== userId && !['sold', 'transferred', 'rejected'].includes(String(row.status || '').toLowerCase())
       ));
       if (blockingRegistration) {
         return res.status(409).json({ success: false, error: 'imei_already_registered' });
