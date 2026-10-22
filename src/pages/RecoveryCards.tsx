@@ -275,14 +275,14 @@ const downloadSingleImage = async (url: string | null, phoneId: string, kind: 'r
         )}
       </div>
       <AlertDialog open={!!phonePendingSale} onOpenChange={(open) => !open && !isMarkingSold && setPhonePendingSale(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent className="border-2 border-orange-400 bg-white text-gray-900 shadow-xl">
           <AlertDialogHeader>
-            <AlertDialogTitle>{t('mark_phone_sold')}</AlertDialogTitle>
-            <AlertDialogDescription>{t('mark_phone_sold_confirmation')}</AlertDialogDescription>
+            <AlertDialogTitle className="text-orange-700">{t('mark_phone_sold')}</AlertDialogTitle>
+            <AlertDialogDescription className="text-gray-600">{t('mark_phone_sold_confirmation')}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isMarkingSold}>{t('cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={(event) => { event.preventDefault(); void handleMarkSold(); }} disabled={isMarkingSold}>
+            <AlertDialogCancel disabled={isMarkingSold} className="border-gray-300 bg-white text-gray-700 hover:bg-gray-100 hover:text-gray-900">{t('cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={(event) => { event.preventDefault(); void handleMarkSold(); }} disabled={isMarkingSold} className="bg-orange-600 text-white hover:bg-orange-700 focus:ring-orange-500">
               {isMarkingSold ? <Loader2 className="h-4 w-4 animate-spin" /> : t('mark_phone_sold')}
             </AlertDialogAction>
           </AlertDialogFooter>

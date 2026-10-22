@@ -6484,7 +6484,7 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
     // جلب جميع السجلات للتحقق منها
     const { data: allPhones, error: phonesFetchError } = await supabase
       .from('registered_phones')
-      .select('owner_name, phone_number, phone_image_url, phone_type, status, user_id, imei, id_last6, country_code');
+      .select('id, owner_name, phone_number, phone_image_url, phone_type, status, user_id, imei, id_last6, country_code, registration_date, created_at');
 
     if (phonesFetchError) {
       console.error('Error fetching registered_phones:', phonesFetchError);
@@ -6492,11 +6492,17 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
     }
 
     // فك تشفير جميع أرقام IMEI والبحث عن المطابقة (بما في ذلك الهواتف التي قد تكون بحالة 'transferred')
-    const matchingPhone = allPhones ? allPhones.find(phone => {
+    const matchingPhones = (allPhones || []).filter(phone => {
       const decryptedImei = decryptField(phone.imei);
       if (process.env.NODE_ENV !== 'production') console.log('[check-imei] phone row decrypted IMEI:', decryptedImei, 'normalized:', normalizeDigitsOnly(decryptedImei));
       return normalizeDigitsOnly(decryptedImei) === normalizeDigitsOnly(imei);
-    }) : null;
+    });
+    matchingPhones.sort((left, right) => {
+      const leftDate = Date.parse(left.registration_date || left.created_at || '') || 0;
+      const rightDate = Date.parse(right.registration_date || right.created_at || '') || 0;
+      return rightDate - leftDate || Number(right.id || 0) - Number(left.id || 0);
+    });
+    const matchingPhone = matchingPhones[0] || null;
 
     // If not found, in non-prod print a summary of all decrypted IMEIs to help debugging
     if (!matchingPhone && process.env.NODE_ENV !== 'production') {
