@@ -530,6 +530,10 @@ const getImeiHash = (imei) => {
         .from('registered_phones')
         .select('*')
         .eq('imei_hash', imeiHash)
+        .order('registration_date', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false, nullsFirst: false })
+        .order('id', { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (error) throw error;
