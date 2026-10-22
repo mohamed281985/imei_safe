@@ -36,6 +36,44 @@ const getImeiHash = (imei) => {
     .digest("hex");
 };
   const logAudit = (config) => rawLogAudit({ supabase, ...config });
+  const deactivateSaleListings = async (phone) => {
+    const imei = phone?.imei ? decryptField(phone.imei) || phone.imei : '';
+    const imeiHash = phone?.imei_hash || getImeiHash(imei);
+    if (!imeiHash) return;
+
+    const { error } = await supabase
+      .from('phones')
+      .update({ status: 'deleted' })
+      .eq('imei_hash', imeiHash)
+      .eq('status', 'active');
+
+    if (error) throw error;
+
+    const normalizedImei = normalizeDigitsOnly(imei);
+    if (!normalizedImei) return;
+
+    const { data: legacyListings, error: legacyError } = await supabase
+      .from('phones')
+      .select('id, imei')
+      .is('imei_hash', null)
+      .eq('status', 'active');
+
+    if (legacyError) throw legacyError;
+
+    const legacyIds = (legacyListings || [])
+      .filter((listing) => normalizeDigitsOnly(decryptField(listing.imei) || listing.imei || '') === normalizedImei)
+      .map((listing) => listing.id);
+
+    if (legacyIds.length > 0) {
+      const { error: legacyUpdateError } = await supabase
+        .from('phones')
+        .update({ status: 'deleted' })
+        .in('id', legacyIds)
+        .eq('status', 'active');
+
+      if (legacyUpdateError) throw legacyUpdateError;
+    }
+  };
   app.post('/api/imei-masked-info', verifyJwtToken, async (req, res) => {
     try {
       const { imei } = req.body;
@@ -766,6 +804,7 @@ const getImeiHash = (imei) => {
       }
 
       const updatedPhoneRow = Array.isArray(updated) ? updated[0] : updated;
+      await deactivateSaleListings(updatedPhoneRow || registeredPhone);
       let recoveryCard = null;
       if (updatedPhoneRow) {
         try {
@@ -1119,11 +1158,10 @@ const getImeiHash = (imei) => {
 
       const imeiHash = getImeiHash(incomingImei);
 
-      const { data: report, error: fetchErr } = await supabase
+      const { data: reports, error: fetchErr } = await supabase
         .from('phone_reports')
-        .select('*')
-        .eq('imei_hash', imeiHash)
-        .maybeSingle();
+        .select('id, user_id, status, imei, imei_hash')
+        .eq('status', 'active');
 
       if (fetchErr) throw fetchErr;
 
@@ -1191,11 +1229,10 @@ const getImeiHash = (imei) => {
       // جلب كل البلاغات الفعالة لمستخدمنا أو عامة للبحث
       const imeiHash = getImeiHash(incomingImei);
 
-      const { data: report, error: fetchErr } = await supabase
+      const { data: reports, error: fetchErr } = await supabase
         .from('phone_reports')
-        .select('*')
-        .eq('imei_hash', imeiHash)
-        .maybeSingle();
+        .select('id, user_id, status, imei, imei_hash')
+        .eq('status', 'active');
 
       if (fetchErr) throw fetchErr;
 
@@ -1221,6 +1258,7 @@ const getImeiHash = (imei) => {
 
       const matching = (reports || []).filter((r) => {
         try {
+          if (r.imei_hash && imeiHash && r.imei_hash === imeiHash) return true;
           const dec = decryptField(r.imei) || r.imei;
           // Match active reports for the same IMEI regardless of who created the report
           return normalizeDigitsOnly(dec) === normalizedIncoming && r.status === 'active';
@@ -1300,7 +1338,7 @@ const getImeiHash = (imei) => {
       if (isOwnershipConfirmation) {
         const { data: phones, error: phonesError } = await supabase
           .from('registered_phones')
-          .select('id, user_id, status, registration_date, last_confirmed_at')
+          .select('id, user_id, status, imei, imei_hash, registration_date, last_confirmed_at')
           .in('id', ids)
           .eq('user_id', userId);
 
@@ -1323,11 +1361,15 @@ const getImeiHash = (imei) => {
           }
 
           if (!Number.isNaN(expiryAt.getTime()) && now >= expiryAt.getTime()) {
-            await supabase
+            const { data: expiredPhone, error: expireError } = await supabase
               .from('registered_phones')
               .update({ status: 'transferred' })
               .eq('id', phone.id)
-              .eq('user_id', userId);
+              .eq('user_id', userId)
+              .select('imei, imei_hash')
+              .maybeSingle();
+            if (expireError) throw expireError;
+            await deactivateSaleListings(expiredPhone || phone);
             return res.status(409).json({
               success: false,
               error: 'انتهت مهلة تأكيد الملكية وأصبح الهاتف متاحًا للتسجيل من جديد',
@@ -1356,6 +1398,12 @@ const getImeiHash = (imei) => {
         .select();
 
       if (error) throw error;
+
+      if (status === 'transferred') {
+        for (const phone of data || []) {
+          await deactivateSaleListings(phone);
+        }
+      }
 
       try {
         // Audit log for ownership updates

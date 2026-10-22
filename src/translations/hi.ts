@@ -87,6 +87,8 @@ export default {
   "select_all": "सभी चुनें",
   "unspecified_phone": "अनिर्दिष्ट फ़ोन",
   "this_is_not_my_phone": "यह मेरा फ़ोन नहीं है",
+  "mark_phone_sold": "बिका हुआ चिह्नित करें",
+  "mark_phone_sold_confirmation": "यह फ़ोन आपके पंजीकृत कार्ड से हटा दिया जाएगा और नया मालिक इसे पंजीकृत कर सकेगा।",
   "confirm_ownership": "मैं स्वामित्व की पुष्टि करता हूँ",
   "phones_selected_label": "चयनित",
   "phones_selected_custom": "में से",

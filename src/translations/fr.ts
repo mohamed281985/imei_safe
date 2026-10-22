@@ -97,6 +97,8 @@ export default {
   "select_all": "Tout sélectionner",
   "unspecified_phone": "Téléphone non spécifié",
   "this_is_not_my_phone": "Ce n'est pas mon téléphone",
+  "mark_phone_sold": "Marquer comme vendu",
+  "mark_phone_sold_confirmation": "Ce téléphone sera retiré de vos cartes enregistrées et pourra être enregistré par son nouveau propriétaire.",
   "confirm_ownership": "Je confirme la propriété",
   "phones_selected_label": "Sélectionné",
   "phones_selected_custom": "sur",

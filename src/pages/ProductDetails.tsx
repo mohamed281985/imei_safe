@@ -329,6 +329,7 @@ const ProductDetails = () => {
         .from('phones')
         .select('*, phone_images(image_path, main_image, order)')
         .eq('id', id)
+        .eq('status', 'active')
         .single();
 
       if (phoneData) {

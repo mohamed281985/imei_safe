@@ -86,6 +86,8 @@ export default {
   "select_all": "Select All",
   "unspecified_phone": "Unspecified Phone",
   "this_is_not_my_phone": "This is not my phone",
+  "mark_phone_sold": "Mark as sold",
+  "mark_phone_sold_confirmation": "This phone will be removed from your registered cards and made available for the new owner to register.",
   "confirm_ownership": "I Confirm My Ownership",
   "phones_selected_label": "selected",
   "phones_selected_custom": "of",

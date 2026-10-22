@@ -1444,6 +1444,44 @@ const expireUnconfirmedPhone = async (phone) => {
     .maybeSingle();
 
   if (error) throw error;
+  if (updated) {
+    const normalizedImei = normalizeDigitsOnly(decryptField(phone.imei) || phone.imei || '');
+    const imeiHash = phone.imei_hash || getImeiHash(normalizedImei);
+
+    if (imeiHash) {
+      const { error: listingUpdateError } = await supabase
+        .from('phones')
+        .update({ status: 'deleted' })
+        .eq('imei_hash', imeiHash)
+        .eq('status', 'active');
+
+      if (listingUpdateError) throw listingUpdateError;
+    }
+
+    if (normalizedImei) {
+      const { data: legacyListings, error: legacyError } = await supabase
+        .from('phones')
+        .select('id, imei')
+        .is('imei_hash', null)
+        .eq('status', 'active');
+
+      if (legacyError) throw legacyError;
+
+      const legacyIds = (legacyListings || [])
+        .filter((listing) => normalizeDigitsOnly(decryptField(listing.imei) || listing.imei || '') === normalizedImei)
+        .map((listing) => listing.id);
+
+      if (legacyIds.length > 0) {
+        const { error: legacyUpdateError } = await supabase
+          .from('phones')
+          .update({ status: 'deleted' })
+          .in('id', legacyIds)
+          .eq('status', 'active');
+
+        if (legacyUpdateError) throw legacyUpdateError;
+      }
+    }
+  }
   return { phone: updated || { ...phone, status: 'transferred' }, schedule };
 };
 const logAudit = (config) => rawLogAudit({ supabase, ...config });
@@ -5520,7 +5558,7 @@ app.get('/api/user-phones', verifyJwtToken, async (req, res) => {
     // جلب الهواتف التي يملكها المستخدم الحالي فقط (استبعاد المنقولة والمن بيعها)
     const { data: phones, error } = await supabase
       .from('registered_phones')
-      .select('id, imei, phone_type, registration_date, last_confirmed_at, status, user_id')
+      .select('id, imei, imei_hash, phone_type, registration_date, last_confirmed_at, status, user_id')
       .eq('user_id', userId)
       .not('status', 'eq', 'rejected'); // استبعاد الهواتف المرفوضة
 
@@ -6833,7 +6871,7 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
       const imeiHash = crypto.createHash('sha256').update(String(normalizeDigitsOnly(rawImei))).digest('hex');
       const { data: existingPhones, error: existingPhonesError } = await supabase
         .from('registered_phones')
-        .select('id, user_id, status, registration_date, last_confirmed_at')
+        .select('id, user_id, status, imei, imei_hash, registration_date, last_confirmed_at')
         .eq('imei_hash', imeiHash);
 
       if (existingPhonesError) throw existingPhonesError;
@@ -7151,15 +7189,18 @@ app.post('/api/create-phone', verifyJwtToken, async (req, res) => {
       };
 
       const [registeredResult, activeReportsResult, existingListingsResult] = await Promise.all([
-        supabase.from('registered_phones').select('imei, imei_hash'),
+        supabase.from('registered_phones').select('imei, imei_hash, status'),
         supabase.from('phone_reports').select('imei, imei_hash').eq('status', 'active'),
-        supabase.from('phones').select('id, imei, status').neq('status', 'deleted'),
+        supabase.from('phones').select('id, imei, status').eq('status', 'active'),
       ]);
 
       const lookupFailure = registeredResult.error || activeReportsResult.error || existingListingsResult.error;
       if (lookupFailure) return sendError(res, 500, 'تعذر التحقق من حالة رقم IMEI', lookupFailure);
 
-      if ((registeredResult.data || []).some(matchesImei)) {
+      const blockingRegistration = (registeredResult.data || []).some((row) => (
+        matchesImei(row) && !['sold', 'transferred', 'rejected'].includes(String(row.status || '').toLowerCase())
+      ));
+      if (blockingRegistration) {
         return res.status(409).json({ success: false, error: 'imei_already_registered' });
       }
       if ((activeReportsResult.data || []).some(matchesImei)) {

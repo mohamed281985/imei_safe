@@ -107,6 +107,7 @@ export function registerReportRoutes({
       data.email = '';
       const PLACEHOLDER_REGISTERED = 'مسجل بالنظام';
       let registeredPhoneForReport = null;
+      let normalizedReportedImei = '';
       const isQuickReport = data.report_mode === 'quick';
 
       // لا يسمح بأكثر من بلاغ سريع واحد للمستخدم أو لنفس IMEI.
@@ -181,6 +182,7 @@ export function registerReportRoutes({
       if (data.imei) {
         // تطبيع الـ IMEI الوارد (أزل كل غير الأرقام) لمطابقة أكثر مرونة
         const incomingImei = String(data.imei || '').replace(/\D/g, '');
+        normalizedReportedImei = incomingImei;
         const { data: phones } = await supabase.from('registered_phones').select('*');
         const registeredPhone = phones ? phones.find(p => {
           const stored = decryptField(p.imei) || '';
@@ -322,6 +324,45 @@ console.log("================================");
         console.error('Error saving report:', error);
         return sendError(res, 500, 'حدث خطأ في الخادم', error, { success: false });
       }
+
+      if (data.imei_hash) {
+        const { data: hashedListings, error: hashedListingsError } = await supabase
+          .from('phones')
+          .select('id, imei, imei_hash')
+          .eq('status', 'active')
+          .eq('imei_hash', data.imei_hash);
+
+        if (hashedListingsError) throw hashedListingsError;
+
+        const { data: legacyListings, error: legacyListingsError } = await supabase
+          .from('phones')
+          .select('id, imei, imei_hash')
+          .eq('status', 'active')
+          .is('imei_hash', null);
+
+        if (legacyListingsError) throw legacyListingsError;
+
+        const matchingListingIds = [
+          ...(hashedListings || []).map((listing) => listing.id),
+          ...(legacyListings || [])
+          .filter((listing) => {
+            const storedImei = decryptField(listing.imei) || listing.imei || '';
+            return normalizeDigitsOnly(storedImei) === normalizedReportedImei;
+          })
+          .map((listing) => listing.id)
+        ];
+
+        if (matchingListingIds.length > 0) {
+          const { error: listingUpdateError } = await supabase
+            .from('phones')
+            .update({ status: 'deleted' })
+            .in('id', matchingListingIds)
+            .eq('status', 'active');
+
+          if (listingUpdateError) throw listingUpdateError;
+        }
+      }
+
       // إشعار تسجيل بلاغ فقد
 
       const { data: userRow } = await supabase

@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useLanguage } from '@/contexts/LanguageContext';
 import PageContainer from '../components/PageContainer';
 import AppNavbar from '../components/AppNavbar';
 import { Button } from '@/components/ui/button';
-import { Download, Eye, ImageIcon, Loader2, AlertTriangle, FileText } from 'lucide-react';
+import { Download, Eye, ImageIcon, Loader2, AlertTriangle, FileText, BadgeCheck } from 'lucide-react';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import axiosInstance from '@/services/axiosInterceptor';
 import { toast } from 'sonner';
 import { Directory, Filesystem } from '@capacitor/filesystem';
@@ -11,10 +13,13 @@ import { Capacitor } from '@capacitor/core';
 
 const RecoveryCards: React.FC = () => {
   const navigate = useNavigate();
+  const { t } = useLanguage();
   const [loading, setLoading] = useState(true);
   const [phones, setPhones] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [activeFileAction, setActiveFileAction] = useState<string | null>(null);
+  const [phonePendingSale, setPhonePendingSale] = useState<any | null>(null);
+  const [isMarkingSold, setIsMarkingSold] = useState(false);
 
   useEffect(() => {
     const fetchPhones = async () => {
@@ -71,6 +76,33 @@ const RecoveryCards: React.FC = () => {
       navigate('/report', { state: { imei } });
     } catch (error: any) {
       toast.error(error?.response?.data?.error || error?.message || 'تعذر فتح بلاغ الفقد');
+    }
+  };
+
+  const handleMarkSold = async () => {
+    if (!phonePendingSale || isMarkingSold) return;
+    const phone = phonePendingSale;
+    setIsMarkingSold(true);
+
+    try {
+      await axiosInstance.post('/api/update-phone-status', { ids: [phone.id], status: 'transferred' });
+
+      if (phone.imei_encrypted) {
+        try {
+          await axiosInstance.post('/api/resolve-report', { imei_encrypted: phone.imei_encrypted });
+        } catch (error: any) {
+          if (error?.response?.status !== 404) throw error;
+        }
+      }
+
+      setPhones(prev => prev.filter(item => item.id !== phone.id));
+      setPhonePendingSale(null);
+      toast.success(t('phones_status_updated'));
+    } catch (error: any) {
+      console.error('Failed to mark phone as sold:', error);
+      toast.error(error?.response?.data?.error || t('phone_status_update_failed'));
+    } finally {
+      setIsMarkingSold(false);
     }
   };
 
@@ -226,6 +258,15 @@ const downloadSingleImage = async (url: string | null, phoneId: string, kind: 'r
                     >
                       <AlertTriangle size={16} className="mr-2" /> إخطار فقد
                     </Button>
+
+                    <Button
+                      type="button"
+                      onClick={() => setPhonePendingSale(p)}
+                      disabled={isMarkingSold}
+                      className="h-10 !bg-amber-600 !text-white font-bold shadow-md hover:!bg-amber-700"
+                    >
+                      <BadgeCheck size={16} className="mr-2" /> {t('mark_phone_sold')}
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -233,6 +274,20 @@ const downloadSingleImage = async (url: string | null, phoneId: string, kind: 'r
           </div>
         )}
       </div>
+      <AlertDialog open={!!phonePendingSale} onOpenChange={(open) => !open && !isMarkingSold && setPhonePendingSale(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('mark_phone_sold')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('mark_phone_sold_confirmation')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isMarkingSold}>{t('cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={(event) => { event.preventDefault(); void handleMarkSold(); }} disabled={isMarkingSold}>
+              {isMarkingSold ? <Loader2 className="h-4 w-4 animate-spin" /> : t('mark_phone_sold')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </PageContainer>
   );
 };

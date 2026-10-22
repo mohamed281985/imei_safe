@@ -126,14 +126,19 @@ const Favorites: React.FC = () => {
         }
 
         // Fetch phones first
-        const { data: phones } = await supabase.from('phones').select('id,title,price,phone_images(image_path)').in('id', ids);
+        const { data: phones } = await supabase.from('phones').select('id,title,price,phone_images(image_path)').in('id', ids).eq('status', 'active');
         const phoneMap = (phones || []).reduce((acc: Record<string, any>, p: any) => { acc[p.id] = p; return acc; }, {});
 
         // Fetch accessories
         const { data: accessories } = await supabase.from('accessories').select('id,title,price,accessory_images(image_path)').in('id', ids);
         const accessoryMap = (accessories || []).reduce((acc: Record<string, any>, a: any) => { acc[a.id] = a; return acc; }, {});
 
-        const out: FavItem[] = ids.map(id => {
+        const availableIds = ids.filter(id => phoneMap[id] || accessoryMap[id]);
+        if (availableIds.length !== ids.length) {
+          localStorage.setItem('favorites', JSON.stringify(availableIds));
+        }
+
+        const out: FavItem[] = availableIds.map(id => {
           if (phoneMap[id]) {
             const p = phoneMap[id];
             return { id: p.id, title: p.title, price: p.price, image: p.phone_images?.[0]?.image_path, type: 'phone' };

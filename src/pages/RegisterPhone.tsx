@@ -19,6 +19,7 @@ import { useScrollToTop } from '../hooks/useScrollToTop';
 import { useAuth } from '@/contexts/AuthContext';
 import NotificationPermissionPrompt from '@/components/NotificationPermissionPrompt';
 import ImeiInput from '@/components/ImeiInput';
+import imeiPhotoGuide from '@/assets/images/imei-photo-guide.jpeg';
 
 type ReviewStatus = 'تمت المراجعة' | 'بيانات خاطئة';
 type Status = 'approved' | 'rejected' | 'pending';
@@ -801,17 +802,20 @@ const RegisterPhone: React.FC = () => {
               </p>
             </div>
           </div>
+        ) : typeData.type === 'phoneImage' ? (
+          <div className="overflow-hidden rounded-lg border border-sky-200 bg-white p-1.5 shadow-sm transition-colors duration-300 hover:border-sky-400">
+            <img
+              src={imeiPhotoGuide}
+              alt={t('phone_image_instructions')}
+              className="aspect-[3/2] w-full rounded-md object-contain"
+              loading="lazy"
+            />
+          </div>
         ) : (
           <div className="h-64 border-2 border-dashed border-imei-cyan/20 rounded-lg flex flex-col items-center justify-center bg-gradient-to-b from-imei-dark/30 to-imei-darker/30 group hover:border-imei-cyan/40 transition-all duration-300">
             <typeData.icon className="w-16 h-16 text-imei-cyan/60 group-hover:text-imei-cyan/80 transition-colors duration-300" strokeWidth={1} />
-            {typeData.type === 'phoneImage' ? (
-              <p className="text-center text-sm text-red-700 font-bold mt-2 bg-red-100 p-2 rounded-md">{t('phone_image_instructions')}</p>
-            ) : (
-              <>
-                <p className="text-center text-sm text-gray-800 mt-2">{t(`no_${typeData.labelKey.replace('_image', '')}_preview`)}</p>
-                <p className="text-xs mt-1 text-gray-600">{t('image_will_be_displayed_here')}</p>
-              </>
-            )}
+            <p className="text-center text-sm text-gray-800 mt-2">{t(`no_${typeData.labelKey.replace('_image', '')}_preview`)}</p>
+            <p className="text-xs mt-1 text-gray-600">{t('image_will_be_displayed_here')}</p>
           </div>
         )}
 

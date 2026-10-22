@@ -124,6 +124,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // الخطوة 2: مسح حالة المستخدم محليًا "لقفل" واجهة التطبيق.
     setUser(null);
     setNeedsProfileCompletion(false);
+    setRejectedAccountProfile(null);
     setUnreadNotificationsCount(0);
     setIsFirstLogin(false); // ⭐ إعادة تعيين الحالة عند الخروج
     const timestamp = Date.now();

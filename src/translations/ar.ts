@@ -89,6 +89,8 @@ export default {
   "select_all": "تحديد الكل",
   "unspecified_phone": "هاتف غير محدد",
   "this_is_not_my_phone": "هذا ليس هاتفي",
+  "mark_phone_sold": "تم البيع",
+  "mark_phone_sold_confirmation": "سيتم إزالة الهاتف من بطاقاتك المسجلة، وسيصبح متاحًا للمالك الجديد لتسجيله.",
   "confirm_ownership": "أؤكد ملكيتي",
   "phones_selected_label": "محدد",
   "phones_selected_custom": "من",
