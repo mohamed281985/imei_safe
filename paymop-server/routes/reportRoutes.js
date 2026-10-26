@@ -205,22 +205,19 @@ export function registerReportRoutes({
 
           // إذا كانت الحالة 'transferred' فالمستخدم تخلى عن الهاتف — لا يسمح لأي شخص بتقديم بلاغ
           if (registeredPhone.status === 'transferred') {
-            const error = registeredPhone.user_id === requesterId
-              ? 'phone_sold_by_this_account'
-              : 'phone_not_owned_by_requester';
-            return res.status(403).json({ success: false, error });
-          }
-          // إذا كانت الحالة 'sold' فتم نقل الملكية — فقط المشتري الجديد يقدر يقدم بلاغ
-          if (registeredPhone.status === 'sold') {
+            if (registeredPhone.user_id === requesterId) {
+              return res.status(403).json({ success: false, error: 'phone_sold_by_this_account' });
+            }
+            // A different account may report this transferred phone as the new possessor.
+          } else if (registeredPhone.status === 'sold') {
+            // إذا كانت الحالة 'sold' فتم نقل الملكية — فقط المشتري الجديد يقدر يقدم بلاغ
             if (!requesterId || registeredPhone.user_id !== requesterId) {
               return res.status(403).json({ success: false, error: 'فقط المالك الجديد يمكنه تقديم البلاغ.' });
             }
             // المشتري الجديد يقدر يقدم بلاغ
-          } else {
+          } else if (!requesterId || registeredPhone.user_id !== requesterId) {
             // الحالة الاعتيادية: تأكد أن المرسل هو المالك المسجّل
-            if (!requesterId || registeredPhone.user_id !== requesterId) {
-              return res.status(403).json({ success: false, error: 'فقط صاحب الهاتف يمكنه تقديم البلاغ' });
-            }
+            return res.status(403).json({ success: false, error: 'فقط صاحب الهاتف يمكنه تقديم البلاغ' });
           }
         }
       }

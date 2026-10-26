@@ -324,7 +324,7 @@ const getImeiHash = (imei) => {
             masked: true,
             isOtherUser: true,
             isTransferred: true,
-            isRegistered: true,
+            isRegistered: false,
             hasActiveReport: false,
             receipt_image_url: registeredPhone.receipt_image_url,
             country_code: countryCodeRaw,
