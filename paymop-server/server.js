@@ -6532,8 +6532,13 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
       if (requesterId && matchingPhone.user_id === requesterId) {
         // الهاتف مسجل للمستخدم الحالي
         if (matchingPhone.status === 'transferred') {
-          // المستخدم تخلى عن الهاتف (قال "هذا ليس هاتفي") - يُسمح بتسجيله من جديد
-          return res.json({ exists: false, phoneDetails: null, isTransferred: true });
+          // Keep the former owner from filing a report while allowing a new owner to register.
+          return res.json({
+            exists: false,
+            phoneDetails: null,
+            isTransferred: true,
+            isSoldByCurrentAccount: true
+          });
         }
         if (matchingPhone.status === 'rejected') {
           // تم رفض التسجيل سابقًا - السماح بإعادة التسجيل

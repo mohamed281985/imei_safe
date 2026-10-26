@@ -662,6 +662,8 @@ const ReportPhone: React.FC = () => {
           result.reporter_user_id = result.reporter_user_id ?? (checkResult.reporter_user_id ?? checkResult.userId ?? checkResult.reporterId);
 
           result.isOtherUser = result.isOtherUser ?? (checkResult.isOtherUser ?? false);
+          result.isTransferred = result.isTransferred ?? checkResult.isTransferred;
+          result.isSoldByCurrentAccount = result.isSoldByCurrentAccount ?? checkResult.isSoldByCurrentAccount;
         }
 
         // حالة 1: هاتف جديد (غير مسجل)
