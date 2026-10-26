@@ -191,9 +191,14 @@ const downloadSingleImage = async (url: string | null, phoneId: string, kind: 'r
               <div key={p.id} className="w-full overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_28px_rgba(15,23,42,0.16)] transition-shadow duration-300 hover:shadow-[0_12px_36px_rgba(15,23,42,0.24)]">
                 <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3">
                   <div className="min-w-0">
-                    <div className="relative aspect-[3/4] overflow-hidden rounded-xl bg-slate-900 shadow-[0_6px_18px_rgba(15,23,42,0.3)]">
+                    <button
+                      type="button"
+                      onClick={() => handleView(p.id)}
+                      aria-label="عرض بطاقة الاسترداد"
+                      className="group relative block aspect-[3/4] w-full cursor-pointer overflow-hidden rounded-xl bg-slate-900 text-left shadow-[0_6px_18px_rgba(15,23,42,0.3)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500 focus-visible:ring-offset-2"
+                    >
                       {p.recoveryCardUrl ? (
-                        <img src={p.recoveryCardUrl} alt="Recovery Card" className="absolute inset-0 h-full w-full object-cover" referrerPolicy="no-referrer" />
+                        <img src={p.recoveryCardUrl} alt="Recovery Card" className="absolute inset-0 h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]" referrerPolicy="no-referrer" />
                       ) : (
                         <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-white">
                           <ImageIcon className="h-8 w-8 text-white/70" />
@@ -201,7 +206,7 @@ const downloadSingleImage = async (url: string | null, phoneId: string, kind: 'r
                         </div>
                       )}
                       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-2 pb-2 pt-6 text-center text-sm font-bold text-white">بطاقة الاسترداد</div>
-                    </div>
+                    </button>
                     <Button
                       type="button"
                       onClick={() => void downloadSingleImage(p.recoveryCardUrl, p.id, 'recovery')}
@@ -245,10 +250,12 @@ const downloadSingleImage = async (url: string | null, phoneId: string, kind: 'r
                   
                   <div className="grid grid-cols-1 gap-2">
                     <Button
-                      onClick={() => handleView(p.id)}
-                      className="h-10 bg-imei-cyan font-bold text-black shadow-md hover:bg-imei-cyan/90"
+                      type="button"
+                      onClick={() => setPhonePendingSale(p)}
+                      disabled={isMarkingSold}
+                      className="h-10 !bg-amber-600 !text-white font-bold shadow-md hover:!bg-amber-700"
                     >
-                      <Eye size={16} className="mr-2" /> عرض البطاقة
+                      <BadgeCheck size={16} className="mr-2" /> {t('mark_phone_sold')}
                     </Button>
 
                     <Button
@@ -259,14 +266,6 @@ const downloadSingleImage = async (url: string | null, phoneId: string, kind: 'r
                       <AlertTriangle size={16} className="mr-2" /> إخطار فقد
                     </Button>
 
-                    <Button
-                      type="button"
-                      onClick={() => setPhonePendingSale(p)}
-                      disabled={isMarkingSold}
-                      className="h-10 !bg-amber-600 !text-white font-bold shadow-md hover:!bg-amber-700"
-                    >
-                      <BadgeCheck size={16} className="mr-2" /> {t('mark_phone_sold')}
-                    </Button>
                   </div>
                 </div>
               </div>

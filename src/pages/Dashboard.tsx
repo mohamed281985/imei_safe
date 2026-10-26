@@ -247,6 +247,10 @@ const Dashboard: React.FC = () => {
   // حالات للهواتف غير المطالب بها (التي تم العثور عليها بالبريد الإلكتروني)
   const [unclaimedPhones, setUnclaimedPhones] = useState<any[]>([]);
   const [showClaimModal, setShowClaimModal] = useState(false);
+  const [showQuickReportPhonePicker, setShowQuickReportPhonePicker] = useState(false);
+  const [quickReportPhones, setQuickReportPhones] = useState<any[]>([]);
+  const [isLoadingQuickReportPhones, setIsLoadingQuickReportPhones] = useState(false);
+  const [quickReportPhoneError, setQuickReportPhoneError] = useState('');
   const [deviceStatus, setDeviceStatus] = useState<'protected' | 'unprotected' | 'lost'>('unprotected');
   const [isCheckingDeviceStatus, setIsCheckingDeviceStatus] = useState(true);
 
@@ -460,6 +464,40 @@ const Dashboard: React.FC = () => {
     } catch (error: any) {
       toast({ title: t('error'), description: error.response?.data?.error || error.message || 'حدث خطأ أثناء تأكيد الملكية', variant: 'destructive' });
     }
+  };
+
+  const openQuickReportPhonePicker = async () => {
+    if (!user?.id) {
+      toast({ title: t('error'), description: t('must_be_logged_in'), variant: 'destructive' });
+      return;
+    }
+
+    setShowQuickReportPhonePicker(true);
+    setIsLoadingQuickReportPhones(true);
+    setQuickReportPhoneError('');
+    try {
+      // The endpoint derives the owner from the verified JWT; never send a client-supplied user ID.
+      const response = await axiosInstance.get('/api/user-phones');
+      const rows = response.data?.data || response.data?.phones || response.data || [];
+      const ownedPhones = (Array.isArray(rows) ? rows : []).filter((phone: any) => {
+        const status = String(phone.status || '').toLowerCase();
+        return /^\d{15}$/.test(String(phone.imei || '').replace(/\D/g, '')) &&
+          !['sold', 'transferred', 'rejected'].includes(status);
+      });
+      setQuickReportPhones(ownedPhones);
+    } catch (error: any) {
+      console.error('Failed to load owned phones for quick report:', error);
+      setQuickReportPhoneError(error?.response?.data?.error || 'تعذر تحميل هواتفك المسجلة. حاول مرة أخرى.');
+    } finally {
+      setIsLoadingQuickReportPhones(false);
+    }
+  };
+
+  const choosePhoneForQuickReport = (phone: any) => {
+    const imei = String(phone?.imei || '').replace(/\D/g, '');
+    if (!/^\d{15}$/.test(imei)) return;
+    setShowQuickReportPhonePicker(false);
+    navigate('/report', { state: { quick: true, imei } });
   };
 
   const handleConfirmOwnership = async (phoneIds: string[]) => {
@@ -1145,7 +1183,7 @@ const Dashboard: React.FC = () => {
               </div>
               <button
                 type="button"
-                onClick={() => navigate('/report', { state: { quick: true } })}
+                onClick={() => void openQuickReportPhonePicker()}
                 className="flex min-h-[45px] items-center gap-1 rounded-lg border-2 border-red-700 bg-red-600 p-1 text-right shadow-sm transition-all hover:border-red-800 hover:bg-red-700 hover:shadow-md"
               >
                 <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-red-700 text-white">
@@ -1640,6 +1678,64 @@ const Dashboard: React.FC = () => {
           onDeny={handleDenyOwnership}
         />
       </Suspense>
+
+      <Dialog open={showQuickReportPhonePicker} onOpenChange={setShowQuickReportPhonePicker}>
+        <DialogContent className="max-h-[85vh] w-[92vw] overflow-y-auto rounded-2xl border-2 border-orange-300 bg-white text-slate-800 shadow-2xl sm:max-w-md">
+          <DialogHeader className="text-right" dir="rtl">
+            <DialogTitle className="text-xl font-extrabold text-slate-900">اختر الهاتف المفقود</DialogTitle>
+            <DialogDescription className="text-sm leading-6 text-slate-600">
+              اختر هاتفًا مسجلًا في حسابك لفتح بلاغ الفقد السريع.
+            </DialogDescription>
+          </DialogHeader>
+
+          {isLoadingQuickReportPhones ? (
+            <div className="flex items-center justify-center gap-2 py-8 text-slate-600" dir="rtl">
+              <Loader2 className="h-5 w-5 animate-spin text-orange-600" />
+              <span className="font-semibold">جارٍ تحميل هواتفك المسجلة...</span>
+            </div>
+          ) : quickReportPhoneError ? (
+            <div className="space-y-4 py-2" dir="rtl">
+              <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold leading-6 text-red-700">
+                {quickReportPhoneError}
+              </p>
+              <Button
+                type="button"
+                onClick={() => void openQuickReportPhonePicker()}
+                className="w-full bg-orange-600 font-bold text-white hover:bg-orange-700"
+              >
+                إعادة المحاولة
+              </Button>
+            </div>
+          ) : quickReportPhones.length === 0 ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-center text-sm font-semibold leading-6 text-amber-900" dir="rtl">
+              لا توجد هواتف مسجلة متاحة للإبلاغ عنها في حسابك.
+            </div>
+          ) : (
+            <div className="space-y-2" dir="rtl">
+              {quickReportPhones.map((phone: any) => (
+                <button
+                  key={phone.id}
+                  type="button"
+                  onClick={() => choosePhoneForQuickReport(phone)}
+                  className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 text-right transition hover:border-orange-400 hover:bg-orange-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate font-bold text-slate-900">
+                      {phone.phone_type || 'هاتف مسجل'}
+                    </span>
+                    <span className="mt-1 block font-mono text-sm text-slate-600" dir="ltr">
+                      {phone.imei_masked || `${String(phone.imei).slice(0, 4)}•••••••${String(phone.imei).slice(-4)}`}
+                    </span>
+                  </span>
+                  <span className="shrink-0 rounded-lg bg-orange-600 px-3 py-2 text-xs font-bold text-white">
+                    اختيار
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* نافذة تأكيد ملكية الهواتف غير المطالب بها */}
       <Dialog open={showClaimModal} onOpenChange={setShowClaimModal}>

@@ -308,15 +308,15 @@ export default function BusinessProfileComplete() {
 
       let resultError;
       if (existingBusiness) {
-        // الحالة أ: السجل موجود -> نقوم بالتحديث
+        // The database trigger blocks client-side updates to protected review fields.
+        // We keep the client update limited to image URLs only, then reset the status
+        // back to pending via a server-side function.
         console.log('[BusinessProfile] Updating existing business record, ID:', existingBusiness.id);
         const { data: updatedRows, error: updateError } = await supabase
           .from('businesses')
-          .update({ 
-            store_image_url: storeImageUrl, 
+          .update({
+            store_image_url: storeImageUrl,
             license_image_url: licenseImageUrl,
-            status: 'pending',
-            reason: null
           })
           .eq('user_id', userId)
           .select();
@@ -326,25 +326,30 @@ export default function BusinessProfileComplete() {
           console.warn('[BusinessProfile] Update affected 0 rows despite record existing');
         }
         resultError = updateError;
+
+        if (!resultError) {
+          const { error: resetError } = await supabase.rpc('reset_business_review_for_resubmission', {
+            p_user_id: userId,
+          });
+
+          if (resetError) {
+            console.error('[BusinessProfile] reset_business_review_for_resubmission failed:', resetError);
+            throw new Error(`${t('data_save_failed')}: ${resetError.message}`);
+          }
+        }
       } else {
-        // الحالة ب: السجل غير موجود -> نقوم بإنشاء سجل جديد
-        console.log('[BusinessProfile] No existing record found. Creating new business record...');
-        const metadata = user.user_metadata || {};
+        // Do not re-insert the sensitive business identity fields here.
+        // Those are server-reviewed and must be created by the reviewed registration path.
+        console.log('[BusinessProfile] No existing record found. Creating a minimal review record...');
         const { data: insertedRows, error: insertError } = await supabase
           .from('businesses')
-          .insert({ 
-            user_id: userId, 
-            store_image_url: storeImageUrl, 
-            license_image_url: licenseImageUrl,
-            store_name: metadata.store_name || '',
+          .insert({
+            user_id: userId,
             email: user.email || '',
-            phone: metadata.phone || '',
-            owner_name: metadata.full_name || metadata.owner_name || '',
-            address: metadata.address || '',
-            business_type: metadata.business_type || '',
-            id_last6: metadata.id_last6 || '',
+            store_image_url: storeImageUrl,
+            license_image_url: licenseImageUrl,
             status: 'pending',
-            reason: null
+            reason: null,
           })
           .select();
 
