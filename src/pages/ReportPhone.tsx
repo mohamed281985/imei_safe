@@ -778,7 +778,7 @@ const ReportPhone: React.FC = () => {
           return;
         }
 
-        if (result.isSoldByCurrentAccount) {
+        if (result.isSoldByCurrentAccount || (result.isTransferred && result.isOwner)) {
           setIsReadOnly(true);
           setIsImeiRegistered(true);
           setIsImeiValid(false);
