@@ -205,7 +205,10 @@ export function registerReportRoutes({
 
           // إذا كانت الحالة 'transferred' فالمستخدم تخلى عن الهاتف — لا يسمح لأي شخص بتقديم بلاغ
           if (registeredPhone.status === 'transferred') {
-            return res.status(403).json({ success: false, error: 'تم التخلي عن هذا الهاتف ولا يمكن تقديم بلاغ عليه.' });
+            const error = registeredPhone.user_id === requesterId
+              ? 'phone_sold_by_this_account'
+              : 'phone_not_owned_by_requester';
+            return res.status(403).json({ success: false, error });
           }
           // إذا كانت الحالة 'sold' فتم نقل الملكية — فقط المشتري الجديد يقدر يقدم بلاغ
           if (registeredPhone.status === 'sold') {

@@ -658,6 +658,7 @@ export default {
   "failed_to_take_photo": "फोटो लेने में विफल",
   "file_too_large_10mb": "फ़ाइल बहुत बड़ी है (अधिकतम 10MB)",
   "phone_already_registered_report_if_lost": "यह फोन पहले से पंजीकृत है, आप इसे खोया हुआ रिपोर्ट कर सकते हैं",
+  "phone_sold_by_this_account": "यह फ़ोन इस खाते से बेचा गया है। नई रिपोर्ट बनाने से पहले कृपया फ़ोन को फिर से पंजीकृत करें।",
   "imei_already_reported_as_lost": "यह फोन पहले ही खोया हुआ रिपोर्ट किया जा चुका है",
   // Duplicate removed: "error_fetching_data": "डेटा लाने में त्रुटि",
   "report_submitted_successfully": "रिपोर्ट सफलतापूर्वक जमा की गई",

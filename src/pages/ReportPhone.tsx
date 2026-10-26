@@ -1152,6 +1152,10 @@ const ReportPhone: React.FC = () => {
         toast({ title: t('error'), description: t('invalid_imei'), variant: 'destructive' });
         return;
       }
+      if (error?.response?.data?.error === 'phone_sold_by_this_account') {
+        toast({ title: t('access_denied'), description: t('phone_sold_by_this_account'), variant: 'destructive' });
+        return;
+      }
       if (error.message && (error.message.includes('كلمة المرور') || error.message.toLowerCase().includes('password'))) {
         setFormData(prev => ({ ...prev, password: '' }));
         setModalPassword('');

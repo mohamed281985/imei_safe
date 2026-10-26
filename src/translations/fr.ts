@@ -665,6 +665,7 @@ export default {
   "failed_to_take_photo": "Échec de la prise de photo",
   "file_too_large_10mb": "Fichier trop volumineux (Max 10 Mo)",
   "phone_already_registered_report_if_lost": "Ce téléphone est déjà enregistré, vous pouvez le signaler comme perdu",
+  "phone_sold_by_this_account": "Ce téléphone a été vendu depuis ce compte. Veuillez le réenregistrer avant de créer un nouveau signalement.",
   "imei_already_reported_as_lost": "Ce téléphone a déjà été signalé comme perdu",
   "error_fetching_data": "Erreur lors de la récupération des données",
   "report_submitted_successfully": "Rapport soumis avec succès",

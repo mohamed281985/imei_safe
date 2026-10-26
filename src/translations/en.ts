@@ -663,6 +663,7 @@ export default {
   "failed_to_take_photo": "Failed to take photo",
   "file_too_large_10mb": "File too large (Max 10MB)",
   "phone_already_registered_report_if_lost": "This phone is already registered, you can report it as lost",
+  "phone_sold_by_this_account": "This phone was sold from this account. Please register the phone again before creating a new report.",
   "imei_already_reported_as_lost": "This phone has already been reported as lost",
   // Duplicate removed: "error_fetching_data": "Error fetching data",
   "report_submitted_successfully": "Report submitted successfully",

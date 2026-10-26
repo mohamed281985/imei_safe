@@ -683,6 +683,7 @@ export default {
   "failed_to_take_photo": "فشل التقاط الصورة",
   "file_too_large_10mb": "حجم الملف كبير جداً (الحد الأقصى 10 ميجابايت)",
   "phone_already_registered_report_if_lost": "هذا الهاتف مسجل بالفعل، يمكنك الإبلاغ عنه كمفقود",
+  "phone_sold_by_this_account": "تم بيع هذا الهاتف من هذا الحساب. برجاء تسجيل الهاتف مرة أخرى قبل إنشاء بلاغ جديد.",
   "imei_already_reported_as_lost": "تم الإبلاغ عن هذا الهاتف كمفقود بالفعل",
   // "error_fetching_data": "خطأ في جلب البيانات",
   "report_submitted_successfully": "تم إرسال البلاغ بنجاح",
