@@ -353,13 +353,13 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
       try {
         const { data: { session } } = await supabase.auth.getSession();
         const token = session?.access_token;
-        await axiosInstance.post('/api/resolve-report', { imei_encrypted: phone.imei_encrypted, dismissForTransfer: true });
+        await axiosInstance.post('/api/resolve-report', { imei_encrypted: phone.imei_encrypted });
       } catch (e) {
         console.error('Failed to resolve report for phone', phoneId, e);
       }
     }
 
-    toast({ title: t('success_title'), description: t('phone_report_removed_after_sale') });
+    toast({ title: t('success_title'), description: t('phones_status_updated') });
     setSelectedPhones([]);
     onClose();
     setRemovedPhoneIds(prev => Array.from(new Set([...prev, ...selectedPhones])));

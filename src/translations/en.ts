@@ -107,7 +107,6 @@ export default {
   "report_status_updated_successfully": "Report status updated successfully.",
   "phone_status_update_failed": "Failed to update phone status.",
   "phone_status_transferred_note": "The report will remain active and the phone will be removed from your registered phones list.",
-  "phone_report_removed_after_sale": "This phone was sold from this account and the report was removed. Please register the phone again.",
   "phones_status_updated": "Phone status updated.",
   "alert_title": "Alert",
   "success_title": "Success",

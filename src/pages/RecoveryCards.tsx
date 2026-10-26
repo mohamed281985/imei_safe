@@ -89,7 +89,7 @@ const RecoveryCards: React.FC = () => {
 
       if (phone.imei_encrypted) {
         try {
-          await axiosInstance.post('/api/resolve-report', { imei_encrypted: phone.imei_encrypted, dismissForTransfer: true });
+          await axiosInstance.post('/api/resolve-report', { imei_encrypted: phone.imei_encrypted });
         } catch (error: any) {
           if (error?.response?.status !== 404) throw error;
         }
@@ -97,7 +97,7 @@ const RecoveryCards: React.FC = () => {
 
       setPhones(prev => prev.filter(item => item.id !== phone.id));
       setPhonePendingSale(null);
-      toast.success(t('phone_report_removed_after_sale'));
+      toast.success(t('phones_status_updated'));
     } catch (error: any) {
       console.error('Failed to mark phone as sold:', error);
       toast.error(error?.response?.data?.error || t('phone_status_update_failed'));

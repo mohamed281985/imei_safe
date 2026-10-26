@@ -39,7 +39,7 @@ const MyReports: React.FC = () => {
       }
       
       // جلب البلاغات الخاصة بالمستخدم الحالي فقط
-      const { data, error } = await supabase.from('phone_reports').select('*').eq('user_id', userId).neq('status', 'deleted');
+      const { data, error } = await supabase.from('phone_reports').select('*').eq('user_id', userId);
       console.log('Fetched reports:', data, 'Error:', error, 'userId:', userId);
       if (error) {
         console.error('Error fetching reports:', error);

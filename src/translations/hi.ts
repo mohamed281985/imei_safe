@@ -108,7 +108,6 @@ export default {
   "report_status_updated_successfully": "रिपोर्ट की स्थिति सफलतापूर्वक अपडेट की गई।",
   "phone_status_update_failed": "फ़ोन की स्थिति अपडेट करने में विफल।",
   "phone_status_transferred_note": "रिपोर्ट सक्रिय रहेगी और फ़ोन आपके पंजीकृत फ़ोनों की सूची से हटा दिया जाएगा।",
-  "phone_report_removed_after_sale": "यह फ़ोन इस खाते से बेच दिया गया है और रिपोर्ट हटा दी गई है। कृपया फ़ोन को फिर से पंजीकृत करें।",
   "phones_status_updated": "चयनित फ़ोनों की स्थिति अपडेट की गई।",
   "alert_title": "चेतावनी",
   "success_title": "सफलता",
