@@ -664,6 +664,13 @@ const ReportPhone: React.FC = () => {
           result.isOtherUser = result.isOtherUser ?? (checkResult.isOtherUser ?? false);
           result.isTransferred = result.isTransferred ?? checkResult.isTransferred;
           result.isSoldByCurrentAccount = result.isSoldByCurrentAccount ?? checkResult.isSoldByCurrentAccount;
+
+          if (checkResult.isTransferred && !checkResult.isSoldByCurrentAccount) {
+            // Treat a transferred registration as unregistered for the new holder.
+            result.isRegistered = false;
+            result.isOwner = false;
+            result.found = Boolean(result.hasActiveReport);
+          }
         }
 
         // حالة 1: هاتف جديد (غير مسجل)

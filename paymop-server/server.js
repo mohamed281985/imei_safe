@@ -6893,14 +6893,30 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
 
       if (existingPhonesError) throw existingPhonesError;
 
-      const latestExistingPhone = (existingPhones || []).sort((left, right) => {
+      const { data: legacyPhones, error: legacyPhonesError } = await supabase
+        .from('registered_phones')
+        .select('id, user_id, status, imei, imei_hash, registration_date, created_at, last_confirmed_at')
+        .is('imei_hash', null);
+
+      if (legacyPhonesError) throw legacyPhonesError;
+
+      const normalizedRegistrationImei = normalizeDigitsOnly(rawImei);
+      const matchingLegacyPhones = (legacyPhones || []).filter((phone) => (
+        normalizeDigitsOnly(decryptField(phone.imei)) === normalizedRegistrationImei
+      ));
+      const matchingExistingPhones = [
+        ...(existingPhones || []),
+        ...matchingLegacyPhones
+      ];
+      const uniqueExistingPhones = [...new Map(matchingExistingPhones.map((phone) => [phone.id, phone])).values()];
+      const orderedExistingPhones = uniqueExistingPhones.sort((left, right) => {
         const leftDate = Date.parse(left.registration_date || left.created_at || '') || 0;
         const rightDate = Date.parse(right.registration_date || right.created_at || '') || 0;
         return rightDate - leftDate || Number(right.id || 0) - Number(left.id || 0);
-      })[0];
+      });
 
-      if (latestExistingPhone) {
-        const { phone: currentPhone } = await expireUnconfirmedPhone(latestExistingPhone);
+      for (const existingPhone of orderedExistingPhones) {
+        const { phone: currentPhone } = await expireUnconfirmedPhone(existingPhone);
         const currentStatus = String(currentPhone.status || '').toLowerCase();
         if (!['transferred', 'sold', 'rejected'].includes(currentStatus)) {
           return res.status(409).json({
