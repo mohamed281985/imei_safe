@@ -776,6 +776,19 @@ const ReportPhone: React.FC = () => {
           return;
         }
 
+        if (result.isSoldByCurrentAccount) {
+          setIsReadOnly(true);
+          setIsImeiRegistered(true);
+          setIsImeiValid(false);
+          setActiveReportWarning('phone_sold_by_this_account');
+          toast({
+            title: t('access_denied'),
+            description: t('phone_sold_by_this_account'),
+            variant: 'destructive',
+          });
+          return;
+        }
+
         if (result.found && result.isRegistered && inferredIsOwner) {
           // ⭐ التعديل الجديد: التعامل مع البيانات المسجلة للمالك الحالي
           // فصل رمز الدولة عن الرقم

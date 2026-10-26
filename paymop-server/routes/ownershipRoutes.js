@@ -282,6 +282,7 @@ const getImeiHash = (imei) => {
               isRegistered: true,
               isOwner: true,
               isTransferred: true,
+              isSoldByCurrentAccount: true,
               hasActiveReport: false,
               receipt_image_url: registeredPhone.receipt_image_url,
               owner_name: ownerName,
