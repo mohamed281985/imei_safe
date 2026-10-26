@@ -6642,6 +6642,15 @@ app.post('/api/check-imei', verifyJwtToken, async (req, res) => {
             maskedCountryKey: ownerCountryKey ? (String(ownerCountryKey).slice(0, 1) + '*'.repeat(Math.max(0, String(ownerCountryKey).length - 1))) : null
           });
         }
+
+        // Registrations still owned by another account must block duplicate registration.
+        return res.json({
+          exists: true,
+          isOtherUser: true,
+          isPendingReview: String(matchingPhone.status || '').toLowerCase() === 'pending',
+          phoneDetails: null,
+          phone_type: matchingPhone.phone_type || null
+        });
       }
     }
 
@@ -6886,37 +6895,27 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
     // أولاً: التحقق من عدم وجود بلاغ نشط لهذا الـ IMEI
     if (rawImei) {
       const imeiHash = crypto.createHash('sha256').update(String(normalizeDigitsOnly(rawImei))).digest('hex');
-      const { data: existingPhones, error: existingPhonesError } = await supabase
+      const normalizedRawImei = normalizeDigitsOnly(rawImei);
+      const { data: allExistingPhones, error: existingPhonesError } = await supabase
         .from('registered_phones')
-        .select('id, user_id, status, imei, imei_hash, registration_date, created_at, last_confirmed_at')
-        .eq('imei_hash', imeiHash);
+        .select('id, user_id, status, imei, imei_hash, registration_date, created_at, last_confirmed_at');
 
       if (existingPhonesError) throw existingPhonesError;
 
-      const { data: legacyPhones, error: legacyPhonesError } = await supabase
-        .from('registered_phones')
-        .select('id, user_id, status, imei, imei_hash, registration_date, created_at, last_confirmed_at')
-        .is('imei_hash', null);
+      const existingPhones = (allExistingPhones || []).filter((phone) => {
+        if (phone.imei_hash && phone.imei_hash === imeiHash) return true;
+        const storedImei = decryptField(phone.imei) || phone.imei || '';
+        return normalizeDigitsOnly(storedImei) === normalizedRawImei;
+      });
 
-      if (legacyPhonesError) throw legacyPhonesError;
-
-      const normalizedRegistrationImei = normalizeDigitsOnly(rawImei);
-      const matchingLegacyPhones = (legacyPhones || []).filter((phone) => (
-        normalizeDigitsOnly(decryptField(phone.imei)) === normalizedRegistrationImei
-      ));
-      const matchingExistingPhones = [
-        ...(existingPhones || []),
-        ...matchingLegacyPhones
-      ];
-      const uniqueExistingPhones = [...new Map(matchingExistingPhones.map((phone) => [phone.id, phone])).values()];
-      const orderedExistingPhones = uniqueExistingPhones.sort((left, right) => {
+      const latestExistingPhone = (existingPhones || []).sort((left, right) => {
         const leftDate = Date.parse(left.registration_date || left.created_at || '') || 0;
         const rightDate = Date.parse(right.registration_date || right.created_at || '') || 0;
         return rightDate - leftDate || Number(right.id || 0) - Number(left.id || 0);
-      });
+      })[0];
 
-      for (const existingPhone of orderedExistingPhones) {
-        const { phone: currentPhone } = await expireUnconfirmedPhone(existingPhone);
+      if (latestExistingPhone) {
+        const { phone: currentPhone } = await expireUnconfirmedPhone(latestExistingPhone);
         const currentStatus = String(currentPhone.status || '').toLowerCase();
         if (!['transferred', 'sold', 'rejected'].includes(currentStatus)) {
           return res.status(409).json({
