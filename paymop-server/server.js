@@ -5568,7 +5568,7 @@ app.get('/api/user-phones', verifyJwtToken, async (req, res) => {
       .from('registered_phones')
       .select('id, imei, imei_hash, phone_type, registration_date, last_confirmed_at, status, user_id')
       .eq('user_id', userId)
-      .not('status', 'eq', 'rejected'); // استبعاد الهواتف المرفوضة
+      .not('status', 'in', '(rejected,transferred)'); // استبعاد الهواتف المرفوضة والمنقولة من قائمة المالك السابق
 
     if (error) throw error;
 

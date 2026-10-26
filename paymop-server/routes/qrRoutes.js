@@ -152,6 +152,10 @@ export function registerQrRoutes({ app, supabase, verifyJwtToken, sendError, dec
       const phone = await fetchRegisteredPhoneById(supabase, phoneId);
       if (!phone) return res.status(404).json({ error: 'Phone not found' });
 
+      if (String(phone.status || '').toLowerCase() === 'transferred') {
+        return res.status(404).json({ error: 'Recovery card is no longer active' });
+      }
+
       // ✅ التحقق الأساسي: المستخدم يجب أن يكون هو صاحب السجل (user_id)
      if (phone.user_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
 
@@ -175,6 +179,10 @@ export function registerQrRoutes({ app, supabase, verifyJwtToken, sendError, dec
 
       const phone = await fetchRegisteredPhoneById(supabase, phoneId);
       if (!phone) return res.status(404).json({ error: 'Phone not found' });
+
+      if (String(phone.status || '').toLowerCase() === 'transferred') {
+        return res.status(404).json({ error: 'Recovery card is no longer active' });
+      }
       
       // ✅ التحقق الأساسي: المستخدم يجب أن يكون هو صاحب السجل (user_id)
       if (phone.user_id !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
