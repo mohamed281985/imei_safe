@@ -118,6 +118,7 @@ export default {
   "report_status_updated_successfully": "Statut du rapport mis à jour avec succès.",
   "phone_status_update_failed": "Échec de la mise à jour du statut du téléphone.",
   "phone_status_transferred_note": "Le rapport restera actif et le téléphone sera retiré de votre liste de téléphones enregistrés.",
+  "phone_report_removed_after_sale": "Ce téléphone a été vendu depuis ce compte et le signalement a été supprimé. Veuillez enregistrer le téléphone à nouveau.",
   "phones_status_updated": "Statut des téléphones sélectionnés mis à jour.",
   "alert_title": "Alerte",
   "success_title": "Succès",

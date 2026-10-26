@@ -804,12 +804,19 @@ const RegisterPhone: React.FC = () => {
           </div>
         ) : typeData.type === 'phoneImage' ? (
           <div className="overflow-hidden rounded-lg border border-sky-200 bg-white p-1.5 shadow-sm transition-colors duration-300 hover:border-sky-400">
-            <img
-              src={imeiPhotoGuide}
-              alt={t('phone_image_instructions')}
-              className="aspect-[3/2] w-full rounded-md object-contain"
-              loading="lazy"
-            />
+            <button
+              type="button"
+              onClick={() => { setFullImageUrl(imeiPhotoGuide); setShowFullImage(true); }}
+              className="block w-full cursor-zoom-in rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+              aria-label={t('phone_image_instructions')}
+            >
+              <img
+                src={imeiPhotoGuide}
+                alt={t('phone_image_instructions')}
+                className="aspect-[3/2] w-full rounded-md object-contain"
+                loading="lazy"
+              />
+            </button>
           </div>
         ) : (
           <div className="h-64 border-2 border-dashed border-imei-cyan/20 rounded-lg flex flex-col items-center justify-center bg-gradient-to-b from-imei-dark/30 to-imei-darker/30 group hover:border-imei-cyan/40 transition-all duration-300">

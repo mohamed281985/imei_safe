@@ -1147,7 +1147,7 @@ const getImeiHash = (imei) => {
   // Endpoint: تحقق مما إذا كان هناك بلاغ "active" ل imei مشفّر (لا يغيّر الحالة)
   app.post('/api/check-report-active', verifyJwtToken, async (req, res) => {
     try {
-      const { imei_encrypted } = req.body || {};
+      const { imei_encrypted, dismissForTransfer = false } = req.body || {};
       const userId = req.user?.id;
       if (!userId) return res.status(401).json({ success: false, error: 'Unauthorized' });
       if (!imei_encrypted) return res.status(400).json({ success: false, error: 'imei_encrypted is required' });
@@ -1296,7 +1296,7 @@ const getImeiHash = (imei) => {
       const ids = matching.map(m => m.id);
       const { data: updated, error: updateErr } = await supabase
         .from('phone_reports')
-        .update({ status: 'resolved' })
+        .update({ status: dismissForTransfer ? 'deleted' : 'resolved' })
         .in('id', ids)
         .select();
       if (updateErr) throw updateErr;
@@ -1306,11 +1306,11 @@ const getImeiHash = (imei) => {
         try {
           await logAudit({
             userId,
-            action: 'resolve_report',
+            action: dismissForTransfer ? 'dismiss_report_after_transfer' : 'resolve_report',
             resourceType: 'phone_report',
             resourceId: id,
             oldValues: { status: 'active' },
-            newValues: { status: 'resolved' },
+            newValues: { status: dismissForTransfer ? 'deleted' : 'resolved' },
             ip: req.ip,
             userAgent: req.headers['user-agent']
           });
