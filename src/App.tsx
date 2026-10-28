@@ -31,6 +31,7 @@ const LanguageSelect = lazy(() => import("./pages/LanguageSelect"));
 const Welcome = lazy(() => import("./pages/Welcome"));
 const Login = lazy(() => import("./pages/Login"));
 const Signup = lazy(() => import("./pages/Signup"));
+const AccountRequired = lazy(() => import("./pages/AccountRequired"));
 const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const ReportPhone = lazy(() => import("./pages/ReportPhone"));
@@ -412,15 +413,17 @@ const AppCore = () => {
 
             <Route path="/login" element={<GuestGuard><Login /></GuestGuard>} />
             <Route path="/signup" element={<GuestGuard><Signup /></GuestGuard>} />
+            <Route path="/account-required" element={<AccountRequired />} />
             <Route path="/forgot-password" element={<GuestGuard><ForgotPassword /></GuestGuard>} />
 
             <Route path="/dashboard" element={<AuthGuard><Dashboard /></AuthGuard>} />
             <Route path="/report" element={<AuthGuard><ReportPhone /></AuthGuard>} />
-            <Route path="/search" element={<AuthGuard><SearchIMEI /></AuthGuard>} />
+            <Route path="/search" element={<SearchIMEI />} />
+            <Route path="/welcome-search" element={<SearchIMEI />} />
             <Route path="/original-phone-guide" element={<AuthGuard><OriginalPhoneGuide /></AuthGuard>} />
             <Route path="/phone-safety-tips" element={<AuthGuard><PhoneSafetyTips /></AuthGuard>} />
             <Route path="/phone/:id" element={<PhoneDetails />} />
-            <Route path="/ownership-transfer" element={<OwnershipTransfer />} />
+            <Route path="/ownership-transfer" element={<AuthGuard><OwnershipTransfer /></AuthGuard>} />
 
             <Route path="/pay/:id" element={<AuthGuard><PayToUnlock /></AuthGuard>} />
             <Route path="/register-phone" element={<AuthGuard><RegisterPhone /></AuthGuard>} />

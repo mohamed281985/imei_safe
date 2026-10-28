@@ -812,7 +812,7 @@ toast({ title: t('success'), description: t('biometric_enabled_success') });
                     {/* Legal Information Section */}
                     <div className="mb-24">
                         <h3 className="text-xl font-bold text-blue-600 mb-3">{t('legal_info')}</h3>
-                        <div className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg overflow-hidden ">
+                        <div className="bg-white/95 rounded-xl shadow-lg overflow-hidden ">
                             <Link
                                 to="/privacy-policy"
                                 className="w-full flex items-center justify-between p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors"

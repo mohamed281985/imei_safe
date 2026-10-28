@@ -27,6 +27,45 @@ const getImeiHash = (imei) => {
   }
 };
 
+const GUEST_SEARCH_LIMIT = 3;
+const GUEST_SESSION_TTL_SECONDS = 24 * 60 * 60;
+const guestSessionSecret = process.env.SESSION_SECRET || 'dev-only-session-secret-not-for-production';
+
+const guestIpHash = (ip) => crypto.createHmac('sha256', guestSessionSecret).update(String(ip || '')).digest('hex');
+
+const signGuestSession = (ip) => {
+  const payload = Buffer.from(JSON.stringify({ ip: guestIpHash(ip), exp: Math.floor(Date.now() / 1000) + GUEST_SESSION_TTL_SECONDS })).toString('base64url');
+  const signature = crypto.createHmac('sha256', guestSessionSecret).update(payload).digest('base64url');
+  return `${payload}.${signature}`;
+};
+
+const verifyGuestSession = (token, ip) => {
+  if (typeof token !== 'string') return null;
+  const [payload, signature, extra] = token.split('.');
+  if (!payload || !signature || extra) return null;
+
+  const expected = crypto.createHmac('sha256', guestSessionSecret).update(payload).digest();
+  let actual;
+  try {
+    actual = Buffer.from(signature, 'base64url');
+  } catch {
+    return null;
+  }
+  if (actual.length !== expected.length || !crypto.timingSafeEqual(actual, expected)) return null;
+
+  try {
+    const session = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    if (!session.exp || session.exp <= Math.floor(Date.now() / 1000) || session.ip !== guestIpHash(ip)) return null;
+    return session;
+  } catch {
+    return null;
+  }
+};
+
+app.post('/api/guest-session', searchImeiLimiter, (req, res) => {
+  return res.json({ token: signGuestSession(req.ip), expiresIn: GUEST_SESSION_TTL_SECONDS, dailyLimit: GUEST_SEARCH_LIMIT });
+});
+
 app.post('/api/send-fcm-v1', verifyJwtToken, async (req, res) => {
   try {
     if (!req.user?.id) {
@@ -211,46 +250,60 @@ app.post('/api/search-imei', searchImeiLimiter, async (req, res) => {
       return res.status(400).json({ error: 'IMEI is required' });
     }
 
-    // التحقق من صحة التوكن واستخراج userId منه
+    // Authenticated users use their verified Supabase identity; guests use a signed, IP-bound session.
     const authHeader = req.headers['authorization'];
-    if (!authHeader) {
-      return res.status(401).json({ error: 'Unauthorized: No token provided' });
+    let authenticatedUserId = null;
+    let authenticatedUser = null;
+    let appUser = null;
+    let isGuest = false;
+
+    if (authHeader?.startsWith('Guest ')) {
+      const guestSession = verifyGuestSession(authHeader.slice(6), req.ip);
+      if (!guestSession) return res.status(401).json({ error: 'Invalid guest session' });
+
+      const { data: usage, error: usageError } = await supabase.rpc('consume_guest_search', {
+        p_guest_id: guestIpHash(req.ip),
+        p_daily_limit: GUEST_SEARCH_LIMIT
+      });
+      if (usageError) {
+        console.error('Guest search usage could not be enforced:', usageError);
+        return res.status(503).json({ error: 'Guest search is temporarily unavailable' });
+      }
+      if (!usage?.allowed) {
+        return res.status(429).json({ error: 'guest_daily_limit_reached', limit: GUEST_SEARCH_LIMIT, remaining: 0 });
+      }
+      isGuest = true;
+    } else {
+      if (!authHeader) return res.status(401).json({ error: 'Unauthorized: No token provided' });
+
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
+      const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+      if (authError || !user) return res.status(401).json({ error: 'Unauthorized: Invalid token' });
+
+      authenticatedUser = user;
+      authenticatedUserId = user.id;
+      const { data: userRecord, error: appUserError } = await supabase
+        .from('users')
+        .select('role')
+        .eq('id', authenticatedUserId)
+        .maybeSingle();
+
+      if (appUserError) return res.status(500).json({ error: 'Could not verify user role' });
+      appUser = userRecord;
+
+      const limitResult = await checkUserLimit(
+        authenticatedUserId,
+        authenticatedUser.email,
+        'search_imei',
+        false,
+        appUser?.role
+      );
+      if (!limitResult.allowed) return res.status(403).json(limitResult);
     }
 
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-
-    if (authError || !user) {
-      return res.status(401).json({ error: 'Unauthorized: Invalid token' });
-    }
-
-    // استخدام userId من التوكن بدلاً من الطلب
-    const authenticatedUserId = user.id;
-    const { data: appUser, error: appUserError } = await supabase
-      .from('users')
-      .select('role')
-      .eq('id', authenticatedUserId)
-      .maybeSingle();
-
-    if (appUserError) {
-      return res.status(500).json({ error: 'Could not verify user role' });
-    }
     if (!isImeiAllowed(imei, appUser?.role)) {
       return res.status(400).json({ error: 'invalid_imei', message: 'Enter a valid 15-digit IMEI' });
     }
-
-// التحقق من حد البحث من داخل السيرفر نفسه
-const limitResult = await checkUserLimit(
-  authenticatedUserId,
-  user.email,
-  'search_imei',
-  false,
-  appUser?.role
-);
-
-if (!limitResult.allowed) {
-  return res.status(403).json(limitResult);
-}
     // 1. البحث في الهواتف المسجلة
     // ملاحظة: لا يمكن البحث المباشر بالقيمة المشفرة لأن التشفير يستخدم IV عشوائي (قيم مختلفة لنفس الـ IMEI)
     // لذلك نجلب البيانات ونفك تشفيرها للمقارنة
@@ -322,7 +375,18 @@ if (!limitResult.allowed) {
       }
     }) : null;
 
-    if (activeReportAny) {
+    if (isGuest) {
+      const hasReport = !!activeReportAny;
+      const isRegistered = !!regPhone;
+      res.json({
+        found: hasReport,
+        masked: true,
+        isOwner: false,
+        status: hasReport ? 'active' : null,
+        registered: isRegistered,
+        isRegistered
+      });
+    } else if (activeReportAny) {
       // يوجد بلاغ فعال — نُظهره بغض النظر عن هوية المبلغ
       // فك تشفير رقم الواتساب إن وجد
       let whatsappNumber = null;
@@ -380,7 +444,7 @@ if (!limitResult.allowed) {
     }
 
     // تسجيل البحث الناجح للتحليل وإحصائيات الاستخدام
-    try {
+    if (!isGuest) try {
       await supabase.from('search_history').insert({
         user_id: authenticatedUserId,
         imei: imei,

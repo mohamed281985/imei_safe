@@ -22,8 +22,7 @@ const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
   }
   
   if (!isAuthenticated) {
-    // Redirect to login with return path
-    return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+    return <Navigate to="/account-required" state={{ returnTo: location.pathname }} replace />;
   }
   
   // إذا كان المستخدم مصادقًا عليه ولكن ملفه التجاري غير مكتمل، قم بتوجيهه إلى صفحة الإكمال
