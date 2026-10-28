@@ -52,14 +52,6 @@ interface AuthContextType {
   refreshNotifications: () => Promise<void>; // دالة لتحديث عدد الإشعارات
 }
 
-// Mock user data for demo purposes
-const MOCK_USERS = [
-  { id: '1', email: 'user@example.com', password: 'password', username: 'user', phoneNumber: '+1234567890', isAdmin: false },
-  { id: '2', email: 'admin@example.com', password: 'admin123', username: 'admin', phoneNumber: '+9876543210', isAdmin: true },
-  // أضف المستخدم الجديد للتمكن من تسجيل الدخول باستخدامه
-  { id: '3', email: 'maly5424@gmail.com', password: 'password', username: 'maly', phoneNumber: '01127520059', isAdmin: false }
-];
-
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const SESSION_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 

@@ -14,6 +14,7 @@ import { useScrollToTop } from '../hooks/useScrollToTop';
 const Login: React.FC = () => {
   useScrollToTop();
   const { t } = useLanguage();
+  const navigate = useNavigate();
   
   return (
     <div 

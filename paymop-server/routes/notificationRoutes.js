@@ -62,8 +62,24 @@ const verifyGuestSession = (token, ip) => {
   }
 };
 
-app.post('/api/guest-session', searchImeiLimiter, (req, res) => {
-  return res.json({ token: signGuestSession(req.ip), expiresIn: GUEST_SESSION_TTL_SECONDS, dailyLimit: GUEST_SEARCH_LIMIT });
+app.post('/api/guest-session', searchImeiLimiter, async (req, res) => {
+  try {
+    const guestId = guestIpHash(req.ip);
+    const { data: remaining, error } = await supabase.rpc('get_guest_search_remaining', {
+      p_guest_id: guestId,
+      p_daily_limit: GUEST_SEARCH_LIMIT
+    });
+    if (error) throw error;
+    return res.json({
+      token: signGuestSession(req.ip),
+      expiresIn: GUEST_SESSION_TTL_SECONDS,
+      dailyLimit: GUEST_SEARCH_LIMIT,
+      remaining: Number(remaining?.remaining ?? GUEST_SEARCH_LIMIT)
+    });
+  } catch (error) {
+    console.error('Guest session could not be initialized:', error);
+    return res.status(503).json({ error: 'Guest search is temporarily unavailable' });
+  }
 });
 
 app.post('/api/send-fcm-v1', verifyJwtToken, async (req, res) => {
@@ -256,10 +272,14 @@ app.post('/api/search-imei', searchImeiLimiter, async (req, res) => {
     let authenticatedUser = null;
     let appUser = null;
     let isGuest = false;
+    let guestUsage = null;
 
     if (authHeader?.startsWith('Guest ')) {
       const guestSession = verifyGuestSession(authHeader.slice(6), req.ip);
       if (!guestSession) return res.status(401).json({ error: 'Invalid guest session' });
+      if (!isImeiAllowed(imei)) {
+        return res.status(400).json({ error: 'invalid_imei', message: 'Enter a valid 15-digit IMEI' });
+      }
 
       const { data: usage, error: usageError } = await supabase.rpc('consume_guest_search', {
         p_guest_id: guestIpHash(req.ip),
@@ -272,6 +292,7 @@ app.post('/api/search-imei', searchImeiLimiter, async (req, res) => {
       if (!usage?.allowed) {
         return res.status(429).json({ error: 'guest_daily_limit_reached', limit: GUEST_SEARCH_LIMIT, remaining: 0 });
       }
+      guestUsage = usage;
       isGuest = true;
     } else {
       if (!authHeader) return res.status(401).json({ error: 'Unauthorized: No token provided' });
@@ -291,6 +312,10 @@ app.post('/api/search-imei', searchImeiLimiter, async (req, res) => {
       if (appUserError) return res.status(500).json({ error: 'Could not verify user role' });
       appUser = userRecord;
 
+      if (!isImeiAllowed(imei, appUser?.role)) {
+        return res.status(400).json({ error: 'invalid_imei', message: 'Enter a valid 15-digit IMEI' });
+      }
+
       const limitResult = await checkUserLimit(
         authenticatedUserId,
         authenticatedUser.email,
@@ -301,9 +326,6 @@ app.post('/api/search-imei', searchImeiLimiter, async (req, res) => {
       if (!limitResult.allowed) return res.status(403).json(limitResult);
     }
 
-    if (!isImeiAllowed(imei, appUser?.role)) {
-      return res.status(400).json({ error: 'invalid_imei', message: 'Enter a valid 15-digit IMEI' });
-    }
     // 1. البحث في الهواتف المسجلة
     // ملاحظة: لا يمكن البحث المباشر بالقيمة المشفرة لأن التشفير يستخدم IV عشوائي (قيم مختلفة لنفس الـ IMEI)
     // لذلك نجلب البيانات ونفك تشفيرها للمقارنة
@@ -326,9 +348,6 @@ app.post('/api/search-imei', searchImeiLimiter, async (req, res) => {
       const rightDate = Date.parse(right.registration_date || right.created_at || '') || 0;
       return rightDate - leftDate || Number(right.id || 0) - Number(left.id || 0);
     });
-    const regPhone = matchingRegisteredPhones[0] || null;
-
-    // 2. البحث في البلاغات
     const imeiHash = getImeiHash(imei);
     let allReports = [];
     let reportError = null;
@@ -384,7 +403,8 @@ app.post('/api/search-imei', searchImeiLimiter, async (req, res) => {
         isOwner: false,
         status: hasReport ? 'active' : null,
         registered: isRegistered,
-        isRegistered
+        isRegistered,
+        guestSearchRemaining: guestUsage?.remaining ?? 0
       });
     } else if (activeReportAny) {
       // يوجد بلاغ فعال — نُظهره بغض النظر عن هوية المبلغ

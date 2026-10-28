@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { AppLauncher } from '@capacitor/app-launcher';
 import { Capacitor, registerPlugin } from '@capacitor/core';
@@ -21,6 +21,7 @@ const NativeAppSettings = registerPlugin<AppSettingsPlugin>('NotificationSetting
 export default function BusinessSignup() {
   useScrollToTop();
   const navigate = useNavigate();
+  const location = useLocation();
   const { t, language } = useLanguage();
   const [formData, setFormData] = useState({
     email: '',
@@ -266,7 +267,7 @@ export default function BusinessSignup() {
         // لا نوقف عملية التسجيل بسبب فشل إنشاء حساب الأعمال
       }
 
-      setTimeout(() => { window.location.href = '/login'; }, 1200);
+      setTimeout(() => navigate('/login', { state: { returnTo: location.state?.returnTo, returnState: location.state?.returnState } }), 1200);
     } catch (error: any) {
       toast({ title: '❌ حدث خطأ', description: error?.message || String(error), variant: 'destructive' });
     } finally {

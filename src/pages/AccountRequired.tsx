@@ -21,6 +21,7 @@ const AccountRequired: React.FC = () => {
   const navigate = useNavigate();
   const { language } = useLanguage();
   const returnTo = ACTION_PATHS.has(location.state?.returnTo) ? location.state.returnTo : '/dashboard';
+  const returnState = location.state?.returnState;
   const isArabic = language === 'ar';
 
   const actionTitle: Record<string, string> = isArabic ? {
@@ -41,7 +42,7 @@ const AccountRequired: React.FC = () => {
 
   const chooseAccount = (type: 'personal' | 'business') => {
     navigate(type === 'personal' ? '/signup' : '/business-signup', {
-      state: { returnTo },
+      state: { returnTo, returnState },
     });
   };
 
@@ -68,6 +69,13 @@ const AccountRequired: React.FC = () => {
             <Button className="h-14 gap-2 bg-slate-800 text-base hover:bg-slate-900" onClick={() => chooseAccount('business')}>
               <BriefcaseBusiness size={20} />
               {isArabic ? 'حساب تجاري' : 'Business account'}
+            </Button>
+            <Button
+              variant="outline"
+              className="sm:col-span-2"
+              onClick={() => navigate('/login', { state: { returnTo, returnState } })}
+            >
+              {isArabic ? 'لدي حساب بالفعل، تسجيل الدخول' : 'I already have an account, sign in'}
             </Button>
           </CardContent>
         </Card>

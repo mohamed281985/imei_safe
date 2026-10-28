@@ -25,7 +25,7 @@ const WelcomeSearch: React.FC = () => {
   const { i18n } = useTranslation();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const userRole = useAppUserRole(user?.id);
   const [isNotifying, setIsNotifying] = useState(false);
 
@@ -42,6 +42,31 @@ const WelcomeSearch: React.FC = () => {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [userId, setUserId] = useState<string>('');
   const [whatsappEnabled, setWhatsappEnabled] = useState<boolean>(false);
+  const [guestToken, setGuestToken] = useState<string | null>(null);
+  const [guestSearchRemaining, setGuestSearchRemaining] = useState<number | null>(null);
+  const [guestPhoneRegistered, setGuestPhoneRegistered] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (authLoading || user) return;
+    let active = true;
+    const initializeGuestSession = async () => {
+      try {
+        const response = await axiosInstance.post('/api/guest-session');
+        if (!active) return;
+        const token = response.data?.token;
+        if (token) {
+          sessionStorage.setItem('imei_guest_session', token);
+          setGuestToken(token);
+          setGuestSearchRemaining(Number(response.data?.remaining ?? response.data?.dailyLimit ?? 3));
+        }
+      } catch {
+        if (active) setGuestToken(null);
+      }
+    };
+
+    void initializeGuestSession();
+    return () => { active = false; };
+  }, [authLoading, user]);
   
   // متغيرات جديدة للتعامل مع ميزة الواتساب
   const [ownerRole, setOwnerRole] = useState<string | null>(null);
@@ -118,25 +143,6 @@ const WelcomeSearch: React.FC = () => {
         variant: 'destructive'
       });
       return false;
-    }
-  };
-
-  // تحديث عدد عمليات البحث المستخدمة
-  const updateSearchUsage = async (userId: string) => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-
-      await axiosInstance.post('/api/increment-usage',
-        { type: 'search_imei' },
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        }
-      );
-    } catch (error) {
-      // تم تجاهل الخطأ في تحديث استخدام البحث
     }
   };
 
@@ -335,29 +341,33 @@ const WelcomeSearch: React.FC = () => {
     // ولكن يجب أيضاً التحقق من صحة الـ IMEI في الخادم لضمان أمان البيانات
     // الخادم يجب أن يرفض أي IMEI لا يطابق النمط المطلوب
 
-    // التحقق من تسجيل الدخول
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       setUserId(user.id);
     }
-    if (!user) {
+    if (!user && !guestToken) {
       toast({
         title: t('error'),
-        description: t('login_required_first'),
+        description: 'تعذر بدء جلسة الزائر. أعد فتح الصفحة أو سجّل الدخول.',
         variant: 'destructive'
       });
       return;
     }
 
-    // التحقق من حد البحث
-    const canSearch = await checkSearchLimit(user.id);
-    if (!canSearch) return;
+    if (user) {
+      const canSearch = await checkSearchLimit(user.id);
+      if (!canSearch) return;
+    } else if (guestSearchRemaining === 0) {
+      toast({ title: t('alert'), description: 'انتهت عمليات البحث اليومية للزائر.', variant: 'destructive' });
+      return;
+    }
 
     setIsSearching(true);
 
     try {
       setSearchResult(null);
       setRegisteredPhoneDetails(null);
+      setGuestPhoneRegistered(null);
       setPhoneId(null);
       setFoundReportStatus(null);
       setFoundReportDate(null);
@@ -379,21 +389,20 @@ const WelcomeSearch: React.FC = () => {
         { imei: imei },
         {
           headers: {
-            'Authorization': `Bearer ${token}`
+            'Authorization': user ? `Bearer ${token}` : `Guest ${guestToken}`
           }
         }
       );
       const result = response.data;
 
-      // تحديث عدد عمليات البحث
-      await updateSearchUsage(user.id);
+      if (!user) setGuestSearchRemaining(Number(result.guestSearchRemaining ?? Math.max(guestSearchRemaining - 1, 0)));
 
       // معالجة النتائج حسب ما يرجعه السيرفر فقط
       if (result.found) {
         setPhoneId(result.imei || imei); // عيّن phoneId دائماً
         setSearchResult('found');
         // تخزين فقط الحالة والتاريخ الضروريين للعرض
-        setFoundReportStatus(result.status || '');
+        setFoundReportStatus(result.status || (user ? '' : 'active'));
         setFoundReportDate(result.report_date || '');
         setLossLocation(result.loss_location || '');
         setLossTime(result.loss_time || '');
@@ -415,6 +424,14 @@ const WelcomeSearch: React.FC = () => {
         
         // لا نتحقق من الواتساب عند البحث - يظهر فقط بعد إبلاغ المالك
       } else if (result.registeredPhone || result.registered || result.isRegistered) {
+        if (!user) {
+          setPhoneId(imei);
+          setSearchResult('not_found');
+          setGuestPhoneRegistered(Boolean(result.isRegistered || result.registered));
+          setRegisteredPhoneDetails(null);
+          return;
+        }
+
         // Normalize registered phone data: the API may return different shapes
         const rp = result.registeredPhone
           ? result.registeredPhone
@@ -433,9 +450,11 @@ const WelcomeSearch: React.FC = () => {
           phone_type: rp.phone_type || result.phone_type,
         });
         setSearchResult('not_found');
+        setGuestPhoneRegistered(!user && Boolean(result.isRegistered || result.registered));
       } else {
         setPhoneId(imei); // حتى لو لم يوجد، عيّن IMEI المدخل
         setSearchResult('not_found');
+        setGuestPhoneRegistered(false);
         setRegisteredPhoneDetails(null);
         toast({
           title: t('info'),
@@ -444,9 +463,11 @@ const WelcomeSearch: React.FC = () => {
       }
     } catch (error) {
       const invalidImei = (error as any)?.response?.data?.error === 'invalid_imei';
+      const limitReached = (error as any)?.response?.data?.error === 'guest_daily_limit_reached';
+      if (limitReached) setGuestSearchRemaining(0);
       toast({
         title: t('error'),
-        description: invalidImei ? t('invalid_imei') : t('error_searching'),
+        description: limitReached ? 'انتهت عمليات البحث اليومية للزائر.' : invalidImei ? t('invalid_imei') : t('error_searching'),
         variant: 'destructive'
       });
     } finally {
@@ -518,13 +539,19 @@ const WelcomeSearch: React.FC = () => {
               marginTop: '1rem',
             }}
           >
-            <BackButton to="/dashboard" className="mr-4" />
+            <BackButton to={user ? '/dashboard' : '/welcome'} className="mr-4" />
             <div className="flex-1 text-center">
               <h1 className="text-2xl font-bold text-white">
                 {t('search_imei')}
               </h1>
             </div>
           </div>
+
+          {!user && guestSearchRemaining !== null && (
+            <div className="mb-4 rounded-md border border-orange-200 bg-orange-50 px-4 py-3 text-center text-sm font-medium text-orange-900" role="status">
+              البحث كزائر: متبقٍ {guestSearchRemaining} من 3 عمليات اليوم.
+            </div>
+          )}
 
           {/* Search Card */}
           {searchResult !== 'found' && (
@@ -646,7 +673,7 @@ const WelcomeSearch: React.FC = () => {
                       {/* صف بعمودين: وقت الفقد ووقت البلاغ */}
                       <div className="grid grid-cols-2 gap-4">
                         {/* وقت الفقد */}
-                        {lossTime ? (
+                        {user && lossTime ? (
                           <div className="flex items-center gap-3">
                             <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center flex-shrink-0">
                               <Clock size={24} className="text-slate-600" />
@@ -661,7 +688,7 @@ const WelcomeSearch: React.FC = () => {
                         ) : null}
 
                         {/* وقت البلاغ */}
-                        {foundReportDate ? (
+                        {user && foundReportDate ? (
                           <div className="flex items-center gap-3">
                             <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center flex-shrink-0">
                               <Clock size={24} className="text-slate-600" />
@@ -679,7 +706,7 @@ const WelcomeSearch: React.FC = () => {
                       {/* صف بعمودين: تاريخ الفقد وتاريخ البلاغ */}
                       <div className="grid grid-cols-2 gap-4">
                         {/* تاريخ الفقد */}
-                        {lossTime ? (
+                        {user && lossTime ? (
                           <div className="flex items-center gap-3">
                             <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center flex-shrink-0">
                               <Calendar size={24} className="text-slate-600" />
@@ -694,7 +721,7 @@ const WelcomeSearch: React.FC = () => {
                         ) : null}
 
                         {/* تاريخ البلاغ */}
-                        {foundReportDate ? (
+                        {user && foundReportDate ? (
                           <div className="flex items-center gap-3">
                             <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center flex-shrink-0">
                               <Calendar size={24} className="text-slate-600" />
@@ -710,7 +737,7 @@ const WelcomeSearch: React.FC = () => {
                       </div>
 
                       {/* صف مكان الفقد */}
-                      {lossLocation ? (
+                      {user && lossLocation ? (
                         <div className="flex items-center gap-3 bg-white/60 p-3 rounded-xl border border-red-100 shadow-sm">
                           <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center flex-shrink-0">
                             <MapPin size={24} className="text-slate-600" />
@@ -851,7 +878,7 @@ const WelcomeSearch: React.FC = () => {
               )}
 
               {/* Report Image for Active Status */}
-              {searchResult === 'found' && foundReportStatus === 'active' && (
+              {user && searchResult === 'found' && foundReportStatus === 'active' && (
                 <div className="bg-white rounded-xl p-4 shadow-xl border border-slate-100">
                   <h3 className="text-lg font-bold text-blue-600 mb-2">{t('report_and_box_image')}</h3>
                   <div className="relative">
@@ -865,7 +892,7 @@ const WelcomeSearch: React.FC = () => {
               )}
 
               {/* Notify Owner Button - تم تعديله لإظهار خيارات متعددة */}
-              {searchResult === 'found' && foundReportStatus === 'active' && (
+              {user && searchResult === 'found' && foundReportStatus === 'active' && (
                 <div className="flex flex-col sm:flex-row gap-3 w-full">
                   {/* زر إرسال إشعار للمالك */}
                   <Button
@@ -912,8 +939,24 @@ const WelcomeSearch: React.FC = () => {
               {searchResult === 'not_found' && !registeredPhoneDetails && (
                 <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
                   <p className="text-blue-600 text-lg text-center font-bold">
-                    {t('phone_not_registered_register_now')}
+                    {!user && guestPhoneRegistered
+                      ? 'هذا الهاتف مسجل في النظام. سجّل الدخول لعرض التفاصيل المتاحة لحسابك.'
+                      : t('phone_not_registered_register_now')}
                   </p>
+                </div>
+              )}
+
+              {!user && (
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <Button variant="outline" onClick={() => navigate('/account-required', { state: { returnTo: '/register-phone', returnState: { imei: phoneId || imei } } })}>
+                    تسجيل هاتف
+                  </Button>
+                  <Button variant="outline" onClick={() => navigate('/account-required', { state: { returnTo: '/report', returnState: { imei: phoneId || imei } } })}>
+                    تقديم بلاغ
+                  </Button>
+                  <Button variant="outline" onClick={() => navigate('/account-required', { state: { returnTo: '/ownership-transfer', returnState: { imei: phoneId || imei } } })}>
+                    نقل ملكية
+                  </Button>
                 </div>
               )}
             </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 // Contexts
 import { useLanguage } from '../contexts/LanguageContext';
@@ -35,6 +35,7 @@ const Signup: React.FC = () => {
   useScrollToTop();
   const { t, language } = useLanguage();
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   
   const [formData, setFormData] = useState<SignupFormData>({
@@ -220,7 +221,7 @@ const Signup: React.FC = () => {
         // لا نوقف عملية التسجيل بسبب فشل إنشاء الملف الشخصي
       }
 
-      navigate('/login');
+      navigate('/login', { state: { returnTo: location.state?.returnTo, returnState: location.state?.returnState } });
     } catch (error: any) {
       setSignupError(error?.message || t('signup_error'));
     } finally {

@@ -26,8 +26,10 @@ export function LoginForm({
   const location = useLocation();
   const params = new URLSearchParams(location.search);
   const redirect = params.get('redirect');
-  const safeRedirect = redirect && redirect.startsWith('/') && !redirect.startsWith('//') && !redirect.includes('://')
-    ? redirect
+  const requestedReturnTo = location.state?.returnTo || redirect;
+  const allowedReturnPaths = ['/register-phone', '/report', '/ownership-transfer', '/businesstransfer', '/BusinessTransferbuy', '/BusinessTransfersell'];
+  const safeRedirect = allowedReturnPaths.includes(requestedReturnTo)
+    ? requestedReturnTo
     : null;
   
   const [email, setEmail] = useState('');
@@ -67,7 +69,7 @@ export function LoginForm({
           navigate('/business-profile-complete', { replace: true });
         } else {
           if (safeRedirect) {
-            navigate(safeRedirect, { replace: true });
+            navigate(safeRedirect, { replace: true, state: location.state?.returnState });
           } else {
             navigate('/dashboard', { replace: true });
           }
