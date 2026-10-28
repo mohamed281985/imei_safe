@@ -11,9 +11,11 @@ type BackButtonProps = {
 const BackButton: React.FC<BackButtonProps> = ({ to, className }) => {
   const navigate = useNavigate();
 
-  const handleBackClick = () => {
+  const handleBackClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
     if (to) {
-      navigate(to);
+      navigate(to, { replace: true });
     } else {
       navigate(-1); // الرجوع خطوة واحدة في التاريخ إذا لم يتم تحديد مسار
     }
@@ -21,6 +23,7 @@ const BackButton: React.FC<BackButtonProps> = ({ to, className }) => {
 
   return (
     <button
+      type="button"
       onClick={handleBackClick}
       // تعديل: إضافة فئات w-10 و h-10 و flex للتوسيط لجعله دائريًا بشكل واضح
       className={`bg-orange-500 p-2 rounded-full hover:bg-orange-600 transition-colors w-10 h-10 flex items-center justify-center ${className}`}

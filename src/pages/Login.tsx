@@ -44,7 +44,10 @@ const Login: React.FC = () => {
             <CardContent className="space-y-4 p-2">
               <LoginForm hidePhoneField biometricButton={<BiometricButton />} />
               <AuthLinks />
-              <Button type="button" variant="outline" className="w-full border-orange-500 text-orange-700 hover:bg-orange-50" onClick={() => navigate('/search')}>
+              <Button type="button" variant="outline" className="w-full border-orange-500 text-orange-700 hover:bg-orange-50" onClick={() => {
+                sessionStorage.setItem('imei_guest_mode', 'true');
+                navigate('/dashboard', { replace: true });
+              }}>
                 دخول كزائر
               </Button>
             </CardContent>

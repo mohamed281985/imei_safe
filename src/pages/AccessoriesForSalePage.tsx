@@ -151,7 +151,8 @@ const AccessoriesForSalePage: React.FC = () => {
             let query: any = supabase
                 .from('accessories')
                 .select(`*, accessory_images(image_path, main_image)`)
-                .eq('status', 'active');
+                .eq('status', 'active')
+                .gt('expires_at', new Date().toISOString());
 
             if (userCountryName) {
                 const { data: countryNames } = await supabase

@@ -1199,7 +1199,7 @@ const ReportPhone: React.FC = () => {
         <PageAdvertisement pageName="reportphone" />
 
         <div className="flex items-center mb-6 pt-3" style={{ background: 'linear-gradient(to top, #053060 0%, #0a4d8c 100%)', padding: '0.3rem', borderRadius: '1rem', marginTop: '1rem' }}>
-          <BackButton className="mr-4" />
+          <BackButton to="/dashboard" className="mr-4" />
           <h1
             className="flex-1 text-center text-2xl font-bold"
             style={{ color: '#ffffff' }}

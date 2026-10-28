@@ -8,7 +8,7 @@ import { App as CapacitorApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import type { PluginListenerHandle } from '@capacitor/core';
 import { supabase } from './lib/supabase';
-import { Routes, Route, useNavigate, useLocation, Link } from "react-router-dom";
+import { Routes, Route, Navigate, useNavigate, useLocation, Link } from "react-router-dom";
 import { PushNotifications, Token } from '@capacitor/push-notifications';
 import { LocalNotifications } from '@capacitor/local-notifications';
 
@@ -416,7 +416,13 @@ const AppCore = () => {
             <Route path="/account-required" element={<AccountRequired />} />
             <Route path="/forgot-password" element={<GuestGuard><ForgotPassword /></GuestGuard>} />
 
-            <Route path="/dashboard" element={<AuthGuard><Dashboard /></AuthGuard>} />
+            <Route path="/dashboard" element={
+              user
+                ? <AuthGuard><Dashboard /></AuthGuard>
+                : sessionStorage.getItem('imei_guest_mode') === 'true'
+                  ? <Dashboard />
+                  : <Navigate to="/login" replace />
+            } />
             <Route path="/report" element={<AuthGuard><ReportPhone /></AuthGuard>} />
             <Route path="/search" element={<SearchIMEI />} />
             <Route path="/welcome-search" element={<SearchIMEI />} />

@@ -539,7 +539,7 @@ const WelcomeSearch: React.FC = () => {
               marginTop: '1rem',
             }}
           >
-            <BackButton to={user ? '/dashboard' : '/welcome'} className="mr-4" />
+            <BackButton to="/dashboard" className="mr-4" />
             <div className="flex-1 text-center">
               <h1 className="text-2xl font-bold text-white">
                 {t('search_imei')}

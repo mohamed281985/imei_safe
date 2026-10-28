@@ -7080,6 +7080,26 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
   }
 });
 
+const resolveSellListingExpiry = async (rawDuration) => {
+  const durationDays = Number(rawDuration);
+  if (!Number.isInteger(durationDays) || durationDays < 1 || durationDays > 365) return null;
+
+  const { data: configuredDuration, error } = await supabase
+    .from('ads_price')
+    .select('duration_days')
+    .eq('type', 'sell_phone')
+    .eq('duration_days', durationDays)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!configuredDuration) return null;
+
+  return {
+    durationDays,
+    expiresAt: new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString()
+  };
+};
+
 // Compatibility endpoint: create-phone (client previously posts to /api/create-phone)
 app.post('/api/create-phone', verifyJwtToken, async (req, res) => {
   const phoneData = { ...req.body };
@@ -7177,6 +7197,13 @@ app.post('/api/create-phone', verifyJwtToken, async (req, res) => {
   }
 
   try {
+    const listingExpiry = await resolveSellListingExpiry(phoneData.duration_days);
+    if (!listingExpiry) {
+      return res.status(400).json({ success: false, error: 'invalid_listing_duration' });
+    }
+    phoneData.duration_days = listingExpiry.durationDays;
+    phoneData.expires_at = listingExpiry.expiresAt;
+
     // Rate limit / plan checks
     // NOTE: Exempt phone sale listings from registration limits per product requirement.
     // Skipping `checkRegisterLimit(userId)` here so users can post phones for sale without quota.
@@ -7498,6 +7525,13 @@ app.post('/api/create-accessory', verifyJwtToken, async (req, res) => {
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
   try {
+    const listingExpiry = await resolveSellListingExpiry(accessoryData.duration_days);
+    if (!listingExpiry) {
+      return res.status(400).json({ success: false, error: 'invalid_listing_duration' });
+    }
+    accessoryData.duration_days = listingExpiry.durationDays;
+    accessoryData.expires_at = listingExpiry.expiresAt;
+
     // Ensure contact_methods is an object
     if (!accessoryData.contact_methods || typeof accessoryData.contact_methods !== 'object') accessoryData.contact_methods = {};
 

@@ -186,7 +186,8 @@ const PhonesForSale: React.FC = () => {
         let phoneQuery: any = supabase
           .from('phones')
           .select(`*, is_verified, phone_images(image_path, main_image)`, { count: 'exact' })
-          .eq('status', 'active');
+          .eq('status', 'active')
+          .gt('expires_at', new Date().toISOString());
 
         if (userCountryName) {
           const { data: countryNames } = await supabase

@@ -657,7 +657,8 @@ const Dashboard: React.FC = () => {
             latitude,
             longitude
           `)
-          .eq('status', 'active');
+          .eq('status', 'active')
+          .gt('expires_at', new Date().toISOString());
 
         // تطبيق فلتر حسب عمود countries فقط (مثل صفحة PhonesForSale)
         if (userCountryName) {
@@ -732,7 +733,8 @@ const Dashboard: React.FC = () => {
             latitude,
             longitude
           `)
-          .eq('status', 'active');
+          .eq('status', 'active')
+          .gt('expires_at', new Date().toISOString());
 
         // قبول اسم الدولة بالعربية أو الإنجليزية في بيانات الإكسسوار.
         if (userCountryName) {
@@ -1122,8 +1124,11 @@ const Dashboard: React.FC = () => {
                 to="/search"
                 className="flex min-w-0 flex-col items-center gap-1 rounded-xl border border-slate-200 bg-white/95 p-1.5 shadow-md transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-xl"
               >
-                <div className="flex h-11 w-full items-center justify-center rounded-lg bg-blue-950 p-1">
+                <div className="relative flex h-11 w-full items-center justify-center rounded-lg bg-blue-950 p-1">
                   <SearchCheck className="h-8 w-8 text-orange-400 drop-shadow-lg" strokeWidth={1.8} />
+                  <span className="absolute -right-1 -top-1 rounded-full border border-white bg-green-600 px-1.5 py-0.5 text-[9px] font-bold leading-none text-white shadow-sm">
+                    متاح
+                  </span>
                 </div>
                 <span className="w-full px-1 text-center text-sm font-black leading-tight text-black">{t('search_imei')}</span>
               </Link>
