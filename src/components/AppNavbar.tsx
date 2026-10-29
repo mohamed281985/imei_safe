@@ -76,8 +76,8 @@ const AppNavbar: React.FC = () => {
   const handleForgotPassword = async () => {
     if (!forgotPasswordData.imei || !forgotPasswordData.newPassword) {
       toast({
-        title: 'خطأ',
-        description: 'يرجى ملء جميع الحقول',
+        title: t('error'),
+        description: t('dashboard_all_fields_required'),
         variant: 'destructive'
       });
       return;
@@ -94,17 +94,17 @@ const AppNavbar: React.FC = () => {
 
       if (!resp.ok) {
         const errText = await resp.text();
-        toast({ title: 'خطأ', description: errText || 'حدث خطأ أثناء تحديث كلمة المرور', variant: 'destructive' });
+        toast({ title: t('error'), description: errText || t('dashboard_password_update_error'), variant: 'destructive' });
         setIsProcessing(false);
         return;
       }
 
-      toast({ title: 'نجح', description: 'تم تحديث كلمة المرور بنجاح' });
+      toast({ title: t('success'), description: t('dashboard_password_updated') });
       setShowForgotPasswordModal(false);
       setForgotPasswordData({ imei: '', newPassword: '' });
     } catch (error) {
       console.error('Error updating password:', error);
-      toast({ title: 'خطأ', description: 'حدث خطأ أثناء تحديث كلمة المرور', variant: 'destructive' });
+      toast({ title: t('error'), description: t('dashboard_password_update_error'), variant: 'destructive' });
     } finally {
       setIsProcessing(false);
     }
@@ -203,22 +203,22 @@ const AppNavbar: React.FC = () => {
             <button
               type="button"
               onClick={() => navigate('/daily-reward')}
-              className="group inline-flex min-h-10 min-w-0 max-w-[min(220px,calc(100vw-2rem))] items-center gap-2 rounded-2xl border border-amber-200/80 bg-white/80 px-2 py-1 text-right shadow-[0_6px_16px_rgba(2,6,23,0.12)] backdrop-blur-md transition hover:-translate-y-0.5 hover:bg-amber-50"
-              aria-label={dailyRewardStatus.claimedToday ? 'تم استلام مكافأة اليوم' : `مكافأة الدخول اليومي +${dailyRewardStatus.amount} Coins`}
+              className="group inline-flex min-h-9 min-w-0 max-w-[min(220px,calc(100vw-2rem))] items-center gap-1.5 rounded-2xl border border-amber-200/80 bg-white/80 px-1.5 py-0 text-right shadow-[0_6px_16px_rgba(2,6,23,0.12)] backdrop-blur-md transition hover:-translate-y-0.5 hover:bg-amber-50"
+              aria-label={dailyRewardStatus.claimedToday ? t('dashboard_daily_reward_claimed') : t('dashboard_daily_reward', { amount: String(dailyRewardStatus.amount) })}
             >
-              <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-amber-300 to-orange-400 text-white shadow-inner shadow-amber-600/30">
-                <Coins className="h-4 w-4 drop-shadow-sm" />
+              <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-amber-300 to-orange-400 text-white shadow-inner shadow-amber-600/30">
+                <Coins className="h-3.5 w-3.5 drop-shadow-sm" />
                 {!dailyRewardStatus.claimedToday && userId && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-white"><span className="absolute inset-0 animate-ping rounded-full bg-rose-400 opacity-60" /></span>}
               </span>
               <span className="flex min-w-0 flex-col items-center gap-0 text-center leading-none">
-                <span className="-translate-y-0.5 text-sm font-extrabold leading-none text-slate-700">اضغط واجمع</span>
-                <span className="max-w-full text-base font-black leading-none text-slate-900 [overflow-wrap:anywhere]">{new Intl.NumberFormat('en-US').format(coinBalance)}</span>
+                <span className="text-xs font-extrabold leading-none text-slate-700">{t('dashboard_tap_collect')}</span>
+                <span className="max-w-full text-sm font-black leading-none text-slate-900 [overflow-wrap:anywhere]">{new Intl.NumberFormat('en-US').format(coinBalance)}</span>
                 {dailyRewardStatus.claimedToday ? (
                   null
                 ) : userId ? (
-                  <span className="animate-pulse max-w-full whitespace-normal rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-black leading-none text-amber-800">🎁 اضغط واجمع +{dailyRewardStatus.amount}</span>
+                  <span className="animate-pulse max-w-full whitespace-normal rounded-full bg-amber-100 px-1 py-0.5 text-[10px] font-black leading-none text-amber-800">🎁 +{dailyRewardStatus.amount}</span>
                 ) : (
-                  <span className="whitespace-nowrap text-[10px] font-black text-amber-700">مكافأة الدخول</span>
+                  <span className="whitespace-nowrap text-[9px] font-black leading-none text-amber-700">{t('dashboard_login_reward')}</span>
                 )}
               </span>
             </button>
@@ -232,15 +232,15 @@ const AppNavbar: React.FC = () => {
         <Dialog open={showForgotPasswordModal} onOpenChange={setShowForgotPasswordModal}>
           <DialogContent className="bg-imei-darker border-imei-cyan/30">
             <DialogHeader className="text-center">
-              <DialogTitle className="text-white text-center">إعادة تعيين كلمة المرور</DialogTitle>
+              <DialogTitle className="text-white text-center">{t('dashboard_reset_password_title')}</DialogTitle>
               <DialogDescription className="text-gray-300 text-center">
-                الخاصه بالتطبيق وليس تسجيل الدخول
+                {t('dashboard_reset_password_description')}
               </DialogDescription>
             </DialogHeader>
 
             <div className="space-y-4">
               <div>
-                <label className="block text-white mb-2">رقم IMEI</label>
+                <label className="block text-white mb-2">IMEI</label>
                 <input
                   type="text"
                   value={forgotPasswordData.imei}
@@ -250,12 +250,12 @@ const AppNavbar: React.FC = () => {
                   }))}
                   className="input-field w-full"
                   maxLength={15}
-                  placeholder="أدخل رقم IMEI"
+                  placeholder={t('dashboard_enter_imei')}
                 />
               </div>
 
               <div>
-                <label className="block text-white mb-2">كلمة المرور الجديدة</label>
+                <label className="block text-white mb-2">{t('dashboard_new_password')}</label>
                 <input
                   type="password"
                   value={forgotPasswordData.newPassword}
@@ -264,7 +264,7 @@ const AppNavbar: React.FC = () => {
                     newPassword: e.target.value
                   }))}
                   className="input-field w-full"
-                  placeholder="أدخل كلمة المرور الجديدة"
+                  placeholder={t('dashboard_enter_new_password')}
                 />
               </div>
             </div>
@@ -275,14 +275,14 @@ const AppNavbar: React.FC = () => {
                 variant="outline"
                 className="border-imei-cyan/30 text-white"
               >
-                إلغاء
+                {t('cancel')}
               </Button>
               <Button
                 onClick={handleForgotPassword}
                 disabled={isProcessing}
                 className="bg-orange-500 hover:bg-orange-600 text-white border-orange-500"
               >
-                {isProcessing ? 'جارٍ التحديث...' : 'تحديث كلمة المرور'}
+                {isProcessing ? t('dashboard_updating') : t('dashboard_update_password')}
               </Button>
             </DialogFooter>
           </DialogContent>

@@ -67,7 +67,7 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
   const startCamera = async (phoneId: string) => {
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error('camera_not_supported');
+        throw new Error(t('dashboard_camera_not_supported'));
       }
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
       setCameraStream(stream);
@@ -75,8 +75,10 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
     } catch (err) {
       console.error('Failed to start camera:', err);
       const description = err instanceof DOMException && err.name === 'NotAllowedError'
-        ? 'اسمح للتطبيق باستخدام الكاميرا من إعدادات الهاتف ثم حاول مرة أخرى'
-        : 'فشل تشغيل الكاميرا';
+        ? t('dashboard_camera_permission')
+        : err instanceof Error && err.message === t('dashboard_camera_not_supported')
+          ? t('dashboard_camera_not_supported')
+          : t('dashboard_camera_start_failed');
       toast({ title: t('error'), description, variant: 'destructive' });
     }
   };
@@ -115,7 +117,7 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
 
   const submitVerification = async (phoneId: string) => {
     if (!boxImage) {
-      toast({ title: t('alert_title'), description: 'يرجى التقاط صورة العلبة', variant: 'destructive' });
+      toast({ title: t('alert_title'), description: t('dashboard_box_image_required'), variant: 'destructive' });
       return;
     }
 
@@ -148,18 +150,18 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
       const resp = await axiosInstance.post('/api/ownership-verification-request', payload);
 
       if (resp.data.success) {
-        toast({ title: t('success'), description: 'تم إرسال طلب التحقق بنجاح' });
+        toast({ title: t('success'), description: t('dashboard_verification_sent') });
         setLocalPhones(prev => prev.filter(p => p.id !== phoneId));
         setRemovedPhoneIds(prev => Array.from(new Set([...prev, phoneId])));
         setBoxImage(null);
         setBoxImagePreview('');
         stopCamera();
       } else {
-        throw new Error(resp.data.error || 'فشل إرسال الطلب');
+        throw new Error(resp.data.error || t('dashboard_verification_failed'));
       }
     } catch (err: any) {
       console.error('Verification submission error:', err);
-      toast({ title: t('error'), description: err.message || 'فشل إرسال الطلب', variant: 'destructive' });
+      toast({ title: t('error'), description: err.message || t('dashboard_verification_failed'), variant: 'destructive' });
     } finally {
       setIsSubmitting(false);
     }
@@ -428,9 +430,9 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
                 {expandedPhoneId === phone.id && (
                   <div className="mt-2 p-4 bg-blue-50 rounded-lg border border-blue-200 space-y-4">
                     <div className="bg-white p-3 rounded-lg border border-gray-300">
-                      <p className="text-sm font-semibold text-gray-800">ادخل صورة العلبة</p>
-                      <p className="text-sm text-gray-600 mt-1">
-                        التقط صورة العلبة مع ظهور رقم IMEI ورقم IMEI من الهاتف (*#06#) جنبًا إلى جنب.
+                      <p className="break-words text-sm font-semibold text-gray-800">{t('dashboard_box_image_title')}</p>
+                      <p className="break-words text-sm text-gray-600 mt-1">
+                        {t('dashboard_box_image_instruction')}
                       </p>
                     </div>
 
@@ -442,7 +444,7 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
                           className="!flex w-full items-center gap-2 !bg-blue-600 !text-white hover:!bg-blue-700"
                         >
                           <Camera className="w-4 h-4" />
-                          تشغيل الكاميرا
+                          {t('dashboard_open_camera')}
                         </Button>
                       ) : (
                         <>
@@ -460,7 +462,7 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
                               onClick={capturePhoto}
                               className="flex-1 bg-green-600 hover:bg-green-700 text-white"
                             >
-                              التقاط الصورة
+                              {t('dashboard_capture_photo')}
                             </Button>
                             <Button
                               type="button"
@@ -468,7 +470,7 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
                               variant="destructive"
                               className="flex-1"
                             >
-                              إغلاق
+                              {t('close')}
                             </Button>
                           </div>
                         </>
@@ -477,7 +479,7 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
 
                     {boxImagePreview && (
                       <div className="relative rounded-lg overflow-hidden border border-gray-300">
-                        <img src={boxImagePreview} alt="صورة العلبة" className="w-full h-40 object-cover" />
+                        <img src={boxImagePreview} alt={t('dashboard_box_image_title')} className="w-full h-40 object-cover" />
                         <button
                           onClick={() => {
                             setBoxImage(null);
@@ -491,7 +493,7 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
                     )}
 
                     <div className="space-y-2">
-                      <label className="text-sm font-medium text-gray-700">أو اختر صورة من الجهاز</label>
+                      <label className="break-words text-sm font-medium text-gray-700">{t('dashboard_select_box_image')}</label>
                       <input
                         type="file"
                         accept="image/*"
@@ -505,7 +507,7 @@ const OwnershipConfirmationModal: React.FC<OwnershipConfirmationModalProps> = ({
                       disabled={!boxImage || isSubmitting}
                       className="!w-full !bg-orange-600 !font-bold !text-white hover:!bg-orange-700 disabled:!bg-slate-300 disabled:!text-slate-700"
                     >
-                      {isSubmitting ? 'جاري الإرسال...' : 'تأكيد الملكية'}
+                      {isSubmitting ? t('dashboard_sending') : t('confirm_phone_ownership')}
                     </Button>
                   </div>
                 )}

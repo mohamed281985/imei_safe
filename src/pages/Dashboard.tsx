@@ -455,14 +455,14 @@ const Dashboard: React.FC = () => {
       const response = await axiosInstance.post<{ success: boolean; error?: string }>('/api/claim-phone-by-email', { imei });
 
       if (response.data.success) {
-        toast({ title: t('success'), description: 'تم تأكيد ملكية الهاتف وربطه بحسابك بنجاح' });
+        toast({ title: t('success'), description: t('dashboard_claim_success') });
         setUnclaimedPhones(prev => prev.filter(p => p.imei !== imei));
         if (unclaimedPhones.length <= 1) setShowClaimModal(false);
       } else {
         throw new Error(response.data.error || 'Failed to claim phone');
       }
     } catch (error: any) {
-      toast({ title: t('error'), description: error.response?.data?.error || error.message || 'حدث خطأ أثناء تأكيد الملكية', variant: 'destructive' });
+      toast({ title: t('error'), description: error.response?.data?.error || error.message || t('dashboard_claim_failed'), variant: 'destructive' });
     }
   };
 
@@ -487,7 +487,7 @@ const Dashboard: React.FC = () => {
       setQuickReportPhones(ownedPhones);
     } catch (error: any) {
       console.error('Failed to load owned phones for quick report:', error);
-      setQuickReportPhoneError(error?.response?.data?.error || 'تعذر تحميل هواتفك المسجلة. حاول مرة أخرى.');
+      setQuickReportPhoneError(error?.response?.data?.error || t('dashboard_registered_phones_load_error'));
     } finally {
       setIsLoadingQuickReportPhones(false);
     }
@@ -505,12 +505,12 @@ const Dashboard: React.FC = () => {
       // استخدام axiosInstance لإرسال الطلب
       const response = await axiosInstance.post<{ success: boolean; error?: string }>('/api/update-phone-status', { ids: phoneIds, status: 'approved' });
 
-      toast({ title: "شكراً لك", description: "تم تأكيد ملكيتك بنجاح." });
+      toast({ title: t('success'), description: t('confirm_ownership') });
       setPhonesForConfirmation(prev => prev.filter(p => !phoneIds.includes(p.id)));
       if (phonesForConfirmation.length <= phoneIds.length) setShowOwnershipConfirmation(false);
     } catch (error: any) {
       console.error('Failed to approve phones:', error);
-      toast({ title: "خطأ", description: error.response?.data?.error || "فشل تحديث حالة التأكيد.", variant: "destructive" });
+      toast({ title: t('error'), description: error.response?.data?.error || t('phone_status_update_failed'), variant: "destructive" });
     }
   };
 
@@ -520,12 +520,12 @@ const Dashboard: React.FC = () => {
       // استخدام axiosInstance لإرسال الطلب
       const response = await axiosInstance.post<{ success: boolean; error?: string }>('/api/update-phone-status', { ids: phoneIds, status: 'transferred' });
 
-      toast({ title: "تمت الإزالة", description: "تمت إزالة الهاتف من قائمة هواتفك المسجلة." });
+      toast({ title: t('success'), description: t('phone_status_transferred_note') });
       setPhonesForConfirmation(prev => prev.filter(p => !phoneIds.includes(p.id)));
       if (phonesForConfirmation.length <= phoneIds.length) setShowOwnershipConfirmation(false);
     } catch (error: any) {
       console.error('Failed to transfer phones:', error);
-      toast({ title: "خطأ", description: error.response?.data?.error || "فشل تحديث حالة الهاتف.", variant: "destructive" });
+      toast({ title: t('error'), description: error.response?.data?.error || t('phone_status_update_failed'), variant: "destructive" });
     }
   };
 
@@ -1002,20 +1002,20 @@ const Dashboard: React.FC = () => {
   const LocationPermissionRequest = () => (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" onClick={() => setShowLocationRequest(false)}>
       <div className="bg-blue-100 rounded-full p-6 max-w-md w-full" onClick={e => e.stopPropagation()}>
-        <h3 className="text-xl font-bold text-gray-800 mb-4">طلب إذن تحديد الموقع</h3>
-        <p className="text-gray-600 mb-6">لعرض الإعلانات القريبة منك، نحتاج إلى استخدام موقعك الجغرافي. هل تسمح للتطبيق بتحديد موقعك؟</p>
+        <h3 className="mb-4 break-words text-xl font-bold text-gray-800">{t('location_permission_title')}</h3>
+        <p className="mb-6 break-words text-gray-600">{t('location_permission_description')}</p>
         <div className="flex justify-end gap-3">
           <button
             className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors"
             onClick={() => setShowLocationRequest(false)}
           >
-            لا شكرًا
+            {t('no_thanks')}
           </button>
           <button
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
             onClick={requestLocationPermission}
           >
-            السماح
+            {t('allow')}
           </button>
         </div>
       </div>
@@ -1127,7 +1127,7 @@ const Dashboard: React.FC = () => {
                 <div className="relative flex h-11 w-full items-center justify-center rounded-lg bg-blue-950 p-1">
                   <SearchCheck className="h-8 w-8 text-orange-400 drop-shadow-lg" strokeWidth={1.8} />
                   <span className="absolute -right-1 -top-1 rounded-full border border-white bg-green-600 px-1.5 py-0.5 text-[9px] font-bold leading-none text-white shadow-sm">
-                    متاح
+                    {t('available')}
                   </span>
                 </div>
                 <span className="w-full px-1 text-center text-sm font-black leading-tight text-black">{t('search_imei')}</span>
@@ -1179,10 +1179,10 @@ const Dashboard: React.FC = () => {
                     ? 'text-blue-900'
                     : deviceStatus === 'protected' ? 'text-emerald-950' : 'text-red-950'
                     }`}>
-                    {isCheckingDeviceStatus ? 'جاري الفحص' : deviceStatus === 'lost' ? 'جهازك مفقود' : deviceStatus === 'unprotected' ? 'جهازك غير محمي' : 'جهازك محمي'}
+                    {isCheckingDeviceStatus ? t('dashboard_device_checking') : deviceStatus === 'lost' ? t('dashboard_device_lost') : deviceStatus === 'unprotected' ? t('dashboard_device_unprotected') : t('dashboard_device_protected')}
                   </p>
-                  <p className={`mt-0.5 text-xs font-bold leading-tight ${isCheckingDeviceStatus ? 'text-blue-700' : deviceStatus === 'protected' ? 'text-emerald-800' : 'text-red-800'}`}>
-                    {isCheckingDeviceStatus ? 'نتحقق من حالة هاتفك' : deviceStatus === 'lost' ? 'يوجد بلاغ نشط' : deviceStatus === 'unprotected' ? 'سجّل هاتفك للحماية' : 'IMEI مسجل ومتابع'}
+                  <p className={`mt-0.5 break-words text-xs font-bold leading-tight ${isCheckingDeviceStatus ? 'text-blue-700' : deviceStatus === 'protected' ? 'text-emerald-800' : 'text-red-800'}`}>
+                    {isCheckingDeviceStatus ? t('dashboard_device_checking_desc') : deviceStatus === 'lost' ? t('dashboard_active_report') : deviceStatus === 'unprotected' ? t('dashboard_register_for_protection') : t('dashboard_imei_monitored')}
                   </p>
                 </div>
               </div>
@@ -1195,8 +1195,8 @@ const Dashboard: React.FC = () => {
                   <BellRing className="h-3.5 w-3.5" strokeWidth={2} />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm leading-tight font-black text-white">فقد هاتفك الآن؟</p>
-                  <p className="mt-0.5 text-xs font-bold leading-tight text-white/90">أبلغ عنه في ثواني</p>
+                  <p className="whitespace-normal break-words text-sm font-black leading-tight text-white">{t('dashboard_quick_report_title')}</p>
+                  <p className="mt-0.5 whitespace-normal break-words text-xs font-bold leading-tight text-white/90">{t('dashboard_quick_report_desc')}</p>
                 </div>
               </button>
             </div>
@@ -1212,9 +1212,9 @@ const Dashboard: React.FC = () => {
           <>
             <div className="mb-4 mt-4">
               <div className="mb-2 flex items-center justify-between">
-                <h2 className="text-xl font-bold text-black">العلامات التجارية</h2>
+                <h2 className="text-xl font-bold text-black">{t('dashboard_brands')}</h2>
                 <Link to="/phones-for-sale" className="text-sm font-bold text-black hover:text-blue-700">
-                  عرض الكل
+                  {t('view_all')}
                 </Link>
               </div>
               <div className="flex flex-nowrap gap-3 overflow-x-auto pb-2">
@@ -1240,7 +1240,7 @@ const Dashboard: React.FC = () => {
                       <span className="flex h-full w-full items-center justify-center rounded-full bg-transparent p-1">
                         <img
                           src={logoUrl}
-                          alt={`شعار ${brand}`}
+                          alt={t('dashboard_brand_logo_alt', { brand })}
                           className="h-full w-full object-contain"
                           loading="lazy"
                           onError={() => setHiddenBrandLogos((current) => [...current, logoUrl])}
@@ -1434,7 +1434,7 @@ const Dashboard: React.FC = () => {
                                 {phone.price.toLocaleString('en-US')} <span className="text-md font-bold text-black">{userCurrencySymbol}</span>
                               </div>
                               {(phone.is_verified === true || phone.is_verified === 'true') && (
-                                <span className="text-[13px] bg-green-50 text-green-700 px-1.5 py-0.5 rounded border border-green-100 font-bold ">
+                                <span className="whitespace-nowrap rounded border border-green-100 bg-green-50 px-1 py-0 text-[11px] font-bold leading-4 text-green-700">
                                   {t('verified')}
                                 </span>
                               )}
@@ -1476,7 +1476,7 @@ const Dashboard: React.FC = () => {
                       loading="lazy"
                     />
                   </div>
-                  <span className="max-w-[82px] text-center text-xs font-bold leading-tight text-slate-900">
+                  <span className="max-w-[82px] break-words text-center text-xs font-bold leading-tight text-slate-900">
                     {t(category.labelKey)}
                   </span>
                 </Link>
@@ -1555,7 +1555,7 @@ const Dashboard: React.FC = () => {
 
                               {/* Category and Brand */}
                               <div className="flex items-center gap-2 text-base text-black truncate font-bold">
-                                {acc.category && <span>{acc.category}</span>}
+                                {acc.category && <span className="whitespace-normal break-words">{t(ACCESSORY_CATEGORIES.find(category => category.value === acc.category)?.labelKey || acc.category)}</span>}
                                 {acc.category && acc.brand && <span className="w-0.5 h-0.5 rounded-full bg-gray-400"></span>}
                                 {acc.brand && <span>{acc.brand}</span>}
                               </div>
@@ -1585,24 +1585,24 @@ const Dashboard: React.FC = () => {
           {/* قسم اكتشف أكثر */}
           <div className="mb-5">
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-xl font-bold text-black">اكتشف أكثر</h2>
-              <span className="text-sm font-bold leading-none text-black">عرض الكل</span>
+              <h2 className="text-xl font-bold text-black">{t('dashboard_discover_more')}</h2>
+              <span className="text-sm font-bold leading-none text-black">{t('view_all')}</span>
             </div>
             <div className="grid grid-cols-3 gap-2">
               <div className="flex min-h-[72px] flex-col items-center justify-center rounded-xl border border-slate-200 bg-white p-1.5 text-center shadow-sm">
                 <FileText className="mb-0.5 h-6 w-6 text-blue-700" strokeWidth={1.8} />
-                <p className="text-xs font-bold leading-tight text-slate-900">فحص IMEI</p>
-                <p className="mt-1 text-[10px] font-bold leading-tight text-slate-500">خطوات التأكد</p>
+                <p className="whitespace-normal break-words text-xs font-bold leading-tight text-slate-900">{t('dashboard_check_imei')}</p>
+                <p className="mt-1 whitespace-normal break-words text-[10px] font-bold leading-tight text-slate-500">{t('dashboard_verification_steps')}</p>
               </div>
               <Link to="/original-phone-guide" className="flex min-h-[72px] flex-col items-center justify-center rounded-xl border border-slate-200 bg-white p-1.5 text-center shadow-sm">
                 <ShieldCheck className="mb-0.5 h-6 w-6 text-emerald-700" strokeWidth={1.8} />
-                <p className="text-xs font-bold leading-tight text-slate-900">كيف تعرف الهاتف الأصلي؟</p>
-                <p className="mt-1 text-[10px] font-bold leading-tight text-slate-500">دليل سريع</p>
+                <p className="whitespace-normal break-words text-xs font-bold leading-tight text-slate-900">{t('dashboard_original_phone')}</p>
+                <p className="mt-1 whitespace-normal break-words text-[10px] font-bold leading-tight text-slate-500">{t('dashboard_quick_guide')}</p>
               </Link>
               <Link to="/phone-safety-tips" className="flex min-h-[72px] flex-col items-center justify-center rounded-xl border border-slate-200 bg-white p-1.5 text-center shadow-sm">
                 <Lightbulb className="mb-0.5 h-6 w-6 text-amber-500" strokeWidth={1.8} />
-                <p className="text-xs font-bold leading-tight text-slate-900">نصائح مهمة لهاتفك</p>
-                <p className="mt-1 text-[10px] font-bold leading-tight text-slate-500">حافظ على هاتفك</p>
+                <p className="whitespace-normal break-words text-xs font-bold leading-tight text-slate-900">{t('dashboard_phone_tips')}</p>
+                <p className="mt-1 whitespace-normal break-words text-[10px] font-bold leading-tight text-slate-500">{t('dashboard_protect_phone')}</p>
               </Link>
             </div>
           </div>
@@ -1658,7 +1658,7 @@ const Dashboard: React.FC = () => {
         {/* Sellers-in-country block removed per request */}
       </div>
 
-      <Suspense fallback={<div>Loading...</div>}>
+      <Suspense fallback={<div>{t('loading')}</div>}>
         <AdPopupModal
           isOpen={isAdModalOpen && !rejectedAccountProfile}
           onClose={() => {
@@ -1674,7 +1674,7 @@ const Dashboard: React.FC = () => {
         />
       </Suspense>
 
-      <Suspense fallback={<div>Loading...</div>}>
+      <Suspense fallback={<div>{t('loading')}</div>}>
         <OwnershipConfirmationModal
           isOpen={showOwnershipConfirmation && !isAdModalOpen}
           onClose={() => setShowOwnershipConfirmation(false)}
@@ -1687,16 +1687,16 @@ const Dashboard: React.FC = () => {
       <Dialog open={showQuickReportPhonePicker} onOpenChange={setShowQuickReportPhonePicker}>
         <DialogContent className="max-h-[85vh] w-[92vw] overflow-y-auto rounded-2xl border-2 border-orange-300 bg-white text-slate-800 shadow-2xl sm:max-w-md">
           <DialogHeader className="text-right" dir="rtl">
-            <DialogTitle className="text-xl font-extrabold text-slate-900">اختر الهاتف المفقود</DialogTitle>
-            <DialogDescription className="text-sm leading-6 text-slate-600">
-              اختر هاتفًا مسجلًا في حسابك لفتح بلاغ الفقد السريع.
+            <DialogTitle className="break-words text-xl font-extrabold text-slate-900">{t('dashboard_choose_lost_phone')}</DialogTitle>
+            <DialogDescription className="break-words text-sm leading-6 text-slate-600">
+              {t('dashboard_choose_registered_phone')}
             </DialogDescription>
           </DialogHeader>
 
           {isLoadingQuickReportPhones ? (
             <div className="flex items-center justify-center gap-2 py-8 text-slate-600" dir="rtl">
               <Loader2 className="h-5 w-5 animate-spin text-orange-600" />
-              <span className="font-semibold">جارٍ تحميل هواتفك المسجلة...</span>
+              <span className="font-semibold">{t('dashboard_loading_registered_phones')}</span>
             </div>
           ) : quickReportPhoneError ? (
             <div className="space-y-4 py-2" dir="rtl">
@@ -1708,12 +1708,12 @@ const Dashboard: React.FC = () => {
                 onClick={() => void openQuickReportPhonePicker()}
                 className="w-full bg-orange-600 font-bold text-white hover:bg-orange-700"
               >
-                إعادة المحاولة
+                {t('dashboard_retry')}
               </Button>
             </div>
           ) : quickReportPhones.length === 0 ? (
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-center text-sm font-semibold leading-6 text-amber-900" dir="rtl">
-              لا توجد هواتف مسجلة متاحة للإبلاغ عنها في حسابك.
+              {t('dashboard_no_report_phones')}
             </div>
           ) : (
             <div className="space-y-2" dir="rtl">
@@ -1726,14 +1726,14 @@ const Dashboard: React.FC = () => {
                 >
                   <span className="min-w-0">
                     <span className="block truncate font-bold text-slate-900">
-                      {phone.phone_type || 'هاتف مسجل'}
+                      {phone.phone_type || t('dashboard_registered_phone')}
                     </span>
                     <span className="mt-1 block font-mono text-sm text-slate-600" dir="ltr">
                       {phone.imei_masked || `${String(phone.imei).slice(0, 4)}•••••••${String(phone.imei).slice(-4)}`}
                     </span>
                   </span>
                   <span className="shrink-0 rounded-lg bg-orange-600 px-3 py-2 text-xs font-bold text-white">
-                    اختيار
+                    {t('dashboard_choose')}
                   </span>
                 </button>
               ))}
@@ -1750,26 +1750,26 @@ const Dashboard: React.FC = () => {
               <Smartphone className="w-10 h-10 text-orange-500" />
             </div>
             <DialogTitle className="text-2xl font-bold text-gray-900">
-              {t('found_unclaimed_phone') || 'تم العثور على هاتف مسجل ببريدك'}
+              {t('found_unclaimed_phone')}
             </DialogTitle>
             <DialogDescription className="text-gray-600 mt-2">
-              {t('do_you_own_this_phone') || 'هل تملك هذا الهاتف؟'}
+              {t('do_you_own_this_phone')}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 my-4">
             {unclaimedPhones.map((phone, index) => (
-              <div key={index} className="bg-gray-50 p-4 rounded-lg border border-gray-200 flex flex-col gap-2 hover:bg-orange-50 transition-colors">
-                <div className="flex justify-between items-center">
+                <div key={index} className="break-words bg-gray-50 p-4 rounded-lg border border-gray-200 flex flex-col gap-2 hover:bg-orange-50 transition-colors">
+                <div className="flex flex-wrap justify-between gap-2">
                   <span className="text-gray-400 text-sm">{t('phone_type')}:</span>
                   <span className="text-gray-800 font-bold">{phone.phone_type}</span>
                 </div>
-                <div className="flex justify-between items-center">
+                <div className="flex flex-wrap justify-between gap-2">
                   <span className="text-gray-400 text-sm">IMEI:</span>
                   <span className="text-orange-600 font-mono">{phone.imei}</span>
                 </div>
                 <Button onClick={() => handleClaimPhone(phone.imei)} className="mt-2 w-full bg-orange-500 hover:bg-orange-600 text-white shadow-md">
-                  {t('yes_i_own_it') || 'نعم، أملك هذا الهاتف'}
+                  {t('yes_i_own_it')}
                 </Button>
               </div>
             ))}

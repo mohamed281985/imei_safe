@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useLanguage } from '../../contexts/LanguageContext';
-import { Eye, EyeOff, Mail, Lock, Phone, Fingerprint } from 'lucide-react'; // Added Fingerprint
+import { ArrowRight, Eye, EyeOff, Mail, Lock, Phone } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -20,7 +20,8 @@ export function LoginForm({
   biometricButton,
 }: LoginFormProps) {
   const { login, logout, error } = useAuth();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+  const isRTL = language === 'ar';
   const navigate = useNavigate();
   const { toast } = useToast();
   const location = useLocation();
@@ -123,7 +124,7 @@ export function LoginForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3">
+    <form onSubmit={handleSubmit} className="space-y-3" dir={isRTL ? 'rtl' : 'ltr'}>
       {loginError && (
         <Alert variant="destructive" className="mb-4">
           <AlertDescription>{loginError}</AlertDescription>
@@ -131,20 +132,21 @@ export function LoginForm({
       )}
 
       <div>
-        <label htmlFor="email" className="block text-black text-sm font-medium mb-1">
+        <label htmlFor="email" className="sr-only">
           {t('email')}
         </label>
         <div className="relative">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Mail size={18} className="text-gray-400" />
+          <div className={`pointer-events-none absolute inset-y-0 flex items-center ${isRTL ? 'right-4' : 'left-4'}`}>
+            <Mail size={21} className="text-slate-500" />
           </div>
           <Input
             id="email"
             type="email"
+            autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="input-field pl-10 w-full"
-            placeholder={t('email_placeholder')}
+            className={`h-14 w-full rounded-xl border-2 border-[#dce4f0] bg-[#f3f6fc] text-base text-[#172d4d] placeholder:text-slate-500 focus-visible:border-sky-400 focus-visible:ring-sky-200 ${isRTL ? 'pr-12 text-right' : 'pl-12 text-left'}`}
+            placeholder={t('email')}
             required
           />
         </div>
@@ -152,11 +154,11 @@ export function LoginForm({
       {/* إخفاء حقل رقم الهاتف إذا كان hidePhoneField = true */}
       {!hidePhoneField && (
         <div>
-          <label htmlFor="phoneNumber" className="block text-white text-sm font-medium mb-1">
+          <label htmlFor="phoneNumber" className="mb-1 block text-sm font-medium text-slate-800">
             {t('phone_number')}
           </label>
           <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <div className={`pointer-events-none absolute inset-y-0 flex items-center ${isRTL ? 'right-4' : 'left-4'}`}>
               <Phone size={18} className="text-gray-400" />
             </div>
             <Input
@@ -164,7 +166,7 @@ export function LoginForm({
               type="tel"
               value={phoneNumber}
               onChange={(e) => setPhoneNumber(e.target.value)}
-              className="input-field pl-10 w-full"
+              className={`h-14 w-full rounded-xl border-2 border-[#dce4f0] bg-[#f3f6fc] text-base text-[#172d4d] ${isRTL ? 'pr-12 text-right' : 'pl-12 text-left'}`}
               placeholder="+1234567890"
             />
           </div>
@@ -172,44 +174,48 @@ export function LoginForm({
       )}
       
       <div>
-        <label htmlFor="password" className="block text-black text-sm font-medium mb-1">
+        <label htmlFor="password" className="sr-only">
           {t('password')}
         </label>
         <div className="relative">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Lock size={18} className="text-gray-400" />
+          <div className={`pointer-events-none absolute inset-y-0 flex items-center ${isRTL ? 'right-4' : 'left-4'}`}>
+            <Lock size={21} className="text-slate-500" />
           </div>
           <Input
             id="password"
             type={showPassword ? 'text' : 'password'}
+            autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="input-field w-full pl-12 pr-16"
-            placeholder="••••••••"
+            className={`h-14 w-full rounded-xl border-2 border-[#dce4f0] bg-[#f3f6fc] text-base text-[#172d4d] placeholder:text-slate-500 focus-visible:border-sky-400 focus-visible:ring-sky-200 ${isRTL ? 'pl-14 pr-12 text-right' : 'pl-12 pr-14 text-left'}`}
+            placeholder={t('password')}
             required
           />
           <button
             type="button"
             aria-label={showPassword ? 'Hide password' : 'Show password'}
-            className="absolute inset-y-0 right-3 flex h-full w-10 items-center justify-center rounded-md"
+            className={`absolute inset-y-0 flex h-full w-10 items-center justify-center rounded-md ${isRTL ? 'left-3' : 'right-3'}`}
             onClick={() => setShowPassword(!showPassword)}
           >
             {showPassword ? (
-              <EyeOff size={18} className="text-gray-400" />
+              <EyeOff size={20} className="text-slate-500" />
             ) : (
-              <Eye size={18} className="text-gray-400" />
+              <Eye size={20} className="text-slate-500" />
             )}
           </button>
         </div>
       </div>
 
       {error && (
-        <div className="text-red-400 text-sm">
+        <div className="text-sm text-red-600">
           {t(error)}
         </div>
       )}
       
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 pt-1">
+        <Link to="/forgot-password" className="text-sm font-semibold text-orange-600 hover:text-orange-700 hover:underline">
+          {t('forgot_password')}
+        </Link>
         <div className="flex items-center gap-2">
           <input
             id="remember-me"
@@ -217,26 +223,26 @@ export function LoginForm({
             type="checkbox"
             checked={rememberMe}
             onChange={(e) => setRememberMe(e.target.checked)}
-            className="h-4 w-4 rounded border-imei-cyan focus:ring-imei-cyan"
+            className="h-5 w-5 rounded border-2 border-slate-300 accent-sky-600 focus:ring-sky-500"
           />
-          <label htmlFor="remember-me" className="block text-sm text-black">
+          <label htmlFor="remember-me" className="block text-sm font-semibold text-[#102b55]">
             {t('remember_me')}
           </label>
         </div>
-        <Link to="/forgot-password" className="text-sm font-medium text-orange-600 hover:text-orange-700 hover:underline">
-          {t('forgot_password')}
-        </Link>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3 pt-1">
         <Button 
           type="submit" 
-          className="flex-1 text-xl bg-imei-cyan text-white shadow-2xl shadow-black transition-all duration-300 ease-in-out transform hover:scale-105"
+          className="flex h-14 flex-1 items-center justify-center gap-3 rounded-xl bg-gradient-to-r from-[#0789e8] to-[#00a3ee] text-lg font-bold text-white shadow-[0_8px_18px_rgba(0,128,220,0.28)] transition-colors hover:from-[#0876cf] hover:to-[#0789df]"
         >
-          {t('login')}
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15">
+            <ArrowRight className="h-5 w-5" />
+          </span>
+          <span dir="auto">{t('login')}</span>
         </Button>
         {biometricButton && (
-          <div className="text-4xl">
+          <div className="shrink-0">
             {biometricButton}
           </div>
         )} 
