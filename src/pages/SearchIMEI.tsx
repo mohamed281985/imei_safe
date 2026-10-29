@@ -462,6 +462,10 @@ const WelcomeSearch: React.FC = () => {
         });
       }
     } catch (error) {
+      const remainingSearches = (error as any)?.response?.data?.guestSearchRemaining;
+      if (!user && remainingSearches !== undefined && Number.isFinite(Number(remainingSearches))) {
+        setGuestSearchRemaining(Number(remainingSearches));
+      }
       const invalidImei = (error as any)?.response?.data?.error === 'invalid_imei';
       const limitReached = (error as any)?.response?.data?.error === 'guest_daily_limit_reached';
       if (limitReached) setGuestSearchRemaining(0);

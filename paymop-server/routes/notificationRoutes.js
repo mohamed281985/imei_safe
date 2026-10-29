@@ -480,7 +480,10 @@ await updateSearchUsage(authenticatedUserId);
     }
   } catch (error) {
     console.error('Error searching IMEI:', error);
-    res.status(500).json({ error: 'Error searching IMEI' });
+    res.status(500).json({
+      error: 'Error searching IMEI',
+      ...(guestUsage ? { guestSearchRemaining: Number(guestUsage.remaining ?? 0) } : {})
+    });
   }
 });
 

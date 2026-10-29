@@ -12,11 +12,18 @@ DO $$
 DECLARE
   fallback_duration integer;
 BEGIN
-  SELECT min(duration_days)::integer
+  SELECT min(
+    CASE
+      WHEN trim(duration_days) ~ '^[0-9]{1,10}$' THEN
+        CASE
+          WHEN trim(duration_days)::numeric BETWEEN 1 AND 2147483647
+            THEN trim(duration_days)::integer
+        END
+    END
+  )
   INTO fallback_duration
   FROM public.ads_price
-  WHERE type = 'sell_phone'
-    AND duration_days > 0;
+  WHERE type = 'sell_phone';
 
   fallback_duration := COALESCE(fallback_duration, 1);
 
