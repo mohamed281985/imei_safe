@@ -348,6 +348,7 @@ app.post('/api/search-imei', searchImeiLimiter, async (req, res) => {
       const rightDate = Date.parse(right.registration_date || right.created_at || '') || 0;
       return rightDate - leftDate || Number(right.id || 0) - Number(left.id || 0);
     });
+    const regPhone = matchingRegisteredPhones[0] || null;
     const imeiHash = getImeiHash(imei);
     let allReports = [];
     let reportError = null;
