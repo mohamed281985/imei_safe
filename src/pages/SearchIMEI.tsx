@@ -51,10 +51,12 @@ const WelcomeSearch: React.FC = () => {
     let active = true;
     const initializeGuestSession = async () => {
       try {
-        const response = await axiosInstance.post('/api/guest-session');
+        const storedToken = localStorage.getItem('imei_guest_session') || sessionStorage.getItem('imei_guest_session');
+        const response = await axiosInstance.post('/api/guest-session', storedToken ? { token: storedToken } : {});
         if (!active) return;
         const token = response.data?.token;
         if (token) {
+          localStorage.setItem('imei_guest_session', token);
           sessionStorage.setItem('imei_guest_session', token);
           setGuestToken(token);
           setGuestSearchRemaining(Number(response.data?.remaining ?? response.data?.dailyLimit ?? 3));
@@ -341,7 +343,6 @@ const WelcomeSearch: React.FC = () => {
     // ولكن يجب أيضاً التحقق من صحة الـ IMEI في الخادم لضمان أمان البيانات
     // الخادم يجب أن يرفض أي IMEI لا يطابق النمط المطلوب
 
-    const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       setUserId(user.id);
     }

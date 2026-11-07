@@ -33,8 +33,8 @@ const guestSessionSecret = process.env.SESSION_SECRET || 'dev-only-session-secre
 
 const guestIpHash = (ip) => crypto.createHmac('sha256', guestSessionSecret).update(String(ip || '')).digest('hex');
 
-const signGuestSession = (ip) => {
-  const payload = Buffer.from(JSON.stringify({ ip: guestIpHash(ip), exp: Math.floor(Date.now() / 1000) + GUEST_SESSION_TTL_SECONDS })).toString('base64url');
+const signGuestSession = (ip, guestId) => {
+  const payload = Buffer.from(JSON.stringify({ ip: guestIpHash(ip), guestId, exp: Math.floor(Date.now() / 1000) + GUEST_SESSION_TTL_SECONDS })).toString('base64url');
   const signature = crypto.createHmac('sha256', guestSessionSecret).update(payload).digest('base64url');
   return `${payload}.${signature}`;
 };
@@ -56,6 +56,7 @@ const verifyGuestSession = (token, ip) => {
   try {
     const session = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
     if (!session.exp || session.exp <= Math.floor(Date.now() / 1000) || session.ip !== guestIpHash(ip)) return null;
+    if (typeof session.guestId !== 'string' || !/^[a-f0-9]{64}$/.test(session.guestId)) return null;
     return session;
   } catch {
     return null;
@@ -64,14 +65,15 @@ const verifyGuestSession = (token, ip) => {
 
 app.post('/api/guest-session', searchImeiLimiter, async (req, res) => {
   try {
-    const guestId = guestIpHash(req.ip);
+    const existingSession = verifyGuestSession(req.body?.token, req.ip);
+    const guestId = existingSession?.guestId || crypto.randomBytes(32).toString('hex');
     const { data: remaining, error } = await supabase.rpc('get_guest_search_remaining', {
       p_guest_id: guestId,
       p_daily_limit: GUEST_SEARCH_LIMIT
     });
     if (error) throw error;
     return res.json({
-      token: signGuestSession(req.ip),
+      token: existingSession ? req.body.token : signGuestSession(req.ip, guestId),
       expiresIn: GUEST_SESSION_TTL_SECONDS,
       dailyLimit: GUEST_SEARCH_LIMIT,
       remaining: Number(remaining?.remaining ?? GUEST_SEARCH_LIMIT)
@@ -282,7 +284,7 @@ app.post('/api/search-imei', searchImeiLimiter, async (req, res) => {
       }
 
       const { data: usage, error: usageError } = await supabase.rpc('consume_guest_search', {
-        p_guest_id: guestIpHash(req.ip),
+        p_guest_id: guestSession.guestId,
         p_daily_limit: GUEST_SEARCH_LIMIT
       });
       if (usageError) {
