@@ -41,7 +41,8 @@ const setupCsrfInterceptor = (axiosInstance: AxiosInstance) => {
       // إضافة Authorization header من Supabase session
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        if (session?.access_token) {
+        const hasExplicitAuthorization = Boolean(config.headers?.get?.('Authorization') || (config.headers as any)?.['Authorization']);
+        if (session?.access_token && !hasExplicitAuthorization) {
           if (!config.headers) {
             config.headers = {} as any;
           }

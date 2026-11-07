@@ -203,7 +203,7 @@ const AppNavbar: React.FC = () => {
             <button
               type="button"
               onClick={() => navigate('/daily-reward')}
-              className="group inline-flex min-h-9 min-w-0 max-w-[min(220px,calc(100vw-2rem))] items-center gap-1.5 rounded-2xl border border-amber-200/80 bg-white/80 px-1.5 py-0 text-right shadow-[0_6px_16px_rgba(2,6,23,0.12)] backdrop-blur-md transition hover:-translate-y-0.5 hover:bg-amber-50"
+              className="group inline-flex min-h-11 min-w-0 max-w-[min(260px,calc(100vw-2rem))] items-center gap-2 rounded-2xl border border-amber-200/80 bg-white/80 px-2.5 py-1 text-right shadow-[0_6px_16px_rgba(2,6,23,0.12)] backdrop-blur-md transition hover:-translate-y-0.5 hover:bg-amber-50"
               aria-label={dailyRewardStatus.claimedToday ? t('dashboard_daily_reward_claimed') : t('dashboard_daily_reward', { amount: String(dailyRewardStatus.amount) })}
             >
               <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-amber-300 to-orange-400 text-white shadow-inner shadow-amber-600/30">

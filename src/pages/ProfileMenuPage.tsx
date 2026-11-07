@@ -14,6 +14,7 @@ import CountryCodeSelector from '@/components/CountryCodeSelector';
 import PageContainer from '../components/PageContainer';
 import AppNavbar from '../components/AppNavbar';
 import PackageBadge from '@/components/PackageBadge';
+import { resetAppTour } from '@/services/appTourStorage';
 // Types for our component state
 interface RewardsInfo {
     count: number;
@@ -626,6 +627,25 @@ toast({ title: t('success'), description: t('biometric_enabled_success') });
                     <div className="mb-6">
                         <h3 className="text-xl font-bold text-blue-600 mb-3">{t('settings')}</h3>
                         <div dir={language === 'ar' ? 'rtl' : 'ltr'} className="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg overflow-hidden">
+                            <button
+                                onClick={async () => {
+                                    await resetAppTour(user?.id);
+                                    navigate('/dashboard');
+                                }}
+                                className="w-full flex items-center justify-between p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                            >
+                                <div className="flex min-w-0 flex-1 items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-sky-100 flex items-center justify-center">
+                                        <Sparkles className="w-5 h-5 text-sky-600" />
+                                    </div>
+                                    <div className={`flex min-w-0 flex-col ${language === 'ar' ? 'items-start' : 'flex-1 items-end'} text-right`}>
+                                        <div className="text-lg font-bold text-gray-800">{t('app_tour_replay_title')}</div>
+                                        <div className="text-xs text-gray-500">{t('app_tour_replay_description')}</div>
+                                    </div>
+                                </div>
+                                <ChevronLeft className="w-5 h-5 text-gray-400" />
+                            </button>
+
                             {/* Recovery Cards - Barcode My Phones */}
                             <button
                                 onClick={() => navigate('/recovery-cards')}

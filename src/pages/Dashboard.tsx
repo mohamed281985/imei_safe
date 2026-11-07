@@ -24,6 +24,7 @@ import { Button } from '@/components/ui/button';
 import axiosInstance from '@/services/axiosInterceptor';
 import { useDevRequestDeduper } from '@/hooks/useDevRequestDeduper';
 import { ACCESSORY_CATEGORIES } from '@/constants/accessoryCategories';
+import AppTour from '@/components/AppTour';
 
 const OwnershipConfirmationModal = React.lazy(() => import('../components/OwnershipConfirmationModal'));
 const AdPopupModal = React.lazy(() => import('../components/AdPopupModal'));
@@ -255,6 +256,7 @@ const Dashboard: React.FC = () => {
   const [isCheckingDeviceStatus, setIsCheckingDeviceStatus] = useState(true);
 
   const [isNavbarVisible, setIsNavbarVisible] = useState(true);
+  const [tourTarget, setTourTarget] = useState<string | null>(null);
   const [showLocationRequest, setShowLocationRequest] = useState(false);
   const shouldRunRequest = useDevRequestDeduper();
 
@@ -485,6 +487,10 @@ const Dashboard: React.FC = () => {
           !['sold', 'transferred', 'rejected'].includes(status);
       });
       setQuickReportPhones(ownedPhones);
+      if (ownedPhones.length === 0) {
+        setShowQuickReportPhonePicker(false);
+        navigate('/report', { state: { quick: true } });
+      }
     } catch (error: any) {
       console.error('Failed to load owned phones for quick report:', error);
       setQuickReportPhoneError(error?.response?.data?.error || t('dashboard_registered_phones_load_error'));
@@ -1099,6 +1105,7 @@ const Dashboard: React.FC = () => {
               {/* Icon 1: Report Lost Phone */}
               <Link
                 to="/report"
+                data-tour="report"
                 className="flex min-w-0 flex-col items-center gap-1 rounded-xl border border-slate-200 bg-white/95 p-1.5 shadow-md transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-xl"
               >
                 <div className="flex h-11 w-full items-center justify-center rounded-lg bg-blue-950 p-1">
@@ -1110,6 +1117,7 @@ const Dashboard: React.FC = () => {
               {/* Icon 2: Register New Phone */}
               <Link
                 to="/register-phone"
+                data-tour="register"
                 className="flex min-w-0 flex-col items-center gap-1 rounded-xl border border-slate-200 bg-white/95 p-1.5 shadow-md transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-xl"
               >
                 <div className="flex h-11 w-full items-center justify-center rounded-lg bg-blue-950 p-1">
@@ -1122,6 +1130,7 @@ const Dashboard: React.FC = () => {
               {/* Icon 3: Search Phone */}
               <Link
                 to="/search"
+                data-tour="search"
                 className="flex min-w-0 flex-col items-center gap-1 rounded-xl border border-slate-200 bg-white/95 p-1.5 shadow-md transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-xl"
               >
                 <div className="relative flex h-11 w-full items-center justify-center rounded-lg bg-blue-950 p-1">
@@ -1135,6 +1144,7 @@ const Dashboard: React.FC = () => {
 
               {/* Icon 4: Ownership Transfer */}
               <div
+                data-tour="transfer"
                 className="flex min-w-0 cursor-pointer flex-col items-center gap-1 rounded-xl border border-slate-200 bg-white/95 p-1.5 shadow-md transition-all duration-300 group-hover:-translate-y-1 group-hover:shadow-xl"
                 onClick={() => {
                   if (user?.role && ['free_business', 'business', 'gold_business', 'silver_business'].includes(user.role)) {
@@ -1153,6 +1163,7 @@ const Dashboard: React.FC = () => {
             </div>
             <div className="mt-3 grid grid-cols-2 gap-3">
               <div
+                data-tour="device-status"
                 className={`flex min-h-[40px] items-center gap-1 rounded-lg border-2 p-1 text-right shadow-sm ${isCheckingDeviceStatus
                   ? 'border-blue-300 bg-blue-50'
                   : deviceStatus === 'lost'
@@ -1188,6 +1199,7 @@ const Dashboard: React.FC = () => {
               </div>
               <button
                 type="button"
+                data-tour="quick-report"
                 onClick={() => void openQuickReportPhonePicker()}
                 className="flex min-h-[45px] items-center gap-1 rounded-lg border-2 border-red-700 bg-red-600 p-1 text-right shadow-sm transition-all hover:border-red-800 hover:bg-red-700 hover:shadow-md"
               >
@@ -1210,7 +1222,7 @@ const Dashboard: React.FC = () => {
 
           {/* قسم براندات الهواتف */}
           <>
-            <div className="mb-4 mt-4">
+            <div className="mb-4 mt-4" data-tour="brands">
               <div className="mb-2 flex items-center justify-between">
                 <h2 className="text-xl font-bold text-black">{t('dashboard_brands')}</h2>
                 <Link to="/phones-for-sale" className="text-sm font-bold text-black hover:text-blue-700">
@@ -1779,7 +1791,13 @@ const Dashboard: React.FC = () => {
 
       {/* تم نقل زر إنشاء الإعلان إلى App.tsx لضمان ثباته */}
 
-      <BottomNavbar isVisible={isNavbarVisible} renderInPortal />
+      <BottomNavbar isVisible={isNavbarVisible} renderInPortal tourTarget={tourTarget} />
+      <AppTour
+        userId={user?.id ?? null}
+        ready={!loadingPhones && !loadingListings && !loadingAccessories && !isCheckingDeviceStatus}
+        blocked={showLocationRequest || isAdModalOpen || showOwnershipConfirmation || showClaimModal || showQuickReportPhonePicker}
+        onTargetChange={setTourTarget}
+      />
 
     </PageContainer>
   );

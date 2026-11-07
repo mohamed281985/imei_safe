@@ -30,9 +30,10 @@ interface Notification {
 interface BottomNavbarProps {
   isVisible?: boolean;
   renderInPortal?: boolean;
+  tourTarget?: string | null;
 }
 
-const BottomNavbar: React.FC<BottomNavbarProps> = ({ isVisible = true, renderInPortal = false }) => {
+const BottomNavbar: React.FC<BottomNavbarProps> = ({ isVisible = true, renderInPortal = false, tourTarget = null }) => {
   // حالة القائمة المنسدلة
   const [menuOpen, setMenuOpen] = useState(false);
   const location = useLocation();
@@ -58,6 +59,7 @@ const BottomNavbar: React.FC<BottomNavbarProps> = ({ isVisible = true, renderInP
 
   const resetCollapseTimer = () => {
     if (collapseTimerRef.current) clearTimeout(collapseTimerRef.current);
+    if (tourTarget) return;
     if (isNavbarExpanded) {
       collapseTimerRef.current = setTimeout(() => {
         setIsNavbarExpanded(false);
@@ -74,11 +76,21 @@ const BottomNavbar: React.FC<BottomNavbarProps> = ({ isVisible = true, renderInP
 
   useEffect(() => {
     resetCollapseTimer();
-  }, [isNavbarExpanded]);
+  }, [isNavbarExpanded, tourTarget]);
 
   // التحقق مما إذا كان المستخدم تجاريًا لعرض زر إنشاء الإعلان
   // تعديل الشرط ليشمل جميع أنواع الحسابات التجارية
   const isBusinessUser = user?.role && ['business', 'free_business', 'gold_business', 'silver_business'].includes(user.role);
+
+  useEffect(() => {
+    if (tourTarget === 'create-action' || tourTarget === 'create-open') {
+      setIsNavbarExpanded(true);
+      setShowCreateAdModal(tourTarget === 'create-action');
+      return;
+    }
+    setShowCreateAdModal(false);
+    if (tourTarget !== 'navigation-open') setIsNavbarExpanded(false);
+  }, [tourTarget]);
 
   const fetchActiveReportsCount = async () => {
     if (!user) return;
@@ -231,7 +243,7 @@ const BottomNavbar: React.FC<BottomNavbarProps> = ({ isVisible = true, renderInP
       ref={navbarRef}
       onMouseEnter={resetCollapseTimer}
       onTouchStart={resetCollapseTimer}
-      className={`fixed print:hidden transition-all duration-300 ease-in-out ${isVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'} ${isNavbarExpanded ? 'bottom-0 left-0 right-0' : 'bottom-[calc(env(safe-area-inset-bottom)+1rem)] right-4'}`}
+      className={`fixed print:hidden transition-all duration-300 ease-in-out ${isVisible || tourTarget ? 'opacity-100' : 'opacity-0 pointer-events-none'} ${isNavbarExpanded ? 'bottom-0 left-0 right-0' : 'bottom-[calc(env(safe-area-inset-bottom)+1rem)] right-4'}`}
       style={{
         zIndex: renderInPortal ? 9999 : 50,
         willChange: 'transform',
@@ -240,6 +252,7 @@ const BottomNavbar: React.FC<BottomNavbarProps> = ({ isVisible = true, renderInP
       {!isNavbarExpanded && (
         <button
           type="button"
+          data-tour="navigation-open"
           aria-label={t('dashboard_open_navigation')}
           onClick={() => setIsNavbarExpanded(true)}
           className="animate-float flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-orange-400 to-orange-600 text-white shadow-xl ring-2 ring-white/70 transition-transform duration-300 hover:scale-105"
@@ -375,6 +388,7 @@ const BottomNavbar: React.FC<BottomNavbarProps> = ({ isVisible = true, renderInP
         {location.pathname === '/dashboard' ? (
           <>
             <button
+              data-tour="create-open"
               onClick={() => setShowCreateAdModal(prev => !prev)}
               className="relative flex items-center justify-center w-full h-full group"
             >
@@ -402,6 +416,7 @@ const BottomNavbar: React.FC<BottomNavbarProps> = ({ isVisible = true, renderInP
                   {isBusinessUser ? (
                     <Link
                       to="/my-store"
+                      data-tour="create-action"
                       className="flex min-h-11 items-center justify-center gap-2 rounded-full bg-gradient-to-r from-orange-500 to-amber-500 px-7 text-base font-black text-white shadow-lg shadow-orange-950/20 transition-colors hover:from-orange-600 hover:to-amber-600 sm:min-h-12 sm:px-10 sm:text-lg"
                       onClick={() => setShowCreateAdModal(false)}
                     >
@@ -411,6 +426,7 @@ const BottomNavbar: React.FC<BottomNavbarProps> = ({ isVisible = true, renderInP
                   ) : (
                     <Link
                       to="/seller-dashboard"
+                      data-tour="create-action"
                       className="flex items-center justify-center rounded-full bg-white px-8 py-1 text-base font-bold text-blue-800 shadow-lg transition-colors hover:bg-blue-50 sm:px-11 sm:text-lg"
                       onClick={() => setShowCreateAdModal(false)}
                     >

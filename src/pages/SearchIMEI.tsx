@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle, Search, Smartphone, FileText, CheckCircle, XCircle, ShieldCheck, MapPin, Clock, Calendar, Hash, Lock, Zap, Database, Target, MessageCircle } from 'lucide-react';
+import { AlertTriangle, Search, Smartphone, FileText, CheckCircle, XCircle, ShieldCheck, MapPin, Clock, Calendar, Hash, Lock, Zap, Database, Target, MessageCircle, ArrowLeftRight, ClipboardPlus } from 'lucide-react';
 import PageContainer from '@/components/PageContainer';
 import AppNavbar from '@/components/AppNavbar';
 import BackButton from '@/components/BackButton';
@@ -942,25 +942,50 @@ const WelcomeSearch: React.FC = () => {
 
               {/* Not Registered Phone */}
               {searchResult === 'not_found' && !registeredPhoneDetails && (
-                <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
-                  <p className="text-blue-600 text-lg text-center font-bold">
-                    {!user && guestPhoneRegistered
-                      ? 'هذا الهاتف مسجل في النظام. سجّل الدخول لعرض التفاصيل المتاحة لحسابك.'
-                      : t('phone_not_registered_register_now')}
-                  </p>
-                </div>
+                <section className="overflow-hidden rounded-xl border border-[#cfe3d3] border-r-[3px] border-r-[#4d8b61] bg-[#f1f8f1] shadow-sm" dir="rtl" aria-live="polite">
+                  <div className="flex items-start gap-4 p-5 sm:p-6">
+                    <div className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-[#e1f0e3] text-[#3d7650]">
+                      <Smartphone className="size-5" aria-hidden="true" />
+                    </div>
+                    <div className="min-w-0 flex-1 text-right">
+                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                        <span className="text-xs font-semibold text-slate-500">نتيجة البحث</span>
+                        <span className="rounded-md bg-[#e1f0e3] px-2 py-1 text-xs font-semibold text-[#3d7650]">
+                          {!user && guestPhoneRegistered ? 'مسجل بالنظام' : 'غير مسجل'}
+                        </span>
+                      </div>
+                      <h3 className="text-lg font-bold leading-7 text-[#17324a] sm:text-xl">
+                        {!user && guestPhoneRegistered ? 'الهاتف مسجل لدينا' : 'الهاتف غير مسجل'}
+                      </h3>
+                      <p className="mt-1 text-sm leading-6 text-slate-600 sm:text-base">
+                        {!user && guestPhoneRegistered
+                          ? 'سجّل الدخول للاطلاع على المعلومات المرتبطة بهذا الهاتف.'
+                          : 'لم نعثر على هذا الرقم في قاعدة بيانات الأجهزة.'}
+                      </p>
+                    </div>
+                  </div>
+                  {phoneId && (
+                    <div className="flex items-center justify-between gap-4 border-t border-[#dcebdd] bg-[#eaf4eb] px-5 py-3 text-sm sm:px-6" dir="rtl">
+                      <span className="font-medium text-slate-500">رقم IMEI</span>
+                      <span className="font-mono font-semibold tracking-normal text-[#263d50]" dir="ltr">{phoneId}</span>
+                    </div>
+                  )}
+                </section>
               )}
 
               {!user && (
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <Button variant="outline" onClick={() => navigate('/account-required', { state: { returnTo: '/register-phone', returnState: { imei: phoneId || imei } } })}>
-                    تسجيل هاتف
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2" dir="rtl">
+                  <Button className="h-12 justify-start gap-3 rounded-lg bg-[#176b91] px-4 text-right text-[15px] font-semibold text-white shadow-sm transition-colors hover:bg-[#125777] sm:col-span-2" onClick={() => navigate('/account-required', { state: { returnTo: '/register-phone', returnState: { imei: phoneId || imei } } })}>
+                    <Smartphone className="size-5" aria-hidden="true" />
+                    <span>تسجيل الهاتف</span>
                   </Button>
-                  <Button variant="outline" onClick={() => navigate('/account-required', { state: { returnTo: '/report', returnState: { imei: phoneId || imei } } })}>
-                    تقديم بلاغ
+                  <Button variant="outline" className="h-11 justify-start gap-3 rounded-lg border-[#d9e4eb] bg-white px-4 text-right text-sm font-medium text-[#344b5c] shadow-none hover:border-[#afc8d6] hover:bg-[#f5f9fb] hover:text-[#17324a]" onClick={() => navigate('/account-required', { state: { returnTo: '/report', returnState: { imei: phoneId || imei } } })}>
+                    <ClipboardPlus className="size-4 text-slate-500" aria-hidden="true" />
+                    <span>الإبلاغ عن الهاتف</span>
                   </Button>
-                  <Button variant="outline" onClick={() => navigate('/account-required', { state: { returnTo: '/ownership-transfer', returnState: { imei: phoneId || imei } } })}>
-                    نقل ملكية
+                  <Button variant="outline" className="h-11 justify-start gap-3 rounded-lg border-[#d9e4eb] bg-white px-4 text-right text-sm font-medium text-[#344b5c] shadow-none hover:border-[#afc8d6] hover:bg-[#f5f9fb] hover:text-[#17324a]" onClick={() => navigate('/account-required', { state: { returnTo: '/ownership-transfer', returnState: { imei: phoneId || imei } } })}>
+                    <ArrowLeftRight className="size-4 text-slate-500" aria-hidden="true" />
+                    <span>نقل الملكية</span>
                   </Button>
                 </div>
               )}

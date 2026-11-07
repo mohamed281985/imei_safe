@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useToast } from '@/hooks/use-toast';
@@ -255,6 +255,8 @@ const RegisterPhone: React.FC = () => {
   // حالة لعرض الصورة الكاملة
   const [showFullImage, setShowFullImage] = useState(false);
   const [fullImageUrl, setFullImageUrl] = useState<string | null>(null);
+  const [showPhoneImageGuide, setShowPhoneImageGuide] = useState(false);
+  const phoneImageInputRef = useRef<HTMLInputElement>(null);
 
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -775,7 +777,7 @@ const RegisterPhone: React.FC = () => {
   }, [previews]);
 
   const imageTypesData: { type: ImageType; labelKey: string; icon: React.ElementType; showUpload: boolean; cameraDirection: 'front' | 'back' }[] = [
-    { type: 'phoneImage', labelKey: 'phone_image', icon: Camera, showUpload: true, cameraDirection: 'back' },
+    { type: 'phoneImage', labelKey: 'phone_and_box_image', icon: Smartphone, showUpload: true, cameraDirection: 'back' },
     { type: 'receiptImage', labelKey: 'receipt_or_id_image', icon: FileText, showUpload: true, cameraDirection: 'back' },
   ];
 
@@ -834,10 +836,15 @@ const RegisterPhone: React.FC = () => {
                 id={`${typeData.type}-upload`}
                 accept="image/*"
                 onChange={(e) => handleFileChange(e, typeData.type)}
+                ref={typeData.type === 'phoneImage' ? phoneImageInputRef : undefined}
                 className="hidden"
               />
               <label
-                htmlFor={`${typeData.type}-upload`}
+                htmlFor={typeData.type === 'phoneImage' ? undefined : `${typeData.type}-upload`}
+                onClick={typeData.type === 'phoneImage' ? (event) => {
+                  event.preventDefault();
+                  setShowPhoneImageGuide(true);
+                } : undefined}
                 className="flex-1 bg-gradient-to-r from-blue-800 via-blue-700 to-blue-800 hover:from-blue-700 hover:via-blue-600 hover:to-blue-700 text-white py-2 px-2 rounded-lg text-center cursor-pointer transition-all duration-300 shadow hover:shadow-md flex items-center justify-center text-sm"
               >
                 <Upload className="w-4 h-4 mr-1" />
@@ -846,14 +853,16 @@ const RegisterPhone: React.FC = () => {
             </>
           )}
 
-          <Button
-            type="button"
-            onClick={() => startCamera(typeData.cameraDirection, typeData.type)}
-            className="flex-1 bg-gradient-to-r from-cyan-800 via-cyan-700 to-cyan-800 hover:from-cyan-700 hover:via-cyan-600 hover:to-cyan-700 text-white py-2 px-2 rounded-lg transition-all duration-300 shadow hover:shadow-md flex items-center justify-center text-sm"
-          >
-            <Camera className="w-4 h-4 mr-1" />
-            {t('capture')}
-          </Button>
+          {typeData.type !== 'phoneImage' && (
+            <Button
+              type="button"
+              onClick={() => startCamera(typeData.cameraDirection, typeData.type)}
+              className="flex-1 bg-gradient-to-r from-cyan-800 via-cyan-700 to-cyan-800 hover:from-cyan-700 hover:via-cyan-600 hover:to-cyan-700 text-white py-2 px-2 rounded-lg transition-all duration-300 shadow hover:shadow-md flex items-center justify-center text-sm"
+            >
+              <Camera className="w-4 h-4 mr-1" />
+              {t('capture')}
+            </Button>
+          )}
         </div>
       </div>
     </div>
@@ -873,6 +882,15 @@ const RegisterPhone: React.FC = () => {
           >
             {t('register_new_phone')}
           </h1>
+        </div>
+        <div className="mb-4 flex flex-col gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-right sm:flex-row sm:items-center sm:justify-between" dir="rtl" role="note">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" aria-hidden="true" />
+            <p className="text-sm font-semibold leading-6 text-amber-950">{t('register_lost_phone_notice')}</p>
+          </div>
+          <Button type="button" variant="outline" onClick={() => navigate('/report')} className="shrink-0 border-amber-400 bg-white text-amber-900 hover:bg-amber-100">
+            {t('register_lost_phone_action')}
+          </Button>
         </div>
         {showUpgradeModal && user && (
           <AdsOfferSlider onClose={() => setShowUpgradeModal(false)} userId={user.id} isUpgradePrompt={true} />
@@ -1064,6 +1082,51 @@ const RegisterPhone: React.FC = () => {
             </form>
           </CardContent>
         </Card>
+        {showPhoneImageGuide && (
+          <div
+            className="fixed inset-0 z-[10000] flex items-center justify-center bg-slate-950/60 p-4"
+            role="presentation"
+            onClick={() => setShowPhoneImageGuide(false)}
+          >
+            <section
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="phone-image-guide-title"
+              dir="rtl"
+              className="w-full max-w-md rounded-2xl border border-sky-100 bg-white p-5 text-right shadow-2xl sm:p-6"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="mb-4 flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sky-700">
+                  <Smartphone className="h-5 w-5" aria-hidden="true" />
+                </div>
+                <div>
+                  <h2 id="phone-image-guide-title" className="text-lg font-extrabold text-[#172B55]">{t('phone_image_guide_title')}</h2>
+                  <p className="mt-1 text-sm leading-6 text-slate-600">{t('phone_image_guide_required')}</p>
+                </div>
+              </div>
+              <ol className="space-y-3 rounded-xl bg-slate-50 p-4 text-sm leading-6 text-slate-800">
+                <li className="flex gap-3"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#172B55] text-xs font-bold text-white">1</span><span>{t('phone_image_guide_step_imei')}</span></li>
+                <li className="flex gap-3"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#172B55] text-xs font-bold text-white">2</span><span>{t('phone_image_guide_step_photo')}</span></li>
+                <li className="flex gap-3"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#172B55] text-xs font-bold text-white">3</span><span>{t('phone_image_guide_step_upload')}</span></li>
+              </ol>
+              <div className="mt-5 flex gap-3">
+                <Button type="button" variant="outline" className="flex-1" onClick={() => setShowPhoneImageGuide(false)}>{t('cancel')}</Button>
+                <Button
+                  type="button"
+                  className="flex-1 bg-[#172B55] text-white hover:bg-[#213d73]"
+                  onClick={() => {
+                    setShowPhoneImageGuide(false);
+                    window.setTimeout(() => phoneImageInputRef.current?.click(), 0);
+                  }}
+                >
+                  <Upload className="ml-2 h-4 w-4" aria-hidden="true" />
+                  {t('phone_image_guide_choose')}
+                </Button>
+              </div>
+            </section>
+          </div>
+        )}
         {/* نافذة عرض الصورة الكاملة */}
         {showFullImage && (
           <div className="fixed inset-0 bg-black bg-opacity-90 z-50 flex flex-col items-center justify-center p-4" onClick={() => setShowFullImage(false)}>
