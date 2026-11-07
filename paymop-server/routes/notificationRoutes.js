@@ -31,15 +31,13 @@ const GUEST_SEARCH_LIMIT = 3;
 const GUEST_SESSION_TTL_SECONDS = 24 * 60 * 60;
 const guestSessionSecret = process.env.SESSION_SECRET || 'dev-only-session-secret-not-for-production';
 
-const guestIpHash = (ip) => crypto.createHmac('sha256', guestSessionSecret).update(String(ip || '')).digest('hex');
-
-const signGuestSession = (ip, guestId) => {
-  const payload = Buffer.from(JSON.stringify({ ip: guestIpHash(ip), guestId, exp: Math.floor(Date.now() / 1000) + GUEST_SESSION_TTL_SECONDS })).toString('base64url');
+const signGuestSession = (guestId) => {
+  const payload = Buffer.from(JSON.stringify({ guestId, exp: Math.floor(Date.now() / 1000) + GUEST_SESSION_TTL_SECONDS })).toString('base64url');
   const signature = crypto.createHmac('sha256', guestSessionSecret).update(payload).digest('base64url');
   return `${payload}.${signature}`;
 };
 
-const verifyGuestSession = (token, ip) => {
+const verifyGuestSession = (token) => {
   if (typeof token !== 'string') return null;
   const [payload, signature, extra] = token.split('.');
   if (!payload || !signature || extra) return null;
@@ -55,7 +53,7 @@ const verifyGuestSession = (token, ip) => {
 
   try {
     const session = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-    if (!session.exp || session.exp <= Math.floor(Date.now() / 1000) || session.ip !== guestIpHash(ip)) return null;
+    if (!session.exp || session.exp <= Math.floor(Date.now() / 1000)) return null;
     if (typeof session.guestId !== 'string' || !/^[a-f0-9]{64}$/.test(session.guestId)) return null;
     return session;
   } catch {
@@ -65,7 +63,7 @@ const verifyGuestSession = (token, ip) => {
 
 app.post('/api/guest-session', searchImeiLimiter, async (req, res) => {
   try {
-    const existingSession = verifyGuestSession(req.body?.token, req.ip);
+    const existingSession = verifyGuestSession(req.body?.token);
     const guestId = existingSession?.guestId || crypto.randomBytes(32).toString('hex');
     const { data: remaining, error } = await supabase.rpc('get_guest_search_remaining', {
       p_guest_id: guestId,
@@ -73,7 +71,7 @@ app.post('/api/guest-session', searchImeiLimiter, async (req, res) => {
     });
     if (error) throw error;
     return res.json({
-      token: existingSession ? req.body.token : signGuestSession(req.ip, guestId),
+      token: existingSession ? req.body.token : signGuestSession(guestId),
       expiresIn: GUEST_SESSION_TTL_SECONDS,
       dailyLimit: GUEST_SEARCH_LIMIT,
       remaining: Number(remaining?.remaining ?? GUEST_SEARCH_LIMIT)
@@ -268,7 +266,7 @@ app.post('/api/search-imei', searchImeiLimiter, async (req, res) => {
       return res.status(400).json({ error: 'IMEI is required' });
     }
 
-    // Authenticated users use their verified Supabase identity; guests use a signed, IP-bound session.
+    // Authenticated users use their verified Supabase identity; guests use a signed random session.
     const authHeader = req.headers['authorization'];
     let authenticatedUserId = null;
     let authenticatedUser = null;
@@ -277,7 +275,7 @@ app.post('/api/search-imei', searchImeiLimiter, async (req, res) => {
     let guestUsage = null;
 
     if (authHeader?.startsWith('Guest ')) {
-      const guestSession = verifyGuestSession(authHeader.slice(6), req.ip);
+      const guestSession = verifyGuestSession(authHeader.slice(6));
       if (!guestSession) return res.status(401).json({ error: 'Invalid guest session' });
       if (!isImeiAllowed(imei)) {
         return res.status(400).json({ error: 'invalid_imei', message: 'Enter a valid 15-digit IMEI' });
