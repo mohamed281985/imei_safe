@@ -1721,14 +1721,16 @@ const getPromoPricing = async (promoCode, offerId) => {
   if (!offer) throw new Error('العرض المحدد غير موجود');
 
   let monthlyPrice = Number(offer.amount ?? offer.price);
+  let originalDurationDays = Number(offer.duration_days) || null;
   if (offer.type) {
     const { data: priceRow, error: priceError } = await supabase
       .from('ads_price')
-      .select('amount')
+      .select('amount, duration_days')
       .eq('type', offer.type)
       .maybeSingle();
     if (priceError) throw new Error('تعذر تحديد سعر العرض');
     if (priceRow?.amount) monthlyPrice = Number(priceRow.amount);
+    if (priceRow?.duration_days) originalDurationDays = Number(priceRow.duration_days);
   }
 
   if (!Number.isFinite(monthlyPrice) || monthlyPrice <= 0) throw new Error('سعر العرض غير متاح');
@@ -1742,6 +1744,7 @@ const getPromoPricing = async (promoCode, offerId) => {
     durationMonths,
     expiresAt: new Date(expirationTime).toISOString(),
     monthlyPrice,
+    originalDurationDays,
     originalAmount,
     discountedAmount
   };
@@ -3065,6 +3068,7 @@ app.post('/api/promo-codes/validate', verifyJwtToken, paymentLimiter, rateLimitM
     }
 
     let monthlyPrice = Number(offer.amount ?? offer.price);
+    let originalDurationDays = Number(offer.duration_days) || null;
     if (offer.type) {
       let priceQuery = supabase
         .from('ads_price')
@@ -3077,6 +3081,7 @@ app.post('/api/promo-codes/validate', verifyJwtToken, paymentLimiter, rateLimitM
         return res.status(500).json({ ok: false, error: 'تعذر تحديد سعر العرض' });
       }
       if (priceRow?.amount) monthlyPrice = Number(priceRow.amount);
+      if (priceRow?.duration_days) originalDurationDays = Number(priceRow.duration_days);
     }
 
     if (!Number.isFinite(monthlyPrice) || monthlyPrice <= 0) {
@@ -3095,6 +3100,7 @@ app.post('/api/promo-codes/validate', verifyJwtToken, paymentLimiter, rateLimitM
         expires_at: new Date(expirationTime).toISOString(),
         original_price: originalPrice,
         discounted_price: discountedPrice,
+        original_duration_days: originalDurationDays,
         currency: 'EGP'
       }
     });

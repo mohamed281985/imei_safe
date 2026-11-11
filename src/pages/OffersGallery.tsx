@@ -23,9 +23,15 @@ interface PromoCodeDetails {
     currency: string;
 }
 
+interface OriginalOfferPricing {
+    amount: number;
+    durationDays: number;
+}
+
 const OffersGallery = () => {
     useScrollToTop();
     const [imageUrl, setImageUrl] = useState<string | null>(null);
+    const [originalOfferPricing, setOriginalOfferPricing] = useState<OriginalOfferPricing | null>(null);
     const [promoDetails, setPromoDetails] = useState<PromoCodeDetails | null>(null);
     const [promoInput, setPromoInput] = useState('');
     const [promoStatus, setPromoStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
@@ -53,6 +59,7 @@ const OffersGallery = () => {
     useEffect(() => {
         const fetchImage = async () => {
             setLoading(true);
+            setOriginalOfferPricing(null);
             setPromoDetails(null);
             setPromoInput('');
             setPromoStatus('idle');
@@ -61,6 +68,7 @@ const OffersGallery = () => {
             const currentAdId = urlParams.get('id');
 
             if (currentAdId) {
+                void fetchOfferPricing(currentAdId);
                 const cacheKey = `offer-image-cache-${currentAdId}`;
 
                 // 1. محاولة تحميل الصورة من ذاكرة التخزين المؤقت (مشفّرة في sessionStorage)
@@ -88,6 +96,42 @@ const OffersGallery = () => {
             } else {
                 setImageError(true);
                 setLoading(false);
+            }
+        };
+
+        const fetchOfferPricing = async (adId: string) => {
+            const idNum = validateId(adId);
+            if (idNum === null) return;
+
+            try {
+                const { data: offer, error: offerError } = await supabase
+                    .from('ads_offar')
+                    .select('*')
+                    .eq('id', idNum)
+                    .maybeSingle();
+                if (offerError || !offer) return;
+
+                let amount = Number(offer.amount ?? offer.price);
+                let durationDays = Number(offer.duration_days) || 1;
+
+                if (offer.type) {
+                    const { data: priceData, error: priceError } = await supabase
+                        .from('ads_price')
+                        .select('amount, duration_days')
+                        .eq('type', offer.type)
+                        .maybeSingle();
+
+                    if (!priceError && priceData) {
+                        if (priceData.amount) amount = Number(priceData.amount);
+                        if (priceData.duration_days) durationDays = Number(priceData.duration_days);
+                    }
+                }
+
+                if (Number.isFinite(amount) && amount > 0) {
+                    setOriginalOfferPricing({ amount, durationDays });
+                }
+            } catch (error) {
+                console.error('Error fetching original offer pricing:', error);
             }
         };
 
@@ -580,36 +624,51 @@ const OffersGallery = () => {
                         {promoStatus === 'error' && (
                             <span className="text-red-300" role="status">{promoError}</span>
                         )}
-                        {promoDetails && (
-                            <div className="mt-1 grid gap-3 rounded-lg border border-emerald-200/70 bg-emerald-950/90 p-3 text-white shadow-xl sm:grid-cols-2">
-                                <div className="text-center sm:col-span-2">
-                                    <span className="block text-xs text-emerald-100">السعر قبل الخصم</span>
-                                    <strong className="text-base text-white/70 line-through" dir="ltr">
+                        {promoDetails ? (
+                            <div className="mt-1 grid grid-cols-2 gap-2 rounded-lg border border-emerald-200/70 bg-emerald-950/90 p-3 text-white shadow-xl sm:grid-cols-3">
+                                <div className="rounded-md bg-white/5 p-2 text-center">
+                                    <span className="block text-xs text-emerald-100">قبل الخصم</span>
+                                    <strong className="text-sm text-white/70 line-through" dir="ltr">
                                         {new Intl.NumberFormat('ar-EG', { style: 'currency', currency: promoDetails.currency }).format(promoDetails.original_price)}
                                     </strong>
                                 </div>
-                                <div className="text-center">
+                                <div className="rounded-md border border-emerald-300/30 bg-emerald-400/10 p-2 text-center">
                                     <span className="block text-xs text-emerald-100">السعر بعد الخصم</span>
-                                    <strong className="text-xl font-black text-emerald-300" dir="ltr">
+                                    <strong className="text-lg font-black text-emerald-300" dir="ltr">
                                         {new Intl.NumberFormat('ar-EG', { style: 'currency', currency: promoDetails.currency }).format(promoDetails.discounted_price)}
                                     </strong>
                                 </div>
-                                <div className="text-center">
+                                <div className="rounded-md bg-white/5 p-2 text-center">
+                                    <span className="block text-xs text-emerald-100">مدة العرض بعد التفعيل</span>
+                                    <strong className="text-sm font-bold">{promoDetails.duration_months} {promoDetails.duration_months === 1 ? 'شهر' : 'شهرًا'}</strong>
+                                </div>
+                                <div className="rounded-md bg-white/5 p-2 text-center">
                                     <span className="block text-xs text-emerald-100">نسبة الخصم</span>
-                                    <strong className="text-lg">{promoDetails.discount_percentage}%</strong>
+                                    <strong className="text-sm font-bold">{promoDetails.discount_percentage}%</strong>
                                 </div>
-                                <div className="text-center">
-                                    <span className="block text-xs text-emerald-100">مدة العرض</span>
-                                    <strong className="text-sm">{promoDetails.duration_months} {promoDetails.duration_months === 1 ? 'شهر' : 'شهرًا'}</strong>
-                                </div>
-                                <div className="text-center">
+                                <div className="col-span-2 rounded-md bg-white/5 p-2 text-center sm:col-span-2">
                                     <span className="block text-xs text-emerald-100">صالح حتى</span>
                                     <strong className="text-sm" dir="auto">
                                         {new Date(promoDetails.expires_at).toLocaleDateString('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' })}
                                     </strong>
                                 </div>
                             </div>
-                        )}
+                        ) : originalOfferPricing ? (
+                            <div className="mt-1 grid grid-cols-2 gap-2 rounded-lg border border-white/30 bg-black/75 p-3 text-white shadow-xl">
+                                <div className="rounded-md border border-white/10 bg-white/5 p-3 text-center">
+                                    <span className="block text-xs text-white/70">السعر الأصلي</span>
+                                    <strong className="text-lg font-bold" dir="ltr">
+                                        {new Intl.NumberFormat('ar-EG', { style: 'currency', currency: 'EGP' }).format(originalOfferPricing.amount)}
+                                    </strong>
+                                </div>
+                                <div className="rounded-md border border-white/10 bg-white/5 p-3 text-center">
+                                    <span className="block text-xs text-white/70">المدة الأصلية</span>
+                                    <strong className="text-lg font-bold">
+                                        {originalOfferPricing.durationDays} {originalOfferPricing.durationDays === 1 ? 'يوم' : 'يومًا'}
+                                    </strong>
+                                </div>
+                            </div>
+                        ) : null}
                     </div>
                     <button className="h-12 shrink-0 rounded-lg bg-red-500 px-6 font-bold text-white shadow-lg disabled:opacity-60" onClick={handleOfferPayment} disabled={isPaying}>اشترك في العرض</button>
                 </div>
