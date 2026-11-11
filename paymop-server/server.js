@@ -2990,17 +2990,15 @@ app.post('/api/promo-codes/validate', verifyJwtToken, paymentLimiter, rateLimitM
     if (offer.type) {
       let priceQuery = supabase
         .from('ads_price')
-        .select('amount')
+        .select('amount, duration_days')
         .eq('type', offer.type);
-
-      if (offer.duration_days) priceQuery = priceQuery.eq('duration_days', offer.duration_days);
 
       const { data: priceRow, error: priceError } = await priceQuery.maybeSingle();
       if (priceError) {
         console.error('promo-code price lookup failed:', priceError);
         return res.status(500).json({ ok: false, error: 'تعذر تحديد سعر العرض' });
       }
-      if (priceRow?.amount != null) originalPrice = Number(priceRow.amount);
+      if (priceRow?.amount) originalPrice = Number(priceRow.amount);
     }
 
     if (!Number.isFinite(originalPrice) || originalPrice <= 0) {
