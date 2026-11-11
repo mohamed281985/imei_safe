@@ -2936,7 +2936,8 @@ app.delete('/api/ads/my-pending-package/:id', verifyJwtToken, csrfProtection, as
 app.post('/api/promo-codes/validate', verifyJwtToken, paymentLimiter, rateLimitMiddleware({ windowMs: 15 * 60 * 1000, max: 8 }), async (req, res) => {
   try {
     const enteredCode = String(req.body?.code || '').trim();
-    if (!enteredCode || enteredCode.length > 64) {
+    const offerId = Number(req.body?.offerId);
+    if (!enteredCode || enteredCode.length > 64 || !Number.isSafeInteger(offerId) || offerId <= 0) {
       return res.status(400).json({ ok: false, error: 'أدخل بروموكود صالحاً' });
     }
 
@@ -2974,13 +2975,50 @@ app.post('/api/promo-codes/validate', verifyJwtToken, paymentLimiter, rateLimitM
       return res.status(500).json({ ok: false, error: 'بيانات البروموكود غير مكتملة' });
     }
 
+    const { data: offer, error: offerError } = await supabase
+      .from('ads_offar')
+      .select('id, amount, type, duration_days')
+      .eq('id', offerId)
+      .maybeSingle();
+
+    if (offerError || !offer) {
+      if (offerError) console.error('promo-code offer lookup failed:', offerError);
+      return res.status(404).json({ ok: false, error: 'العرض المحدد غير موجود' });
+    }
+
+    let originalPrice = Number(offer.amount);
+    if (offer.type) {
+      let priceQuery = supabase
+        .from('ads_price')
+        .select('amount')
+        .eq('type', offer.type);
+
+      if (offer.duration_days) priceQuery = priceQuery.eq('duration_days', offer.duration_days);
+
+      const { data: priceRow, error: priceError } = await priceQuery.maybeSingle();
+      if (priceError) {
+        console.error('promo-code price lookup failed:', priceError);
+        return res.status(500).json({ ok: false, error: 'تعذر تحديد سعر العرض' });
+      }
+      if (priceRow?.amount != null) originalPrice = Number(priceRow.amount);
+    }
+
+    if (!Number.isFinite(originalPrice) || originalPrice <= 0) {
+      return res.status(400).json({ ok: false, error: 'سعر العرض غير متاح' });
+    }
+
+    const discountedPrice = Math.round(originalPrice * (1 - discountPercent / 100) * 100) / 100;
+
     return res.json({
       ok: true,
       promo: {
         code: promo.promo_code ?? promo.code ?? promo.name ?? promo.promo_name,
         discount_percentage: discountPercent,
         duration_days: durationDays,
-        expires_at: new Date(expirationTime).toISOString()
+        expires_at: new Date(expirationTime).toISOString(),
+        original_price: originalPrice,
+        discounted_price: discountedPrice,
+        currency: 'EGP'
       }
     });
   } catch (error) {

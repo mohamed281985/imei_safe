@@ -18,6 +18,9 @@ interface PromoCodeDetails {
     discount_percentage: number;
     duration_days: number;
     expires_at: string;
+    original_price: number;
+    discounted_price: number;
+    currency: string;
 }
 
 const OffersGallery = () => {
@@ -151,12 +154,15 @@ const OffersGallery = () => {
         setPromoDetails(null);
 
         try {
-            const response = await axiosInstance.post('/api/promo-codes/validate', { code });
+            const offerId = validateId(new URLSearchParams(location.search).get('id') || '');
+            if (offerId === null) throw new Error('العرض المحدد غير صالح');
+
+            const response = await axiosInstance.post('/api/promo-codes/validate', { code, offerId });
             setPromoDetails(response.data.promo);
             setPromoStatus('success');
         } catch (error: any) {
             setPromoStatus('error');
-            setPromoError(error.response?.data?.error || 'تعذر تفعيل البروموكود، تحقق من الرمز وحاول مرة أخرى');
+            setPromoError(error.response?.data?.error || error.message || 'تعذر تفعيل البروموكود، تحقق من الرمز وحاول مرة أخرى');
         }
     };
 
@@ -570,7 +576,19 @@ const OffersGallery = () => {
                             <span className="text-red-300" role="status">{promoError}</span>
                         )}
                         {promoDetails && (
-                            <div className="mt-1 grid gap-2 rounded-lg border border-emerald-200/70 bg-emerald-950/85 p-3 text-white shadow-xl sm:grid-cols-3" role="status">
+                            <div className="mt-1 grid gap-3 rounded-lg border border-emerald-200/70 bg-emerald-950/90 p-3 text-white shadow-xl sm:grid-cols-2">
+                                <div className="text-center sm:col-span-2">
+                                    <span className="block text-xs text-emerald-100">السعر قبل الخصم</span>
+                                    <strong className="text-base text-white/70 line-through" dir="ltr">
+                                        {new Intl.NumberFormat('ar-EG', { style: 'currency', currency: promoDetails.currency }).format(promoDetails.original_price)}
+                                    </strong>
+                                </div>
+                                <div className="text-center">
+                                    <span className="block text-xs text-emerald-100">السعر بعد الخصم</span>
+                                    <strong className="text-xl font-black text-emerald-300" dir="ltr">
+                                        {new Intl.NumberFormat('ar-EG', { style: 'currency', currency: promoDetails.currency }).format(promoDetails.discounted_price)}
+                                    </strong>
+                                </div>
                                 <div className="text-center">
                                     <span className="block text-xs text-emerald-100">نسبة الخصم</span>
                                     <strong className="text-lg">{promoDetails.discount_percentage}%</strong>
