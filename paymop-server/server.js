@@ -2933,6 +2933,62 @@ app.delete('/api/ads/my-pending-package/:id', verifyJwtToken, csrfProtection, as
   }
 });
 
+app.post('/api/promo-codes/validate', verifyJwtToken, paymentLimiter, rateLimitMiddleware({ windowMs: 15 * 60 * 1000, max: 8 }), async (req, res) => {
+  try {
+    const enteredCode = String(req.body?.code || '').trim();
+    if (!enteredCode || enteredCode.length > 64) {
+      return res.status(400).json({ ok: false, error: 'أدخل بروموكود صالحاً' });
+    }
+
+    const { data: activePromos, error } = await supabase
+      .from('promo_code')
+      .select('*')
+      .eq('is_active', true)
+      .limit(500);
+
+    if (error) {
+      console.error('promo-code validation query failed:', error);
+      return res.status(500).json({ ok: false, error: 'تعذر التحقق من البروموكود حالياً' });
+    }
+
+    const normalizedCode = enteredCode.toLocaleUpperCase();
+    const promo = (activePromos || []).find((row) => {
+      const storedCode = row.promo_code ?? row.code ?? row.name ?? row.promo_name;
+      return typeof storedCode === 'string' && storedCode.trim().toLocaleUpperCase() === normalizedCode;
+    });
+
+    if (!promo) {
+      return res.status(400).json({ ok: false, error: 'البروموكود غير صالح أو غير مفعّل' });
+    }
+
+    const expiresAt = promo.expires_at || promo.expiry_at || promo.expiration_date || promo.expiry_date || promo.valid_until || null;
+    const expirationTime = expiresAt ? new Date(expiresAt).getTime() : NaN;
+    if (!Number.isFinite(expirationTime) || expirationTime <= Date.now()) {
+      return res.status(400).json({ ok: false, error: 'انتهت صلاحية البروموكود' });
+    }
+
+    const discountPercent = Number(promo.discount_percentage ?? promo.discount_percent ?? promo.discount);
+    const durationDays = Number(promo.duration_days ?? promo.offer_duration_days ?? promo.duration);
+    if (!Number.isFinite(discountPercent) || discountPercent <= 0 || discountPercent > 100 || !Number.isFinite(durationDays) || durationDays <= 0) {
+      console.error('promo-code row has invalid discount metadata');
+      return res.status(500).json({ ok: false, error: 'بيانات البروموكود غير مكتملة' });
+    }
+
+    return res.json({
+      ok: true,
+      promo: {
+        code: promo.promo_code ?? promo.code ?? promo.name ?? promo.promo_name,
+        discount_percentage: discountPercent,
+        duration_days: durationDays,
+        expires_at: new Date(expirationTime).toISOString()
+      }
+    });
+  } catch (error) {
+    console.error('promo-code validation failed:', error);
+    return res.status(500).json({ ok: false, error: 'تعذر التحقق من البروموكود حالياً' });
+  }
+});
+
 // Endpoint لحساب عدد الإعلانات المتبقية من باقة المستخدم
 app.get('/api/ads/package-remaining', verifyJwtToken, async (req, res) => {
   try {

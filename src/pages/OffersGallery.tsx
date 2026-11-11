@@ -13,9 +13,20 @@ import axiosInstance from '@/services/axiosInterceptor';
 import { Browser } from '@capacitor/browser';
 import { Capacitor } from '@capacitor/core';
 
+interface PromoCodeDetails {
+    code: string;
+    discount_percentage: number;
+    duration_days: number;
+    expires_at: string;
+}
+
 const OffersGallery = () => {
     useScrollToTop();
     const [imageUrl, setImageUrl] = useState<string | null>(null);
+    const [promoDetails, setPromoDetails] = useState<PromoCodeDetails | null>(null);
+    const [promoInput, setPromoInput] = useState('');
+    const [promoStatus, setPromoStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+    const [promoError, setPromoError] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
     const [imageError, setImageError] = useState(false);
     const [isPaying, setIsPaying] = useState(false);
@@ -39,6 +50,10 @@ const OffersGallery = () => {
     useEffect(() => {
         const fetchImage = async () => {
             setLoading(true);
+            setPromoDetails(null);
+            setPromoInput('');
+            setPromoStatus('idle');
+            setPromoError(null);
             const urlParams = new URLSearchParams(location.search);
             const currentAdId = urlParams.get('id');
 
@@ -121,6 +136,29 @@ const OffersGallery = () => {
     if (imageError || !imageUrl) {
         return <div className="flex items-center justify-center min-h-screen bg-black text-white">{t('image_not_found')}</div>;
     }
+
+    const handleActivatePromoCode = async () => {
+        const code = promoInput.trim();
+        if (!code) {
+            setPromoDetails(null);
+            setPromoStatus('error');
+            setPromoError('اكتب البروموكود أولاً');
+            return;
+        }
+
+        setPromoStatus('loading');
+        setPromoError(null);
+        setPromoDetails(null);
+
+        try {
+            const response = await axiosInstance.post('/api/promo-codes/validate', { code });
+            setPromoDetails(response.data.promo);
+            setPromoStatus('success');
+        } catch (error: any) {
+            setPromoStatus('error');
+            setPromoError(error.response?.data?.error || 'تعذر تفعيل البروموكود، تحقق من الرمز وحاول مرة أخرى');
+        }
+    };
 
     const handleOfferPayment = async () => {
         setIsPaying(true);
@@ -501,7 +539,57 @@ const OffersGallery = () => {
     return (
         <div className="fixed inset-0  flex flex-col items-center justify-center z-50" style={{ padding: 0, margin: 0 }}>
             <div className="absolute bottom-10 left-0 w-full flex flex-col items-center z-10 px-4">
-                <button className="bg-red-500 text-white font-bold py-3 px-6 rounded-lg shadow-lg" onClick={handleOfferPayment} disabled={isPaying}>اشترك في العرض</button>
+                <div className="flex w-full max-w-xl flex-col items-stretch gap-3 sm:flex-row sm:items-end sm:justify-center">
+                    <div className="flex min-w-0 flex-1 flex-col gap-1 text-right text-sm font-semibold text-white">
+                        <label htmlFor="offer-promo-code">البروموكود</label>
+                        <div className="flex gap-2">
+                            <input
+                                id="offer-promo-code"
+                                autoComplete="off"
+                                className="h-12 min-w-0 flex-1 rounded-lg border border-white/40 bg-white px-3 text-center font-bold text-gray-900"
+                                dir="ltr"
+                                value={promoInput}
+                                onChange={(event) => {
+                                    setPromoInput(event.target.value);
+                                    setPromoDetails(null);
+                                    setPromoStatus('idle');
+                                    setPromoError(null);
+                                }}
+                                placeholder="اكتب البروموكود"
+                            />
+                            <button
+                                type="button"
+                                className="h-12 shrink-0 rounded-lg bg-emerald-600 px-4 font-bold text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-60"
+                                onClick={handleActivatePromoCode}
+                                disabled={promoStatus === 'loading'}
+                            >
+                                {promoStatus === 'loading' ? 'جارٍ التحقق...' : 'تفعيل'}
+                            </button>
+                        </div>
+                        {promoStatus === 'error' && (
+                            <span className="text-red-300" role="status">{promoError}</span>
+                        )}
+                        {promoDetails && (
+                            <div className="mt-1 grid gap-2 rounded-lg border border-emerald-200/70 bg-emerald-950/85 p-3 text-white shadow-xl sm:grid-cols-3" role="status">
+                                <div className="text-center">
+                                    <span className="block text-xs text-emerald-100">نسبة الخصم</span>
+                                    <strong className="text-lg">{promoDetails.discount_percentage}%</strong>
+                                </div>
+                                <div className="text-center">
+                                    <span className="block text-xs text-emerald-100">مدة العرض</span>
+                                    <strong className="text-sm">{promoDetails.duration_days} يوم</strong>
+                                </div>
+                                <div className="text-center">
+                                    <span className="block text-xs text-emerald-100">صالح حتى</span>
+                                    <strong className="text-sm" dir="auto">
+                                        {new Date(promoDetails.expires_at).toLocaleDateString('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' })}
+                                    </strong>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                    <button className="h-12 shrink-0 rounded-lg bg-red-500 px-6 font-bold text-white shadow-lg disabled:opacity-60" onClick={handleOfferPayment} disabled={isPaying}>اشترك في العرض</button>
+                </div>
                 {payError && <div className="text-red-500 mt-4 text-xl text-center max-w-[80%]">{payError}</div>}
             </div>
             <div
