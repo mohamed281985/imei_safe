@@ -3,8 +3,8 @@ create table if not exists public.promo_code (
   promo_code text not null,
   discount_percentage numeric(5, 2) not null
     check (discount_percentage > 0 and discount_percentage <= 100),
-  duration_days integer not null
-    check (duration_days > 0),
+  duration_months integer not null
+    constraint promo_code_duration_months_positive check (duration_months > 0),
   is_active boolean not null default false,
   expires_at timestamptz not null,
   created_at timestamptz not null default now()

@@ -2969,8 +2969,8 @@ app.post('/api/promo-codes/validate', verifyJwtToken, paymentLimiter, rateLimitM
     }
 
     const discountPercent = Number(promo.discount_percentage ?? promo.discount_percent ?? promo.discount);
-    const durationDays = Number(promo.duration_days ?? promo.offer_duration_days ?? promo.duration);
-    if (!Number.isFinite(discountPercent) || discountPercent <= 0 || discountPercent > 100 || !Number.isFinite(durationDays) || durationDays <= 0) {
+    const durationMonths = Number(promo.duration_months ?? promo.duration_month);
+    if (!Number.isFinite(discountPercent) || discountPercent <= 0 || discountPercent > 100 || !Number.isSafeInteger(durationMonths) || durationMonths <= 0) {
       console.error('promo-code row has invalid discount metadata');
       return res.status(500).json({ ok: false, error: 'بيانات البروموكود غير مكتملة' });
     }
@@ -2990,7 +2990,7 @@ app.post('/api/promo-codes/validate', verifyJwtToken, paymentLimiter, rateLimitM
       return res.status(404).json({ ok: false, error: 'العرض المحدد غير موجود' });
     }
 
-    let originalPrice = Number(offer.amount ?? offer.price);
+    let monthlyPrice = Number(offer.amount ?? offer.price);
     if (offer.type) {
       let priceQuery = supabase
         .from('ads_price')
@@ -3002,13 +3002,14 @@ app.post('/api/promo-codes/validate', verifyJwtToken, paymentLimiter, rateLimitM
         console.error('promo-code price lookup failed:', priceError);
         return res.status(500).json({ ok: false, error: 'تعذر تحديد سعر العرض' });
       }
-      if (priceRow?.amount) originalPrice = Number(priceRow.amount);
+      if (priceRow?.amount) monthlyPrice = Number(priceRow.amount);
     }
 
-    if (!Number.isFinite(originalPrice) || originalPrice <= 0) {
+    if (!Number.isFinite(monthlyPrice) || monthlyPrice <= 0) {
       return res.status(400).json({ ok: false, error: 'سعر العرض غير متاح' });
     }
 
+    const originalPrice = Math.round(monthlyPrice * durationMonths * 100) / 100;
     const discountedPrice = Math.round(originalPrice * (1 - discountPercent / 100) * 100) / 100;
 
     return res.json({
@@ -3016,7 +3017,7 @@ app.post('/api/promo-codes/validate', verifyJwtToken, paymentLimiter, rateLimitM
       promo: {
         code: promo.promo_code ?? promo.code ?? promo.name ?? promo.promo_name,
         discount_percentage: discountPercent,
-        duration_days: durationDays,
+        duration_months: durationMonths,
         expires_at: new Date(expirationTime).toISOString(),
         original_price: originalPrice,
         discounted_price: discountedPrice,

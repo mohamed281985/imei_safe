@@ -1,14 +1,14 @@
 insert into public.promo_code (
   promo_code,
   discount_percentage,
-  duration_days,
+  duration_months,
   is_active,
   expires_at
 )
 values (
   'M5',
   50,
-  365,
+  12,
   true,
   now() + interval '30 days'
 )

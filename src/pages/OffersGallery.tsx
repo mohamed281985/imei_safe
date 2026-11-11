@@ -16,7 +16,7 @@ import { Capacitor } from '@capacitor/core';
 interface PromoCodeDetails {
     code: string;
     discount_percentage: number;
-    duration_days: number;
+    duration_months: number;
     expires_at: string;
     original_price: number;
     discounted_price: number;
@@ -595,7 +595,7 @@ const OffersGallery = () => {
                                 </div>
                                 <div className="text-center">
                                     <span className="block text-xs text-emerald-100">مدة العرض</span>
-                                    <strong className="text-sm">{promoDetails.duration_days} يوم</strong>
+                                    <strong className="text-sm">{promoDetails.duration_months} {promoDetails.duration_months === 1 ? 'شهر' : 'شهرًا'}</strong>
                                 </div>
                                 <div className="text-center">
                                     <span className="block text-xs text-emerald-100">صالح حتى</span>
