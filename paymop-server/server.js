@@ -2977,7 +2977,7 @@ app.post('/api/promo-codes/validate', verifyJwtToken, paymentLimiter, rateLimitM
 
     const { data: offer, error: offerError } = await supabase
       .from('ads_offar')
-      .select('id, amount, type')
+      .select('*')
       .eq('id', offerId)
       .maybeSingle();
 
@@ -2990,7 +2990,7 @@ app.post('/api/promo-codes/validate', verifyJwtToken, paymentLimiter, rateLimitM
       return res.status(404).json({ ok: false, error: 'العرض المحدد غير موجود' });
     }
 
-    let originalPrice = Number(offer.amount);
+    let originalPrice = Number(offer.amount ?? offer.price);
     if (offer.type) {
       let priceQuery = supabase
         .from('ads_price')
