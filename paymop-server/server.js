@@ -1682,10 +1682,75 @@ const verifySignatureHmac = async ({ merchantOrderId, amount, timestamp, signatu
   }
 };
 
+const getPromoPricing = async (promoCode, offerId) => {
+  const normalizedCode = String(promoCode || '').trim().toLocaleUpperCase();
+  const normalizedOfferId = Number(offerId);
+  if (!normalizedCode || normalizedCode.length > 64 || !Number.isSafeInteger(normalizedOfferId) || normalizedOfferId <= 0) {
+    throw new Error('البروموكود أو العرض غير صالح');
+  }
+
+  const { data: activePromos, error: promoError } = await supabase
+    .from('promo_code')
+    .select('*')
+    .eq('is_active', true)
+    .limit(500);
+  if (promoError) throw new Error('تعذر التحقق من البروموكود حالياً');
+
+  const promo = (activePromos || []).find((row) => {
+    const storedCode = row.promo_code ?? row.code ?? row.name ?? row.promo_name;
+    return typeof storedCode === 'string' && storedCode.trim().toLocaleUpperCase() === normalizedCode;
+  });
+  if (!promo) throw new Error('البروموكود غير صالح أو غير مفعّل');
+
+  const expiresAt = promo.expires_at || promo.expiry_at || promo.expiration_date || promo.expiry_date || promo.valid_until || null;
+  const expirationTime = expiresAt ? new Date(expiresAt).getTime() : NaN;
+  if (!Number.isFinite(expirationTime) || expirationTime <= Date.now()) throw new Error('انتهت صلاحية البروموكود');
+
+  const discountPercent = Number(promo.discount_percentage ?? promo.discount_percent ?? promo.discount);
+  const durationMonths = Number(promo.duration_months ?? promo.duration_month);
+  if (!Number.isFinite(discountPercent) || discountPercent <= 0 || discountPercent > 100 || !Number.isSafeInteger(durationMonths) || durationMonths <= 0) {
+    throw new Error('بيانات البروموكود غير مكتملة');
+  }
+
+  const { data: offer, error: offerError } = await supabase
+    .from('ads_offar')
+    .select('*')
+    .eq('id', normalizedOfferId)
+    .maybeSingle();
+  if (offerError) throw new Error('تعذر قراءة بيانات العرض');
+  if (!offer) throw new Error('العرض المحدد غير موجود');
+
+  let monthlyPrice = Number(offer.amount ?? offer.price);
+  if (offer.type) {
+    const { data: priceRow, error: priceError } = await supabase
+      .from('ads_price')
+      .select('amount')
+      .eq('type', offer.type)
+      .maybeSingle();
+    if (priceError) throw new Error('تعذر تحديد سعر العرض');
+    if (priceRow?.amount) monthlyPrice = Number(priceRow.amount);
+  }
+
+  if (!Number.isFinite(monthlyPrice) || monthlyPrice <= 0) throw new Error('سعر العرض غير متاح');
+
+  const originalAmount = Math.round(monthlyPrice * durationMonths * 100) / 100;
+  const discountedAmount = Math.round(originalAmount * (1 - discountPercent / 100) * 100) / 100;
+  return {
+    promo,
+    code: promo.promo_code ?? promo.code ?? promo.name ?? promo.promo_name,
+    discountPercent,
+    durationMonths,
+    expiresAt: new Date(expirationTime).toISOString(),
+    monthlyPrice,
+    originalAmount,
+    discountedAmount
+  };
+};
+
 // Signing endpoint - server signs the payload and returns signature
 app.post('/paymob/sign', paymentLimiter, rateLimitMiddleware({ windowMs: 15 * 60 * 1000, max: 10 }), async (req, res) => {
   try {
-    const { merchantOrderId, offerId, timestamp } = req.body || {};
+    const { merchantOrderId, offerId, timestamp, promoCode } = req.body || {};
     if (!merchantOrderId || !offerId || !timestamp) {
       return res.status(400).json({ error: 'merchantOrderId, offerId and timestamp are required' });
     }
@@ -1769,6 +1834,15 @@ app.post('/paymob/sign', paymentLimiter, rateLimitMiddleware({ windowMs: 15 * 60
               .single();
             if (!priceErr && priceRow && typeof priceRow.amount !== 'undefined') expectedAmount = Number(priceRow.amount);
           }
+        }
+      }
+
+      if (promoCode) {
+        try {
+          const promoPricing = await getPromoPricing(promoCode, offerId);
+          expectedAmount = promoPricing.discountedAmount;
+        } catch (promoError) {
+          return res.status(400).json({ error: promoError.message || 'تعذر تطبيق البروموكود' });
         }
       }
     } catch (e) {
@@ -3375,7 +3449,7 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
   try {
     // سجل الحدث بدون طباعة الحقول الحساسة
     console.log("Received create-offer-payment request:", JSON.stringify({ merchantOrderId: req.body?.merchantOrderId || null, offerId: req.body?.offerId || null, timestamp: req.body?.timestamp || null }));
-    const { amount, email, name, phone, merchantOrderId, offerData, redirect_url_success, redirect_url_failed, offerId, signature, timestamp } = req.body;
+    const { amount, email, name, phone, merchantOrderId, offerData, redirect_url_success, redirect_url_failed, offerId, promoCode, signature, timestamp } = req.body;
     // الملاحظة: الآن يمكن للعميل ألا يرسل حقل `amount`؛ الخادم سيحسب المبلغ المتوقع من قاعدة البيانات
 
 
@@ -3432,6 +3506,15 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
             console.log('ads_price fallback lookup (by offerRow.type):', { type: offerRow.type, priceRow: priceRow || null, priceErr: priceErr || null });
             if (!priceErr && priceRow && typeof priceRow.amount !== 'undefined') expectedAmount = Number(priceRow.amount);
           }
+        }
+      }
+
+      if (promoCode) {
+        try {
+          const promoPricing = await getPromoPricing(promoCode, offerId || offerData?.offer_id);
+          expectedAmount = promoPricing.discountedAmount;
+        } catch (promoError) {
+          return safeStatusJson(400, { error: promoError.message || 'تعذر تطبيق البروموكود' });
         }
       }
 

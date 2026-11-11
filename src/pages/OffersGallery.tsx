@@ -259,8 +259,13 @@ const OffersGallery = () => {
 
             // تجهيز بيانات الدفع لإرسالها للسيرفر
             console.log(t('preparing_payment_data'));
+            const activePromoCode = promoDetails && promoInput.trim().toLocaleUpperCase() === promoDetails.code.toLocaleUpperCase()
+                ? promoDetails.code
+                : null;
+            const paymentAmount = activePromoCode ? promoDetails.discounted_price : price;
             const paymobData = {
-                amount: price,
+                amount: paymentAmount,
+                promoCode: activePromoCode,
                 // ⭐ استخدام بيانات المستخدم الحالي
                 email: user.email || '',
                 name: businessData?.store_name || user.username || '',
@@ -320,7 +325,7 @@ const OffersGallery = () => {
                         try {
                             const resp = await axiosInstance.post(
                                 'https://imei-safe.me/paymob/sign',
-                                { merchantOrderId: paymobData.merchantOrderId, offerId: offerIdNum, offerData: paymobData.offerData, timestamp },
+                                { merchantOrderId: paymobData.merchantOrderId, offerId: offerIdNum, offerData: paymobData.offerData, promoCode: paymobData.promoCode, timestamp },
                                 { timeout: 15000, headers: { Authorization: `Bearer ${token}` } }
                             );
                             return resp.data;
