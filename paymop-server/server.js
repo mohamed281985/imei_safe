@@ -2977,12 +2977,16 @@ app.post('/api/promo-codes/validate', verifyJwtToken, paymentLimiter, rateLimitM
 
     const { data: offer, error: offerError } = await supabase
       .from('ads_offar')
-      .select('id, amount, type, duration_days')
+      .select('id, amount, type')
       .eq('id', offerId)
       .maybeSingle();
 
-    if (offerError || !offer) {
-      if (offerError) console.error('promo-code offer lookup failed:', offerError);
+    if (offerError) {
+      console.error('promo-code offer lookup failed:', offerError);
+      return res.status(500).json({ ok: false, error: 'تعذر قراءة بيانات العرض' });
+    }
+
+    if (!offer) {
       return res.status(404).json({ ok: false, error: 'العرض المحدد غير موجود' });
     }
 
