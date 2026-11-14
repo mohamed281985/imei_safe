@@ -54,6 +54,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const SESSION_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+const isBusinessRole = (role?: string | null) => String(role || '').toLowerCase().includes('business');
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -281,7 +282,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               console.warn('checkAuth: app user check error', e);
             }
 
-            if (appUserStatus === 'pending' && !String(appUserRole || userProfile.role || '').toLowerCase().includes('admin')) {
+            const effectiveRole = appUserRole || userProfile.role || '';
+            const isBusinessAccount = isBusinessRole(effectiveRole);
+            if (appUserStatus === 'pending' && !isBusinessAccount && !String(effectiveRole).toLowerCase().includes('admin')) {
               toast({
                 title: 'الحساب قيد المراجعة',
                 description: 'تم استلام بياناتك. عاود تسجيل الدخول لاحقًا بعد انتهاء المراجعة.',
@@ -297,23 +300,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               .eq('user_id', user.id)
               .maybeSingle();
             if (businessError) console.warn('checkAuth: failed to check business review status', businessError);
-            if (businessProfile?.status === 'pending' && !String(appUserRole || userProfile.role || '').toLowerCase().includes('admin')) {
+            if (isBusinessAccount && businessProfile?.status === 'pending'
+              && businessProfile.store_image_url && businessProfile.license_image_url) {
               toast({
                 title: 'النشاط التجاري قيد المراجعة',
-                description: 'تم استلام بيانات النشاط. عاود تسجيل الدخول في وقت لاحق بعد انتهاء المراجعة.',
+                description: 'تم استلام بيانات النشاط. لن تتمكن من الدخول حتى اعتماد الطلب.',
                 variant: 'destructive'
               });
               await logout();
               return;
             }
-
-            setNeedsProfileCompletion(Boolean(
-              businessProfile && (
-                businessProfile.status === 'rejected' ||
-                !businessProfile.store_image_url ||
-                !businessProfile.license_image_url
-              )
-            ));
+            setNeedsProfileCompletion(isBusinessAccount && businessProfile?.status !== 'approved');
 
             if (appUserStatus === 'rejected') {
               setRejectedAccountProfile({
@@ -375,14 +372,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .from('users')
         .select('status, role')
         .eq('email', email)
-        .single();
+        .maybeSingle();
 
       // إذا كان الحساب محظوراً، أوقف العملية فوراً
       if (userProfileData && userProfileData.status === 'blocked') {
         console.log('Login blocked for blocked user:', email);
         return { success: false, error: 'user_blocked' };
       }
-      if (userProfileData && userProfileData.status === 'pending') {
+      const isBusinessAccount = isBusinessRole(userProfileData?.role);
+      if (userProfileData && userProfileData.status === 'pending' && !isBusinessAccount) {
         return { success: false, error: 'account_pending_review' };
       }
 
@@ -405,11 +403,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .eq('user_id', user.id)
           .maybeSingle();
         if (businessProfileError) console.warn('Login: failed to check business review status', businessProfileError);
-        if (businessProfile?.status === 'pending') {
+        if (isBusinessRole(userProfileData?.role || user.user_metadata.role)
+          && businessProfile?.status === 'pending'
+          && businessProfile.store_image_url && businessProfile.license_image_url) {
           await logout();
           return { success: false, error: 'business_pending_review' };
         }
-
         console.log("User found, login successful", user);
         await syncUserLanguage(user.id);
         const userProfile = {
@@ -458,11 +457,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // تحديث عدد الإشعارات غير المقروؤة
         refreshNotifications();
 
-        const needsBusinessReview = Boolean(businessProfile && (
-          businessProfile.status === 'rejected' ||
-          !businessProfile.store_image_url ||
-          !businessProfile.license_image_url
-        ));
+        const needsBusinessReview = isBusinessRole(userProfileData?.role || user.user_metadata.role)
+          && businessProfile?.status !== 'approved';
         setNeedsProfileCompletion(needsBusinessReview);
         if (needsBusinessReview) return { success: true, needsProfileCompletion: true };
         
@@ -709,7 +705,8 @@ return 'success';
           .eq('id', user.id)
           .maybeSingle();
         if (appUserError) console.warn('Biometric login: failed to check account status', appUserError);
-        if (appUser?.status === 'pending' && !String(appUser.role || '').toLowerCase().includes('admin')) {
+        const isBusinessAccount = isBusinessRole(appUser?.role || user.user_metadata.role);
+        if (appUser?.status === 'pending' && !isBusinessAccount && !String(appUser?.role || '').toLowerCase().includes('admin')) {
           await logout();
           toast({ title: 'الحساب قيد المراجعة', description: 'لن تتمكن من استخدام التطبيق حتى انتهاء مراجعة بياناتك.' });
           return false;
@@ -721,12 +718,12 @@ return 'success';
           .eq('user_id', user.id)
           .maybeSingle();
         if (businessProfileError) console.warn('Biometric login: failed to check business review status', businessProfileError);
-        if (businessProfile?.status === 'pending') {
+        if (isBusinessAccount && businessProfile?.status === 'pending'
+          && businessProfile.store_image_url && businessProfile.license_image_url) {
           await logout();
-          toast({ title: 'النشاط التجاري قيد المراجعة', description: 'عاود تسجيل الدخول في وقت لاحق بعد انتهاء مراجعة بيانات النشاط.' });
+          toast({ title: 'النشاط التجاري قيد المراجعة', description: 'لن تتمكن من الدخول حتى اعتماد الطلب.' });
           return false;
         }
-
         console.log("Biometric login successful, user:", user);
         await syncUserLanguage(user.id);
         const userProfile = {
@@ -774,11 +771,7 @@ return 'success';
         // تحديث عدد الإشعارات غير المقروؤة
         refreshNotifications();
 
-        setNeedsProfileCompletion(Boolean(businessProfile && (
-          businessProfile.status === 'rejected' ||
-          !businessProfile.store_image_url ||
-          !businessProfile.license_image_url
-        )));
+        setNeedsProfileCompletion(isBusinessAccount && businessProfile?.status !== 'approved');
 
         toast({ title: 'تم تسجيل الدخول بنجاح', description: `مرحباً ${userProfile.username}` });
         return true;

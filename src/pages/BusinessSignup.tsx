@@ -256,7 +256,8 @@ export default function BusinessSignup() {
           // -------------------------------------------------------
 
           if (!response.ok) {
-            throw new Error('Failed to create business account');
+            const errorBody = await response.json().catch(() => null);
+            throw new Error(errorBody?.message || errorBody?.error || 'تعذر حفظ بيانات الحساب التجاري. يرجى المحاولة مرة أخرى.');
           }
 
           const result = await response.json();
@@ -264,7 +265,7 @@ export default function BusinessSignup() {
         }
       } catch (e) {
         console.warn('Error creating business account:', e);
-        // لا نوقف عملية التسجيل بسبب فشل إنشاء حساب الأعمال
+        throw e;
       }
 
       setTimeout(() => navigate('/login', { state: { returnTo: location.state?.returnTo, returnState: location.state?.returnState } }), 1200);

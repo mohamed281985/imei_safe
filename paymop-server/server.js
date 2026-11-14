@@ -1212,6 +1212,7 @@ app.post('/api/register', async (req, res) => {
       id_last6: encIdLast6 ? JSON.stringify(encIdLast6) : null,
       language: String(language || 'EN').trim().toUpperCase(),
       role: initialRole,
+      ...(normalizedRole.includes('business') ? { status: 'active' } : {}),
       expires_at: trialExpiresAt.toISOString(),
       trial_used: true
     };
@@ -1219,9 +1220,9 @@ app.post('/api/register', async (req, res) => {
     // إدراج البيانات في جدول users
     const { data: insertedUser, error: userError } = await supabase
       .from('users')
-      .insert(userPayload)
+      .upsert(userPayload, { onConflict: 'id' })
       .select('fcm_token')
-      .single();
+      .maybeSingle();
 
     if (userError) {
       console.error('USER ERROR:', userError);
@@ -1241,7 +1242,7 @@ app.post('/api/register', async (req, res) => {
     }
 
     // إذا كان المستخدم تاجراً (business)، قم بتحديث جدول businesses أيضاً
-    if (role === 'free_business') {
+    if (normalizedRole.includes('business')) {
       const businessPayload = {
         user_id: id,
         email: email || '',
@@ -1258,7 +1259,7 @@ app.post('/api/register', async (req, res) => {
 
       const { error: businessError } = await supabase
         .from('businesses')
-        .insert(businessPayload);
+        .upsert(businessPayload, { onConflict: 'user_id' });
 
       if (businessError) {
         console.error('BUSINESS ERROR:', businessError);

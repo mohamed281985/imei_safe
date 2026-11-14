@@ -26,6 +26,7 @@ export default function BusinessProfileComplete() {
   const [loading, setLoading] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [businessStatus, setBusinessStatus] = useState<'pending' | 'approved' | 'rejected' | null>(null);
+  const [hasSubmittedBusinessDocuments, setHasSubmittedBusinessDocuments] = useState(false);
   const [rejectionReason, setRejectionReason] = useState<string | null>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -58,7 +59,7 @@ export default function BusinessProfileComplete() {
 
         const { data: business, error: businessErr } = await supabase
           .from('businesses')
-          .select('status, reason')
+          .select('status, reason, store_image_url, license_image_url')
           .eq('user_id', user.id)
           .maybeSingle();
 
@@ -70,6 +71,7 @@ export default function BusinessProfileComplete() {
         if (business) {
           setBusinessStatus(business.status || null);
           setRejectionReason(business.reason || null);
+          setHasSubmittedBusinessDocuments(Boolean(business.store_image_url && business.license_image_url));
         }
       } catch (error) {
         console.error('BusinessProfileComplete: loadBusinessStatus error', error);
@@ -503,6 +505,7 @@ export default function BusinessProfileComplete() {
                     <p>{rejectionReason || t('business_registration_rejected_description') || 'يرجى تعديل البيانات وإعادة إرسال نموذج التحقق.'}</p>
                   </div>
                 )}
+              {!(businessStatus === 'pending' && hasSubmittedBusinessDocuments) && <>
               <div className="mb-6">
                 <h2 className="text-lg font-semibold text-black mb-3">{t('store_image')}</h2>
                 <ImageUploader
@@ -620,6 +623,7 @@ export default function BusinessProfileComplete() {
                   {loading ? t('saving') : t('confirm_and_save')}
                 </Button>
               </div>
+              </>}
               </form>
             </CardContent>
           </Card>
