@@ -1,7 +1,6 @@
 export const getReportImageStorageLocation = (value, defaultBucket) => {
   if (typeof value !== 'string' || !value.trim()) return null;
 
-  let bucket = defaultBucket;
   let filePath = value.trim();
 
   if (/^https?:\/\//i.test(filePath)) {
@@ -14,32 +13,42 @@ export const getReportImageStorageLocation = (value, defaultBucket) => {
 
     const storageMatch = pathname.match(/\/storage\/v1\/object\/(?:sign|public|authenticated)\/([^/]+)\/(.+)$/);
     if (!storageMatch) return null;
-    bucket = decodeURIComponent(storageMatch[1]);
     filePath = decodeURIComponent(storageMatch[2]);
   }
 
   filePath = filePath.split('?')[0].replace(/^\/+/, '');
-  for (const knownBucket of ['phone_reports', 'registerphone']) {
+  for (const knownBucket of ['registerphone', 'phone_reports']) {
     if (filePath.startsWith(`${knownBucket}/`)) {
-      bucket = knownBucket;
       filePath = filePath.slice(knownBucket.length + 1);
       break;
     }
   }
 
-  if (filePath.startsWith('reports/')) bucket = 'phone_reports';
-  if (!filePath || !bucket) return null;
-  return { bucket, filePath };
+  if (!filePath) return null;
+  return {
+    filePath,
+    buckets: ['registerphone', 'phone_reports'],
+  };
 };
 
 export const createReportImageSignedUrl = async (supabase, value, defaultBucket) => {
   const location = getReportImageStorageLocation(value, defaultBucket);
   if (!location) return null;
 
-  const { data, error } = await supabase.storage
-    .from(location.bucket)
-    .createSignedUrl(location.filePath, 3600);
+  let lastError = null;
+  for (const bucket of location.buckets) {
+    const { data, error } = await supabase.storage
+      .from(bucket)
+      .createSignedUrl(location.filePath, 3600);
 
-  if (error) throw error;
-  return data?.signedUrl || data?.signed_url || null;
+    if (error) {
+      lastError = error;
+      continue;
+    }
+    const signedUrl = data?.signedUrl || data?.signed_url;
+    if (signedUrl) return signedUrl;
+  }
+
+  if (lastError) throw lastError;
+  return null;
 };
