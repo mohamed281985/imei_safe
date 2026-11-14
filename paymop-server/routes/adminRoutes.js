@@ -66,7 +66,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
   const getActivePromoSubscription = async (userId) => {
     const { data, error } = await supabase
       .from('ads_payment')
-      .select('type, promo_duration_months, expires_at, payment_date')
+      .select('type, promo_code, promo_duration_months, expires_at, payment_date')
       .eq('user_id', userId)
       .eq('is_paid', true)
       .not('promo_duration_months', 'is', null)
@@ -79,11 +79,213 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
     if (!data) return null;
     return {
       plan_type: data.type || null,
+      promo_code: data.promo_code || null,
       duration_months: data.promo_duration_months,
       expires_at: data.expires_at,
       payment_date: data.payment_date,
     };
   };
+
+  app.get('/admin/promo-codes', verifyJwtToken, requireAdmin, async (req, res) => {
+    try {
+      const { data: promos, error: promoError } = await supabase
+        .from('promo_code')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(1000);
+      if (promoError) throw promoError;
+
+      const promoRows = promos || [];
+      const promoIds = promoRows.map((promo) => promo.id).filter(Boolean);
+      let payments = [];
+      if (promoIds.length) {
+        const { data: paymentRows, error: paymentError } = await supabase
+          .from('ads_payment')
+          .select('id, promo_code_id, promo_code, user_id, type, amount, is_paid, payment_status, payment_date, upload_date, created_at, expires_at')
+          .in('promo_code_id', promoIds)
+          .order('payment_date', { ascending: false })
+          .limit(10000);
+        if (paymentError) throw paymentError;
+        payments = paymentRows || [];
+      }
+
+      const today = new Date();
+      const monthAgo = new Date(today);
+      monthAgo.setDate(monthAgo.getDate() - 29);
+      const data = promoRows.map((promo) => {
+        const relatedPayments = payments.filter((payment) => payment.promo_code_id === promo.id);
+        const paidPayments = relatedPayments.filter((payment) => payment.is_paid === true && payment.payment_status === 'paid');
+        const paidUsers = new Set(paidPayments.map((payment) => payment.user_id).filter(Boolean));
+        const revenue = paidPayments.reduce((total, payment) => total + (Number(payment.amount) || 0), 0);
+        const dailyUsageMap = new Map();
+        for (const payment of paidPayments) {
+          const dateValue = payment.payment_date || payment.upload_date || payment.created_at;
+          if (!dateValue) continue;
+          const date = new Date(dateValue);
+          if (Number.isNaN(date.getTime()) || date < monthAgo) continue;
+          const key = date.toISOString().slice(0, 10);
+          dailyUsageMap.set(key, (dailyUsageMap.get(key) || 0) + 1);
+        }
+
+        return {
+          ...promo,
+          checkout_count: relatedPayments.length,
+          paid_count: paidPayments.length,
+          unique_users: paidUsers.size,
+          revenue: Math.round(revenue * 100) / 100,
+          conversion_rate: relatedPayments.length ? Math.round((paidPayments.length / relatedPayments.length) * 10000) / 100 : 0,
+          daily_usage: [...dailyUsageMap.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([date, count]) => ({ date, count })),
+          recent_payments: relatedPayments.slice(0, 10),
+        };
+      });
+
+      return res.json({ success: true, data });
+    } catch (error) {
+      console.error('/admin/promo-codes GET failed:', error);
+      return res.status(500).json({ success: false, error: 'تعذر تحميل بيانات البروموكود' });
+    }
+  });
+
+  app.post('/admin/promo-codes', verifyJwtToken, requireAdmin, async (req, res) => {
+    try {
+      const body = req.body || {};
+      const code = typeof body.promo_code === 'string' ? body.promo_code.trim().toUpperCase() : '';
+      const discount = Number(body.discount_percentage);
+      const duration = Number(body.duration_months);
+      const maxRedemptions = body.max_redemptions === '' || body.max_redemptions === null || typeof body.max_redemptions === 'undefined'
+        ? null
+        : Number(body.max_redemptions);
+      const expiresAt = body.expires_at ? new Date(body.expires_at).toISOString() : null;
+      const startsAt = body.starts_at ? new Date(body.starts_at).toISOString() : null;
+
+      if (!/^[A-Z0-9_-]{3,32}$/.test(code)) return res.status(400).json({ success: false, error: 'رمز البرومو يجب أن يكون 3 إلى 32 حرفًا أو رقمًا' });
+      if (!Number.isFinite(discount) || discount <= 0 || discount > 100) return res.status(400).json({ success: false, error: 'نسبة الخصم يجب أن تكون أكبر من صفر وحتى 100%' });
+      if (!Number.isSafeInteger(duration) || duration <= 0) return res.status(400).json({ success: false, error: 'مدة الاشتراك يجب أن تكون عددًا صحيحًا موجبًا' });
+      if (!expiresAt) return res.status(400).json({ success: false, error: 'تاريخ انتهاء البرومو مطلوب' });
+      if (maxRedemptions !== null && (!Number.isSafeInteger(maxRedemptions) || maxRedemptions <= 0)) return res.status(400).json({ success: false, error: 'حد الاستخدام يجب أن يكون عددًا صحيحًا موجبًا' });
+
+      const payload = {
+        promo_code: code,
+        description: typeof body.description === 'string' ? body.description.trim().slice(0, 1000) || null : null,
+        discount_percentage: discount,
+        duration_months: duration,
+        max_redemptions: maxRedemptions,
+        starts_at: startsAt,
+        expires_at: expiresAt,
+        is_active: body.is_active !== false,
+      };
+      const { data, error } = await supabase.from('promo_code').insert(payload).select('*').maybeSingle();
+      if (error) {
+        if (error.code === '23505') return res.status(409).json({ success: false, error: 'رمز البرومو مستخدم بالفعل' });
+        throw error;
+      }
+
+      await logAudit({
+        userId: req.user?.id || null,
+        action: 'admin_create_promo_code',
+        resourceType: 'promo_code',
+        resourceId: data?.id || null,
+        newValues: payload,
+        ip: getAuditIp(req),
+        userAgent: req.headers['user-agent'] || null,
+        status: 'success'
+      });
+      return res.status(201).json({ success: true, data });
+    } catch (error) {
+      console.error('/admin/promo-codes POST failed:', error);
+      return res.status(500).json({ success: false, error: 'تعذر إنشاء البروموكود' });
+    }
+  });
+
+  app.patch('/admin/promo-codes/:id', verifyJwtToken, requireAdmin, async (req, res) => {
+    try {
+      const id = req.params.id;
+      const body = req.body || {};
+      const updates = {};
+      if (typeof body.promo_code === 'string') {
+        const code = body.promo_code.trim().toUpperCase();
+        if (!/^[A-Z0-9_-]{3,32}$/.test(code)) return res.status(400).json({ success: false, error: 'رمز البرومو غير صالح' });
+        updates.promo_code = code;
+      }
+      if (typeof body.description === 'string') updates.description = body.description.trim().slice(0, 1000) || null;
+      if (typeof body.discount_percentage !== 'undefined') {
+        const value = Number(body.discount_percentage);
+        if (!Number.isFinite(value) || value <= 0 || value > 100) return res.status(400).json({ success: false, error: 'نسبة الخصم غير صالحة' });
+        updates.discount_percentage = value;
+      }
+      if (typeof body.duration_months !== 'undefined') {
+        const value = Number(body.duration_months);
+        if (!Number.isSafeInteger(value) || value <= 0) return res.status(400).json({ success: false, error: 'مدة الاشتراك غير صالحة' });
+        updates.duration_months = value;
+      }
+      if (typeof body.max_redemptions !== 'undefined') {
+        const value = body.max_redemptions === '' || body.max_redemptions === null ? null : Number(body.max_redemptions);
+        if (value !== null && (!Number.isSafeInteger(value) || value <= 0)) return res.status(400).json({ success: false, error: 'حد الاستخدام غير صالح' });
+        updates.max_redemptions = value;
+      }
+      for (const field of ['starts_at', 'expires_at']) {
+        if (typeof body[field] === 'undefined') continue;
+        if (!body[field] && field === 'starts_at') updates[field] = null;
+        else {
+          const time = new Date(body[field]).getTime();
+          if (!Number.isFinite(time)) return res.status(400).json({ success: false, error: `تاريخ ${field} غير صالح` });
+          updates[field] = new Date(time).toISOString();
+        }
+      }
+      if (typeof body.is_active === 'boolean') updates.is_active = body.is_active;
+      if (!Object.keys(updates).length) return res.status(400).json({ success: false, error: 'لا توجد تغييرات للحفظ' });
+
+      const { data, error } = await supabase.from('promo_code').update(updates).eq('id', id).select('*').maybeSingle();
+      if (error) {
+        if (error.code === '23505') return res.status(409).json({ success: false, error: 'رمز البرومو مستخدم بالفعل' });
+        throw error;
+      }
+      if (!data) return res.status(404).json({ success: false, error: 'البروموكود غير موجود' });
+
+      await logAudit({
+        userId: req.user?.id || null,
+        action: 'admin_update_promo_code',
+        resourceType: 'promo_code',
+        resourceId: id,
+        newValues: updates,
+        ip: getAuditIp(req),
+        userAgent: req.headers['user-agent'] || null,
+        status: 'success'
+      });
+      return res.json({ success: true, data });
+    } catch (error) {
+      console.error('/admin/promo-codes PATCH failed:', error);
+      return res.status(500).json({ success: false, error: 'تعذر تحديث البروموكود' });
+    }
+  });
+
+  app.delete('/admin/promo-codes/:id', verifyJwtToken, requireAdmin, async (req, res) => {
+    try {
+      const { data, error } = await supabase
+        .from('promo_code')
+        .update({ is_active: false })
+        .eq('id', req.params.id)
+        .select('*')
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return res.status(404).json({ success: false, error: 'البروموكود غير موجود' });
+
+      await logAudit({
+        userId: req.user?.id || null,
+        action: 'admin_deactivate_promo_code',
+        resourceType: 'promo_code',
+        resourceId: req.params.id,
+        newValues: { is_active: false },
+        ip: getAuditIp(req),
+        userAgent: req.headers['user-agent'] || null,
+        status: 'success'
+      });
+      return res.json({ success: true, data });
+    } catch (error) {
+      console.error('/admin/promo-codes DELETE failed:', error);
+      return res.status(500).json({ success: false, error: 'تعذر تعطيل البروموكود' });
+    }
+  });
 
   // Load translations (best-effort) from frontend `src/translations` folder.
   const translations = {};
@@ -2820,7 +3022,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       if (userIds.length) {
         const { data: promoPayments, error: promoError } = await supabase
           .from('ads_payment')
-          .select('user_id, type, promo_duration_months, expires_at, payment_date')
+          .select('user_id, type, promo_code, promo_duration_months, expires_at, payment_date')
           .in('user_id', userIds)
           .eq('is_paid', true)
           .not('promo_duration_months', 'is', null)
@@ -2834,6 +3036,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
             if (promoByUserId.has(payment.user_id)) continue;
             promoByUserId.set(payment.user_id, {
               plan_type: payment.type || null,
+              promo_code: payment.promo_code || null,
               duration_months: payment.promo_duration_months,
               expires_at: payment.expires_at,
               payment_date: payment.payment_date,
