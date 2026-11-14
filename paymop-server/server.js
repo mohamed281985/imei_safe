@@ -3464,6 +3464,7 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
 
     // ===== تحقق من المبلغ المتوقع لعرض الـ offer =====
     let numericAmount = null;
+    let promoDurationMonths = null;
     try {
       let expectedAmount = null;
 
@@ -3519,6 +3520,7 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
         try {
           const promoPricing = await getPromoPricing(promoCode, offerId || offerData?.offer_id);
           expectedAmount = promoPricing.discountedAmount;
+          promoDurationMonths = promoPricing.durationMonths;
         } catch (promoError) {
           return safeStatusJson(400, { error: promoError.message || 'تعذر تطبيق البروموكود' });
         }
@@ -3639,6 +3641,7 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
       amount: numericAmount,
       type: offerData.type,
       payment_status: 'pending',
+      ...(promoDurationMonths ? { promo_duration_months: promoDurationMonths } : {}),
       offer_id: offerRowId,
       bonus_offer: offerData.bonus_offer || 0,
       image_url: imageUrl
@@ -3827,9 +3830,15 @@ app.get('/paymob/redirect-success', async (req, res) => {
             const paidAmount = Number(req.query?.amount_cents || 0) / 100;
             if (expectedAmount !== null && !Number.isNaN(paidAmount) && Math.abs(paidAmount - expectedAmount) <= 0.001) {
               const paymentDate = new Date();
-              const duration = parseInt(existingAd.duration_days, 10) || 0;
-              const expiresAt = new Date(paymentDate);
-              expiresAt.setDate(expiresAt.getDate() + duration);
+              const promoDurationMonths = Number(existingAd.promo_duration_months);
+              let expiresAt = Number.isSafeInteger(promoDurationMonths) && promoDurationMonths > 0
+                ? addCalendarMonths(paymentDate, promoDurationMonths)
+                : null;
+              if (!expiresAt) {
+                const duration = parseInt(existingAd.duration_days, 10) || 0;
+                expiresAt = new Date(paymentDate);
+                expiresAt.setDate(expiresAt.getDate() + duration);
+              }
               const isOffersGallerySubscription = String(merchantOrderId || '').startsWith('ads_payment-');
 
               const { error: updateError } = await supabase
@@ -4175,10 +4184,16 @@ app.post("/paymob/webhook", async (req, res) => {
 
             // 2. حساب تاريخ الانتهاء
             const paymentDate = new Date();
-            // ⭐ تحويل المدة إلى رقم صحيح لضمان الحساب الصحيح
-            const duration = parseInt(existingAd.duration_days, 10) || 0;
-            const expiresAt = new Date(paymentDate);
-            expiresAt.setDate(expiresAt.getDate() + duration);
+            const promoDurationMonths = Number(existingAd.promo_duration_months);
+            let expiresAt = Number.isSafeInteger(promoDurationMonths) && promoDurationMonths > 0
+              ? addCalendarMonths(paymentDate, promoDurationMonths)
+              : null;
+            if (!expiresAt) {
+              // Keep the existing day-based expiry for payments without a promo code.
+              const duration = parseInt(existingAd.duration_days, 10) || 0;
+              expiresAt = new Date(paymentDate);
+              expiresAt.setDate(expiresAt.getDate() + duration);
+            }
             const isOffersGallerySubscription = String(merchantOrderId || '').startsWith('ads_payment-');
 
             // 3. تحديث حالة الدفع وتاريخ الانتهاء
