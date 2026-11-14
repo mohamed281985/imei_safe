@@ -7,6 +7,7 @@ import {
   createOrRefreshRecoveryCard,
   normalizeStoragePath
 } from '../utils/qrCardUtils.js';
+import { createReportImageSignedUrl } from '../utils/reportImageUrl.js';
 export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToken, logAudit: rawLogAudit, resend, sendFCMNotificationV1: sendFCMFn }) {
   const logAudit = (config) => rawLogAudit({ supabase, ...config });
   // Deep decrypt helper: recursively decrypt strings or encrypted objects.
@@ -2385,32 +2386,16 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       });
 
       for (const r of out) {
-
-        // ===== صورة الفاتورة =====
-        if (
-          r.receipt_image_url &&
-          !r.receipt_image_url.startsWith("http")
-        ) {
-          const { data } = await supabase.storage
-            .from("registerphone")
-            .createSignedUrl(r.receipt_image_url, 3600);
-
-          if (data?.signedUrl) {
-            r.receipt_image_url = data.signedUrl;
-          }
-        }
-
-        // ===== صورة المحضر =====
-        if (
-          r.report_image_url &&
-          !r.report_image_url.startsWith("http")
-        ) {
-          const { data } = await supabase.storage
-            .from("phone_reports")
-            .createSignedUrl(r.report_image_url, 3600);
-
-          if (data?.signedUrl) {
-            r.report_image_url = data.signedUrl;
+        for (const [field, defaultBucket] of [
+          ['receipt_image_url', 'registerphone'],
+          ['report_image_url', 'phone_reports'],
+        ]) {
+          if (!r[field]) continue;
+          try {
+            const signedUrl = await createReportImageSignedUrl(supabase, r[field], defaultBucket);
+            if (signedUrl) r[field] = signedUrl;
+          } catch (imageError) {
+            console.warn(`/admin/reports: failed to sign ${field} for report ${r.id}:`, imageError?.message || imageError);
           }
         }
       }

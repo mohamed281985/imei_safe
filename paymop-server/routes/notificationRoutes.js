@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { isImeiAllowed } from '../utils/imeiValidator.js';
+import { isReportCurrentlyActive } from '../utils/reportStatus.js';
 
 export function registerNotificationRoutes({
   app,
@@ -356,7 +357,7 @@ app.post('/api/search-imei', searchImeiLimiter, async (req, res) => {
     if (imeiHash) {
       const result = await supabase
         .from('phone_reports')
-        .select('imei_hash, imei, status, report_date, updated_at, loss_location, loss_time, user_id, anther_number, whatsapp')
+        .select('imei_hash, imei, status, report_mode, expiry, report_date, updated_at, loss_location, loss_time, user_id, anther_number, whatsapp')
         .eq('imei_hash', imeiHash)
         .in('status', ['active', 'resolved']);
       allReports = result.data || [];
@@ -366,7 +367,7 @@ app.post('/api/search-imei', searchImeiLimiter, async (req, res) => {
     if ((!allReports || !allReports.length) && reportError === null) {
       const legacy = await supabase
         .from('phone_reports')
-        .select('imei_hash, imei, status, report_date, updated_at, loss_location, loss_time, user_id, anther_number, whatsapp')
+        .select('imei_hash, imei, status, report_mode, expiry, report_date, updated_at, loss_location, loss_time, user_id, anther_number, whatsapp')
         .in('status', ['active', 'resolved']);
       allReports = legacy.data || [];
       reportError = legacy.error;
@@ -385,11 +386,12 @@ app.post('/api/search-imei', searchImeiLimiter, async (req, res) => {
     }
     // ابحث عن بلاغ active يطابق الـ IMEI
     const activeReportAny = allReports ? allReports.find(r => {
+      if (!isReportCurrentlyActive(r)) return false;
       if (r.imei_hash && imeiHash) {
-        return r.imei_hash === imeiHash && r.status === 'active';
+        return r.imei_hash === imeiHash;
       }
       try {
-        return normalizeDigitsOnly(decryptField(r.imei)) === normalizedIncoming && r.status === 'active';
+        return normalizeDigitsOnly(decryptField(r.imei)) === normalizedIncoming;
       } catch (e) {
         return false;
       }
@@ -501,7 +503,7 @@ app.post('/api/get-owner-details-by-imei', verifyJwtToken, async (req, res) => {
     if (imeiHash) {
       const result = await supabase
         .from('phone_reports')
-        .select('id, imei_hash, imei, user_id, whatsapp, anther_number, status')
+        .select('id, imei_hash, imei, user_id, whatsapp, anther_number, status, report_mode, expiry, report_date')
         .eq('imei_hash', imeiHash)
         .in('status', ['active', 'resolved']);
       reports = result.data || [];
@@ -511,7 +513,7 @@ app.post('/api/get-owner-details-by-imei', verifyJwtToken, async (req, res) => {
     if ((!reports || !reports.length) && reportsErr === null) {
       const result = await supabase
         .from('phone_reports')
-        .select('id, imei_hash, imei, user_id, whatsapp, anther_number, status')
+        .select('id, imei_hash, imei, user_id, whatsapp, anther_number, status, report_mode, expiry, report_date')
         .in('status', ['active', 'resolved']);
       reports = result.data || [];
       reportsErr = result.error;
@@ -524,6 +526,7 @@ app.post('/api/get-owner-details-by-imei', verifyJwtToken, async (req, res) => {
 
     const normalizedIncoming = normalizeDigitsOnly(String(imei));
     const match = (reports || []).find(r => {
+      if (!isReportCurrentlyActive(r)) return false;
       if (r.imei_hash && imeiHash) {
         return r.imei_hash === imeiHash;
       }

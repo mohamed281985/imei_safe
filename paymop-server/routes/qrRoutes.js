@@ -2,6 +2,7 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 import rateLimit from 'express-rate-limit';
 import { normalizeStoragePath, signStorageUrl, createOrRefreshRecoveryCard } from '../utils/qrCardUtils.js';
+import { isReportCurrentlyActive } from '../utils/reportStatus.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -55,17 +56,17 @@ const findActiveReportForPhone = async (supabase, registeredPhone, decryptField,
   if (registeredPhone.imei_hash) {
     const { data, error } = await supabase
       .from('phone_reports')
-      .select('id')
+      .select('id, status, report_mode, expiry, report_date')
       .eq('imei_hash', registeredPhone.imei_hash)
       .eq('status', 'active')
       .limit(1);
-    if (!error && data && data.length > 0) return true;
+    if (!error && data && data.some(isReportCurrentlyActive)) return true;
   }
 
   try {
     const { data: reports, error } = await supabase
       .from('phone_reports')
-      .select('imei')
+      .select('imei, status, report_mode, expiry, report_date')
       .eq('status', 'active');
     if (error) return false;
 
@@ -74,6 +75,7 @@ const findActiveReportForPhone = async (supabase, registeredPhone, decryptField,
     if (!normalizedPhoneImei) return false;
 
     return (reports || []).some((report) => {
+      if (!isReportCurrentlyActive(report)) return false;
       const reportImei = report?.imei ? decryptField(report.imei) : null;
       const normalizedReportImei = reportImei ? normalizeDigitsOnly(reportImei) : null;
       return normalizedReportImei && normalizedReportImei === normalizedPhoneImei;
@@ -248,28 +250,29 @@ app.get('/api/found/:token', async (req, res) => {
       if (phone.imei_hash) {
         const { data, error: repErr } = await supabase
           .from('phone_reports')
-          .select('imei, imei_hash, whatsapp, anther_number')
+          .select('imei, imei_hash, whatsapp, anther_number, status, report_mode, expiry, report_date')
           .eq('imei_hash', phone.imei_hash)
           .eq('status', 'active')
-          .limit(1);
+          .limit(20);
 
         if (repErr) {
           console.error('/api/found phone_reports query error:', repErr);
           return sendError(res, 500, 'Server error', repErr);
         }
 
-        repRows = data || [];
+        repRows = (data || []).filter(isReportCurrentlyActive);
       }
 
       if (repRows.length === 0) {
         const { data, error: legacyError } = await supabase
           .from('phone_reports')
-          .select('imei, imei_hash, whatsapp, anther_number')
+          .select('imei, imei_hash, whatsapp, anther_number, status, report_mode, expiry, report_date')
           .eq('status', 'active');
         if (legacyError) throw legacyError;
 
         const phoneImei = normalizeDigitsOnly(decryptField(phone.imei || ''));
         repRows = (data || []).filter((row) => {
+          if (!isReportCurrentlyActive(row)) return false;
           if (phone.imei_hash && row.imei_hash === phone.imei_hash) return true;
           return phoneImei && normalizeDigitsOnly(decryptField(row.imei)) === phoneImei;
         }).slice(0, 1);
@@ -458,23 +461,24 @@ app.get('/api/found/:token', async (req, res) => {
       if (phone.imei_hash) {
         const { data: hashedReports, error: reportError } = await supabase
           .from('phone_reports')
-          .select('id, user_id, imei, imei_hash, status, anther_number, finder_phone')
+          .select('id, user_id, imei, imei_hash, status, report_mode, expiry, report_date, anther_number, finder_phone')
           .eq('imei_hash', phone.imei_hash)
           .eq('status', 'active')
-          .limit(1);
+          .limit(20);
         if (reportError) throw reportError;
-        report = hashedReports?.[0] || null;
+        report = (hashedReports || []).find(isReportCurrentlyActive) || null;
       }
 
       if (!report && phone.imei) {
         const { data: reports, error: legacyError } = await supabase
           .from('phone_reports')
-          .select('id, user_id, imei, imei_hash, status, anther_number, finder_phone')
+          .select('id, user_id, imei, imei_hash, status, report_mode, expiry, report_date, anther_number, finder_phone')
           .eq('status', 'active');
         if (legacyError) throw legacyError;
         const phoneImei = normalizeDigitsOnly(decryptField(phone.imei));
         report = (reports || []).find((candidate) => (
-          phoneImei && normalizeDigitsOnly(decryptField(candidate.imei)) === phoneImei
+          isReportCurrentlyActive(candidate)
+          && phoneImei && normalizeDigitsOnly(decryptField(candidate.imei)) === phoneImei
         )) || null;
       }
 

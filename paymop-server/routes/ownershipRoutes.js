@@ -4,6 +4,7 @@ import { SECURITY_CONFIG } from '../config/security.js';
 import crypto from 'crypto';
 import { createOrRefreshRecoveryCard, normalizeStoragePath } from '../utils/qrCardUtils.js';
 import { isImeiAllowed } from '../utils/imeiValidator.js';
+import { isReportCurrentlyActive } from '../utils/reportStatus.js';
 
 const decryptedRequestCounts = {};
 
@@ -85,7 +86,7 @@ const getImeiHash = (imei) => {
 
       const { data: reports, error: reportError } = await supabase
         .from('phone_reports')
-        .select('imei, report_mode, expiry')
+        .select('imei, report_mode, expiry, report_date, created_at')
         .eq('status', 'active');
 
       if (reportError) throw reportError;
@@ -94,6 +95,7 @@ const getImeiHash = (imei) => {
       const activeReport = reports
         ? reports.find((r) => {
           // البلاغ السريع لا يمنع إنشاء بلاغ عادي لنفس الهاتف.
+          if (!isReportCurrentlyActive(r)) return false;
           if (r.report_mode === 'quick') return false;
           return normalizeDigitsOnly(decryptField(r.imei)) === normalizedIncoming;
         })
@@ -1162,7 +1164,7 @@ const getImeiHash = (imei) => {
 
       const { data: reports, error: fetchErr } = await supabase
         .from('phone_reports')
-        .select('id, user_id, status, imei, imei_hash')
+        .select('id, user_id, status, report_mode, expiry, report_date, imei, imei_hash')
         .eq('status', 'active');
 
       if (fetchErr) throw fetchErr;
@@ -1170,7 +1172,7 @@ const getImeiHash = (imei) => {
       const matchingActive = (reports || []).filter((r) => {
         try {
           const dec = decryptField(r.imei) || r.imei;
-          return normalizeDigitsOnly(dec) === normalizedIncoming && r.status === 'active';
+          return normalizeDigitsOnly(dec) === normalizedIncoming && isReportCurrentlyActive(r);
         } catch (e) {
           return false;
         }
@@ -1194,7 +1196,7 @@ const getImeiHash = (imei) => {
         try {
           const { data: single, error: singleErr } = await supabase
             .from('phone_reports')
-            .select('id,status')
+            .select('id,status,report_mode,expiry,report_date')
             .eq('id', id)
             .maybeSingle();
           if (singleErr) {
@@ -1202,7 +1204,7 @@ const getImeiHash = (imei) => {
             continue;
           }
           refreshedStatuses.push({ id: single.id, status: single.status });
-          if (String(single.status) === 'active') authoritativeActive = true;
+          if (isReportCurrentlyActive(single)) authoritativeActive = true;
         } catch (e) {
           console.warn('[check-report-active] exception re-fetching report', id, e);
         }
@@ -1233,7 +1235,7 @@ const getImeiHash = (imei) => {
 
       const { data: reports, error: fetchErr } = await supabase
         .from('phone_reports')
-        .select('id, user_id, status, imei, imei_hash')
+        .select('id, user_id, status, report_mode, expiry, report_date, imei, imei_hash')
         .eq('status', 'active');
 
       if (fetchErr) throw fetchErr;
@@ -1260,10 +1262,11 @@ const getImeiHash = (imei) => {
 
       const matching = (reports || []).filter((r) => {
         try {
+          if (!isReportCurrentlyActive(r)) return false;
           if (r.imei_hash && imeiHash && r.imei_hash === imeiHash) return true;
           const dec = decryptField(r.imei) || r.imei;
           // Match active reports for the same IMEI regardless of who created the report
-          return normalizeDigitsOnly(dec) === normalizedIncoming && r.status === 'active';
+          return normalizeDigitsOnly(dec) === normalizedIncoming;
         } catch (e) {
           return false;
         }
