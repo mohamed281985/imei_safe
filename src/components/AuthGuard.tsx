@@ -22,7 +22,9 @@ const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
   }
   
   if (!isAuthenticated) {
-    return <Navigate to="/account-required" state={{ returnTo: location.pathname, returnState: location.state }} replace />;
+    const sessionExpired = localStorage.getItem('session_expired_redirect') === 'true';
+    const destination = sessionExpired ? '/login' : '/account-required';
+    return <Navigate to={destination} state={{ returnTo: location.pathname, returnState: location.state, sessionExpired }} replace />;
   }
   
   // إذا كان المستخدم مصادقًا عليه ولكن ملفه التجاري غير مكتمل، قم بتوجيهه إلى صفحة الإكمال

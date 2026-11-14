@@ -12,6 +12,7 @@ import { validateId } from '@/utils/validateId';
 import axiosInstance from '@/services/axiosInterceptor';
 import { Browser } from '@capacitor/browser';
 import { Capacitor } from '@capacitor/core';
+import { X } from 'lucide-react';
 
 interface PromoCodeDetails {
     code: string;
@@ -31,11 +32,12 @@ interface OriginalOfferPricing {
 const OffersGallery = () => {
     useScrollToTop();
     const [imageUrl, setImageUrl] = useState<string | null>(null);
-    const [originalOfferPricing, setOriginalOfferPricing] = useState<OriginalOfferPricing | null>(null);
+    const [originalOfferPricing, setOriginalOfferPricing] = useState<OriginalOfferPricing>({ amount: 0, durationDays: 0 });
     const [promoDetails, setPromoDetails] = useState<PromoCodeDetails | null>(null);
     const [promoInput, setPromoInput] = useState('');
     const [promoStatus, setPromoStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
     const [promoError, setPromoError] = useState<string | null>(null);
+    const [showCheckoutPanel, setShowCheckoutPanel] = useState(false);
     const [loading, setLoading] = useState(true);
     const [imageError, setImageError] = useState(false);
     const [isPaying, setIsPaying] = useState(false);
@@ -59,7 +61,7 @@ const OffersGallery = () => {
     useEffect(() => {
         const fetchImage = async () => {
             setLoading(true);
-            setOriginalOfferPricing(null);
+            setOriginalOfferPricing({ amount: 0, durationDays: 0 });
             setPromoDetails(null);
             setPromoInput('');
             setPromoStatus('idle');
@@ -112,7 +114,7 @@ const OffersGallery = () => {
                 if (offerError || !offer) return;
 
                 let amount = Number(offer.amount ?? offer.price);
-                let durationDays = Number(offer.duration_days) || 1;
+                let durationDays = Number(offer.duration_days) || 0;
 
                 if (offer.type) {
                     const { data: priceData, error: priceError } = await supabase
@@ -127,9 +129,10 @@ const OffersGallery = () => {
                     }
                 }
 
-                if (Number.isFinite(amount) && amount > 0) {
-                    setOriginalOfferPricing({ amount, durationDays });
-                }
+                setOriginalOfferPricing({
+                    amount: Number.isFinite(amount) && amount > 0 ? amount : 0,
+                    durationDays: Number.isFinite(durationDays) && durationDays > 0 ? durationDays : 0
+                });
             } catch (error) {
                 console.error('Error fetching original offer pricing:', error);
             }
@@ -592,16 +595,29 @@ const OffersGallery = () => {
     };
 
     return (
-        <div className="fixed inset-0  flex flex-col items-center justify-center z-50" style={{ padding: 0, margin: 0 }}>
-            <div className="absolute bottom-10 left-0 w-full flex flex-col items-center z-10 px-4">
-                <div className="flex w-full max-w-xl flex-col items-stretch gap-3 sm:flex-row sm:items-end sm:justify-center">
-                    <div className="flex min-w-0 flex-1 flex-col gap-1 text-right text-sm font-semibold text-white">
-                        <label htmlFor="offer-promo-code">البروموكود</label>
+        <div className="fixed inset-0 z-50 overflow-hidden bg-slate-950" style={{ padding: 0, margin: 0 }}>
+            {showCheckoutPanel ? (
+                <div
+                    className="absolute inset-0 z-20 flex items-end justify-center overflow-y-auto bg-slate-950/60 p-3 backdrop-blur-sm sm:items-center sm:p-6"
+                    onClick={() => setShowCheckoutPanel(false)}
+                >
+                    <div className="my-auto w-full max-w-xl" onClick={(event) => event.stopPropagation()}>
+                        <section role="dialog" aria-modal="true" aria-labelledby="offer-checkout-title" className="max-h-[calc(100dvh-24px)] overflow-y-auto rounded-2xl border border-blue-200 bg-white p-3 text-slate-900 shadow-[0_20px_60px_rgba(15,23,42,0.38)] sm:p-5">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                            <h2 id="offer-checkout-title" className="text-base font-extrabold text-blue-950">تفاصيل الاشتراك</h2>
+                            <div className="flex items-center gap-2">
+                                {promoDetails && <span className="rounded-full bg-orange-100 px-2.5 py-1 text-xs font-extrabold text-orange-800">تم التفعيل</span>}
+                                <button type="button" className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-600 transition hover:bg-slate-100" onClick={() => setShowCheckoutPanel(false)} aria-label="إغلاق تفاصيل الاشتراك">
+                                    <X className="h-4 w-4" />
+                                </button>
+                            </div>
+                        </div>
+                        <label htmlFor="offer-promo-code" className="mb-2 block text-sm font-bold text-blue-950">كود الخصم</label>
                         <div className="flex gap-2">
                             <input
                                 id="offer-promo-code"
                                 autoComplete="off"
-                                className="h-12 min-w-0 flex-1 rounded-lg border border-white/40 bg-white px-3 text-center font-bold text-gray-900"
+                                className="h-11 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 text-center font-bold text-slate-900 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
                                 dir="ltr"
                                 value={promoInput}
                                 onChange={(event) => {
@@ -614,82 +630,78 @@ const OffersGallery = () => {
                             />
                             <button
                                 type="button"
-                                className="h-12 shrink-0 rounded-lg bg-emerald-600 px-4 font-bold text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-60"
+                                className="h-11 min-w-20 rounded-lg bg-blue-800 px-4 font-extrabold text-white shadow-sm transition hover:bg-blue-900 disabled:cursor-not-allowed disabled:opacity-60"
                                 onClick={handleActivatePromoCode}
                                 disabled={promoStatus === 'loading'}
                             >
                                 {promoStatus === 'loading' ? 'جارٍ التحقق...' : 'تفعيل'}
                             </button>
                         </div>
-                        {promoStatus === 'error' && (
-                            <span className="text-red-300" role="status">{promoError}</span>
-                        )}
-                        {promoDetails ? (
-                            <div className="mt-1 grid grid-cols-2 gap-2 rounded-lg border border-emerald-200/70 bg-emerald-950/90 p-3 text-white shadow-xl sm:grid-cols-3">
-                                <div className="rounded-md bg-white/5 p-2 text-center">
-                                    <span className="block text-xs text-emerald-100">قبل الخصم</span>
-                                    <strong className="text-sm text-white/70 line-through" dir="ltr">
-                                        {new Intl.NumberFormat('ar-EG', { style: 'currency', currency: promoDetails.currency }).format(promoDetails.original_price)}
-                                    </strong>
-                                </div>
-                                <div className="rounded-md border border-emerald-300/30 bg-emerald-400/10 p-2 text-center">
-                                    <span className="block text-xs text-emerald-100">السعر بعد الخصم</span>
-                                    <strong className="text-lg font-black text-emerald-300" dir="ltr">
-                                        {new Intl.NumberFormat('ar-EG', { style: 'currency', currency: promoDetails.currency }).format(promoDetails.discounted_price)}
-                                    </strong>
-                                </div>
-                                <div className="rounded-md bg-white/5 p-2 text-center">
-                                    <span className="block text-xs text-emerald-100">مدة العرض بعد التفعيل</span>
-                                    <strong className="text-sm font-bold">{promoDetails.duration_months} {promoDetails.duration_months === 1 ? 'شهر' : 'شهرًا'}</strong>
-                                </div>
-                                <div className="rounded-md bg-white/5 p-2 text-center">
-                                    <span className="block text-xs text-emerald-100">نسبة الخصم</span>
-                                    <strong className="text-sm font-bold">{promoDetails.discount_percentage}%</strong>
-                                </div>
-                                <div className="col-span-2 rounded-md bg-white/5 p-2 text-center sm:col-span-2">
-                                    <span className="block text-xs text-emerald-100">صالح حتى</span>
-                                    <strong className="text-sm" dir="auto">
-                                        {new Date(promoDetails.expires_at).toLocaleDateString('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' })}
-                                    </strong>
-                                </div>
+                        <div className="h-5 pt-1 text-xs font-semibold text-red-600" role="status" aria-live="polite">
+                            {promoStatus === 'error' ? promoError : ''}
+                        </div>
+
+                        <div className="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-slate-50 px-3">
+                            <div className="flex min-h-8 items-center justify-between gap-3">
+                                <span className="text-sm font-semibold text-slate-600">السعر قبل الخصم</span>
+                                <strong className={`text-sm font-extrabold ${promoDetails ? 'text-slate-500 line-through' : 'text-slate-900'}`} dir="ltr">
+                                    {new Intl.NumberFormat('ar-EG', { style: 'currency', currency: promoDetails?.currency || 'EGP' }).format(Number(promoDetails?.original_price ?? originalOfferPricing.amount) || 0)}
+                                </strong>
                             </div>
-                        ) : originalOfferPricing ? (
-                            <div className="mt-1 grid grid-cols-2 gap-2 rounded-lg border border-white/30 bg-black/75 p-3 text-white shadow-xl">
-                                <div className="rounded-md border border-white/10 bg-white/5 p-3 text-center">
-                                    <span className="block text-xs text-white/70">السعر الأصلي</span>
-                                    <strong className="text-lg font-bold" dir="ltr">
-                                        {new Intl.NumberFormat('ar-EG', { style: 'currency', currency: 'EGP' }).format(originalOfferPricing.amount)}
-                                    </strong>
-                                </div>
-                                <div className="rounded-md border border-white/10 bg-white/5 p-3 text-center">
-                                    <span className="block text-xs text-white/70">المدة الأصلية</span>
-                                    <strong className="text-lg font-bold">
-                                        {originalOfferPricing.durationDays} {originalOfferPricing.durationDays === 1 ? 'يوم' : 'يومًا'}
-                                    </strong>
-                                </div>
+                            <div className="flex min-h-9 items-center justify-between gap-3">
+                                <span className="text-sm font-bold text-slate-700">السعر النهائي</span>
+                                <strong className="text-lg font-black text-orange-700" dir="ltr">
+                                    {new Intl.NumberFormat('ar-EG', { style: 'currency', currency: promoDetails?.currency || 'EGP' }).format(Number(promoDetails?.discounted_price ?? originalOfferPricing.amount) || 0)}
+                                </strong>
                             </div>
-                        ) : null}
-                    </div>
-                    <button className="h-12 shrink-0 rounded-lg bg-red-500 px-6 font-bold text-white shadow-lg disabled:opacity-60" onClick={handleOfferPayment} disabled={isPaying}>اشترك في العرض</button>
+                            <div className="flex min-h-8 items-center justify-between gap-3">
+                                <span className="text-sm font-semibold text-slate-600">المدة</span>
+                                <strong className="text-sm font-extrabold text-slate-900">
+                                    {promoDetails ? `${Number(promoDetails.duration_months) || 0} شهر` : `${Number(originalOfferPricing.durationDays) || 0} يوم`}
+                                </strong>
+                            </div>
+                            <div className="flex min-h-8 items-center justify-between gap-3">
+                                <span className="text-sm font-semibold text-slate-600">نسبة الخصم</span>
+                                <strong className="text-sm font-black text-orange-700">{Number(promoDetails?.discount_percentage) || 0}%</strong>
+                            </div>
+                            <div className="flex min-h-8 items-center justify-between gap-3">
+                                <span className="text-sm font-semibold text-slate-600">صالح حتى</span>
+                                <strong className="text-xs font-bold text-slate-800" dir="auto">
+                                    {promoDetails && Number.isFinite(new Date(promoDetails.expires_at).getTime())
+                                        ? new Date(promoDetails.expires_at).toLocaleDateString('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' })
+                                        : '0'}
+                                </strong>
+                            </div>
+                        </div>
+
+                        <button className="mt-3 h-12 w-full rounded-lg bg-orange-500 px-6 font-extrabold text-white shadow-md transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60" onClick={handleOfferPayment} disabled={isPaying}>
+                            {isPaying ? 'جارٍ تجهيز الاشتراك...' : 'متابعة للدفع'}
+                        </button>
+                    </section>
                 </div>
-                {payError && <div className="text-red-500 mt-4 text-xl text-center max-w-[80%]">{payError}</div>}
-            </div>
+                </div>
+            ) : (
+                <button
+                    type="button"
+                    className="absolute bottom-6 left-1/2 z-10 h-14 w-[min(420px,calc(100vw-32px))] -translate-x-1/2 rounded-xl bg-orange-500 px-6 text-lg font-extrabold text-white shadow-[0_10px_28px_rgba(15,23,42,0.35)] transition hover:bg-orange-600 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-200"
+                    onClick={() => setShowCheckoutPanel(true)}
+                >
+                    اشترك في العرض
+                </button>
+            )}
+            {payError && <div className="absolute bottom-24 left-1/2 z-10 w-[min(420px,calc(100vw-32px))] -translate-x-1/2 rounded-lg bg-white/95 p-3 text-center text-sm font-bold text-red-700 shadow-lg" role="alert">{payError}</div>}
             <div
-                style={{ width: '100%', height: '100%', position: 'relative' }}
+                className="absolute inset-0 z-0"
             >
                 <img
                     src={imageUrl}
                     alt={t('offer_image')}
+                    className="h-full w-full object-contain"
                     onLoad={(e) => {
                         console.log(
                             e.currentTarget.naturalWidth,
                             e.currentTarget.naturalHeight
                         );
-                    }}
-                    style={{
-                        width: '100%',
-                        height: '100%',
-                        display: 'block'
                     }}
                 />
             </div>

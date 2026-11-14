@@ -44,7 +44,7 @@ interface AuthContextType {
   clearFirstLogin: () => void; // ⭐ دالة لإعادة تعيين الحالة
   login: (email: string, password: string, remember?: boolean) => Promise<{ success: boolean; needsProfileCompletion?: boolean; error?: string; }>;
   loginWithGoogle: () => Promise<boolean>;
-  logout: () => void;
+  logout: (sessionExpired?: boolean) => void;
   signup: (email: string, password: string, username: string, phoneNumber: string, idLast6: string) => Promise<'success' | 'email_exists' | 'error'>;
   error: string | null;
   completeProfile: () => void; // دالة لتحديث حالة اكتمال الملف يدويًا
@@ -108,10 +108,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // تم تعريف دالة الخروج هنا وتغليفها بـ useCallback
   // لحل مشكلة "used before its declaration" في الـ useEffects.
-  const logout = useCallback(async () => {
+  const logout = useCallback(async (sessionExpired = false) => {
     // الخطوة 1: تسجيل علامة في التخزين المحلي للإشارة إلى أن الخروج تم بشكل يدوي.
     // هذا يمنع checkAuth من تسجيل الدخول تلقائيًا عند إعادة تشغيل التطبيق.
     localStorage.setItem('manual_logout', 'true');
+    if (sessionExpired) {
+      localStorage.setItem('session_expired_redirect', 'true');
+    } else {
+      localStorage.removeItem('session_expired_redirect');
+    }
 
     // الخطوة 2: مسح حالة المستخدم محليًا "لقفل" واجهة التطبيق.
     setUser(null);
@@ -171,7 +176,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const now = Date.now();
       const timeElapsed = now - lastActivity;
       if (timeElapsed > SESSION_IDLE_TIMEOUT_MS && user) {
-        logout();
+        logout(true);
         toast({
           title: t('session_expired'),
           description: t('logged_out_inactivity'),
@@ -204,7 +209,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (backgroundTimestamp) {
           const timeInBackground = Date.now() - parseInt(backgroundTimestamp, 10);
           if (timeInBackground > SESSION_IDLE_TIMEOUT_MS) {
-            logout();
+            logout(true);
             toast({ title: t('session_expired'), description: t('logged_out_inactivity') });
           }
           // إزالة المؤقت دائماً بعد التحقق
@@ -239,6 +244,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const persistedLastActivity = Math.max(lastActivityTimestamp || 0, backgroundTimestamp || 0);
         if (persistedLastActivity > 0 && Date.now() - persistedLastActivity > SESSION_IDLE_TIMEOUT_MS) {
           localStorage.setItem('manual_logout', 'true');
+          localStorage.setItem('session_expired_redirect', 'true');
           localStorage.removeItem('last_activity_timestamp');
           localStorage.removeItem('background_timestamp');
           setIsLoading(false);
@@ -447,6 +453,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsFirstLogin(true); // ⭐ تعيين حالة أول تسجيل دخول
 
         localStorage.removeItem('manual_logout');
+        localStorage.removeItem('session_expired_redirect');
         
         // تحديث عدد الإشعارات غير المقروؤة
         refreshNotifications();
@@ -762,6 +769,7 @@ return 'success';
         setIsFirstLogin(true); // ⭐ تفعيل حالة أول تسجيل دخول
         // إزالة علامة تسجيل الخروج اليدوي عند تسجيل الدخول بنجاح
         localStorage.removeItem('manual_logout');
+        localStorage.removeItem('session_expired_redirect');
         
         // تحديث عدد الإشعارات غير المقروؤة
         refreshNotifications();
