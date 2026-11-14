@@ -63,6 +63,28 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
     return next();
   };
 
+  const getActivePromoSubscription = async (userId) => {
+    const { data, error } = await supabase
+      .from('ads_payment')
+      .select('type, promo_duration_months, expires_at, payment_date')
+      .eq('user_id', userId)
+      .eq('is_paid', true)
+      .not('promo_duration_months', 'is', null)
+      .gt('expires_at', new Date().toISOString())
+      .order('payment_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return null;
+    return {
+      plan_type: data.type || null,
+      duration_months: data.promo_duration_months,
+      expires_at: data.expires_at,
+      payment_date: data.payment_date,
+    };
+  };
+
   // Load translations (best-effort) from frontend `src/translations` folder.
   const translations = {};
   const loadTranslations = () => {
@@ -2793,6 +2815,32 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       if (error) throw error;
 
       const users = data || [];
+      const promoByUserId = new Map();
+      const userIds = users.map(user => user.id).filter(Boolean);
+      if (userIds.length) {
+        const { data: promoPayments, error: promoError } = await supabase
+          .from('ads_payment')
+          .select('user_id, type, promo_duration_months, expires_at, payment_date')
+          .in('user_id', userIds)
+          .eq('is_paid', true)
+          .not('promo_duration_months', 'is', null)
+          .gt('expires_at', new Date().toISOString())
+          .order('payment_date', { ascending: false });
+
+        if (promoError) {
+          console.warn('/admin/users: failed to load promo subscriptions', promoError);
+        } else {
+          for (const payment of promoPayments || []) {
+            if (promoByUserId.has(payment.user_id)) continue;
+            promoByUserId.set(payment.user_id, {
+              plan_type: payment.type || null,
+              duration_months: payment.promo_duration_months,
+              expires_at: payment.expires_at,
+              payment_date: payment.payment_date,
+            });
+          }
+        }
+      }
       const rejectedUserIds = users.filter(user => ['rejected', 'pending'].includes(user.status)).map(user => user.id);
       const rejectionReasonByUser = new Map();
       if (rejectedUserIds.length) {
@@ -2818,7 +2866,8 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       const out = users.map(u => ({
         id: u.id,
         ...decryptDeep(u),
-        rejection_reason: rejectionReasonByUser.get(u.id) || ''
+        rejection_reason: rejectionReasonByUser.get(u.id) || '',
+        promo_subscription: promoByUserId.get(u.id) || null
       }));
 
       return res.json({ ok: true, users: out });
@@ -2845,6 +2894,8 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       if (error) throw error;
       if (!data) return res.status(404).json({ error: 'user not found' });
 
+      const promoSubscription = await getActivePromoSubscription(id);
+
       const user = decryptDeep(data) || {};
       const idLast6 = String(user.id_last6 || '').replace(/\D/g, '').slice(-6);
       const phone = String(user.phone || '').trim();
@@ -2866,6 +2917,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
           full_name: user.full_name || '',
           phone: fullPhone,
           id_last6: idLast6,
+          promo_subscription: promoSubscription,
         },
       });
     } catch (err) {

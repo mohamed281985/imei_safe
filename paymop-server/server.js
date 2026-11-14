@@ -3112,6 +3112,35 @@ app.post('/api/promo-codes/validate', verifyJwtToken, paymentLimiter, rateLimitM
 });
 
 // Endpoint لحساب عدد الإعلانات المتبقية من باقة المستخدم
+app.get('/api/ads/my-promo-subscription', verifyJwtToken, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { data: payment, error } = await supabase
+      .from('ads_payment')
+      .select('type, promo_duration_months, expires_at, payment_date')
+      .eq('user_id', userId)
+      .eq('is_paid', true)
+      .not('promo_duration_months', 'is', null)
+      .gt('expires_at', new Date().toISOString())
+      .order('payment_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw error;
+    return res.json({
+      isPromoSubscription: Boolean(payment),
+      planType: payment?.type || null,
+      durationMonths: payment?.promo_duration_months || null,
+      expiresAt: payment?.expires_at || null,
+    });
+  } catch (error) {
+    console.error('/api/ads/my-promo-subscription error:', error);
+    return res.status(500).json({ error: 'تعذر تحميل بيانات الاشتراك الترويجي' });
+  }
+});
+
 app.get('/api/ads/package-remaining', verifyJwtToken, async (req, res) => {
   try {
     const userId = req.user?.id;

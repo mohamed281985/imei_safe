@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Gift, Award, Crown } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import axiosInstance from '@/services/axiosInterceptor';
 
 interface Props {
   user?: any | null;
@@ -35,6 +36,7 @@ const PlanCard: React.FC<{
 const PackageBadge: React.FC<Props> = ({ user = null, className = '', compact = false }) => {
   const [dbRole, setDbRole] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
+  const [promoDurationMonths, setPromoDurationMonths] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -48,11 +50,18 @@ const PackageBadge: React.FC<Props> = ({ user = null, className = '', compact = 
 
       try {
         console.log('Fetching role for user:', user.id);
-        const { data, error } = await supabase
-          .from('users')
-          .select('role, expires_at')
-          .eq('id', user.id)
-          .maybeSingle();
+        const [userResult, promoResult] = await Promise.all([
+          supabase
+            .from('users')
+            .select('role, expires_at')
+            .eq('id', user.id)
+            .maybeSingle(),
+          axiosInstance.get('/api/ads/my-promo-subscription').catch((error) => {
+            console.warn('PackageBadge: failed fetching promo subscription', error);
+            return null;
+          }),
+        ]);
+        const { data, error } = userResult;
         
         if (error) {
           console.error('PackageBadge: failed fetching role', error);
@@ -62,6 +71,10 @@ const PackageBadge: React.FC<Props> = ({ user = null, className = '', compact = 
         
         console.log('Fetched user data from DB:', data);
         setExpiresAt(data?.expires_at || null);
+        const promoMonths = Number(promoResult?.data?.durationMonths);
+        setPromoDurationMonths(promoResult?.data?.isPromoSubscription && Number.isSafeInteger(promoMonths) && promoMonths > 0
+          ? promoMonths
+          : null);
         if (data?.role) {
           const normalizedFromDb = String(data.role).toLowerCase().trim();
           console.log('Setting role from DB to:', data.role, '-> normalized:', normalizedFromDb);
@@ -152,6 +165,7 @@ const PackageBadge: React.FC<Props> = ({ user = null, className = '', compact = 
             <span className="text-xs font-semibold opacity-80">{planBadge.description}</span>
           </span>
           <span className="mt-1 block text-[10px] font-medium text-slate-600">{expiryLabel}</span>
+          {promoDurationMonths && <span className="mt-1 inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-bold text-orange-800">اشتراك ترويجي · {promoDurationMonths} شهر</span>}
         </span>
         <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold ${planBadge.statusClassName}`}>نشطة</span>
       </div>
@@ -199,6 +213,11 @@ const PackageBadge: React.FC<Props> = ({ user = null, className = '', compact = 
   return (
     <div className={className}>
       {renderActivePlan()}
+      {promoDurationMonths && (
+        <div className="mt-2 inline-flex rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-bold text-orange-800">
+          اشتراك ترويجي لمدة {promoDurationMonths} شهر
+        </div>
+      )}
     </div>
   );
 };
