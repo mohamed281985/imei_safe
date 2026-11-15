@@ -2499,6 +2499,7 @@ app.post('/api/paymob/unified/create-intention', verifyJwtToken, paymentLimiter,
   if (!userId) return res.status(401).json({ success: false, error: 'Unauthorized' });
 
   let insertedPaymentId = null;
+  let failureStage = 'validate_customer';
   try {
     const body = req.body || {};
     const flow = String(body.flow || '').trim().toLowerCase();
@@ -2570,6 +2571,7 @@ app.post('/api/paymob/unified/create-intention', verifyJwtToken, paymentLimiter,
     let paymentPayload;
 
     if (flow === 'publish' || flow === 'special') {
+      failureStage = 'load_ad_price';
       if (body.adId) {
         return res.status(400).json({ success: false, error: 'Updating an existing ad is not supported by this initial intention endpoint' });
       }
@@ -2624,6 +2626,7 @@ app.post('/api/paymob/unified/create-intention', verifyJwtToken, paymentLimiter,
         transaction: 'publish',
       };
     } else {
+      failureStage = 'load_offer';
       const offerData = body.offerData;
       const offerId = Number(body.offerId ?? offerData?.offer_id);
       if (!Number.isSafeInteger(offerId) || offerId <= 0 || !offerData || typeof offerData !== 'object') {
@@ -2662,7 +2665,16 @@ app.post('/api/paymob/unified/create-intention', verifyJwtToken, paymentLimiter,
 
       const promoCode = typeof body.promoCode === 'string' ? body.promoCode.trim() : '';
       if (promoCode) {
-        promoPricing = await getPromoPricing(promoCode, offerId);
+        failureStage = 'validate_promo';
+        try {
+          promoPricing = await getPromoPricing(promoCode, offerId);
+        } catch (promoError) {
+          return res.status(400).json({
+            success: false,
+            error: promoError?.message || 'تعذر التحقق من البروموكود',
+            stage: 'validate_promo',
+          });
+        }
         amount = Number(promoPricing.discountedAmount);
       }
 
@@ -2699,6 +2711,7 @@ app.post('/api/paymob/unified/create-intention', verifyJwtToken, paymentLimiter,
 
     const internalReference = `imei-${crypto.randomUUID()}`;
     paymentPayload.merchant_order_id = internalReference;
+    failureStage = 'save_pending_payment';
     const { data: insertedPayment, error: insertError } = await supabase
       .from('ads_payment')
       .insert(paymentPayload)
@@ -2739,6 +2752,7 @@ app.post('/api/paymob/unified/create-intention', verifyJwtToken, paymentLimiter,
     };
 
     const controller = new AbortController();
+    failureStage = 'create_paymob_intention';
     const timeoutId = setTimeout(() => controller.abort(), PAYMENT_OP_TIMEOUT_MS);
     let intentionResponse;
     try {
@@ -2769,12 +2783,14 @@ app.post('/api/paymob/unified/create-intention', verifyJwtToken, paymentLimiter,
     }
 
     const { error: linkError } = await supabase
+      // Link Paymob's order to the already-created internal payment record.
       .from('ads_payment')
       .update({ paymob_order_id: Number(intention.intention_order_id) })
       .eq('id', insertedPaymentId)
       .eq('merchant_order_id', internalReference);
     if (linkError) throw linkError;
 
+    failureStage = 'build_checkout_url';
     const checkoutUrl = new URL(`${PAYMOB_UNIFIED_BASE_URL}/unifiedcheckout/`);
     checkoutUrl.searchParams.set('publicKey', PAYMOB_PUBLIC_KEY);
     checkoutUrl.searchParams.set('clientSecret', intention.client_secret);
@@ -2789,6 +2805,8 @@ app.post('/api/paymob/unified/create-intention', verifyJwtToken, paymentLimiter,
   } catch (error) {
     console.error('[paymob-unified] create-intention failed', {
       paymentId: insertedPaymentId,
+      stage: failureStage,
+      code: /^[A-Z0-9_]{3,24}$/i.test(String(error?.code || '')) ? String(error.code) : undefined,
       message: error?.name === 'AbortError' ? 'Paymob intention request timed out' : (error?.message || 'Unknown error'),
     });
     if (insertedPaymentId) {
@@ -2798,7 +2816,7 @@ app.post('/api/paymob/unified/create-intention', verifyJwtToken, paymentLimiter,
         console.error('[paymob-unified] failed to mark pending payment after intention error', { paymentId: insertedPaymentId });
       }
     }
-    return res.status(500).json({ success: false, error: 'تعذر إنشاء رابط الدفع الموحد' });
+    return res.status(500).json({ success: false, error: 'تعذر إنشاء رابط الدفع الموحد', stage: failureStage });
   }
 });
 
