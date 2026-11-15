@@ -2262,6 +2262,11 @@ const PAYMOB_API_KEY = process.env.PAYMOB_API_KEY;
 const INTEGRATION_ID = process.env.PAYMOB_INTEGRATION_ID;
 const IFRAME_ID = process.env.PAYMOB_IFRAME_ID;
 const HMAC_SECRET = process.env.PAYMOB_HMAC_SECRET;
+const WALLET_INTEGRATION_ID = process.env.PAYMOB_WALLET_INTEGRATION_ID;
+const PAYMOB_UNIFIED_ENABLED = String(process.env.PAYMOB_UNIFIED_ENABLED || 'false').trim().toLowerCase() === 'true';
+const PAYMOB_PUBLIC_KEY = process.env.PAYMOB_PUBLIC_KEY || '';
+const PAYMOB_SECRET_KEY = process.env.PAYMOB_SECRET_KEY || '';
+const PAYMOB_UNIFIED_BASE_URL = String(process.env.PAYMOB_UNIFIED_BASE_URL || 'https://accept.paymob.com').replace(/\/+$/, '');
 
 // طباعة متغيرات Paymob للتحقق
 console.log('Paymob variables check:');
@@ -2269,9 +2274,10 @@ console.log('PAYMOB_API_KEY:', PAYMOB_API_KEY ? 'Found' : 'Not found');
 console.log('INTEGRATION_ID:', INTEGRATION_ID ? 'Found' : 'Not found');
 console.log('IFRAME_ID:', IFRAME_ID ? 'Found' : 'Not found');
 console.log('HMAC_SECRET:', HMAC_SECRET ? 'Found' : 'Not found');
+console.log('WALLET_INTEGRATION_ID:', WALLET_INTEGRATION_ID ? 'Found' : 'Not found');
 
 // التحقق من متغيرات البيئة عند بدء التشغيل
-if (!PAYMOB_API_KEY || !INTEGRATION_ID || !IFRAME_ID || !HMAC_SECRET) {
+if (!PAYMOB_API_KEY || !INTEGRATION_ID || !IFRAME_ID || !HMAC_SECRET || !WALLET_INTEGRATION_ID) {
   console.error("❌ خطأ: متغيرات البيئة الخاصة بـ Paymob غير مكتملة. يرجى التحقق من ملف .env");
   process.exit(1); // إيقاف السيرفر إذا كانت المتغيرات ناقصة
 }
@@ -2470,6 +2476,281 @@ const getPaymentKey = async (token, { amount, orderId, email, name, phone, redir
     }
   }
 };
+
+// New Paymob Intention flow. This is intentionally isolated from Legacy Acceptance routes.
+app.post('/api/paymob/unified/create-intention', verifyJwtToken, paymentLimiter, rateLimitMiddleware({ windowMs: 15 * 60 * 1000, max: 8 }), async (req, res) => {
+  if (!PAYMOB_UNIFIED_ENABLED) {
+    return res.status(503).json({ success: false, error: 'Paymob Unified Checkout is disabled' });
+  }
+
+  if (!PAYMOB_PUBLIC_KEY || !PAYMOB_SECRET_KEY) {
+    return res.status(503).json({ success: false, error: 'Paymob Unified Checkout credentials are not configured' });
+  }
+
+  const cardIntegrationId = Number(INTEGRATION_ID);
+  const walletIntegrationId = Number(WALLET_INTEGRATION_ID);
+  if (!Number.isSafeInteger(cardIntegrationId) || cardIntegrationId <= 0
+    || !Number.isSafeInteger(walletIntegrationId) || walletIntegrationId <= 0
+    || cardIntegrationId === walletIntegrationId) {
+    return res.status(503).json({ success: false, error: 'Paymob test/live integration IDs are missing or invalid' });
+  }
+
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ success: false, error: 'Unauthorized' });
+
+  let insertedPaymentId = null;
+  try {
+    const body = req.body || {};
+    const flow = String(body.flow || '').trim().toLowerCase();
+    if (!['publish', 'special', 'offer'].includes(flow)) {
+      return res.status(400).json({ success: false, error: 'flow must be publish, special, or offer' });
+    }
+
+    const suppliedEmail = String(req.user.email || body.email || '').trim();
+    const suppliedName = String(body.name || body.billing_data?.first_name || '').trim();
+    const suppliedPhone = String(body.phone || body.billing_data?.phone_number || '').trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(suppliedEmail) || !suppliedName || !suppliedPhone) {
+      return res.status(400).json({ success: false, error: 'Valid customer name, email and phone are required' });
+    }
+
+    let amount = null;
+    let paymentType = flow;
+    let durationDays = null;
+    let promoPricing = null;
+    let paymentPayload;
+
+    if (flow === 'publish' || flow === 'special') {
+      if (body.adId) {
+        return res.status(400).json({ success: false, error: 'Updating an existing ad is not supported by this initial intention endpoint' });
+      }
+      const sourceAd = body.adData;
+      if (!sourceAd || typeof sourceAd !== 'object' || Array.isArray(sourceAd)) {
+        return res.status(400).json({ success: false, error: 'adData is required' });
+      }
+
+      durationDays = Number(sourceAd.duration_days ?? sourceAd.duration);
+      if (!Number.isSafeInteger(durationDays) || durationDays <= 0) {
+        return res.status(400).json({ success: false, error: 'A valid ad duration is required' });
+      }
+
+      const expectedType = flow === 'special' ? 'special' : 'publish';
+      const { data: priceRow, error: priceError } = await supabase
+        .from('ads_price')
+        .select('amount')
+        .eq('type', expectedType)
+        .eq('duration_days', durationDays)
+        .maybeSingle();
+      if (priceError) throw priceError;
+      if (!priceRow || !Number.isFinite(Number(priceRow.amount)) || Number(priceRow.amount) <= 0) {
+        return res.status(400).json({ success: false, error: 'No server price is configured for this ad duration' });
+      }
+      amount = Number(priceRow.amount);
+      paymentType = expectedType;
+
+      const adData = {
+        store_name: String(sourceAd.store_name || '').trim().slice(0, 200),
+        image_url: typeof sourceAd.image_url === 'string' ? sourceAd.image_url.trim().slice(0, 2000) : '',
+        whatsapp: Boolean(sourceAd.whatsapp),
+        latitude: Number.isFinite(Number(sourceAd.latitude)) ? Number(sourceAd.latitude) : null,
+        longitude: Number.isFinite(Number(sourceAd.longitude)) ? Number(sourceAd.longitude) : null,
+        country_code: typeof sourceAd.country_code === 'string' ? sourceAd.country_code.trim().slice(0, 12) : null,
+        phone: Object.prototype.hasOwnProperty.call(sourceAd, 'phone')
+          ? encryptFieldForStorage(sourceAd.phone)
+          : null,
+      };
+
+      paymentPayload = {
+        ...adData,
+        user_id: userId,
+        type: paymentType,
+        amount,
+        duration_days: durationDays,
+        upload_date: new Date().toISOString(),
+        expires_at: (() => { const date = new Date(); date.setDate(date.getDate() + durationDays); return date.toISOString(); })(),
+        is_paid: false,
+        is_active: false,
+        status: 'pending',
+        payment_status: 'pending',
+        transaction: 'publish',
+      };
+    } else {
+      const offerData = body.offerData;
+      const offerId = Number(body.offerId ?? offerData?.offer_id);
+      if (!Number.isSafeInteger(offerId) || offerId <= 0 || !offerData || typeof offerData !== 'object') {
+        return res.status(400).json({ success: false, error: 'A valid offerId and offerData are required' });
+      }
+
+      const { data: offerRow, error: offerError } = await supabase
+        .from('ads_offar')
+        .select('id, type, amount, price, duration_days, mainimage_url, store_name, bonus_offer')
+        .eq('id', offerId)
+        .maybeSingle();
+      if (offerError) throw offerError;
+      if (!offerRow) return res.status(404).json({ success: false, error: 'Offer not found' });
+
+      paymentType = String(offerRow.type || '').trim();
+      if (!paymentType) return res.status(400).json({ success: false, error: 'Offer has no configured payment type' });
+
+      durationDays = Number(offerRow.duration_days ?? offerData.duration_days);
+      if (!Number.isSafeInteger(durationDays) || durationDays <= 0) {
+        return res.status(400).json({ success: false, error: 'A valid offer duration is required' });
+      }
+
+      const { data: priceRow, error: priceError } = await supabase
+        .from('ads_price')
+        .select('amount')
+        .eq('type', paymentType)
+        .eq('duration_days', durationDays)
+        .maybeSingle();
+      if (priceError) throw priceError;
+
+      const baseAmount = Number(priceRow?.amount ?? offerRow.amount ?? offerRow.price);
+      if (!Number.isFinite(baseAmount) || baseAmount <= 0) {
+        return res.status(400).json({ success: false, error: 'No server price is configured for this offer' });
+      }
+      amount = baseAmount;
+
+      const promoCode = typeof body.promoCode === 'string' ? body.promoCode.trim() : '';
+      if (promoCode) {
+        promoPricing = await getPromoPricing(promoCode, offerId);
+        amount = Number(promoPricing.discountedAmount);
+      }
+
+      const encryptedPhone = encryptFieldForStorage(suppliedPhone);
+      paymentPayload = {
+        user_id: userId,
+        store_name: String(offerData.store_name || offerRow.store_name || suppliedName).slice(0, 200),
+        phone: encryptedPhone,
+        duration_days: durationDays,
+        expires_at: null,
+        is_paid: false,
+        is_active: false,
+        payment_date: null,
+        amount,
+        type: paymentType,
+        payment_status: 'pending',
+        status: 'pending',
+        transaction: 'promo_subscription',
+        offer_id: offerId,
+        bonus_offer: Number(offerRow.bonus_offer) || 0,
+        image_url: offerRow.mainimage_url || '',
+        ...(promoPricing ? {
+          promo_duration_months: promoPricing.durationMonths,
+          promo_code: promoPricing.code,
+          promo_code_id: promoPricing.promoId,
+        } : {}),
+      };
+    }
+
+    const amountCents = Math.round(amount * 100);
+    if (!Number.isSafeInteger(amountCents) || amountCents <= 0) {
+      return res.status(400).json({ success: false, error: 'Calculated payment amount is invalid' });
+    }
+
+    const internalReference = `imei-${crypto.randomUUID()}`;
+    paymentPayload.merchant_order_id = internalReference;
+    const { data: insertedPayment, error: insertError } = await supabase
+      .from('ads_payment')
+      .insert(paymentPayload)
+      .select('id')
+      .maybeSingle();
+    if (insertError) throw insertError;
+    if (!insertedPayment?.id) throw new Error('Pending payment record was not created');
+    insertedPaymentId = insertedPayment.id;
+
+    const firstName = suppliedName.split(/\s+/)[0].slice(0, 50);
+    const lastName = suppliedName.split(/\s+/).slice(1).join(' ').slice(0, 50) || 'NA';
+    const billingData = {
+      apartment: 'NA',
+      first_name: firstName,
+      last_name: lastName,
+      street: 'NA',
+      building: 'NA',
+      phone_number: suppliedPhone.slice(0, 32),
+      city: 'Cairo',
+      country: 'EG',
+      email: suppliedEmail,
+      floor: 'NA',
+      state: 'Cairo',
+    };
+    const intentionBody = {
+      amount: amountCents,
+      currency: 'EGP',
+      payment_methods: [cardIntegrationId, walletIntegrationId],
+      items: [{
+        name: (flow === 'offer' ? `IMEI Safe ${paymentType} subscription` : `IMEI Safe ${paymentType} ad`).slice(0, 50),
+        amount: amountCents,
+        description: (flow === 'offer' && promoPricing ? `Promo ${promoPricing.code}, ${promoPricing.durationMonths} months` : 'IMEI Safe payment').slice(0, 255),
+        quantity: 1,
+      }],
+      billing_data: billingData,
+      special_reference: internalReference,
+      expiration: 3600,
+    };
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), PAYMENT_OP_TIMEOUT_MS);
+    let intentionResponse;
+    try {
+      intentionResponse = await fetch(`${PAYMOB_UNIFIED_BASE_URL}/v1/intention/`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Token ${PAYMOB_SECRET_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(intentionBody),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    if (!intentionResponse.ok) {
+      console.error('[paymob-unified] intention request rejected', { status: intentionResponse.status, paymentId: insertedPaymentId });
+      await supabase.from('ads_payment').update({ payment_status: 'intention_failed' }).eq('id', insertedPaymentId);
+      return res.status(502).json({ success: false, error: 'Paymob could not create the payment intention' });
+    }
+
+    const intention = await intentionResponse.json();
+    if (!intention?.client_secret || !Number.isSafeInteger(Number(intention?.intention_order_id))) {
+      console.error('[paymob-unified] incomplete intention response', { paymentId: insertedPaymentId });
+      await supabase.from('ads_payment').update({ payment_status: 'intention_failed' }).eq('id', insertedPaymentId);
+      return res.status(502).json({ success: false, error: 'Paymob returned an incomplete intention response' });
+    }
+
+    const { error: linkError } = await supabase
+      .from('ads_payment')
+      .update({ paymob_order_id: Number(intention.intention_order_id) })
+      .eq('id', insertedPaymentId)
+      .eq('merchant_order_id', internalReference);
+    if (linkError) throw linkError;
+
+    const checkoutUrl = new URL(`${PAYMOB_UNIFIED_BASE_URL}/unifiedcheckout/`);
+    checkoutUrl.searchParams.set('publicKey', PAYMOB_PUBLIC_KEY);
+    checkoutUrl.searchParams.set('clientSecret', intention.client_secret);
+
+    return res.status(201).json({
+      success: true,
+      payment_id: insertedPaymentId,
+      merchant_order_id: internalReference,
+      intention_order_id: Number(intention.intention_order_id),
+      checkout_url: checkoutUrl.toString(),
+    });
+  } catch (error) {
+    console.error('[paymob-unified] create-intention failed', {
+      paymentId: insertedPaymentId,
+      message: error?.name === 'AbortError' ? 'Paymob intention request timed out' : (error?.message || 'Unknown error'),
+    });
+    if (insertedPaymentId) {
+      try {
+        await supabase.from('ads_payment').update({ payment_status: 'intention_failed' }).eq('id', insertedPaymentId);
+      } catch (updateError) {
+        console.error('[paymob-unified] failed to mark pending payment after intention error', { paymentId: insertedPaymentId });
+      }
+    }
+    return res.status(500).json({ success: false, error: 'تعذر إنشاء رابط الدفع الموحد' });
+  }
+});
 
 app.post("/paymob/create-payment", paymentLimiter, rateLimitMiddleware({ windowMs: 15 * 60 * 1000, max: 10 }), async (req, res) => {
   // per-operation timeout guard
