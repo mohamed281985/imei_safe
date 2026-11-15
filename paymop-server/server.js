@@ -2507,11 +2507,61 @@ app.post('/api/paymob/unified/create-intention', verifyJwtToken, paymentLimiter,
     }
 
     const suppliedEmail = String(req.user.email || body.email || '').trim();
-    const suppliedName = String(body.name || body.billing_data?.first_name || '').trim();
-    const suppliedPhone = String(body.phone || body.billing_data?.phone_number || '').trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(suppliedEmail) || !suppliedName || !suppliedPhone) {
-      return res.status(400).json({ success: false, error: 'Valid customer name, email and phone are required' });
+    let suppliedName = String(body.name || body.billing_data?.first_name || '').trim();
+    let suppliedPhone = String(body.phone || body.billing_data?.phone_number || '').trim();
+    const hasUsablePhone = (value) => {
+      const digits = String(value || '').replace(/\D/g, '');
+      return digits.length >= 7 && digits.length <= 15;
+    };
+
+    if (!suppliedName || !hasUsablePhone(suppliedPhone)) {
+      const [userResult, businessResult] = await Promise.all([
+        supabase.from('users').select('full_name, phone, country_code').eq('id', userId).maybeSingle(),
+        supabase.from('businesses').select('store_name, phone, country_code').eq('user_id', userId).maybeSingle(),
+      ]);
+      if (userResult.error) throw userResult.error;
+      if (businessResult.error) throw businessResult.error;
+
+      const userRecord = userResult.data || {};
+      const businessRecord = businessResult.data || {};
+      const metadata = req.user.user_metadata || {};
+      if (!suppliedName) {
+        suppliedName = String(
+          businessRecord.store_name
+          || decryptField(userRecord.full_name)
+          || metadata.full_name
+          || metadata.fullName
+          || metadata.username
+          || metadata.name
+          || ''
+        ).trim();
+      }
+
+      if (!suppliedPhone) {
+        const storedPhone = decryptField(businessRecord.phone) || decryptField(userRecord.phone) || '';
+        const countryCode = String(businessRecord.country_code || userRecord.country_code || '').trim();
+        const phoneDigits = String(storedPhone).replace(/\D/g, '');
+        const countryDigits = countryCode.replace(/\D/g, '');
+        suppliedPhone = phoneDigits
+          ? (countryDigits && !phoneDigits.startsWith(countryDigits) ? `+${countryDigits}${phoneDigits}` : `+${phoneDigits}`)
+          : '';
+      }
     }
+
+    const normalizedPhone = suppliedPhone.replace(/[^\d+]/g, '');
+    const phoneDigits = normalizedPhone.replace(/\D/g, '');
+    const missingCustomerFields = [];
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(suppliedEmail)) missingCustomerFields.push('email');
+    if (!suppliedName) missingCustomerFields.push('name');
+    if (phoneDigits.length < 7 || phoneDigits.length > 15) missingCustomerFields.push('phone');
+    if (missingCustomerFields.length) {
+      return res.status(400).json({
+        success: false,
+        error: 'Valid customer name, email and phone are required',
+        missing_fields: missingCustomerFields,
+      });
+    }
+    suppliedPhone = normalizedPhone;
 
     let amount = null;
     let paymentType = flow;
