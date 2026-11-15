@@ -2537,7 +2537,7 @@ app.post('/api/paymob/unified/create-intention', verifyJwtToken, paymentLimiter,
         ).trim();
       }
 
-      if (!suppliedPhone) {
+      if (!hasUsablePhone(suppliedPhone)) {
         const storedPhone = decryptField(businessRecord.phone) || decryptField(userRecord.phone) || '';
         const countryCode = String(businessRecord.country_code || userRecord.country_code || '').trim();
         const phoneDigits = String(storedPhone).replace(/\D/g, '');
