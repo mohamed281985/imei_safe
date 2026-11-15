@@ -233,39 +233,83 @@ const OffersGallery = () => {
                 ? promoDetails.code
                 : null;
 
-            // Unified Checkout calculates the authoritative amount on the server.
+            const { data: offer, error: offerError } = await supabase
+                .from('ads_offar')
+                .select('type, amount, duration_days')
+                .eq('id', offerIdNum)
+                .maybeSingle();
+            if (offerError || !offer) throw new Error(t('error_fetching_offer_data'));
+
+            const { data: priceRow, error: priceError } = await supabase
+                .from('ads_price')
+                .select('amount, duration_days')
+                .eq('type', offer.type)
+                .maybeSingle();
+            if (priceError) throw new Error(t('error_fetching_offer_data'));
+
+            const price = Number(priceRow?.amount || offer.amount);
+            const durationDays = Number(priceRow?.duration_days || offer.duration_days || 1);
+            const paymentData = {
+                amount: activePromoCode ? promoDetails!.discounted_price : price,
+                promoCode: activePromoCode,
+                email: user.email || '',
+                name: businessData?.store_name || user.username || '',
+                phone: businessData?.phone || user.phoneNumber || '',
+                merchantOrderId: `ads_payment-${Date.now()}`,
+                signature: null as string | null,
+                timestamp: null as number | null,
+                offerData: {
+                    user_id: user.id,
+                    store_name: businessData?.store_name || t('undefined_store'),
+                    phone: businessData?.phone || user.phoneNumber || '',
+                    duration_days: durationDays,
+                    type: offer.type,
+                    amount: price,
+                    offer_id: offerIdNum,
+                    Actual_payment_date: new Date().toISOString(),
+                },
+                redirect_url_success: 'https://imei-safe.me/paymob/redirect-success',
+                redirect_url_failed: 'https://imei-safe.me/paymob/redirect-failed',
+            };
+
+            if (!Number.isFinite(paymentData.amount) || paymentData.amount <= 0 || !paymentData.email || !paymentData.name) {
+                throw new Error(t('invalid_payment_data'));
+            }
+
             const sessionForPayment = await validateSession();
             const tokenForPayment = sessionForPayment?.access_token;
             if (!tokenForPayment) throw new Error(t('must_login_for_offer'));
 
-            const paymentResponse = await axiosInstance.post(
-                'https://imei-safe.me/api/paymob/unified/create-intention',
+            const timestamp = Date.now();
+            const signatureResponse = await axiosInstance.post(
+                'https://imei-safe.me/paymob/sign',
                 {
-                    flow: 'offer',
+                    merchantOrderId: paymentData.merchantOrderId,
                     offerId: offerIdNum,
-                    promoCode: activePromoCode,
-                    email: user.email || '',
-                    name: businessData?.store_name || user.username || '',
-                    phone: businessData?.phone || user.phoneNumber || '',
-                    offerData: {
-                        offer_id: offerIdNum,
-                        store_name: businessData?.store_name || t('undefined_store'),
-                    },
+                    offerData: paymentData.offerData,
+                    promoCode: paymentData.promoCode,
+                    timestamp,
                 },
-                { timeout: 25000, headers: { Authorization: `Bearer ${tokenForPayment}` } }
+                { timeout: 15000, headers: { Authorization: `Bearer ${tokenForPayment}` } }
             );
+            paymentData.signature = signatureResponse.data?.signature || null;
+            paymentData.timestamp = timestamp;
+            if (!paymentData.signature) throw new Error(t('error_fetching_signature'));
 
-            const paymentData = paymentResponse.data;
-            if (!paymentData?.checkout_url) {
-                throw new Error(paymentData?.error || 'لم يُرجع الخادم رابط الدفع الموحد.');
-            }
+            const paymentResponse = await axiosInstance.post(
+                'https://imei-safe.me/paymob/create-offer-payment',
+                paymentData,
+                { timeout: 15000, headers: { Authorization: `Bearer ${tokenForPayment}` } }
+            );
+            const result = paymentResponse.data;
+            if (!result?.iframe_url) throw new Error(result?.error || t('error_creating_payment_link'));
 
             if (Capacitor.isNativePlatform()) {
-                await Browser.open({ url: paymentData.checkout_url, toolbarColor: '#000000' });
+                await Browser.open({ url: result.iframe_url, toolbarColor: '#000000' });
             } else if (popup && !popup.closed) {
-                popup.location.replace(paymentData.checkout_url);
+                popup.location.replace(result.iframe_url);
             } else {
-                window.location.assign(paymentData.checkout_url);
+                window.location.assign(result.iframe_url);
             }
             setShowCheckoutPanel(false);
             return;
