@@ -1706,19 +1706,6 @@ const getPromoPricing = async (promoCode, offerId) => {
   const expiresAt = promo.expires_at || promo.expiry_at || promo.expiration_date || promo.expiry_date || promo.valid_until || null;
   const expirationTime = expiresAt ? new Date(expiresAt).getTime() : NaN;
   if (!Number.isFinite(expirationTime) || expirationTime <= Date.now()) throw new Error('انتهت صلاحية البروموكود');
-  const startsAtTime = promo.starts_at ? new Date(promo.starts_at).getTime() : NaN;
-  if (Number.isFinite(startsAtTime) && startsAtTime > Date.now()) throw new Error('لم يبدأ تفعيل البروموكود بعد');
-
-  if (promo.max_redemptions) {
-    const { count, error: countError } = await supabase
-      .from('ads_payment')
-      .select('id', { count: 'exact', head: true })
-      .eq('promo_code_id', promo.id)
-      .eq('is_paid', true)
-      .eq('payment_status', 'paid');
-    if (countError) throw new Error('تعذر التحقق من عدد استخدامات البروموكود');
-    if (Number(count || 0) >= Number(promo.max_redemptions)) throw new Error('اكتمل الحد الأقصى لاستخدام البروموكود');
-  }
 
   const discountPercent = Number(promo.discount_percentage ?? promo.discount_percent ?? promo.discount);
   const durationMonths = Number(promo.duration_months ?? promo.duration_month);
@@ -1753,7 +1740,6 @@ const getPromoPricing = async (promoCode, offerId) => {
   const discountedAmount = Math.round(originalAmount * (1 - discountPercent / 100) * 100) / 100;
   return {
     promo,
-    promoId: promo.id,
     code: promo.promo_code ?? promo.code ?? promo.name ?? promo.promo_name,
     discountPercent,
     durationMonths,
@@ -2262,7 +2248,6 @@ const PAYMOB_API_KEY = process.env.PAYMOB_API_KEY;
 const INTEGRATION_ID = process.env.PAYMOB_INTEGRATION_ID;
 const IFRAME_ID = process.env.PAYMOB_IFRAME_ID;
 const HMAC_SECRET = process.env.PAYMOB_HMAC_SECRET;
-const WALLET_INTEGRATION_ID = process.env.PAYMOB_WALLET_INTEGRATION_ID;
 
 // طباعة متغيرات Paymob للتحقق
 console.log('Paymob variables check:');
@@ -2270,10 +2255,9 @@ console.log('PAYMOB_API_KEY:', PAYMOB_API_KEY ? 'Found' : 'Not found');
 console.log('INTEGRATION_ID:', INTEGRATION_ID ? 'Found' : 'Not found');
 console.log('IFRAME_ID:', IFRAME_ID ? 'Found' : 'Not found');
 console.log('HMAC_SECRET:', HMAC_SECRET ? 'Found' : 'Not found');
-console.log('WALLET_INTEGRATION_ID:', WALLET_INTEGRATION_ID ? 'Found' : 'Not found');
 
 // التحقق من متغيرات البيئة عند بدء التشغيل
-if (!PAYMOB_API_KEY || !INTEGRATION_ID || !IFRAME_ID || !HMAC_SECRET || !WALLET_INTEGRATION_ID) {
+if (!PAYMOB_API_KEY || !INTEGRATION_ID || !IFRAME_ID || !HMAC_SECRET) {
   console.error("❌ خطأ: متغيرات البيئة الخاصة بـ Paymob غير مكتملة. يرجى التحقق من ملف .env");
   process.exit(1); // إيقاف السيرفر إذا كانت المتغيرات ناقصة
 }
@@ -3061,25 +3045,6 @@ app.post('/api/promo-codes/validate', verifyJwtToken, paymentLimiter, rateLimitM
     if (!Number.isFinite(expirationTime) || expirationTime <= Date.now()) {
       return res.status(400).json({ ok: false, error: 'انتهت صلاحية البروموكود' });
     }
-    const startsAtTime = promo.starts_at ? new Date(promo.starts_at).getTime() : NaN;
-    if (Number.isFinite(startsAtTime) && startsAtTime > Date.now()) {
-      return res.status(400).json({ ok: false, error: 'لم يبدأ تفعيل البروموكود بعد' });
-    }
-    if (promo.max_redemptions) {
-      const { count, error: redemptionCountError } = await supabase
-        .from('ads_payment')
-        .select('id', { count: 'exact', head: true })
-        .eq('promo_code_id', promo.id)
-        .eq('is_paid', true)
-        .eq('payment_status', 'paid');
-      if (redemptionCountError) {
-        console.error('promo-code usage count failed:', redemptionCountError);
-        return res.status(500).json({ ok: false, error: 'تعذر التحقق من عدد استخدامات البروموكود' });
-      }
-      if (Number(count || 0) >= Number(promo.max_redemptions)) {
-        return res.status(400).json({ ok: false, error: 'اكتمل الحد الأقصى لاستخدام البروموكود' });
-      }
-    }
 
     const discountPercent = Number(promo.discount_percentage ?? promo.discount_percent ?? promo.discount);
     const durationMonths = Number(promo.duration_months ?? promo.duration_month);
@@ -3531,7 +3496,6 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
     let numericAmount = null;
     let promoDurationMonths = null;
     let promoCodeName = null;
-    let promoCodeId = null;
     try {
       let expectedAmount = null;
 
@@ -3589,7 +3553,6 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
           expectedAmount = promoPricing.discountedAmount;
           promoDurationMonths = promoPricing.durationMonths;
           promoCodeName = promoPricing.code;
-          promoCodeId = promoPricing.promoId;
         } catch (promoError) {
           return safeStatusJson(400, { error: promoError.message || 'تعذر تطبيق البروموكود' });
         }
@@ -3712,7 +3675,6 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
       payment_status: 'pending',
       ...(promoDurationMonths ? { promo_duration_months: promoDurationMonths } : {}),
       ...(promoCodeName ? { promo_code: promoCodeName } : {}),
-      ...(promoCodeId ? { promo_code_id: promoCodeId } : {}),
       offer_id: offerRowId,
       bonus_offer: offerData.bonus_offer || 0,
       image_url: imageUrl
