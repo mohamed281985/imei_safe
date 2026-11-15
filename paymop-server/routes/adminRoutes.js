@@ -77,8 +77,9 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       for (let offset = 0; ; offset += pageSize) {
         const { data, error } = await supabase
           .from('ads_payment')
-          .select('promo_code, amount, is_paid, payment_status')
+          .select('id, promo_code, user_id, type, amount, is_paid, payment_status, payment_date, created_at')
           .not('promo_code', 'is', null)
+          .order('id', { ascending: false })
           .range(offset, offset + pageSize - 1);
 
         if (error) throw error;
@@ -87,29 +88,68 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       }
 
       const performanceByCode = new Map();
+      const dailyUsageStart = new Date();
+      dailyUsageStart.setUTCHours(0, 0, 0, 0);
+      dailyUsageStart.setUTCDate(dailyUsageStart.getUTCDate() - 29);
       for (const payment of paymentRows) {
         const code = String(payment.promo_code || '').trim().toUpperCase();
         if (!code) continue;
 
-        const metrics = performanceByCode.get(code) || { paid_count: 0, checkout_count: 0, revenue: 0 };
+        const metrics = performanceByCode.get(code) || {
+          paid_count: 0,
+          checkout_count: 0,
+          revenue: 0,
+          users: new Set(),
+          daily_usage: new Map(),
+          recent_payments: []
+        };
         metrics.checkout_count += 1;
         if (payment.is_paid === true || payment.payment_status === 'paid') {
           metrics.paid_count += 1;
           metrics.revenue += Number(payment.amount) || 0;
+
+          if (payment.user_id) metrics.users.add(payment.user_id);
+          const paidAt = payment.payment_date || payment.created_at;
+          const paidDate = paidAt ? new Date(paidAt) : null;
+          if (paidDate && !Number.isNaN(paidDate.getTime()) && paidDate >= dailyUsageStart) {
+            const date = paidDate.toISOString().slice(0, 10);
+            metrics.daily_usage.set(date, (metrics.daily_usage.get(date) || 0) + 1);
+          }
+        }
+        if (metrics.recent_payments.length < 10) {
+          metrics.recent_payments.push({
+            id: payment.id,
+            user_id: payment.user_id,
+            type: payment.type,
+            amount: payment.amount,
+            is_paid: payment.is_paid,
+            payment_status: payment.payment_status,
+            payment_date: payment.payment_date,
+            created_at: payment.created_at
+          });
         }
         performanceByCode.set(code, metrics);
       }
 
       return res.json({
         success: true,
-        data: (promoCodes || []).map((promo) => ({
-          ...promo,
-          ...(performanceByCode.get(String(promo.promo_code || '').trim().toUpperCase()) || {
-            paid_count: 0,
-            checkout_count: 0,
-            revenue: 0
-          })
-        }))
+        data: (promoCodes || []).map((promo) => {
+          const metrics = performanceByCode.get(String(promo.promo_code || '').trim().toUpperCase());
+          const paidCount = metrics?.paid_count || 0;
+          const checkoutCount = metrics?.checkout_count || 0;
+          return {
+            ...promo,
+            paid_count: paidCount,
+            checkout_count: checkoutCount,
+            revenue: metrics?.revenue || 0,
+            conversion_rate: checkoutCount ? Number(((paidCount / checkoutCount) * 100).toFixed(2)) : 0,
+            unique_users: metrics?.users.size || 0,
+            daily_usage: metrics
+              ? Array.from(metrics.daily_usage, ([date, count]) => ({ date, count })).sort((a, b) => a.date.localeCompare(b.date))
+              : [],
+            recent_payments: metrics?.recent_payments || []
+          };
+        })
       });
     } catch (error) {
       console.error('/admin/promo-codes GET failed:', error);
