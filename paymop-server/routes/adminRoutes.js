@@ -2814,24 +2814,35 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       const type = req.query.type || null;
       const phone_id = req.query.phone_id || null;
 
-      let q = supabase.from('ads_payment').select('*').order('id', { ascending: false }).limit(limit);
+      const pageSize = limit;
+      const data = [];
+      for (let offset = 0; ; offset += pageSize) {
+        let q = supabase.from('ads_payment').select('*').order('id', { ascending: false });
 
-      if (filter && filter !== 'all') {
-        if (filter.includes(',')) {
-          const vals = filter.split(',').map(s => s.trim()).filter(Boolean);
-          if (vals.length) q = q.in('status', vals);
-        } else {
-          q = q.eq('status', filter);
+        if (filter && filter !== 'all') {
+          const normalizedFilter = filter.toString().toLowerCase();
+          if (normalizedFilter === 'paid') {
+            q = q.or('is_paid.eq.true,payment_status.eq.paid');
+          } else if (normalizedFilter === 'unpaid') {
+            q = q.eq('is_paid', false);
+          } else if (filter.includes(',')) {
+            const vals = filter.split(',').map(s => s.trim()).filter(Boolean);
+            if (vals.length) q = q.in('status', vals);
+          } else {
+            q = q.eq('status', filter);
+          }
         }
-      }
-      if (user_id) q = q.eq('user_id', user_id);
-      if (id) q = q.eq('id', id);
-      if (type) q = q.eq('type', type);
-      if (phone_id) q = q.eq('phone_id', phone_id);
+        if (user_id) q = q.eq('user_id', user_id);
+        if (id) q = q.eq('id', id);
+        if (type) q = q.eq('type', type);
+        if (phone_id) q = q.eq('phone_id', phone_id);
 
-      const { data, error } = await q;
-      if (error) throw error;
-      const out = (data || []).map(p => ({ id: p.id, ...decryptDeep(p) }));
+        const { data: page, error } = await q.range(offset, offset + pageSize - 1);
+        if (error) throw error;
+        data.push(...(page || []));
+        if (!page || page.length < pageSize || pageSize < 1000) break;
+      }
+      const out = data.map(p => ({ id: p.id, ...decryptDeep(p) }));
       return res.json({ ok: true, ads: out });
     } catch (err) {
       console.error('/admin/ads error', err);
@@ -2849,27 +2860,35 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       const type = req.query.type || null;
       const phone_id = req.query.phone_id || null;
 
-      let q = supabase.from('ads_payment').select('*').order('id', { ascending: false }).limit(limit);
+      const pageSize = limit;
+      const data = [];
+      for (let offset = 0; ; offset += pageSize) {
+        let q = supabase.from('ads_payment').select('*').order('id', { ascending: false });
 
-      if (filter && filter !== 'all') {
-        const f = filter.toString().toLowerCase();
-        if (f === 'paid' || f === 'unpaid') {
-          q = q.eq('is_paid', f === 'paid');
-        } else if (filter.includes(',')) {
-          const vals = filter.split(',').map(s => s.trim()).filter(Boolean);
-          if (vals.length) q = q.in('status', vals);
-        } else {
-          q = q.eq('status', filter);
+        if (filter && filter !== 'all') {
+          const f = filter.toString().toLowerCase();
+          if (f === 'paid') {
+            q = q.or('is_paid.eq.true,payment_status.eq.paid');
+          } else if (f === 'unpaid') {
+            q = q.eq('is_paid', false);
+          } else if (filter.includes(',')) {
+            const vals = filter.split(',').map(s => s.trim()).filter(Boolean);
+            if (vals.length) q = q.in('status', vals);
+          } else {
+            q = q.eq('status', filter);
+          }
         }
-      }
-      if (user_id) q = q.eq('user_id', user_id);
-      if (id) q = q.eq('id', id);
-      if (type) q = q.eq('type', type);
-      if (phone_id) q = q.eq('phone_id', phone_id);
+        if (user_id) q = q.eq('user_id', user_id);
+        if (id) q = q.eq('id', id);
+        if (type) q = q.eq('type', type);
+        if (phone_id) q = q.eq('phone_id', phone_id);
 
-      const { data, error } = await q;
-      if (error) throw error;
-      const out = (data || []).map(p => ({ id: p.id, ...decryptDeep(p) }));
+        const { data: page, error } = await q.range(offset, offset + pageSize - 1);
+        if (error) throw error;
+        data.push(...(page || []));
+        if (!page || page.length < pageSize || pageSize < 1000) break;
+      }
+      const out = data.map(p => ({ id: p.id, ...decryptDeep(p) }));
       return res.json({ ok: true, ads_payment: out });
     } catch (err) {
       console.error('/admin/ads_payment error', err);
