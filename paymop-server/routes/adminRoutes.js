@@ -63,6 +63,196 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
     return next();
   };
 
+  app.get('/admin/promo-codes', verifyJwtToken, requireAdmin, async (req, res) => {
+    try {
+      const { data: promoCodes, error: promoError } = await supabase
+        .from('promo_code')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (promoError) throw promoError;
+
+      const paymentRows = [];
+      const pageSize = 1000;
+      for (let offset = 0; ; offset += pageSize) {
+        const { data, error } = await supabase
+          .from('ads_payment')
+          .select('promo_code, amount, is_paid, payment_status')
+          .not('promo_code', 'is', null)
+          .range(offset, offset + pageSize - 1);
+
+        if (error) throw error;
+        paymentRows.push(...(data || []));
+        if (!data || data.length < pageSize) break;
+      }
+
+      const performanceByCode = new Map();
+      for (const payment of paymentRows) {
+        const code = String(payment.promo_code || '').trim().toUpperCase();
+        if (!code) continue;
+
+        const metrics = performanceByCode.get(code) || { paid_count: 0, checkout_count: 0, revenue: 0 };
+        metrics.checkout_count += 1;
+        if (payment.is_paid === true || payment.payment_status === 'paid') {
+          metrics.paid_count += 1;
+          metrics.revenue += Number(payment.amount) || 0;
+        }
+        performanceByCode.set(code, metrics);
+      }
+
+      return res.json({
+        success: true,
+        data: (promoCodes || []).map((promo) => ({
+          ...promo,
+          ...(performanceByCode.get(String(promo.promo_code || '').trim().toUpperCase()) || {
+            paid_count: 0,
+            checkout_count: 0,
+            revenue: 0
+          })
+        }))
+      });
+    } catch (error) {
+      console.error('/admin/promo-codes GET failed:', error);
+      return res.status(500).json({ success: false, error: 'Failed to fetch promo codes' });
+    }
+  });
+
+  const normalizePromoPayload = (body, partial = false) => {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return { error: 'Request body must be an object' };
+    }
+
+    const has = (key) => Object.prototype.hasOwnProperty.call(body, key);
+    const payload = {};
+
+    if (!partial || has('promo_code')) {
+      const promoCode = typeof body.promo_code === 'string' ? body.promo_code.trim().toUpperCase() : '';
+      if (!promoCode || promoCode.length > 64) return { error: 'promo_code must be between 1 and 64 characters' };
+      payload.promo_code = promoCode;
+    }
+
+    if (!partial || has('discount_percentage')) {
+      const discount = Number(body.discount_percentage);
+      if (!Number.isFinite(discount) || discount <= 0 || discount > 100) {
+        return { error: 'discount_percentage must be greater than 0 and at most 100' };
+      }
+      payload.discount_percentage = discount;
+    }
+
+    if (!partial || has('duration_months')) {
+      const duration = Number(body.duration_months);
+      if (!Number.isSafeInteger(duration) || duration <= 0) return { error: 'duration_months must be a positive integer' };
+      payload.duration_months = duration;
+    }
+
+    if (!partial || has('expires_at')) {
+      const expiresAt = Date.parse(body.expires_at);
+      if (!Number.isFinite(expiresAt)) return { error: 'expires_at must be a valid date' };
+      payload.expires_at = new Date(expiresAt).toISOString();
+    }
+
+    if (!partial || has('description')) {
+      payload.description = typeof body.description === 'string' ? body.description.trim() : '';
+    }
+
+    if (!partial || has('starts_at')) {
+      if (body.starts_at === null || body.starts_at === '') {
+        payload.starts_at = null;
+      } else {
+        const startsAt = Date.parse(body.starts_at);
+        if (!Number.isFinite(startsAt)) return { error: 'starts_at must be a valid date or null' };
+        payload.starts_at = new Date(startsAt).toISOString();
+      }
+    }
+
+    if (!partial || has('max_redemptions')) {
+      if (body.max_redemptions === null || body.max_redemptions === '') {
+        payload.max_redemptions = null;
+      } else {
+        const maxRedemptions = Number(body.max_redemptions);
+        if (!Number.isSafeInteger(maxRedemptions) || maxRedemptions <= 0) {
+          return { error: 'max_redemptions must be a positive integer or null' };
+        }
+        payload.max_redemptions = maxRedemptions;
+      }
+    }
+
+    if (!partial || has('is_active')) {
+      if (typeof body.is_active !== 'boolean') return { error: 'is_active must be a boolean' };
+      payload.is_active = body.is_active;
+    }
+
+    if (Object.keys(payload).length === 0) return { error: 'No promo-code fields provided' };
+    return { payload };
+  };
+
+  app.post('/admin/promo-codes', verifyJwtToken, requireAdmin, async (req, res) => {
+    const { payload, error: validationError } = normalizePromoPayload(req.body);
+    if (validationError) return res.status(400).json({ success: false, error: validationError });
+
+    try {
+      const { data, error } = await supabase
+        .from('promo_code')
+        .insert(payload)
+        .select('*')
+        .single();
+
+      if (error) {
+        if (error.code === '23505') return res.status(409).json({ success: false, error: 'Promo code already exists' });
+        throw error;
+      }
+
+      return res.status(201).json({ success: true, data });
+    } catch (error) {
+      console.error('/admin/promo-codes POST failed:', error);
+      return res.status(500).json({ success: false, error: 'Failed to create promo code' });
+    }
+  });
+
+  app.patch('/admin/promo-codes/:id', verifyJwtToken, requireAdmin, async (req, res) => {
+    const { payload, error: validationError } = normalizePromoPayload(req.body, true);
+    if (validationError) return res.status(400).json({ success: false, error: validationError });
+
+    try {
+      const { data, error } = await supabase
+        .from('promo_code')
+        .update(payload)
+        .eq('id', req.params.id)
+        .select('*')
+        .maybeSingle();
+
+      if (error) {
+        if (error.code === '23505') return res.status(409).json({ success: false, error: 'Promo code already exists' });
+        throw error;
+      }
+      if (!data) return res.status(404).json({ success: false, error: 'Promo code not found' });
+
+      return res.json({ success: true, data });
+    } catch (error) {
+      console.error('/admin/promo-codes PATCH failed:', error);
+      return res.status(500).json({ success: false, error: 'Failed to update promo code' });
+    }
+  });
+
+  app.delete('/admin/promo-codes/:id', verifyJwtToken, requireAdmin, async (req, res) => {
+    try {
+      const { data, error } = await supabase
+        .from('promo_code')
+        .update({ is_active: false })
+        .eq('id', req.params.id)
+        .select('id, promo_code, is_active')
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!data) return res.status(404).json({ success: false, error: 'Promo code not found' });
+
+      return res.json({ success: true, data });
+    } catch (error) {
+      console.error('/admin/promo-codes DELETE failed:', error);
+      return res.status(500).json({ success: false, error: 'Failed to deactivate promo code' });
+    }
+  });
+
   const getActivePromoSubscription = async (userId) => {
     const { data, error } = await supabase
       .from('ads_payment')

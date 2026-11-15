@@ -235,7 +235,7 @@ const OffersGallery = () => {
 
             const { data: offer, error: offerError } = await supabase
                 .from('ads_offar')
-                .select('type, duration_days')
+                .select('type')
                 .eq('id', offerIdNum)
                 .maybeSingle();
             if (offerError || !offer) throw new Error(t('error_fetching_offer_data'));
@@ -244,7 +244,6 @@ const OffersGallery = () => {
                 .from('ads_price')
                 .select('amount, duration_days')
                 .eq('type', offer.type);
-            if (offer.duration_days) priceQuery = priceQuery.eq('duration_days', offer.duration_days);
             const { data: priceRows, error: priceError } = await priceQuery
                 .order('duration_days', { ascending: true })
                 .limit(1);
@@ -252,7 +251,7 @@ const OffersGallery = () => {
             const priceRow = Array.isArray(priceRows) ? priceRows[0] : null;
 
             const price = Number(priceRow?.amount);
-            const durationDays = Number(priceRow?.duration_days || offer.duration_days || 1);
+            const durationDays = Number(priceRow?.duration_days || 1);
             const paymentData = {
                 amount: activePromoCode ? promoDetails!.discounted_price : price,
                 promoCode: activePromoCode,
