@@ -1715,26 +1715,22 @@ const getPromoPricing = async (promoCode, offerId) => {
 
   const { data: offer, error: offerError } = await supabase
     .from('ads_offar')
-    .select('id, type, duration_days')
+    .select('*')
     .eq('id', normalizedOfferId)
     .maybeSingle();
   if (offerError) throw new Error('تعذر قراءة بيانات العرض');
   if (!offer) throw new Error('العرض المحدد غير موجود');
 
-  let monthlyPrice = NaN;
+  let monthlyPrice = Number(offer.amount ?? offer.price);
   let originalDurationDays = Number(offer.duration_days) || null;
   if (offer.type) {
-    let priceQuery = supabase
+    const { data: priceRow, error: priceError } = await supabase
       .from('ads_price')
       .select('amount, duration_days')
-      .eq('type', offer.type);
-    if (originalDurationDays) priceQuery = priceQuery.eq('duration_days', originalDurationDays);
-    const { data: priceRows, error: priceError } = await priceQuery
-      .order('duration_days', { ascending: true })
-      .limit(1);
+      .eq('type', offer.type)
+      .maybeSingle();
     if (priceError) throw new Error('تعذر تحديد سعر العرض');
-    const priceRow = Array.isArray(priceRows) ? priceRows[0] : null;
-    if (priceRow?.amount !== null && typeof priceRow?.amount !== 'undefined') monthlyPrice = Number(priceRow.amount);
+    if (priceRow?.amount) monthlyPrice = Number(priceRow.amount);
     if (priceRow?.duration_days) originalDurationDays = Number(priceRow.duration_days);
   }
 
@@ -1828,15 +1824,20 @@ app.post('/paymob/sign', paymentLimiter, rateLimitMiddleware({ windowMs: 15 * 60
       if (expectedAmount === null) {
         const { data: offerRow, error: offerErr } = await supabase
           .from('ads_offar')
-          .select('type, duration_days')
+          .select('price, type')
           .eq('id', offerId)
-          .maybeSingle();
+          .single();
         if (!offerErr && offerRow) {
-          let priceQuery = supabase.from('ads_price').select('amount, duration_days').eq('type', offerRow.type);
-          if (offerRow.duration_days) priceQuery = priceQuery.eq('duration_days', offerRow.duration_days);
-          const { data: priceRows, error: priceErr } = await priceQuery.order('duration_days', { ascending: true }).limit(1);
-          const priceRow = Array.isArray(priceRows) ? priceRows[0] : null;
-          if (!priceErr && priceRow && typeof priceRow.amount !== 'undefined') expectedAmount = Number(priceRow.amount);
+          if (offerRow.price) expectedAmount = Number(offerRow.price);
+          else if (offerRow.type) {
+            const { data: priceRow, error: priceErr } = await supabase
+              .from('ads_price')
+              .select('amount')
+              .eq('type', offerRow.type)
+              .limit(1)
+              .single();
+            if (!priceErr && priceRow && typeof priceRow.amount !== 'undefined') expectedAmount = Number(priceRow.amount);
+          }
         }
       }
 
@@ -3054,7 +3055,7 @@ app.post('/api/promo-codes/validate', verifyJwtToken, paymentLimiter, rateLimitM
 
     const { data: offer, error: offerError } = await supabase
       .from('ads_offar')
-      .select('id, type, duration_days')
+      .select('*')
       .eq('id', offerId)
       .maybeSingle();
 
@@ -3067,23 +3068,19 @@ app.post('/api/promo-codes/validate', verifyJwtToken, paymentLimiter, rateLimitM
       return res.status(404).json({ ok: false, error: 'العرض المحدد غير موجود' });
     }
 
-    let monthlyPrice = NaN;
+    let monthlyPrice = Number(offer.amount ?? offer.price);
     let originalDurationDays = Number(offer.duration_days) || null;
     if (offer.type) {
       let priceQuery = supabase
         .from('ads_price')
         .select('amount, duration_days')
         .eq('type', offer.type);
-      if (originalDurationDays) priceQuery = priceQuery.eq('duration_days', originalDurationDays);
 
-      const { data: priceRows, error: priceError } = await priceQuery
-        .order('duration_days', { ascending: true })
-        .limit(1);
+      const { data: priceRow, error: priceError } = await priceQuery.maybeSingle();
       if (priceError) {
         console.error('promo-code price lookup failed:', priceError);
         return res.status(500).json({ ok: false, error: 'تعذر تحديد سعر العرض' });
       }
-      const priceRow = Array.isArray(priceRows) ? priceRows[0] : null;
       if (priceRow?.amount) monthlyPrice = Number(priceRow.amount);
       if (priceRow?.duration_days) originalDurationDays = Number(priceRow.duration_days);
     }
@@ -3502,30 +3499,51 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
     try {
       let expectedAmount = null;
 
-      // السعر المعتمد موجود في ads_price؛ لا نعتمد على أسعار مرسلة من العميل.
+      // حاول جلب السعر من جدول ads_price باستخدام نوع العرض و/أو مدة إذا كانت متوفرة
       if (offerData && offerData.type) {
         const durationDays = offerData.duration_days || offerData.duration || null;
-        let priceQuery = supabase.from('ads_price').select('amount, duration_days').eq('type', offerData.type);
-        if (durationDays) priceQuery = priceQuery.eq('duration_days', durationDays);
-        const { data: priceRows, error: priceErr } = await priceQuery.order('duration_days', { ascending: true }).limit(1);
-        const priceRow = Array.isArray(priceRows) ? priceRows[0] : null;
-        if (!priceErr && priceRow && typeof priceRow.amount !== 'undefined') expectedAmount = Number(priceRow.amount);
+        if (durationDays) {
+          const { data: priceRow, error: priceErr } = await supabase
+            .from('ads_price')
+            .select('amount')
+            .eq('type', offerData.type)
+            .eq('duration_days', durationDays)
+            .limit(1)
+            .single();
+          // Debug log: record result of price lookup for given type+duration
+          console.log('ads_price lookup (by type+duration):', { type: offerData.type, durationDays, priceRow: priceRow || null, priceErr: priceErr || null });
+          if (!priceErr && priceRow && typeof priceRow.amount !== 'undefined') expectedAmount = Number(priceRow.amount);
+        }
+
+        // كملطفة: إذا لم نجد من ads_price، استخدم السعر المرفق في offerData إذا وُجِد
+        if (expectedAmount === null && typeof offerData.price !== 'undefined') expectedAmount = Number(offerData.price);
       }
 
-      // إذا لم يرسل العميل نوع العرض، استخرج النوع والمدة فقط من ads_offar ثم اقرأ السعر من ads_price.
+      // إن فشلنا في الحصول على سعر متوقع، حاول جلب السعر من سجل العرض في قاعدة البيانات إذا كان offerId موجودًا
       if (expectedAmount === null && offerId) {
+        // حاول جلب الحقول المحتملة: amount أو price، بالإضافة إلى type
         const { data: offerRow, error: offerErr } = await supabase
           .from('ads_offar')
-          .select('type, duration_days')
+          .select('amount, price, type')
           .eq('id', offerId)
-          .maybeSingle();
+          .single();
         if (!offerErr && offerRow) {
-          let priceQuery = supabase.from('ads_price').select('amount, duration_days').eq('type', offerRow.type);
-          const durationDays = offerRow.duration_days || offerData?.duration_days || null;
-          if (durationDays) priceQuery = priceQuery.eq('duration_days', durationDays);
-          const { data: priceRows, error: priceErr } = await priceQuery.order('duration_days', { ascending: true }).limit(1);
-          const priceRow = Array.isArray(priceRows) ? priceRows[0] : null;
-          if (!priceErr && priceRow && typeof priceRow.amount !== 'undefined') expectedAmount = Number(priceRow.amount);
+          // Debug log: show fetched offerRow
+          console.log('ads_offar lookup result:', { offerId, offerRow: offerRow || null, offerErr: offerErr || null });
+          // استخدم عمود amount إن وُجد، وإلا عمود price
+          if (typeof offerRow.amount !== 'undefined' && offerRow.amount !== null) expectedAmount = Number(offerRow.amount);
+          else if (typeof offerRow.price !== 'undefined' && offerRow.price !== null) expectedAmount = Number(offerRow.price);
+          else if (offerRow.type) {
+            const { data: priceRow, error: priceErr } = await supabase
+              .from('ads_price')
+              .select('amount')
+              .eq('type', offerRow.type)
+              .limit(1)
+              .single();
+            // Debug log: record result of fallback price lookup by offerRow.type
+            console.log('ads_price fallback lookup (by offerRow.type):', { type: offerRow.type, priceRow: priceRow || null, priceErr: priceErr || null });
+            if (!priceErr && priceRow && typeof priceRow.amount !== 'undefined') expectedAmount = Number(priceRow.amount);
+          }
         }
       }
 
