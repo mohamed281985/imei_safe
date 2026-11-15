@@ -1828,20 +1828,15 @@ app.post('/paymob/sign', paymentLimiter, rateLimitMiddleware({ windowMs: 15 * 60
       if (expectedAmount === null) {
         const { data: offerRow, error: offerErr } = await supabase
           .from('ads_offar')
-          .select('price, type')
+          .select('type, duration_days')
           .eq('id', offerId)
-          .single();
+          .maybeSingle();
         if (!offerErr && offerRow) {
-          if (offerRow.price) expectedAmount = Number(offerRow.price);
-          else if (offerRow.type) {
-            const { data: priceRow, error: priceErr } = await supabase
-              .from('ads_price')
-              .select('amount')
-              .eq('type', offerRow.type)
-              .limit(1)
-              .single();
-            if (!priceErr && priceRow && typeof priceRow.amount !== 'undefined') expectedAmount = Number(priceRow.amount);
-          }
+          let priceQuery = supabase.from('ads_price').select('amount, duration_days').eq('type', offerRow.type);
+          if (offerRow.duration_days) priceQuery = priceQuery.eq('duration_days', offerRow.duration_days);
+          const { data: priceRows, error: priceErr } = await priceQuery.order('duration_days', { ascending: true }).limit(1);
+          const priceRow = Array.isArray(priceRows) ? priceRows[0] : null;
+          if (!priceErr && priceRow && typeof priceRow.amount !== 'undefined') expectedAmount = Number(priceRow.amount);
         }
       }
 
