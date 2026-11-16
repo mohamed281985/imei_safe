@@ -12,12 +12,16 @@ import { Browser } from '@capacitor/browser';
 import axiosInstance from '@/services/axiosInterceptor';
 
 // طلب توقيع من الخادم. يجب أن يتم التوقيع الحقيقي على الخادم.
-const requestSignature = async (payload: { merchantOrderId: string; amount: number; timestamp: number; offerId?: string; offerData?: { type: string; duration_days: number | null } }) => {
+const requestSignature = async (payload: { merchantOrderId: string; amount: number; timestamp: number; offerId?: string; paymentType?: 'publish_ad'; offerData?: { type: string; duration_days: number | null } }) => {
   try {
     const resp = await axiosInstance.post('https://imei-safe.me/paymob/sign', payload);
-    return resp.data.signature as string;
+    const signature = resp.data?.signature;
+    if (typeof signature !== 'string' || !signature) {
+      throw new Error(resp.data?.error || 'Failed to obtain signature');
+    }
+    return signature;
   } catch (err: any) {
-    throw new Error(err.response?.data?.error || 'Failed to obtain signature');
+    throw new Error(err.response?.data?.error || err.message || 'Failed to obtain signature');
   }
 };
 
@@ -683,6 +687,7 @@ const PublishAd: React.FC = () => {
         name: storeName,
         phone: phoneNumber,
         paymentMethod,
+        paymentType: 'publish_ad' as const,
         walletPhone: paymentMethod === 'wallet' ? walletPhone.trim() : undefined,
         merchantOrderId: `AD-${Date.now()}`,
         isSpecialAd: false,
@@ -771,10 +776,11 @@ const PublishAd: React.FC = () => {
           amount: paymentData.amount,
           timestamp,
           offerId: `publish-${fullAdData.duration_days ?? 'default'}`,
+          paymentType: paymentData.paymentType,
           offerData: { type: fullAdData.type, duration_days: fullAdData.duration_days }
         });
-      } catch (err) {
-        throw new Error(t('failed_to_get_signature'));
+      } catch (err: any) {
+        throw new Error(err.message || t('failed_to_get_signature'));
       }
 
       const paymentPayload = { ...paymentData, timestamp, signature };
@@ -802,7 +808,11 @@ const PublishAd: React.FC = () => {
         goToMyAdsAfterDelay();
       }
     } catch (error: any) {
-      toast({ title: t('error'), description: error.message || t('operation_error'), variant: 'destructive' });
+      toast({
+        title: t('error'),
+        description: error.response?.data?.error || error.response?.data?.message || error.message || t('operation_error'),
+        variant: 'destructive'
+      });
       goToMyAdsAfterDelay();
     } finally {
       setIsLoading(false);

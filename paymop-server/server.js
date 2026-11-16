@@ -1609,6 +1609,15 @@ const paymentLimiter = rateLimit({
   handler: (req, res) => res.status(429).json({ error: 'Too many payment attempts, please wait and try again.' })
 });
 
+const paymentSignatureLimiter = rateLimit({
+  windowMs: SECURITY_CONFIG.RATE_LIMITS.PAYMENT.windowMs,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  trustProxy: 1,
+  handler: (req, res) => res.status(429).json({ error: 'Too many signature requests, please wait and try again.' })
+});
+
 // Apply global limiter to all requests
 app.use(globalLimiter);
 
@@ -1683,6 +1692,28 @@ const verifySignatureHmac = async ({ merchantOrderId, amount, timestamp, signatu
   }
 };
 
+const getPublishAdPaymentAmount = async (offerData) => {
+  const type = String(offerData?.type || '').trim();
+  const durationDays = Number(offerData?.duration_days ?? offerData?.duration);
+  if (type !== 'publish' || !Number.isSafeInteger(durationDays) || durationDays <= 0) {
+    throw new Error('بيانات مدة الإعلان غير صالحة');
+  }
+
+  const { data: priceRow, error } = await supabase
+    .from('ads_price')
+    .select('amount')
+    .eq('type', type)
+    .eq('duration_days', durationDays)
+    .maybeSingle();
+  if (error) throw error;
+
+  const amount = Number(priceRow?.amount);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error('سعر مدة الإعلان غير متاح');
+  }
+  return amount;
+};
+
 const getPromoPricing = async (promoCode, offerId) => {
   const normalizedCode = String(promoCode || '').trim().toLocaleUpperCase();
   const normalizedOfferId = Number(offerId);
@@ -1752,9 +1783,9 @@ const getPromoPricing = async (promoCode, offerId) => {
 };
 
 // Signing endpoint - server signs the payload and returns signature
-app.post('/paymob/sign', paymentLimiter, rateLimitMiddleware({ windowMs: 15 * 60 * 1000, max: 10 }), async (req, res) => {
+app.post('/paymob/sign', paymentSignatureLimiter, rateLimitMiddleware({ windowMs: 15 * 60 * 1000, max: 10 }), async (req, res) => {
   try {
-    const { merchantOrderId, offerId, timestamp, promoCode } = req.body || {};
+    const { merchantOrderId, offerId, timestamp, promoCode, paymentType } = req.body || {};
     if (!merchantOrderId || !offerId || !timestamp) {
       return res.status(400).json({ error: 'merchantOrderId, offerId and timestamp are required' });
     }
@@ -1765,6 +1796,17 @@ app.post('/paymob/sign', paymentLimiter, rateLimitMiddleware({ windowMs: 15 * 60
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return res.status(401).json({ error: 'Unauthorized: invalid token' });
+
+    if (paymentType === 'publish_ad') {
+      try {
+        const expectedAmount = await getPublishAdPaymentAmount(req.body?.offerData);
+        const signature = generateSignatureHmac({ merchantOrderId, amount: expectedAmount, timestamp });
+        return res.json({ signature, expectedAmount });
+      } catch (error) {
+        console.error('Error computing publish ad signature amount:', error.message || error);
+        return res.status(400).json({ error: error.message || 'تعذر التحقق من سعر الإعلان' });
+      }
+    }
 
     // Compute expected amount from provided offerData first, then fallback to offerId (ads_offar -> ads_price)
     let expectedAmount = null;
@@ -2515,6 +2557,7 @@ app.post("/paymob/create-payment", paymentLimiter, rateLimitMiddleware({ windowM
       adId,
       signature,
       timestamp,
+      paymentType,
       paymentMethod = 'card',
       walletPhone
     } = req.body;
@@ -2551,6 +2594,9 @@ app.post("/paymob/create-payment", paymentLimiter, rateLimitMiddleware({ windowM
     // حاول تحديد السعر المتوقع بناءً على بيانات الإعلان أو معرف الإعلان
     let expectedAmount = null;
     try {
+      if (paymentType === 'publish_ad') {
+        expectedAmount = await getPublishAdPaymentAmount(adData);
+      } else {
       // إذا كان هناك adId، حاول جلب الإعلان الموجود
       if (adId) {
         const { data: existingAd, error: fetchError } = await supabase
@@ -2590,6 +2636,7 @@ app.post("/paymob/create-payment", paymentLimiter, rateLimitMiddleware({ windowM
         }
         // كملطفة: إذا كان adData يحتوي على amount الموثوق به من النظام الخلفي، استخدمه
         if (!expectedAmount && typeof adData.amount !== 'undefined') expectedAmount = Number(adData.amount);
+      }
       }
 
       // أخيرًا، إذا لم نستطع تحديد سعر متوقع، نفّذ فشل صريح
