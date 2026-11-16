@@ -10,7 +10,7 @@ import { validateId } from '@/utils/validateId';
 import axiosInstance from '@/services/axiosInterceptor';
 import { Browser } from '@capacitor/browser';
 import { Capacitor } from '@capacitor/core';
-import { X } from 'lucide-react';
+import { CreditCard, Wallet, X } from 'lucide-react';
 
 interface PromoCodeDetails {
     code: string;
@@ -40,6 +40,8 @@ const OffersGallery = () => {
     const [imageError, setImageError] = useState(false);
     const [isPaying, setIsPaying] = useState(false);
     const [payError, setPayError] = useState<string | null>(null);
+    const [paymentMethod, setPaymentMethod] = useState<'card' | 'wallet'>('card');
+    const [walletPhone, setWalletPhone] = useState('');
     const { user } = useAuth();
     const location = useLocation();
     const { t } = useLanguage();
@@ -233,6 +235,10 @@ const OffersGallery = () => {
                 ? promoDetails.code
                 : null;
 
+            if (paymentMethod === 'wallet' && !walletPhone.trim()) {
+                throw new Error('أدخل رقم الهاتف المرتبط بالمحفظة');
+            }
+
             const { data: offer, error: offerError } = await supabase
                 .from('ads_offar')
                 .select('type')
@@ -255,6 +261,8 @@ const OffersGallery = () => {
             const paymentData = {
                 amount: activePromoCode ? promoDetails!.discounted_price : price,
                 promoCode: activePromoCode,
+                paymentMethod,
+                walletPhone: paymentMethod === 'wallet' ? walletPhone.trim() : undefined,
                 email: user.email || '',
                 name: businessData?.store_name || user.username || '',
                 phone: businessData?.phone || user.phoneNumber || '',
@@ -305,14 +313,15 @@ const OffersGallery = () => {
                 { timeout: 15000, headers: { Authorization: `Bearer ${tokenForPayment}` } }
             );
             const result = paymentResponse.data;
-            if (!result?.iframe_url) throw new Error(result?.error || t('error_creating_payment_link'));
+            const paymentUrl = result?.payment_url || result?.iframe_url;
+            if (!paymentUrl) throw new Error(result?.error || t('error_creating_payment_link'));
 
             if (Capacitor.isNativePlatform()) {
-                await Browser.open({ url: result.iframe_url, toolbarColor: '#000000' });
+                await Browser.open({ url: paymentUrl, toolbarColor: '#000000' });
             } else if (popup && !popup.closed) {
-                popup.location.replace(result.iframe_url);
+                popup.location.replace(paymentUrl);
             } else {
-                window.location.assign(result.iframe_url);
+                window.location.assign(paymentUrl);
             }
             setShowCheckoutPanel(false);
             return;
@@ -403,6 +412,65 @@ const OffersGallery = () => {
                                 </strong>
                             </div>
                         </div>
+
+                        <fieldset className="mt-3">
+                            <legend className="mb-2 text-sm font-bold text-blue-950">وسيلة الدفع</legend>
+                            <div className="grid gap-2 sm:grid-cols-2">
+                                <label className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition ${paymentMethod === 'card' ? 'border-blue-700 bg-blue-50 ring-2 ring-blue-100' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
+                                    <input
+                                        className="accent-blue-700"
+                                        type="radio"
+                                        name="offer-payment-method"
+                                        value="card"
+                                        checked={paymentMethod === 'card'}
+                                        onChange={() => setPaymentMethod('card')}
+                                    />
+                                    <CreditCard className="h-5 w-5 text-blue-800" aria-hidden="true" />
+                                    <span>
+                                        <span className="block text-sm font-bold text-slate-900">بطاقة بنكية</span>
+                                        <span className="block text-xs text-slate-500">Visa أو Mastercard</span>
+                                    </span>
+                                </label>
+                                <label className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition ${paymentMethod === 'wallet' ? 'border-orange-600 bg-orange-50 ring-2 ring-orange-100' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
+                                    <input
+                                        className="accent-orange-600"
+                                        type="radio"
+                                        name="offer-payment-method"
+                                        value="wallet"
+                                        checked={paymentMethod === 'wallet'}
+                                        onChange={() => setPaymentMethod('wallet')}
+                                    />
+                                    <Wallet className="h-5 w-5 text-orange-700" aria-hidden="true" />
+                                    <span>
+                                        <span className="block text-sm font-bold text-slate-900">محفظة إلكترونية</span>
+                                        <span className="block text-xs text-slate-500">الدفع عبر Paymob</span>
+                                    </span>
+                                </label>
+                            </div>
+                        </fieldset>
+
+                        {paymentMethod === 'wallet' && (
+                            <div className="mt-3">
+                                <label htmlFor="offer-wallet-phone" className="mb-1.5 block text-sm font-bold text-blue-950">
+                                    رقم الهاتف المرتبط بالمحفظة
+                                </label>
+                                <input
+                                    id="offer-wallet-phone"
+                                    type="tel"
+                                    inputMode="tel"
+                                    autoComplete="tel"
+                                    dir="ltr"
+                                    maxLength={16}
+                                    value={walletPhone}
+                                    onChange={(event) => setWalletPhone(event.target.value)}
+                                    placeholder="01xxxxxxxxx"
+                                    className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-left font-semibold text-slate-900 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                                />
+                                <p className="mt-1 text-xs text-slate-500">
+                                    أدخل الرقم الذي ستستقبل عليه طلب تأكيد الدفع من المحفظة.
+                                </p>
+                            </div>
+                        )}
 
                         <button className="mt-3 h-12 w-full rounded-lg bg-orange-500 px-6 font-extrabold text-white shadow-md transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60" onClick={handleOfferPayment} disabled={isPaying}>
                             {isPaying ? 'جارٍ تجهيز الاشتراك...' : 'متابعة للدفع'}

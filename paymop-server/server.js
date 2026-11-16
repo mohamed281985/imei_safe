@@ -2057,7 +2057,7 @@ const paymobRequest = async (url, body, method = "POST", timeoutMs = PAYMENT_OP_
     const redact = (obj) => {
       if (!obj || typeof obj !== 'object') return obj;
       const copy = JSON.parse(JSON.stringify(obj));
-      const sensitive = ['api_key', 'payment_token', 'token', 'card_number', 'cvv', 'password', 'authorization'];
+      const sensitive = ['api_key', 'payment_token', 'token', 'card_number', 'cvv', 'password', 'authorization', 'identifier', 'wallet_number', 'phone'];
       const walk = (o) => {
         if (!o || typeof o !== 'object') return;
         for (const k of Object.keys(o)) {
@@ -2246,6 +2246,7 @@ registerAdminRoutes({
 // متغيرات البيئة
 const PAYMOB_API_KEY = process.env.PAYMOB_API_KEY;
 const INTEGRATION_ID = process.env.PAYMOB_INTEGRATION_ID;
+const WALLET_INTEGRATION_ID = process.env.PAYMOB_WALLET_INTEGRATION_ID;
 const IFRAME_ID = process.env.PAYMOB_IFRAME_ID;
 const HMAC_SECRET = process.env.PAYMOB_HMAC_SECRET;
 
@@ -2391,7 +2392,24 @@ const registerInvoice = async (token, { amount, currency, shippingData, items })
 };
 
 // 3. الحصول على مفتاح الدفع
-const getPaymentKey = async (token, { amount, orderId, email, name, phone, redirect_url, failed_redirect_url }) => {
+const normalizeEgyptianWalletPhone = (value) => {
+  const digits = String(value || '').replace(/\D/g, '');
+  let localNumber = digits;
+
+  if (digits.startsWith('0020')) {
+    localNumber = `0${digits.slice(4)}`;
+  } else if (digits.startsWith('20')) {
+    localNumber = `0${digits.slice(2)}`;
+  }
+
+  if (!/^01[0125]\d{8}$/.test(localNumber)) {
+    throw new Error('أدخل رقم محفظة مصري صحيح');
+  }
+
+  return localNumber;
+};
+
+const getPaymentKey = async (token, { amount, orderId, email, name, phone, redirect_url, failed_redirect_url, integrationId = INTEGRATION_ID }) => {
   const billingData = {
     apartment: "NA",
     email: email || "user@example.com",
@@ -2417,7 +2435,7 @@ const getPaymentKey = async (token, { amount, orderId, email, name, phone, redir
       expiration: 3600,
       order_id: orderId,
       currency: "EGP",
-      integration_id: Number(INTEGRATION_ID),
+      integration_id: Number(integrationId),
       billing_data: billingData,
       // إعدادات لتجنب الأخطاء
       // تعطيل الخصومات والقسائم
@@ -2441,7 +2459,7 @@ const getPaymentKey = async (token, { amount, orderId, email, name, phone, redir
         expiration: 3600,
         order_id: orderId,
         currency: "EGP",
-        integration_id: Number(INTEGRATION_ID),
+        integration_id: Number(integrationId),
         billing_data: billingData,
         // إضافة روابط إعادة التوجيه بشكل صريح
         "redirect_url": redirect_url,
@@ -3485,7 +3503,43 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
   try {
     // سجل الحدث بدون طباعة الحقول الحساسة
     console.log("Received create-offer-payment request:", JSON.stringify({ merchantOrderId: req.body?.merchantOrderId || null, offerId: req.body?.offerId || null, timestamp: req.body?.timestamp || null }));
-    const { amount, email, name, phone, merchantOrderId, offerData, redirect_url_success, redirect_url_failed, offerId, promoCode, signature, timestamp } = req.body;
+    const {
+      amount,
+      email,
+      name,
+      phone,
+      merchantOrderId,
+      offerData,
+      redirect_url_success,
+      redirect_url_failed,
+      offerId,
+      promoCode,
+      signature,
+      timestamp,
+      paymentMethod = 'card',
+      walletPhone
+    } = req.body;
+    let normalizedWalletPhone = null;
+    let selectedIntegrationId = INTEGRATION_ID;
+
+    if (paymentMethod !== 'card' && paymentMethod !== 'wallet') {
+      return safeStatusJson(400, { error: 'وسيلة الدفع غير مدعومة' });
+    }
+
+    if (paymentMethod === 'wallet') {
+      const walletIntegrationId = Number(WALLET_INTEGRATION_ID);
+      if (!Number.isSafeInteger(walletIntegrationId) || walletIntegrationId <= 0) {
+        return safeStatusJson(503, { error: 'الدفع بالمحفظة غير مفعّل حاليًا' });
+      }
+
+      try {
+        normalizedWalletPhone = normalizeEgyptianWalletPhone(walletPhone);
+      } catch (phoneError) {
+        return safeStatusJson(400, { error: phoneError.message });
+      }
+
+      selectedIntegrationId = walletIntegrationId;
+    }
     // الملاحظة: الآن يمكن للعميل ألا يرسل حقل `amount`؛ الخادم سيحسب المبلغ المتوقع من قاعدة البيانات
 
 
@@ -3600,10 +3654,13 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
       name,
       phone,
       redirect_url: redirect_url_success,
-      failed_redirect_url: redirect_url_failed
+      failed_redirect_url: redirect_url_failed,
+      integrationId: selectedIntegrationId
     });
-    console.log("Step 4: Building iframe URL...");
-    const iframe_url = `https://accept.paymob.com/api/acceptance/iframes/${IFRAME_ID}?payment_token=${paymentKey}`;
+    console.log("Step 4: Building payment URL...");
+    const iframe_url = paymentMethod === 'card'
+      ? `https://accept.paymob.com/api/acceptance/iframes/${IFRAME_ID}?payment_token=${paymentKey}`
+      : null;
     console.log("Step 5: Saving payment data to ads_payment table...");
     const offerRowId = (offerData && offerData.offer_id) ? offerData.offer_id : offerId;
     const { data: adData, error: adError } = await supabase
@@ -3672,6 +3729,7 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
       payment_date: null,
       amount: numericAmount,
       type: offerData.type,
+      payment_method: paymentMethod,
       payment_status: 'pending',
       ...(promoDurationMonths ? { promo_duration_months: promoDurationMonths } : {}),
       ...(promoCodeName ? { promo_code: promoCodeName } : {}),
@@ -3694,24 +3752,41 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
       insertedPaymentId = insertedPayment.id;
       console.log(`تم حفظ بيانات الدفع بنجاح في جدول ads_payment with ID: ${insertedPaymentId}`);
       // نحفظ iframe_url فقط (بدون payment_token) لتقليل المخاطر الأمنية
-      try {
-        await supabase
-          .from('ads_payment')
-          .update({ iframe_url })
-          .eq('id', insertedPaymentId);
-        console.log('تم حفظ iframe_url في ads_payment');
-      } catch (storeErr) {
-        console.warn('Could not store iframe_url in ads_payment (column may not exist):', storeErr.message || storeErr);
-        // لا نُعيد الخطأ لأننا نريد إرجاع الـ iframe إلى العميل مهما حدث
+      if (iframe_url) {
+        try {
+          await supabase
+            .from('ads_payment')
+            .update({ iframe_url })
+            .eq('id', insertedPaymentId);
+          console.log('تم حفظ iframe_url في ads_payment');
+        } catch (storeErr) {
+          console.warn('Could not store iframe_url in ads_payment (column may not exist):', storeErr.message || storeErr);
+          // لا نُعيد الخطأ لأننا نريد إرجاع الـ iframe إلى العميل مهما حدث
+        }
       }
       // ⭐ لا يتم الإدراج يدوياً في publish_ad - المشغل (trigger_copy_ad) سيتكفل بذلك تلقائياً عند تفعيل is_active
     } catch (insertError) {
       console.error('خطأ في حفظ بيانات الدفع في جدول ads_payment:', insertError);
       throw insertError;
     }
+    let payment_url = null;
+    if (paymentMethod === 'wallet') {
+      const walletPayment = await paymobRequest('https://accept.paymob.com/api/acceptance/payments/pay', {
+        source: {
+          identifier: normalizedWalletPhone,
+          subtype: 'WALLET'
+        },
+        payment_token: paymentKey
+      });
+      payment_url = walletPayment?.redirect_url || null;
+      if (!payment_url) {
+        throw new Error('لم يُرجع Paymob رابط تأكيد دفع المحفظة');
+      }
+    }
     const response = {
       ok: true,
       iframe_url,
+      payment_url,
       order_id: orderData.id,
       merchant_order_id: merchantOrderId || null,
       offerId: offerId || null,
