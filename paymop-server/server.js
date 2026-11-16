@@ -2495,10 +2495,50 @@ app.post("/paymob/create-payment", paymentLimiter, rateLimitMiddleware({ windowM
   };
 
   try {
-    console.log("Received create-payment request:", JSON.stringify(req.body, null, 2));
+    console.log("Received create-payment request:", JSON.stringify({
+      merchantOrderId: req.body?.merchantOrderId || null,
+      adId: req.body?.adId || null,
+      paymentMethod: req.body?.paymentMethod || 'card'
+    }));
 
     // ⭐ تعديل: استقبال adId للتمييز بين الإنشاء والتحديث
-    const { amount, email, name, phone, merchantOrderId, adData, redirect_url_success, redirect_url_failed, isSpecialAd, adId, signature, timestamp } = req.body;
+    const {
+      amount,
+      email,
+      name,
+      phone,
+      merchantOrderId,
+      adData,
+      redirect_url_success,
+      redirect_url_failed,
+      isSpecialAd,
+      adId,
+      signature,
+      timestamp,
+      paymentMethod = 'card',
+      walletPhone
+    } = req.body;
+    let normalizedWalletPhone = null;
+    let selectedIntegrationId = INTEGRATION_ID;
+
+    if (paymentMethod !== 'card' && paymentMethod !== 'wallet') {
+      return safeStatusJson(400, { error: 'وسيلة الدفع غير مدعومة' });
+    }
+
+    if (paymentMethod === 'wallet') {
+      const walletIntegrationId = Number(WALLET_INTEGRATION_ID);
+      if (!Number.isSafeInteger(walletIntegrationId) || walletIntegrationId <= 0) {
+        return safeStatusJson(503, { error: 'الدفع بالمحفظة غير مفعّل حاليًا' });
+      }
+
+      try {
+        normalizedWalletPhone = normalizeEgyptianWalletPhone(walletPhone);
+      } catch (phoneError) {
+        return safeStatusJson(400, { error: phoneError.message });
+      }
+
+      selectedIntegrationId = walletIntegrationId;
+    }
 
     // سيتم التحقق من التوقيع بعد تحديد المبلغ المتوقع من الخادم (أكثر أماناً)
 
@@ -2593,12 +2633,15 @@ app.post("/paymob/create-payment", paymentLimiter, rateLimitMiddleware({ windowM
       name,
       phone,
       redirect_url: redirect_url_success,
-      failed_redirect_url: redirect_url_failed
+      failed_redirect_url: redirect_url_failed,
+      integrationId: selectedIntegrationId
     });
 
     // 4. بناء رابط الدفع
     console.log("Step 4: Building iframe URL...");
-    const iframe_url = `https://accept.paymob.com/api/acceptance/iframes/${IFRAME_ID}?payment_token=${paymentKey}`;
+    const iframe_url = paymentMethod === 'card'
+      ? `https://accept.paymob.com/api/acceptance/iframes/${IFRAME_ID}?payment_token=${paymentKey}`
+      : null;
 
     // تشفير الحقول الحساسة قبل الحفظ في ads_payment
     const adDataToStore = adData ? { ...adData } : null;
@@ -2616,7 +2659,7 @@ app.post("/paymob/create-payment", paymentLimiter, rateLimitMiddleware({ windowM
       // adData هنا يحتوي فقط على الحقول المراد تحديثها
       const { error: updateError } = await supabase
         .from(tableName)
-        .update({ ...adDataToStore, paymob_order_id: orderData.id }) // ربط طلب الدفع الجديد
+        .update({ ...adDataToStore, paymob_order_id: orderData.id, payment_method: paymentMethod }) // ربط طلب الدفع الجديد
         .eq('id', adId);
 
       if (updateError) {
@@ -2630,6 +2673,7 @@ app.post("/paymob/create-payment", paymentLimiter, rateLimitMiddleware({ windowM
       const adInsertData = {
         ...adDataToStore,
         paymob_order_id: orderData.id, // ربط الإعلان بطلب الدفع
+        payment_method: paymentMethod,
         payment_status: 'pending', // ⭐ تغيير: حالة الدفع المبدئية
         is_paid: false,
         status: 'pending',
@@ -2655,10 +2699,26 @@ app.post("/paymob/create-payment", paymentLimiter, rateLimitMiddleware({ windowM
       }
     }
 
+    let payment_url = null;
+    if (paymentMethod === 'wallet') {
+      const walletPayment = await paymobRequest('https://accept.paymob.com/api/acceptance/payments/pay', {
+        source: {
+          identifier: normalizedWalletPhone,
+          subtype: 'WALLET'
+        },
+        payment_token: paymentKey
+      });
+      payment_url = walletPayment?.redirect_url || null;
+      if (!payment_url) {
+        throw new Error('لم يُرجع Paymob رابط تأكيد دفع المحفظة');
+      }
+    }
+
     // 6. إرسال الرد للواجهة الأمامية
     const response = {
       ok: true,
       iframe_url,
+      payment_url,
       order_id: orderData.id,
       merchant_order_id: merchantOrderId || null,
       // ⭐ إرجاع adId سواء كان جديداً أو محدثاً

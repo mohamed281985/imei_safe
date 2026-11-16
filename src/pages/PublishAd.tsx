@@ -32,7 +32,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 
 // Icons
-import { Upload, Store, Link as LinkIcon, CalendarDays, Send, MapPin, X, Phone } from 'lucide-react';
+import { Upload, Store, Link as LinkIcon, CalendarDays, Send, MapPin, X, Phone, CreditCard, Wallet } from 'lucide-react';
 import PackageBadge from '@/components/PackageBadge';
 import { useScrollToTop } from '@/hooks/useScrollToTop';
 import AdImagePreviewModal from '../components/AdImagePreviewModal';
@@ -290,8 +290,8 @@ const PublishAd: React.FC = () => {
 
 
   // متغيرات الدفع داخل التطبيق
-  const [showPayment, setShowPayment] = useState(false);
-  const [paymentUrl, setPaymentUrl] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'card' | 'wallet'>('card');
+  const [walletPhone, setWalletPhone] = useState('');
 
   const [crop, setCrop] = useState<Crop>({
     unit: '%',
@@ -315,6 +315,10 @@ const PublishAd: React.FC = () => {
 
   // Replace hardcoded token usage
   const API_TOKEN = (import.meta as any).env?.VITE_API_TOKEN;
+
+  const packageSlotPending = isPackageUser && (packageAdsRemaining === null || packageAdsRemaining > 0);
+  const payableAmount = packageSlotPending ? 0 : (prices[duration] || 0);
+  const requiresPayment = !packageSlotPending && payableAmount > 0;
 
   // Effect to check for an ad ID in the URL for editing
   useEffect(() => {
@@ -603,6 +607,11 @@ const PublishAd: React.FC = () => {
       return;
     }
 
+    if (requiresPayment && paymentMethod === 'wallet' && !walletPhone.trim()) {
+      toast({ title: t('error'), description: 'أدخل رقم الهاتف المرتبط بالمحفظة', variant: 'destructive' });
+      return;
+    }
+
     setIsLoading(true);
     try {
       // 1. رفع الصورة إذا كانت جديدة
@@ -673,6 +682,8 @@ const PublishAd: React.FC = () => {
         email: activeUser.email,
         name: storeName,
         phone: phoneNumber,
+        paymentMethod,
+        walletPhone: paymentMethod === 'wallet' ? walletPhone.trim() : undefined,
         merchantOrderId: `AD-${Date.now()}`,
         isSpecialAd: false,
         adData: fullAdData,
@@ -774,19 +785,13 @@ const PublishAd: React.FC = () => {
         throw new Error(errorData.error || t('failed_to_create_payment'));
       }
       const data = response.data;
-      if (data.iframe_url) {
+      const redirectUrl = data.payment_url || data.iframe_url;
+      if (redirectUrl) {
         if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser) {
-          await window.Capacitor.Plugins.Browser.open({ url: data.iframe_url, toolbarColor: '#000000' });
+          await window.Capacitor.Plugins.Browser.open({ url: redirectUrl, toolbarColor: '#000000' });
         } else {
-          window.open(data.iframe_url, '_blank', 'noopener,noreferrer');
+          window.open(redirectUrl, '_blank', 'noopener,noreferrer');
         }
-        toast({ 
-          title: t('redirecting_to_payment'), 
-          description: 'بعد إتمام الدفع، سيتم مراجعة إعلانك ونشره في أقرب وقت.' 
-        });
-        goToMyAdsAfterDelay();
-      } else if (data.payment_url) {
-        window.open(data.payment_url, '_blank', 'noopener,noreferrer');
         toast({ 
           title: t('redirecting_to_payment'), 
           description: 'بعد إتمام الدفع، سيتم مراجعة إعلانك ونشره في أقرب وقت.' 
@@ -816,11 +821,6 @@ const PublishAd: React.FC = () => {
     } else {
       toast({ title: t('info'), description: t('please_enable_location'), variant: 'default' });
     }
-  };
-
-  const closePaymentModal = () => {
-    setShowPayment(false);
-    setPaymentUrl('');
   };
 
   const normalizePhoneNumber = (phone: string): string => {
@@ -1102,14 +1102,75 @@ const PublishAd: React.FC = () => {
                 </RadioGroup>
 
                 {/* Current Price Display */}
-                {!isPackageUser && adPrice !== null && (
+                {requiresPayment && adPrice !== null && (
                   <div className="mt-4 p-4 bg-gradient-to-r from-[#E6F7FF] to-white border border-white/30 rounded-xl text-center shadow-sm">
                     <p className="text-gray-800 font-medium">
-                      الإجمالي: <span className="text-2xl font-extrabold text-gray-900">{adPrice} {t('currency_short')}</span>
+                      الإجمالي: <span className="text-2xl font-extrabold text-gray-900">{payableAmount} {t('currency_short')}</span>
                     </p>
                   </div>
                 )}
               </div>
+
+              {requiresPayment && (
+                <fieldset className="rounded-xl border border-blue-100 bg-white/70 p-4">
+                  <legend className="px-1 text-sm font-bold text-gray-800">وسيلة الدفع</legend>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <label className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition ${paymentMethod === 'card' ? 'border-blue-700 bg-blue-50 ring-2 ring-blue-100' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
+                      <input
+                        className="accent-blue-700"
+                        type="radio"
+                        name="publish-ad-payment-method"
+                        value="card"
+                        checked={paymentMethod === 'card'}
+                        onChange={() => setPaymentMethod('card')}
+                      />
+                      <CreditCard className="h-5 w-5 text-blue-800" aria-hidden="true" />
+                      <span>
+                        <span className="block text-sm font-bold text-gray-900">بطاقة بنكية</span>
+                        <span className="block text-xs text-gray-500">Visa أو Mastercard</span>
+                      </span>
+                    </label>
+                    <label className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition ${paymentMethod === 'wallet' ? 'border-orange-600 bg-orange-50 ring-2 ring-orange-100' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
+                      <input
+                        className="accent-orange-600"
+                        type="radio"
+                        name="publish-ad-payment-method"
+                        value="wallet"
+                        checked={paymentMethod === 'wallet'}
+                        onChange={() => setPaymentMethod('wallet')}
+                      />
+                      <Wallet className="h-5 w-5 text-orange-700" aria-hidden="true" />
+                      <span>
+                        <span className="block text-sm font-bold text-gray-900">محفظة إلكترونية</span>
+                        <span className="block text-xs text-gray-500">الدفع عبر Paymob</span>
+                      </span>
+                    </label>
+                  </div>
+                  {paymentMethod === 'wallet' && (
+                    <div className="mt-3">
+                      <Label htmlFor="publish-ad-wallet-phone" className="mb-1.5 block text-sm font-bold text-gray-800">
+                        رقم الهاتف المرتبط بالمحفظة
+                      </Label>
+                      <Input
+                        id="publish-ad-wallet-phone"
+                        type="tel"
+                        inputMode="tel"
+                        autoComplete="tel"
+                        dir="ltr"
+                        maxLength={16}
+                        value={walletPhone}
+                        onChange={(event) => setWalletPhone(event.target.value)}
+                        placeholder="01xxxxxxxxx"
+                        required
+                        className="bg-white text-left"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">
+                        أدخل الرقم الذي ستستقبل عليه طلب تأكيد الدفع من المحفظة.
+                      </p>
+                    </div>
+                  )}
+                </fieldset>
+              )}
 
               {/* Location Info */}
               <div className="p-3 bg-gradient-to-r from-[#E6F7FF] to-white rounded-xl border border-white/30 shadow-sm flex items-center justify-between">
