@@ -77,7 +77,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
       for (let offset = 0; ; offset += pageSize) {
         const { data, error } = await supabase
           .from('ads_payment')
-          .select('id, promo_code, user_id, type, amount, is_paid, payment_status, payment_date, created_at')
+          .select('id, promo_code, user_id, type, amount, is_paid, payment_status, payment_date')
           .not('promo_code', 'is', null)
           .order('id', { ascending: false })
           .range(offset, offset + pageSize - 1);
@@ -109,7 +109,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
           metrics.revenue += Number(payment.amount) || 0;
 
           if (payment.user_id) metrics.users.add(payment.user_id);
-          const paidAt = payment.payment_date || payment.created_at;
+          const paidAt = payment.payment_date;
           const paidDate = paidAt ? new Date(paidAt) : null;
           if (paidDate && !Number.isNaN(paidDate.getTime()) && paidDate >= dailyUsageStart) {
             const date = paidDate.toISOString().slice(0, 10);
@@ -124,8 +124,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
             amount: payment.amount,
             is_paid: payment.is_paid,
             payment_status: payment.payment_status,
-            payment_date: payment.payment_date,
-            created_at: payment.created_at
+            payment_date: payment.payment_date
           });
         }
         performanceByCode.set(code, metrics);

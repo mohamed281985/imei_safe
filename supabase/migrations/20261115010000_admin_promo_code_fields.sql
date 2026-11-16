@@ -1,3 +1,6 @@
+alter table public.ads_payment
+  add column if not exists promo_code text;
+
 alter table public.promo_code
   add column if not exists description text not null default '',
   add column if not exists starts_at timestamptz,
