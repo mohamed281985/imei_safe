@@ -337,26 +337,26 @@ const OffersGallery = () => {
         <div className="fixed inset-0 z-50 overflow-hidden bg-slate-950" style={{ padding: 0, margin: 0 }}>
             {showCheckoutPanel ? (
                 <div
-                    className="absolute inset-0 z-20 flex items-end justify-center overflow-y-auto bg-slate-950/60 p-3 backdrop-blur-sm sm:items-center sm:p-6"
+                    className="absolute inset-0 z-20 flex items-center justify-center overflow-hidden bg-slate-950/60 p-2 backdrop-blur-sm sm:p-6"
                     onClick={() => setShowCheckoutPanel(false)}
                 >
-                    <div className="my-auto w-full max-w-xl" onClick={(event) => event.stopPropagation()}>
-                        <section role="dialog" aria-modal="true" aria-labelledby="offer-checkout-title" className="max-h-[calc(100dvh-24px)] overflow-y-auto rounded-2xl border border-blue-200 bg-white p-3 text-slate-900 shadow-[0_20px_60px_rgba(15,23,42,0.38)] sm:p-5">
-                        <div className="mb-2 flex items-center justify-between gap-2">
+                    <div className="w-full max-w-xl" onClick={(event) => event.stopPropagation()}>
+                        <section role="dialog" aria-modal="true" aria-labelledby="offer-checkout-title" className="max-h-[calc(100dvh-16px)] overflow-hidden rounded-2xl border border-blue-200 bg-white p-2.5 text-slate-900 shadow-[0_20px_60px_rgba(15,23,42,0.38)] sm:max-h-[calc(100dvh-48px)] sm:p-5">
+                        <div className="mb-1 flex items-center justify-between gap-2">
                             <h2 id="offer-checkout-title" className="text-base font-extrabold text-blue-950">تفاصيل الاشتراك</h2>
                             <div className="flex items-center gap-2">
                                 {promoDetails && <span className="rounded-full bg-orange-100 px-2.5 py-1 text-xs font-extrabold text-orange-800">تم التفعيل</span>}
-                                <button type="button" className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-600 transition hover:bg-slate-100" onClick={() => setShowCheckoutPanel(false)} aria-label="إغلاق تفاصيل الاشتراك">
+                                <button type="button" className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-600 transition hover:bg-slate-100" onClick={() => setShowCheckoutPanel(false)} aria-label="إغلاق تفاصيل الاشتراك">
                                     <X className="h-4 w-4" />
                                 </button>
                             </div>
                         </div>
-                        <label htmlFor="offer-promo-code" className="mb-2 block text-sm font-bold text-blue-950">كود الخصم</label>
+                        <label htmlFor="offer-promo-code" className="mb-1 block text-sm font-bold text-blue-950">كود الخصم</label>
                         <div className="flex gap-2">
                             <input
                                 id="offer-promo-code"
                                 autoComplete="off"
-                                className="h-11 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 text-center font-bold text-slate-900 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+                                className="h-10 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 text-center font-bold text-slate-900 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
                                 dir="ltr"
                                 value={promoInput}
                                 onChange={(event) => {
@@ -369,54 +369,73 @@ const OffersGallery = () => {
                             />
                             <button
                                 type="button"
-                                className="h-11 min-w-20 rounded-lg bg-blue-800 px-4 font-extrabold text-white shadow-sm transition hover:bg-blue-900 disabled:cursor-not-allowed disabled:opacity-60"
+                                className="h-10 min-w-20 rounded-lg bg-blue-800 px-4 font-extrabold text-white shadow-sm transition hover:bg-blue-900 disabled:cursor-not-allowed disabled:opacity-60"
                                 onClick={handleActivatePromoCode}
                                 disabled={promoStatus === 'loading'}
                             >
                                 {promoStatus === 'loading' ? 'جارٍ التحقق...' : 'تفعيل'}
                             </button>
                         </div>
-                        <div className="h-5 pt-1 text-xs font-semibold text-red-600" role="status" aria-live="polite">
+                        <div className="min-h-4 pt-0.5 text-xs font-semibold leading-4 text-red-600" role="status" aria-live="polite">
                             {promoStatus === 'error' ? promoError : ''}
                         </div>
 
                         <div className="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-slate-50 px-3">
-                            <div className="flex min-h-8 items-center justify-between gap-3">
-                                <span className="text-sm font-semibold text-slate-600">السعر قبل الخصم</span>
-                                <strong className={`text-sm font-extrabold ${promoDetails ? 'text-slate-500 line-through' : 'text-slate-900'}`} dir="ltr">
-                                    {new Intl.NumberFormat('ar-EG', { style: 'currency', currency: promoDetails?.currency || 'EGP' }).format(Number(promoDetails?.original_price ?? originalOfferPricing.amount) || 0)}
-                                </strong>
-                            </div>
-                            <div className="flex min-h-9 items-center justify-between gap-3">
-                                <span className="text-sm font-bold text-slate-700">السعر النهائي</span>
-                                <strong className="text-lg font-black text-orange-700" dir="ltr">
-                                    {new Intl.NumberFormat('ar-EG', { style: 'currency', currency: promoDetails?.currency || 'EGP' }).format(Number(promoDetails?.discounted_price ?? originalOfferPricing.amount) || 0)}
-                                </strong>
-                            </div>
-                            <div className="flex min-h-8 items-center justify-between gap-3">
-                                <span className="text-sm font-semibold text-slate-600">المدة</span>
-                                <strong className="text-sm font-extrabold text-slate-900">
-                                    {promoDetails ? `${Number(promoDetails.duration_months) || 0} شهر` : `${Number(originalOfferPricing.durationDays) || 0} يوم`}
-                                </strong>
-                            </div>
-                            <div className="flex min-h-8 items-center justify-between gap-3">
-                                <span className="text-sm font-semibold text-slate-600">نسبة الخصم</span>
-                                <strong className="text-sm font-black text-orange-700">{Number(promoDetails?.discount_percentage) || 0}%</strong>
-                            </div>
-                            <div className="flex min-h-8 items-center justify-between gap-3">
-                                <span className="text-sm font-semibold text-slate-600">صالح حتى</span>
-                                <strong className="text-xs font-bold text-slate-800" dir="auto">
-                                    {promoDetails && Number.isFinite(new Date(promoDetails.expires_at).getTime())
-                                        ? new Date(promoDetails.expires_at).toLocaleDateString('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' })
-                                        : '0'}
-                                </strong>
-                            </div>
+                            {promoDetails ? (
+                                <>
+                                    <div className="flex min-h-7 items-center justify-between gap-3">
+                                        <span className="text-sm font-semibold text-slate-600">السعر قبل الخصم</span>
+                                        <strong className="text-sm font-extrabold text-slate-500 line-through" dir="ltr">
+                                            {new Intl.NumberFormat('ar-EG', { style: 'currency', currency: promoDetails.currency || 'EGP' }).format(Number(promoDetails.original_price) || 0)}
+                                        </strong>
+                                    </div>
+                                    <div className="flex min-h-8 items-center justify-between gap-3">
+                                        <span className="text-sm font-bold text-slate-700">السعر النهائي</span>
+                                        <strong className="text-base font-black text-orange-700" dir="ltr">
+                                            {new Intl.NumberFormat('ar-EG', { style: 'currency', currency: promoDetails.currency || 'EGP' }).format(Number(promoDetails.discounted_price) || 0)}
+                                        </strong>
+                                    </div>
+                                    <div className="flex min-h-7 items-center justify-between gap-3">
+                                        <span className="text-sm font-semibold text-slate-600">المدة</span>
+                                        <strong className="text-sm font-extrabold text-slate-900">
+                                            {Number(promoDetails.duration_months) || 0} شهر
+                                        </strong>
+                                    </div>
+                                    <div className="flex min-h-7 items-center justify-between gap-3">
+                                        <span className="text-sm font-semibold text-slate-600">نسبة الخصم</span>
+                                        <strong className="text-sm font-black text-orange-700">{Number(promoDetails.discount_percentage) || 0}%</strong>
+                                    </div>
+                                    <div className="flex min-h-7 items-center justify-between gap-3">
+                                        <span className="text-sm font-semibold text-slate-600">صالح حتى</span>
+                                        <strong className="text-xs font-bold text-slate-800" dir="auto">
+                                            {Number.isFinite(new Date(promoDetails.expires_at).getTime())
+                                                ? new Date(promoDetails.expires_at).toLocaleDateString('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' })
+                                                : '—'}
+                                        </strong>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="flex min-h-8 items-center justify-between gap-3">
+                                        <span className="text-sm font-bold text-slate-700">السعر</span>
+                                        <strong className="text-base font-black text-orange-700" dir="ltr">
+                                            {new Intl.NumberFormat('ar-EG', { style: 'currency', currency: 'EGP' }).format(Number(originalOfferPricing.amount) || 0)}
+                                        </strong>
+                                    </div>
+                                    <div className="flex min-h-7 items-center justify-between gap-3">
+                                        <span className="text-sm font-semibold text-slate-600">المدة</span>
+                                        <strong className="text-sm font-extrabold text-slate-900">
+                                            {Number(originalOfferPricing.durationDays) || 0} يوم
+                                        </strong>
+                                    </div>
+                                </>
+                            )}
                         </div>
 
-                        <fieldset className="mt-3">
-                            <legend className="mb-2 text-sm font-bold text-blue-950">وسيلة الدفع</legend>
+                        <fieldset className="mt-2">
+                            <legend className="mb-1 text-sm font-bold text-blue-950">وسيلة الدفع</legend>
                             <div className="grid gap-2 sm:grid-cols-2">
-                                <label className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition ${paymentMethod === 'card' ? 'border-blue-700 bg-blue-50 ring-2 ring-blue-100' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
+                                <label className={`flex cursor-pointer items-center gap-2 rounded-xl border p-2 transition ${paymentMethod === 'card' ? 'border-blue-700 bg-blue-50 ring-2 ring-blue-100' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
                                     <input
                                         className="accent-blue-700"
                                         type="radio"
@@ -431,7 +450,7 @@ const OffersGallery = () => {
                                         <span className="block text-xs text-slate-500">Visa أو Mastercard</span>
                                     </span>
                                 </label>
-                                <label className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition ${paymentMethod === 'wallet' ? 'border-orange-600 bg-orange-50 ring-2 ring-orange-100' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
+                                <label className={`flex cursor-pointer items-center gap-2 rounded-xl border p-2 transition ${paymentMethod === 'wallet' ? 'border-orange-600 bg-orange-50 ring-2 ring-orange-100' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
                                     <input
                                         className="accent-orange-600"
                                         type="radio"
@@ -450,8 +469,8 @@ const OffersGallery = () => {
                         </fieldset>
 
                         {paymentMethod === 'wallet' && (
-                            <div className="mt-3">
-                                <label htmlFor="offer-wallet-phone" className="mb-1.5 block text-sm font-bold text-blue-950">
+                            <div className="mt-2">
+                                <label htmlFor="offer-wallet-phone" className="mb-1 block text-sm font-bold text-blue-950">
                                     رقم الهاتف المرتبط بالمحفظة
                                 </label>
                                 <input
@@ -464,15 +483,15 @@ const OffersGallery = () => {
                                     value={walletPhone}
                                     onChange={(event) => setWalletPhone(event.target.value)}
                                     placeholder="01xxxxxxxxx"
-                                    className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-left font-semibold text-slate-900 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                                    className="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-left font-semibold text-slate-900 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
                                 />
-                                <p className="mt-1 text-xs text-slate-500">
+                                <p className="mt-0.5 text-[11px] leading-4 text-slate-500">
                                     أدخل الرقم الذي ستستقبل عليه طلب تأكيد الدفع من المحفظة.
                                 </p>
                             </div>
                         )}
 
-                        <button className="mt-3 h-12 w-full rounded-lg bg-orange-500 px-6 font-extrabold text-white shadow-md transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60" onClick={handleOfferPayment} disabled={isPaying}>
+                        <button className="mt-2 h-11 w-full rounded-lg bg-orange-500 px-6 font-extrabold text-white shadow-md transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60" onClick={handleOfferPayment} disabled={isPaying}>
                             {isPaying ? 'جارٍ تجهيز الاشتراك...' : 'متابعة للدفع'}
                         </button>
                     </section>

@@ -2057,7 +2057,7 @@ const paymobRequest = async (url, body, method = "POST", timeoutMs = PAYMENT_OP_
     const redact = (obj) => {
       if (!obj || typeof obj !== 'object') return obj;
       const copy = JSON.parse(JSON.stringify(obj));
-      const sensitive = ['api_key', 'payment_token', 'token', 'card_number', 'cvv', 'password', 'authorization', 'identifier', 'wallet_number', 'phone'];
+      const sensitive = ['api_key', 'payment_token', 'token', 'card_number', 'cvv', 'password', 'authorization', 'identifier', 'wallet_number', 'phone', 'redirect_url', 'payment_url', 'iframe_url', 'order_url'];
       const walk = (o) => {
         if (!o || typeof o !== 'object') return;
         for (const k of Object.keys(o)) {
@@ -2666,7 +2666,15 @@ app.post("/paymob/create-payment", paymentLimiter, rateLimitMiddleware({ windowM
     };
 
     // لا نُرجع payment_token للعميل لتقليل سطح التسريب
-    console.log("Sending response:", JSON.stringify(response, null, 2));
+    console.log("Sending response:", JSON.stringify({
+      ok: response.ok,
+      order_id: response.order_id,
+      merchant_order_id: response.merchant_order_id,
+      offerId: response.offerId,
+      payment_id: response.payment_id,
+      has_iframe_url: Boolean(response.iframe_url),
+      has_payment_url: Boolean(response.payment_url)
+    }, null, 2));
     return safeJson(response);
   } catch (e) {
     console.error("Error in create-payment:", e);
@@ -3792,7 +3800,15 @@ app.post('/paymob/create-offer-payment', paymentLimiter, rateLimitMiddleware({ w
       offerId: offerId || null,
       payment_id: insertedPaymentId // ⭐ إضافة payment_id في الرد
     };
-    console.log("Sending response:", JSON.stringify(response, null, 2));
+    console.log("Sending response:", JSON.stringify({
+      ok: response.ok,
+      order_id: response.order_id,
+      merchant_order_id: response.merchant_order_id,
+      offerId: response.offerId,
+      payment_id: response.payment_id,
+      has_iframe_url: Boolean(response.iframe_url),
+      has_payment_url: Boolean(response.payment_url)
+    }, null, 2));
     return safeJson(response);
   } catch (e) {
     console.error("Error in create-offer-payment:", e);
