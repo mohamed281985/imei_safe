@@ -104,7 +104,7 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
           recent_payments: []
         };
         metrics.checkout_count += 1;
-        if (payment.is_paid === true || payment.payment_status === 'paid') {
+        if (payment.is_paid === true && payment.payment_status === 'paid') {
           metrics.paid_count += 1;
           metrics.revenue += Number(payment.amount) || 0;
 
