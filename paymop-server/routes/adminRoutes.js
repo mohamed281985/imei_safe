@@ -156,6 +156,103 @@ export function registerAdminRoutes({ app, supabase, decryptField, verifyJwtToke
     }
   });
 
+  app.get('/admin/promo-codes/:code/analytics', verifyJwtToken, requireAdmin, async (req, res) => {
+    try {
+      const code = String(req.params.code || '').trim().toUpperCase();
+      const start = new Date(String(req.query.start || ''));
+      const end = new Date(String(req.query.end || ''));
+      const bucket = ['day', 'week', 'month'].includes(String(req.query.bucket))
+        ? String(req.query.bucket)
+        : 'day';
+      const requestedTimezoneOffset = Number.parseInt(String(req.query.timezoneOffset || '0'), 10);
+      const timezoneOffset = Number.isInteger(requestedTimezoneOffset) && Math.abs(requestedTimezoneOffset) <= 840
+        ? requestedTimezoneOffset
+        : 0;
+
+      if (!code || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start >= end) {
+        return res.status(400).json({ success: false, error: 'A promo code and valid start/end dates are required' });
+      }
+
+      const rows = [];
+      const pageSize = 1000;
+      for (let offset = 0; ; offset += pageSize) {
+        const { data, error } = await supabase
+          .from('ads_payment')
+          .select('id, user_id, type, amount, is_paid, payment_status, payment_date')
+          .eq('promo_code', code)
+          .eq('is_paid', true)
+          .eq('payment_status', 'paid')
+          .gte('payment_date', start.toISOString())
+          .lt('payment_date', end.toISOString())
+          .order('payment_date', { ascending: false })
+          .range(offset, offset + pageSize - 1);
+
+        if (error) throw error;
+        rows.push(...(data || []));
+        if (!data || data.length < pageSize) break;
+      }
+
+      const countsByBucket = new Map();
+      const revenueByBucket = new Map();
+      const users = new Set();
+      let revenue = 0;
+      for (const payment of rows) {
+        const paidDate = new Date(payment.payment_date);
+        if (Number.isNaN(paidDate.getTime())) continue;
+        paidDate.setUTCMinutes(paidDate.getUTCMinutes() - timezoneOffset);
+
+        if (bucket === 'week') {
+          paidDate.setUTCDate(paidDate.getUTCDate() - ((paidDate.getUTCDay() + 6) % 7));
+        } else if (bucket === 'month') {
+          paidDate.setUTCDate(1);
+        }
+        const key = paidDate.toISOString().slice(0, 10);
+        const amount = Number(payment.amount) || 0;
+        countsByBucket.set(key, (countsByBucket.get(key) || 0) + 1);
+        revenueByBucket.set(key, (revenueByBucket.get(key) || 0) + amount);
+        revenue += amount;
+        if (payment.user_id) users.add(payment.user_id);
+      }
+
+      const series = [];
+      const cursor = new Date(start);
+      const localEnd = new Date(end);
+      cursor.setUTCMinutes(cursor.getUTCMinutes() - timezoneOffset);
+      localEnd.setUTCMinutes(localEnd.getUTCMinutes() - timezoneOffset);
+      cursor.setUTCHours(0, 0, 0, 0);
+      if (bucket === 'week') {
+        cursor.setUTCDate(cursor.getUTCDate() - ((cursor.getUTCDay() + 6) % 7));
+      } else if (bucket === 'month') {
+        cursor.setUTCDate(1);
+      }
+      while (cursor < localEnd) {
+        const key = cursor.toISOString().slice(0, 10);
+        series.push({ date: key, count: countsByBucket.get(key) || 0, revenue: revenueByBucket.get(key) || 0 });
+        if (bucket === 'week') cursor.setUTCDate(cursor.getUTCDate() + 7);
+        else if (bucket === 'month') cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+        else cursor.setUTCDate(cursor.getUTCDate() + 1);
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          promo_code: code,
+          start: start.toISOString(),
+          end: end.toISOString(),
+          bucket,
+          paid_count: rows.length,
+          revenue,
+          unique_users: users.size,
+          series,
+          recent_payments: rows.slice(0, 20)
+        }
+      });
+    } catch (error) {
+      console.error('/admin/promo-codes/:code/analytics GET failed:', error);
+      return res.status(500).json({ success: false, error: 'Failed to fetch promo-code analytics' });
+    }
+  });
+
   const normalizePromoPayload = (body, partial = false) => {
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
       return { error: 'Request body must be an object' };
