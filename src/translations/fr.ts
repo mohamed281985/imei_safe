@@ -1705,6 +1705,7 @@ export default {
   "store_qr_alt": "Code QR de la boutique {{name}}",
   "store_package_ads": "Annonces de la page d'accueil",
   "store_package_summary": "Résumé de votre forfait et de l'utilisation des annonces",
+  "monthly_ads_quota_renews": "Votre quota mensuel d'annonces est renouvelé le",
   "store_total_ads": "Nombre total d'annonces",
   "store_redemptions": "Utilisations des offres",
   "store_redemptions_subtitle": "Transactions confirmées avec des points",

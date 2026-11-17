@@ -1704,6 +1704,7 @@ export default {
   "store_qr_alt": "{{name}} दुकान का QR कोड",
   "store_package_ads": "होमपेज विज्ञापन",
   "store_package_summary": "आपके पैकेज और विज्ञापन उपयोग का सारांश",
+  "monthly_ads_quota_renews": "आपका मासिक विज्ञापन कोटा इस तारीख को नवीनीकृत होगा",
   "store_total_ads": "कुल विज्ञापन",
   "store_redemptions": "ऑफ़र रिडेम्प्शन",
   "store_redemptions_subtitle": "पॉइंट्स से पुष्टि किए गए लेन-देन",

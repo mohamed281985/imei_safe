@@ -383,31 +383,31 @@ const OffersGallery = () => {
                         <div className="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-slate-50 px-3">
                             {promoDetails ? (
                                 <>
-                                    <div className="flex min-h-7 items-center justify-between gap-3">
+                                    <div className="flex min-h-10 items-center justify-between gap-3">
                                         <span className="text-sm font-semibold text-slate-600">السعر قبل الخصم</span>
-                                        <strong className="text-sm font-extrabold text-slate-500 line-through" dir="ltr">
+                                        <strong className="text-lg font-extrabold text-slate-950 line-through sm:text-xl" dir="ltr">
                                             {new Intl.NumberFormat('ar-EG', { style: 'currency', currency: promoDetails.currency || 'EGP' }).format(Number(promoDetails.original_price) || 0)}
                                         </strong>
                                     </div>
-                                    <div className="flex min-h-8 items-center justify-between gap-3">
+                                    <div className="flex min-h-10 items-center justify-between gap-3">
                                         <span className="text-sm font-bold text-slate-700">السعر النهائي</span>
-                                        <strong className="text-base font-black text-orange-700" dir="ltr">
+                                        <strong className="text-xl font-black text-orange-700 sm:text-2xl" dir="ltr">
                                             {new Intl.NumberFormat('ar-EG', { style: 'currency', currency: promoDetails.currency || 'EGP' }).format(Number(promoDetails.discounted_price) || 0)}
                                         </strong>
                                     </div>
                                     <div className="flex min-h-7 items-center justify-between gap-3">
                                         <span className="text-sm font-semibold text-slate-600">المدة</span>
-                                        <strong className="text-sm font-extrabold text-slate-900">
+                                        <strong className="text-base font-extrabold text-slate-900 sm:text-lg">
                                             {Number(promoDetails.duration_months) || 0} شهر
                                         </strong>
                                     </div>
                                     <div className="flex min-h-7 items-center justify-between gap-3">
                                         <span className="text-sm font-semibold text-slate-600">نسبة الخصم</span>
-                                        <strong className="text-sm font-black text-orange-700">{Number(promoDetails.discount_percentage) || 0}%</strong>
+                                        <strong className="text-lg font-black text-orange-700">{Number(promoDetails.discount_percentage) || 0}%</strong>
                                     </div>
                                     <div className="flex min-h-7 items-center justify-between gap-3">
                                         <span className="text-sm font-semibold text-slate-600">صالح حتى</span>
-                                        <strong className="text-xs font-bold text-slate-800" dir="auto">
+                                        <strong className="text-base font-bold text-slate-800" dir="auto">
                                             {Number.isFinite(new Date(promoDetails.expires_at).getTime())
                                                 ? new Date(promoDetails.expires_at).toLocaleDateString('ar-EG', { day: 'numeric', month: 'long', year: 'numeric' })
                                                 : '—'}
@@ -416,15 +416,15 @@ const OffersGallery = () => {
                                 </>
                             ) : (
                                 <>
-                                    <div className="flex min-h-8 items-center justify-between gap-3">
-                                        <span className="text-sm font-bold text-slate-700">السعر</span>
-                                        <strong className="text-base font-black text-orange-700" dir="ltr">
+                                    <div className="flex min-h-10 items-center justify-between gap-3">
+                                        <span className="text-base font-bold text-slate-700 sm:text-lg">السعر</span>
+                                        <strong className="text-xl font-black text-orange-700 sm:text-2xl" dir="ltr">
                                             {new Intl.NumberFormat('ar-EG', { style: 'currency', currency: 'EGP' }).format(Number(originalOfferPricing.amount) || 0)}
                                         </strong>
                                     </div>
-                                    <div className="flex min-h-7 items-center justify-between gap-3">
-                                        <span className="text-sm font-semibold text-slate-600">المدة</span>
-                                        <strong className="text-sm font-extrabold text-slate-900">
+                                    <div className="flex min-h-9 items-center justify-between gap-3">
+                                        <span className="text-base font-semibold text-slate-600 sm:text-lg">المدة</span>
+                                        <strong className="text-base font-extrabold text-slate-900 sm:text-lg">
                                             {Number(originalOfferPricing.durationDays) || 0} يوم
                                         </strong>
                                     </div>
@@ -433,9 +433,9 @@ const OffersGallery = () => {
                         </div>
 
                         <fieldset className="mt-2">
-                            <legend className="mb-1 text-sm font-bold text-blue-950">وسيلة الدفع</legend>
+                            <legend className="mb-1 text-lg font-bold text-blue-950">وسيلة الدفع</legend>
                             <div className="grid gap-2 sm:grid-cols-2">
-                                <label className={`flex cursor-pointer items-center gap-2 rounded-xl border p-2 transition ${paymentMethod === 'card' ? 'border-blue-700 bg-blue-50 ring-2 ring-blue-100' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
+                                <label className={`flex cursor-pointer items-center gap-2 rounded-xl border p-3 transition ${paymentMethod === 'card' ? 'border-blue-700 bg-blue-50 ring-2 ring-blue-100' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
                                     <input
                                         className="accent-blue-700"
                                         type="radio"
@@ -446,11 +446,11 @@ const OffersGallery = () => {
                                     />
                                     <CreditCard className="h-5 w-5 text-blue-800" aria-hidden="true" />
                                     <span>
-                                        <span className="block text-sm font-bold text-slate-900">بطاقة بنكية</span>
-                                        <span className="block text-xs text-slate-500">Visa أو Mastercard</span>
+                                        <span className="block text-lg font-bold text-slate-900">بطاقة بنكية</span>
+                                        <span className="block text-base text-slate-500">Visa أو Mastercard</span>
                                     </span>
                                 </label>
-                                <label className={`flex cursor-pointer items-center gap-2 rounded-xl border p-2 transition ${paymentMethod === 'wallet' ? 'border-orange-600 bg-orange-50 ring-2 ring-orange-100' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
+                                <label className={`flex cursor-pointer items-center gap-2 rounded-xl border p-3 transition ${paymentMethod === 'wallet' ? 'border-orange-600 bg-orange-50 ring-2 ring-orange-100' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
                                     <input
                                         className="accent-orange-600"
                                         type="radio"
@@ -461,8 +461,8 @@ const OffersGallery = () => {
                                     />
                                     <Wallet className="h-5 w-5 text-orange-700" aria-hidden="true" />
                                     <span>
-                                        <span className="block text-sm font-bold text-slate-900">محفظة إلكترونية</span>
-                                        <span className="block text-xs text-slate-500">الدفع عبر Paymob</span>
+                                        <span className="block text-lg font-bold text-slate-900">محفظة إلكترونية</span>
+                                        <span className="block text-base text-slate-500">الدفع عبر Paymob</span>
                                     </span>
                                 </label>
                             </div>

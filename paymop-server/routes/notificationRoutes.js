@@ -397,6 +397,13 @@ app.post('/api/search-imei', searchImeiLimiter, async (req, res) => {
       }
     }) : null;
 
+    if (!isGuest) {
+      const { error: usageError } = await supabase.rpc('increment_search_usage', {
+        p_user_id: authenticatedUserId
+      });
+      if (usageError) throw usageError;
+    }
+
     if (isGuest) {
       const hasReport = !!activeReportAny;
       const isRegistered = !!regPhone;
@@ -474,8 +481,6 @@ app.post('/api/search-imei', searchImeiLimiter, async (req, res) => {
         found: !!activeReportAny || !!regPhone,
         created_at: new Date().toISOString()
       });
-      // زيادة عدد مرات الاستخدام بعد نجاح البحث
-await updateSearchUsage(authenticatedUserId);
     } catch (logError) {
       // لا نوقف العملية إذا فشل تسجيل البحث
       console.error('Error logging search history:', logError);

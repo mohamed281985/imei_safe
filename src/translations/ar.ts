@@ -1700,6 +1700,7 @@ export default {
   "store_qr_alt": "باركود متجر {{name}}",
   "store_package_ads": "إعلانات الصفحة الرئيسية",
   "store_package_summary": "ملخص باقتك واستخدام الإعلانات",
+  "monthly_ads_quota_renews": "تتجدد حصة إعلاناتك الشهرية في",
   "store_total_ads": "إجمالي الإعلانات",
   "store_redemptions": "استبدالات العروض",
   "store_redemptions_subtitle": "عمليات مؤكدة من رصيد النقاط",

@@ -28,6 +28,7 @@ type PackageInfo = {
   publishAdsCount: number;
   publishedAdsCount: number;
   remainingAds: number;
+  monthlyQuotaRenewsAt: string | null;
 };
 
 type StoreRedemption = {
@@ -148,6 +149,7 @@ const MyStore: React.FC = () => {
               publishAdsCount: Number(packageStats.publishAdsCount) || 0,
               publishedAdsCount: Number(packageStats.actualPublishedAdsCount) || 0,
               remainingAds: Number(packageStats.remainingAds) || 0,
+              monthlyQuotaRenewsAt: packageStats.monthlyQuotaRenewsAt || null,
             });
           }
         } catch (error) {
@@ -196,6 +198,7 @@ const MyStore: React.FC = () => {
           publishAdsCount: Number(data.publishAdsCount) || 0,
           publishedAdsCount: Number(data.actualPublishedAdsCount) || 0,
           remainingAds: Number(data.remainingAds) || 0,
+          monthlyQuotaRenewsAt: data.monthlyQuotaRenewsAt || null,
         } : current);
       } catch (error) {
         console.warn('Could not refresh store package ad counts:', error);
@@ -341,12 +344,13 @@ const MyStore: React.FC = () => {
                 </span>
                 <span className="truncate font-bold text-gray-800">{packageInfo.planType === 'GOLD' ? t('gold_vip') : packageInfo.planType === 'SILVER' ? t('silver') : t('free')}</span>
               </div>
-              {packageInfo.expiresAt && <span className="shrink-0 text-left text-[10px] font-bold leading-tight text-gray-700 sm:text-right sm:text-xs">{t('expires_at')} {new Date(packageInfo.expiresAt).toLocaleDateString(language === 'ar' ? 'ar-EG' : language === 'fr' ? 'fr-FR' : language === 'hi' ? 'hi-IN' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</span>}
+              {packageInfo.expiresAt && <span className="max-w-[55%] shrink-0 text-left text-xs font-bold leading-tight text-gray-800 sm:max-w-none sm:text-right sm:text-sm">{t('expires_at')} {new Date(packageInfo.expiresAt).toLocaleDateString(language === 'ar' ? 'ar-EG' : language === 'fr' ? 'fr-FR' : language === 'hi' ? 'hi-IN' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</span>}
             </div>
+            {packageInfo.monthlyQuotaRenewsAt && <p className="mb-3 text-xs font-semibold text-slate-700">{t('monthly_ads_quota_renews')} {new Date(packageInfo.monthlyQuotaRenewsAt).toLocaleDateString(language === 'ar' ? 'ar-EG' : language === 'fr' ? 'fr-FR' : language === 'hi' ? 'hi-IN' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</p>}
             <div className="grid grid-cols-3 gap-2">
-              <div className="rounded-xl bg-white/75 p-2.5 text-center shadow-sm"><div className="text-sm font-black tabular-nums text-[#208b7e]">{packageInfo.remainingAds}</div><div className="text-xs font-bold leading-tight text-slate-700">{t('remaining_ads')}</div></div>
-              <div className="rounded-xl bg-white/75 p-2.5 text-center shadow-sm"><div className="text-sm font-black tabular-nums text-green-700">{packageInfo.daysRemaining}</div><div className="text-xs font-bold leading-tight text-slate-700">{t('days_remaining')}</div></div>
-              <div className="rounded-xl bg-white/75 p-2.5 text-center shadow-sm"><div className="text-sm font-black tabular-nums text-violet-700">{packageInfo.publishAdsCount}</div><div className="text-xs font-bold leading-tight text-slate-700">{t('store_total_ads')}</div></div>
+              <div className="rounded-xl bg-white/75 p-2.5 text-center shadow-sm"><div className="text-2xl font-black tabular-nums text-[#208b7e] sm:text-3xl">{packageInfo.remainingAds}</div><div className="text-xs font-bold leading-tight text-slate-700">{t('remaining_ads')}</div></div>
+              <div className="rounded-xl bg-white/75 p-2.5 text-center shadow-sm"><div className="text-2xl font-black tabular-nums text-green-700 sm:text-3xl">{packageInfo.daysRemaining}</div><div className="text-xs font-bold leading-tight text-slate-700">{t('days_remaining')}</div></div>
+              <div className="rounded-xl bg-white/75 p-2.5 text-center shadow-sm"><div className="text-2xl font-black tabular-nums text-violet-700 sm:text-3xl">{packageInfo.publishAdsCount}</div><div className="text-xs font-bold leading-tight text-slate-700">{t('store_total_ads')}</div></div>
             </div>
           </div>
         </section>}

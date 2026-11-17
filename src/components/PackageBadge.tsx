@@ -155,19 +155,19 @@ const PackageBadge: React.FC<Props> = ({ user = null, className = '', compact = 
       : 'تاريخ الانتهاء غير مسجل';
     return (
       <div aria-label={`${planBadge.description} ${planBadge.title}، ${expiryLabel}`} className={`flex min-h-16 w-full items-center gap-3 rounded-xl border px-3 py-2 shadow-sm ${planBadge.className} ${className}`}>
-        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg shadow-inner ${planBadge.iconClassName}`}>
+        <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg shadow-inner ${planBadge.iconClassName}`}>
           <Icon className="h-4 w-4" />
         </span>
         <span className="min-w-0 flex-1 leading-tight">
-          <span className="block text-[10px] font-semibold text-slate-500">مستوى عضويتك</span>
+          <span className="block text-xs font-semibold text-slate-600 sm:text-sm">مستوى عضويتك</span>
           <span className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-            <span className="text-sm font-black tracking-wide">{planBadge.title}</span>
-            <span className="text-xs font-semibold opacity-80">{planBadge.description}</span>
+            <span className="text-base font-black tracking-wide sm:text-lg">{planBadge.title}</span>
+            <span className="text-sm font-semibold opacity-80 sm:text-base">{planBadge.description}</span>
           </span>
-          <span className="mt-1 block text-[10px] font-medium text-slate-600">{expiryLabel}</span>
-          {promoDurationMonths && <span className="mt-1 inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-bold text-orange-800">اشتراك ترويجي · {promoDurationMonths} شهر</span>}
+          <span className="mt-1 block text-xs font-medium text-slate-700 sm:text-sm">{expiryLabel}</span>
+          {promoDurationMonths && <span className="mt-1 inline-flex max-w-full rounded-full bg-orange-100 px-2.5 py-1 text-xs font-bold text-orange-800 sm:text-sm">اشتراك ترويجي · {promoDurationMonths} شهر</span>}
         </span>
-        <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold ${planBadge.statusClassName}`}>نشطة</span>
+        <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold sm:text-sm ${planBadge.statusClassName}`}>نشطة</span>
       </div>
     );
   }

@@ -578,12 +578,32 @@ const PublishAd: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const goToMyAdsAfterDelay = () => setTimeout(() => navigate('/myads'), 5000);
+    let paymentWindow: Window | null = null;
     if (!storeName.trim() || !phoneNumber.trim()) {
       toast({ title: t('error'), description: t('required_fields'), variant: 'destructive' });
       setIsLoading(false);
       goToMyAdsAfterDelay();
       return;
     }
+
+    if (!isUpdateMode && !adImage && !adImagePreview) {
+      toast({ title: t('error'), description: t('required_fields'), variant: 'destructive' });
+      return;
+    }
+
+    if (requiresPayment && paymentMethod === 'wallet' && !walletPhone.trim()) {
+      toast({ title: t('error'), description: 'أدخل رقم الهاتف المرتبط بالمحفظة', variant: 'destructive' });
+      return;
+    }
+
+    const hasNativePaymentBrowser = Boolean(
+      window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser
+    );
+    if (requiresPayment && !hasNativePaymentBrowser) {
+      paymentWindow = window.open('about:blank', '_blank');
+      if (paymentWindow) paymentWindow.opener = null;
+    }
+
     let activeUser = user;
     if (!activeUser) {
       try {
@@ -601,18 +621,9 @@ const PublishAd: React.FC = () => {
       }
     }
     if (!activeUser) {
+      paymentWindow?.close();
       toast({ title: t('error'), description: t('must_be_logged_in'), variant: 'destructive' });
       goToMyAdsAfterDelay();
-      return;
-    }
-
-    if (!isUpdateMode && !adImage && !adImagePreview) {
-      toast({ title: t('error'), description: t('required_fields'), variant: 'destructive' });
-      return;
-    }
-
-    if (requiresPayment && paymentMethod === 'wallet' && !walletPhone.trim()) {
-      toast({ title: t('error'), description: 'أدخل رقم الهاتف المرتبط بالمحفظة', variant: 'destructive' });
       return;
     }
 
@@ -793,10 +804,17 @@ const PublishAd: React.FC = () => {
       const data = response.data;
       const redirectUrl = data.payment_url || data.iframe_url;
       if (redirectUrl) {
-        if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser) {
+        if (hasNativePaymentBrowser) {
           await window.Capacitor.Plugins.Browser.open({ url: redirectUrl, toolbarColor: '#000000' });
+        } else if (paymentWindow && !paymentWindow.closed) {
+          paymentWindow.location.replace(redirectUrl);
         } else {
-          window.open(redirectUrl, '_blank', 'noopener,noreferrer');
+          toast({
+            title: t('redirecting_to_payment'),
+            description: 'سيتم فتح بوابة الدفع في هذه الصفحة.'
+          });
+          window.location.assign(redirectUrl);
+          return;
         }
         toast({ 
           title: t('redirecting_to_payment'), 
@@ -804,10 +822,12 @@ const PublishAd: React.FC = () => {
         });
         goToMyAdsAfterDelay();
       } else {
+        paymentWindow?.close();
         toast({ title: t('error'), description: t('payment_link_error'), variant: 'destructive' });
         goToMyAdsAfterDelay();
       }
     } catch (error: any) {
+      if (paymentWindow && !paymentWindow.closed) paymentWindow.close();
       toast({
         title: t('error'),
         description: error.response?.data?.error || error.response?.data?.message || error.message || t('operation_error'),

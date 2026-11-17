@@ -9,7 +9,6 @@ import { ACCESSORY_CATEGORIES } from '@/constants/accessoryCategories';
 
 import { useGeolocated } from 'react-geolocated';
 import { useToast } from '@/hooks/use-toast';
-import AdsOfferSlider from '@/components/advertisements/AdsOfferSlider';
 import PackageBadge from '@/components/PackageBadge';
 import CountrySelector from '@/components/CountrySelector';
 import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
@@ -65,18 +64,12 @@ const AddAccessoriesForm: React.FC = () => {
   const [availableDurations, setAvailableDurations] = useState<string[]>([]);
   const [selectedDuration, setSelectedDuration] = useState('7');
   const [promotionPrice, setPromotionPrice] = useState<number | null>(null);
-  const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
 
   // متغيرات مدة الإعلان
   const [sellDurations, setSellDurations] = useState<number[]>([]);
   const [selectedSellDuration, setSelectedSellDuration] = useState<number>(7);
 
-  // متغيرات الباقة
   const [currentUserRole, setCurrentUserRole] = useState<string>(user?.role || 'free_user');
-  const [packagePublishAdsCount, setPackagePublishAdsCount] = useState<number | null>(null);
-  const [publishedAdsCount, setPublishedAdsCount] = useState<number | null>(null);
-  const [packageDaysRemaining, setPackageDaysRemaining] = useState<number | null>(null);
-  const [isPlanLoading, setIsPlanLoading] = useState(false);
   const { coords } = useGeolocated({
     positionOptions: {
       enableHighAccuracy: true,
@@ -112,107 +105,6 @@ const AddAccessoriesForm: React.FC = () => {
 
     fetchUserRole();
   }, [user?.id]);
-
-  // ⭐ جلب معلومات الباقة من قاعدة البيانات
-  useEffect(() => {
-    const fetchPackageInfo = async () => {
-      if (!user?.id) return;
-      setIsPlanLoading(true);
-
-      try {
-        // جلب دور المستخدم وتاريخ انتهاء الباقة
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .select('role, expires_at')
-          .eq('id', user.id)
-          .maybeSingle();
-
-        if (userError) {
-          console.error('Error fetching user package info:', userError);
-          return;
-        }
-
-        if (!userData) {
-          return;
-        }
-
-        // تحديد نوع الباقة
-        const rawRole = String(userData.role || '').toLowerCase().trim();
-        const normalizedRole = rawRole.replace(/[\s\-]+/g, '_');
-        const basePlan = normalizedRole.split('_')[0];
-
-        // حساب الأيام المتبقية
-        let daysRemaining = 0;
-        if (userData.expires_at) {
-          const expiryDate = new Date(userData.expires_at);
-          const today = new Date();
-          const diffTime = expiryDate.getTime() - today.getTime();
-          daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        }
-
-        setPackageDaysRemaining(Math.max(0, daysRemaining));
-
-        // جلب عدد الإعلانات المنشورة
-        const { count: publishedCount, error: adsError } = await supabase
-          .from('accessories')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', user.id);
-
-        if (adsError) {
-          console.error('Error fetching published ads count:', adsError);
-          return;
-        }
-
-        setPublishedAdsCount(publishedCount || 0);
-
-        // جلب معلومات الباقة من جدول plans
-        let plan = null;
-        const normalizedFull = normalizedRole || String(user?.role || '').toLowerCase().trim().replace(/[\s\-]+/g, '_');
-
-        // محاولة البحث عن الباقة
-        if (normalizedFull) {
-          const exact = await supabase.from('plans').select('*').eq('type', normalizedFull).maybeSingle();
-          plan = exact.data;
-        }
-
-        if (!plan && normalizedFull) {
-          const res2 = await supabase.from('plans').select('*').ilike('type', `%${normalizedFull}%`).maybeSingle();
-          plan = res2.data;
-        }
-
-        if (!plan) {
-          const res3 = await supabase.from('plans').select('*').ilike('type', `%${basePlan}%`).maybeSingle();
-          plan = res3.data;
-        }
-
-        // إذا لم يتم العثور على الباقة، جلب جميع الباقات والمطابقة محلياً
-        if (!plan) {
-          const allRes = await supabase.from('plans').select('*');
-          const list = allRes.data || [];
-          const found = list.find((r: any) => {
-            const typ = String(r.type || '').toLowerCase().trim();
-            return (
-              (normalizedFull && typ.includes(normalizedFull)) ||
-              (basePlan && typ.includes(basePlan))
-            );
-          });
-          plan = found || null;
-        }
-
-        // استخراج عدد الإعلانات المسموح بها
-        const publishVal = plan?.Publish_Ad ?? plan?.publish_ad ?? plan?.publishAd ?? plan?.publish_ads ?? plan?.publishAds ?? null;
-        const publishAdsCount = publishVal != null ? Number(publishVal) : 0;
-        setPackagePublishAdsCount(publishAdsCount);
-
-      } catch (err) {
-        console.error('Error fetching package info:', err);
-      } finally {
-        setIsPlanLoading(false);
-      }
-    };
-
-    fetchPackageInfo();
-  }, [user?.id, user?.role]);
 
   // Fetch promotion prices
   useEffect(() => {
@@ -500,14 +392,6 @@ const AddAccessoriesForm: React.FC = () => {
         return;
       }
 
-      // التحقق من الباقة
-      if (packagePublishAdsCount !== null && publishedAdsCount !== null && publishedAdsCount >= packagePublishAdsCount) {
-        setError(t('package_ads_limit_reached'));
-        setShowUpgradePrompt(true);
-        setLoading(false);
-        return;
-      }
-
       // 1. إنشاء الإكسسوار عبر السيرفر (سيقوم السيرفر بتشفير الحقول الحساسة)
       const createPayload = {
         title: formData.title,
@@ -637,14 +521,6 @@ const AddAccessoriesForm: React.FC = () => {
     // Validate required fields and images before creating
     if (!formData.title || !formData.category || !formData.price || images.length === 0) {
       setError(t('complete_required_fields_and_upload_image'));
-      setLoading(false);
-      return;
-    }
-
-    // التحقق من الباقة
-    if (packagePublishAdsCount !== null && publishedAdsCount !== null && publishedAdsCount >= packagePublishAdsCount) {
-      setError(t('package_ads_limit_reached'));
-      setShowUpgradePrompt(true);
       setLoading(false);
       return;
     }
@@ -797,22 +673,9 @@ const AddAccessoriesForm: React.FC = () => {
                 <h1 className="text-xl font-bold sm:text-2xl">{t('add_new_accessory')}</h1>
                 <p className="mt-1 text-sm text-blue-100">{t('add_accessory_wizard_subtitle')}</p>
               </div>
-              {!isPlanLoading && <PackageBadge user={user} />}
+              <PackageBadge user={user} />
             </div>
           </div>
-
-          {/* زر ترقية الباقة */}
-          {!isPlanLoading && (packagePublishAdsCount === 0 || (packagePublishAdsCount !== null && publishedAdsCount !== null && publishedAdsCount >= packagePublishAdsCount)) && (
-            <div className="mb-5 text-left">
-              <button
-                type="button"
-                onClick={() => setShowUpgradePrompt(true)}
-                className="rounded-xl bg-orange-500 px-4 py-2 text-sm font-bold text-white shadow-lg shadow-orange-200 transition hover:bg-orange-600"
-              >
-                {t('upgrade_package')}
-              </button>
-            </div>
-          )}
 
           <div className="mb-5 rounded-[28px] border-2 border-blue-300 bg-gradient-to-br from-blue-100 via-white to-cyan-100 p-4 shadow-lg sm:p-5">
             <div className="mb-3 h-1.5 rounded-full bg-slate-200">
@@ -1150,18 +1013,6 @@ const AddAccessoriesForm: React.FC = () => {
           </form>
         </div>
       </div>
-    {/* نافذة الترقية عند عدم وجود رصيد بونص كافٍ */}
-    {showUpgradePrompt && (
-      <div className="fixed inset-0 bg-gray-600/60 backdrop-blur-lg z-[100] flex flex-col items-center justify-center p-4">
-        <button
-          onClick={() => setShowUpgradePrompt(false)}
-          className="absolute top-5 right-5 text-white bg-black/50 rounded-full p-2 z-10"
-        >
-          <X size={24} />
-        </button>
-        <AdsOfferSlider isUpgradePrompt={true} onClose={() => setShowUpgradePrompt(false)} />
-      </div>
-    )}
     {isFeatureModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-60 backdrop-blur-sm flex justify-center items-center z-50 p-4" onClick={() => setIsFeatureModalOpen(false)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg transform transition-all" onClick={(e) => e.stopPropagation()}>

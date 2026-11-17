@@ -33,6 +33,7 @@ import { registerAdminRoutes } from './routes/adminRoutes.js';
 import { registerQrRoutes } from './routes/qrRoutes.js';
 import { createOrRefreshRecoveryCard } from './utils/qrCardUtils.js';
 import { isImeiAllowed } from './utils/imeiValidator.js';
+import { getPromoQuotaCycle } from './utils/promoQuotaCycle.js';
 // =================================================================
 // 1. الإعدادات الأولية وتحميل متغيرات البيئة (يجب أن تكون في البداية)
 // =================================================================
@@ -1421,6 +1422,40 @@ const addCalendarMonths = (value, months) => {
   const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
   date.setDate(Math.min(day, lastDay));
   return date;
+};
+
+const getActivePromoQuotaCycle = async (userId, planType, now = new Date()) => {
+  if (!userId || !planType) return null;
+
+  const { data: payment, error } = await supabase
+    .from('ads_payment')
+    .select('type, payment_date, promo_duration_months, expires_at')
+    .eq('user_id', userId)
+    .eq('type', planType)
+    .eq('is_paid', true)
+    .not('payment_date', 'is', null)
+    .or('transaction.is.null,transaction.neq.package_publish')
+    .order('payment_date', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return payment?.promo_duration_months ? getPromoQuotaCycle(payment, now) : null;
+};
+
+const refreshPromoQuotaCycle = async (userId, planType, email, now = new Date()) => {
+  const cycle = await getActivePromoQuotaCycle(userId, planType, now);
+  if (!cycle) return null;
+
+  const { error } = await supabase.rpc('refresh_promo_quota_cycle', {
+    p_user_id: userId,
+    p_role: planType,
+    p_email: email || null,
+    p_cycle_start: cycle.startsAt,
+  });
+  if (error) throw error;
+
+  return cycle;
 };
 
 const getOwnershipSchedule = (phone) => {
@@ -2919,74 +2954,81 @@ app.post('/api/ads/package-publish', verifyJwtToken, paymentLimiter, rateLimitMi
     const { adData, packageType, merchantOrderId } = req.body || {};
     if (!adData || !packageType) return res.status(400).json({ error: 'adData and packageType are required' });
 
-    const normalizedPackage = String(packageType || '').toLowerCase().trim();
-    if (!normalizedPackage.includes('gold') && !normalizedPackage.includes('silver')) {
+    const requestedPackage = String(packageType || '').toLowerCase().trim().replace(/[\s\-]+/g, '_');
+    if (!requestedPackage.includes('gold') && !requestedPackage.includes('silver')) {
       return res.status(400).json({ error: 'Invalid packageType' });
     }
 
-    // 1) جلب الحد الأقصى من جدول plans بناءً على type المستخدم وعمود Publish_Ad فقط
-    let maxAdsAllowed = null;
-    try {
-      const { data: planRow, error: planErr } = await supabase
-        .from('plans')
-        .select('type, Publish_Ad')
-        .ilike('type', `%${normalizedPackage}%`)
-        .maybeSingle();
-      if (!planErr && planRow) {
-        maxAdsAllowed = planRow.Publish_Ad;
-        if (maxAdsAllowed != null) maxAdsAllowed = Number(maxAdsAllowed);
-        console.log(`[PACKAGE-PUBLISH] نوع الباقة من plans: ${planRow.type} | الحد الأقصى: ${maxAdsAllowed}`);
-      } else {
-        console.warn(`[PACKAGE-PUBLISH] لم يتم العثور على باقة مطابقة في plans للنوع: ${normalizedPackage}`);
+    const { data: packageUser, error: packageUserError } = await supabase
+      .from('users')
+      .select('role, expires_at')
+      .eq('id', userId)
+      .maybeSingle();
+    if (packageUserError || !packageUser) {
+      console.error('package-publish: failed to load user package', packageUserError);
+      return res.status(500).json({ error: 'تعذر التحقق من الباقة الحالية' });
+    }
+
+    const normalizedPackage = String(packageUser.role || '').toLowerCase().trim().replace(/[\s\-]+/g, '_');
+    if (normalizedPackage !== requestedPackage || (!normalizedPackage.includes('gold') && !normalizedPackage.includes('silver'))) {
+      return res.status(403).json({ error: 'لا توجد باقة فعالة مطابقة لهذا الطلب' });
+    }
+    if (packageUser.expires_at) {
+      const expiryTime = Date.parse(packageUser.expires_at);
+      if (!Number.isFinite(expiryTime) || expiryTime <= Date.now()) {
+        return res.status(403).json({ error: 'انتهت صلاحية الباقة' });
       }
-    } catch (e) {
-      console.warn('package-publish: error fetching plan', e);
     }
 
-    if (!maxAdsAllowed || !Number.isFinite(maxAdsAllowed)) {
-      return res.status(400).json({ error: 'تعذر تحديد الحد الأقصى للإعلانات المسموح بها للباقة' });
+    // 1) جلب الحد الأقصى من جدول plans بناءً على type المستخدم وعمود Publish_Ad فقط
+    const { data: planRow, error: planError } = await supabase
+      .from('plans')
+      .select('type, Publish_Ad')
+      .eq('type', normalizedPackage)
+      .maybeSingle();
+    if (planError) throw planError;
+
+    const maxAdsAllowed = planRow?.Publish_Ad == null ? Number.NaN : Number(planRow.Publish_Ad);
+    if (!planRow || !Number.isFinite(maxAdsAllowed) || maxAdsAllowed < 0) {
+      return res.status(500).json({ error: 'تعذر تحديد الحد الأقصى للإعلانات المسموح بها للباقة' });
     }
 
-    // 2) جلب تاريخ بداية الباقة الفعلي
-    let packageStartDate = null;
-    try {
-      // جلب أقدم دفعة مدفوعة لنفس الباقة (تاريخ البداية)
-      const { data: firstPaid, error: firstPaidErr } = await supabase
+    // 2) Use the current promo month as the shop-ad quota window when applicable.
+    const now = new Date();
+    const promoCycle = await refreshPromoQuotaCycle(userId, normalizedPackage, req.user?.email, now);
+    let packageStartDate = promoCycle?.startsAt || null;
+    const packageEndDate = promoCycle?.endsAt || packageUser.expires_at || null;
+
+    if (!packageStartDate) {
+      const { data: latestPaid, error: latestPaidError } = await supabase
         .from('ads_payment')
         .select('payment_date')
         .eq('user_id', userId)
         .eq('is_paid', true)
         .eq('type', normalizedPackage)
-        .order('payment_date', { ascending: false }) // جلب أحدث تاريخ دفع لبداية الدورة الحالية
+        .not('payment_date', 'is', null)
+        .or('transaction.is.null,transaction.neq.package_publish')
+        .order('payment_date', { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (!firstPaidErr && firstPaid && firstPaid.payment_date) {
-        packageStartDate = firstPaid.payment_date;
-      }
-    } catch (e) {
-      console.warn('package-publish: error fetching package start date', e);
+      if (latestPaidError) throw latestPaidError;
+      packageStartDate = latestPaid?.payment_date || null;
     }
 
-    if (!packageStartDate) {
-      // fallback: جلب expires_at من جدول users ومدة الباقة الكاملة من plans
-      try {
-        const { data: userRec } = await supabase.from('users').select('expires_at').eq('id', userId).maybeSingle();
-        if (userRec && userRec.expires_at && maxAdsAllowed) {
-          // مدة الباقة الكاملة (مثلاً 30 يوم أو 90 يوم) يجب أن تكون معرفة في plans (مثلاً planRow.duration_days)
-          // إذا لم توجد، نستخدم 30 يوم افتراضيًا
-          let planDuration = 30;
-          try {
-            const { data: planRow } = await supabase.from('plans').select('duration_days').ilike('type', `%${normalizedPackage}%`).maybeSingle();
-            if (planRow && planRow.duration_days) planDuration = Number(planRow.duration_days);
-          } catch { }
-          const expiresAt = new Date(userRec.expires_at);
-          const start = new Date(expiresAt);
-          start.setDate(start.getDate() - planDuration);
-          packageStartDate = start.toISOString();
-        }
-      } catch (e) {
-        console.warn('package-publish: error fallback fetching expires_at', e);
-      }
+    if (!packageStartDate && packageUser.expires_at && Number.isFinite(maxAdsAllowed)) {
+      let planDuration = 30;
+      const { data: planDurationRow, error: durationError } = await supabase
+        .from('plans')
+        .select('duration_days')
+        .eq('type', normalizedPackage)
+        .maybeSingle();
+      if (durationError) throw durationError;
+      if (planDurationRow?.duration_days) planDuration = Number(planDurationRow.duration_days);
+
+      const expiresAt = new Date(packageUser.expires_at);
+      const start = new Date(expiresAt);
+      start.setDate(start.getDate() - planDuration);
+      packageStartDate = start.toISOString();
     }
 
     if (!packageStartDate) {
@@ -2994,22 +3036,20 @@ app.post('/api/ads/package-publish', verifyJwtToken, paymentLimiter, rateLimitMi
     }
 
     // 3) عدّ الإعلانات الحالية (pending + approved) للمستخدم منذ بداية الباقة
-    let currentAdsCount = 0;
-    try {
-      const { data: adsList, error: countErr } = await supabase
-        .from('ads_payment')
-        .select('id, status, upload_date, expires_at')
-        .eq('user_id', userId)
-        .gte('upload_date', packageStartDate);
-      if (!countErr && Array.isArray(adsList)) {
-        currentAdsCount = adsList.filter(ad => {
-          return ad.status === 'pending' || ad.status === 'approved';
-        }).length;
-      }
-      console.log(`[PACKAGE-PUBLISH] userId=${userId} | currentAdsCount=${currentAdsCount} | maxAdsAllowed=${maxAdsAllowed} | packageStartDate=${packageStartDate}`);
-    } catch (e) {
-      console.warn('package-publish: error counting user ads', e);
-    }
+    let adsQuery = supabase
+      .from('ads_payment')
+      .select('id, status, upload_date')
+      .eq('user_id', userId)
+      .eq('transaction', 'package_publish')
+      .gte('upload_date', packageStartDate);
+    if (packageEndDate) adsQuery = adsQuery.lt('upload_date', packageEndDate);
+
+    const { data: adsList, error: countErr } = await adsQuery;
+    if (countErr) throw countErr;
+    const currentAdsCount = Array.isArray(adsList)
+      ? adsList.filter(ad => ad.status === 'pending' || ad.status === 'approved').length
+      : 0;
+    console.log(`[PACKAGE-PUBLISH] userId=${userId} | currentAdsCount=${currentAdsCount} | maxAdsAllowed=${maxAdsAllowed} | packageStartDate=${packageStartDate}`);
 
     if (currentAdsCount >= maxAdsAllowed) {
       console.log(`[PACKAGE-PUBLISH] منع النشر: المستخدم وصل للحد الأقصى (${currentAdsCount}/${maxAdsAllowed})`);
@@ -3250,23 +3290,40 @@ app.get('/api/ads/my-promo-subscription', verifyJwtToken, async (req, res) => {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
+    const now = new Date();
+    const planType = String(req.user?.role || '').toLowerCase().trim().replace(/[\s\-]+/g, '_');
+    if (!planType.includes('gold') && !planType.includes('silver')) {
+      return res.json({
+        isPromoSubscription: false,
+        planType: null,
+        durationMonths: null,
+        expiresAt: null,
+        monthlyQuotaRenewsAt: null,
+      });
+    }
+
     const { data: payment, error } = await supabase
       .from('ads_payment')
       .select('type, promo_duration_months, expires_at, payment_date')
       .eq('user_id', userId)
+      .eq('type', planType)
       .eq('is_paid', true)
-      .not('promo_duration_months', 'is', null)
-      .gt('expires_at', new Date().toISOString())
+      .not('payment_date', 'is', null)
+      .or('transaction.is.null,transaction.neq.package_publish')
       .order('payment_date', { ascending: false })
       .limit(1)
       .maybeSingle();
 
     if (error) throw error;
+    const promoCycle = payment?.promo_duration_months
+      ? getPromoQuotaCycle(payment, now)
+      : null;
     return res.json({
-      isPromoSubscription: Boolean(payment),
-      planType: payment?.type || null,
-      durationMonths: payment?.promo_duration_months || null,
-      expiresAt: payment?.expires_at || null,
+      isPromoSubscription: Boolean(promoCycle),
+      planType: promoCycle ? payment.type : null,
+      durationMonths: promoCycle ? payment.promo_duration_months : null,
+      expiresAt: promoCycle ? payment.expires_at : null,
+      monthlyQuotaRenewsAt: promoCycle?.renewsAt || null,
     });
   } catch (error) {
     console.error('/api/ads/my-promo-subscription error:', error);
@@ -3291,7 +3348,22 @@ app.get('/api/ads/package-remaining', verifyJwtToken, async (req, res) => {
       return res.status(400).json({ error: 'User not found' });
     }
 
+    const now = new Date();
     const normalizedRole = String(userData.role || '').toLowerCase().trim().replace(/[\s\-]+/g, '_');
+    const expiryTime = userData.expires_at ? Date.parse(userData.expires_at) : null;
+    if (expiryTime !== null && (!Number.isFinite(expiryTime) || expiryTime <= now.getTime())) {
+      return res.json({
+        ok: true,
+        isPackageUser: false,
+        publishAdsCount: 0,
+        actualPublishedAdsCount: 0,
+        remainingAds: 0,
+        daysRemaining: 0,
+        planType: null,
+        monthlyQuotaRenewsAt: null
+      });
+    }
+
     if (!normalizedRole.includes('gold') && !normalizedRole.includes('silver')) {
       return res.json({
         ok: true,
@@ -3300,193 +3372,72 @@ app.get('/api/ads/package-remaining', verifyJwtToken, async (req, res) => {
         actualPublishedAdsCount: 0,
         remainingAds: 0,
         daysRemaining: 0,
-        planType: null
+        planType: null,
+        monthlyQuotaRenewsAt: null
       });
     }
 
-    // 2) جلب الحد الأقصى من جدول plans
-    let maxAdsAllowed = null;
-    let planDuration = 30;
-    let planRow = null;
-    try {
-      console.log(`[PACKAGE-REMAINING] DEBUG: searching for plan with normalizedRole="${normalizedRole}"`);
+    // 2) Resolve this exact plan's shop-ad quota.
+    const { data: planRow, error: planError } = await supabase
+      .from('plans')
+      .select('type, Publish_Ad, duration_days')
+      .eq('type', normalizedRole)
+      .maybeSingle();
+    if (planError) throw planError;
 
-      // Exact type match first (e.g. gold_business)
-      const { data: exactPlan, error: exactErr } = await supabase
-        .from('plans')
-          .select('type, Publish_Ad')
-        .eq('type', normalizedRole)
-        .maybeSingle();
-      console.log(`[PACKAGE-REMAINING] DEBUG exact match (${normalizedRole}):`, exactPlan, exactErr);
-      if (!exactErr && exactPlan) {
-        planRow = exactPlan;
-      }
-
-      // If no exact match, search by normalized role using ilike
-      if (!planRow) {
-        const { data: ilikePlan, error: ilikeErr } = await supabase
-          .from('plans')
-          .select('type, Publish_Ad')
-          .ilike('type', `%${normalizedRole}%`)
-          .maybeSingle();
-        console.log(`[PACKAGE-REMAINING] DEBUG ilike match (%${normalizedRole}%):`, ilikePlan, ilikeErr);
-        if (!ilikeErr && ilikePlan) {
-          planRow = ilikePlan;
-        }
-      }
-
-      // If still no plan, search by base plan token (gold/silver)
-      if (!planRow) {
-        const basePlan = normalizedRole.split('_')[0];
-        console.log(`[PACKAGE-REMAINING] DEBUG: trying base token "${basePlan}"`);
-        if (basePlan) {
-          const { data: basePlanRow, error: baseErr } = await supabase
-            .from('plans')
-          .select('type, Publish_Ad')
-            .ilike('type', `%${basePlan}%`)
-            .maybeSingle();
-          console.log(`[PACKAGE-REMAINING] DEBUG base match (%${basePlan}%):`, basePlanRow, baseErr);
-          if (!baseErr && basePlanRow) {
-            planRow = basePlanRow;
-          }
-        }
-      }
-
-      // If still not found, fetch all plans and search locally
-      if (!planRow) {
-        const { data: allPlans, error: allErr } = await supabase
-          .from('plans')
-
-          .select('type, Publish_Ad')
-        console.log(`[PACKAGE-REMAINING] DEBUG fetching all plans:`, allPlans?.length || 0, 'records', allErr);
-        if (allErr) {
-          console.error('[PACKAGE-REMAINING] DEBUG all plans error:', allErr);
-        } else if (Array.isArray(allPlans)) {
-          // Log each plan's type and publish_ad value for debugging
-          allPlans.forEach((p, i) => {
-            const publishVal = p.Publish_Ad ?? p.publish_ad ?? p.publishAd ?? p.publish_ads ?? p.publishAds ?? '???';
-            console.log(`[PACKAGE-REMAINING] DEBUG all[${i}]:`, { type: p.type, publish_column_value: publishVal });
-          });
-          const found = allPlans.find((p) => {
-            const pType = String(p.type || '').toLowerCase().trim();
-            return pType.includes(normalizedRole) || pType.includes(normalizedRole.split('_')[0]);
-          });
-          console.log(`[PACKAGE-REMAINING] DEBUG local scan found:`, found);
-          if (found) {
-            planRow = found;
-          }
-        }
-      }
-
-      if (planRow) {
-        // Extract common column name variants for publish quota
-        const publishVal = planRow.Publish_Ad;
-        const num = publishVal != null ? Number(publishVal) : null;
-        maxAdsAllowed = Number.isFinite(num) ? num : null;
-        if (planRow.duration_days != null) planDuration = Number(planRow.duration_days);
-        console.log(`[PACKAGE-REMAINING] resolved planRow.type=${planRow.type} publishVal=${publishVal} -> maxAdsAllowed=${maxAdsAllowed} duration_days=${planRow.duration_days}`);
-      } else {
-        console.warn('[PACKAGE-REMAINING] DEBUG: no planRow found after all attempts');
-      }
-    } catch (e) {
-      console.error('package-remaining: error fetching plan', e);
+    const maxAdsAllowed = planRow?.Publish_Ad == null ? Number.NaN : Number(planRow.Publish_Ad);
+    if (!planRow || !Number.isFinite(maxAdsAllowed) || maxAdsAllowed < 0) {
+      return res.status(500).json({ error: 'تعذر تحديد الحد الأقصى لإعلانات الباقة' });
     }
+    const planDuration = Number(planRow.duration_days) > 0 ? Number(planRow.duration_days) : 30;
 
-    if (!maxAdsAllowed || !Number.isFinite(maxAdsAllowed)) {
-      console.warn('package-remaining: publish quota not found from initial resolution, attempting additional fallbacks');
-      try {
-        // Try to find any plan row that mentions the base token (gold/silver) and has a numeric publish quota
-        const baseToken = normalizedRole.split('_')[0];
-        if (baseToken) {
-          const { data: tokenPlans, error: tokenErr } = await supabase
-            .from('plans')
-            .select('type, Publish_Ad')
-            .ilike('type', `%${baseToken}%`)
-            .limit(5);
+    // 3) Promo subscriptions receive a fresh Publish_Ad quota each month.
+    const promoCycle = await refreshPromoQuotaCycle(userId, normalizedRole, req.user?.email, now);
+    let packageStartDate = promoCycle?.startsAt || null;
+    const packageEndDate = promoCycle?.endsAt || userData.expires_at || null;
+    const monthlyQuotaRenewsAt = promoCycle?.renewsAt || null;
 
-          if (!tokenErr && Array.isArray(tokenPlans) && tokenPlans.length) {
-            for (const p of tokenPlans) {
-              const publishVal = p.Publish_Ad ?? p.publish_ad ?? p.publishAd ?? p.publish_ads ?? p.publishAds ?? null;
-              const num = publishVal != null ? Number(publishVal) : null;
-              if (Number.isFinite(num)) {
-                maxAdsAllowed = num;
-                console.log(`package-remaining: fallback found publish quota from plan type=${p.type} -> ${maxAdsAllowed}`);
-                break;
-              }
-            }
-          }
-        }
-      } catch (fallbackErr) {
-        console.error('package-remaining: error during fallback plan lookup', fallbackErr);
-      }
-
-      // If still not determined, set safe-default (0) to avoid client 400 and expose that quota could not be resolved
-      if (!maxAdsAllowed || !Number.isFinite(maxAdsAllowed)) {
-        console.warn('package-remaining: unable to resolve publish quota for', normalizedRole, '- returning 0 as safe default');
-        maxAdsAllowed = 0;
-      }
-    }
-
-    // 3) جلب تاريخ بداية الباقة الحالية
-    let packageStartDate = null;
-    try {
+    if (!packageStartDate) {
       const { data: latestPaid, error: latestErr } = await supabase
         .from('ads_payment')
         .select('payment_date')
         .eq('user_id', userId)
         .eq('is_paid', true)
         .eq('type', normalizedRole)
+        .not('payment_date', 'is', null)
+        .or('transaction.is.null,transaction.neq.package_publish')
         .order('payment_date', { ascending: false })
         .limit(1)
         .maybeSingle();
-
-      if (!latestErr && latestPaid?.payment_date) {
-        packageStartDate = latestPaid.payment_date;
-      }
-    } catch (e) {
-      console.error('package-remaining: error fetching payment date', e);
+      if (latestErr) throw latestErr;
+      packageStartDate = latestPaid?.payment_date || null;
     }
 
     // 4) Fallback لحساب تاريخ البداية من expires_at
     if (!packageStartDate) {
-      try {
-        let planDuration = 30;
-        try {
-          const { data: planRow } = await supabase
-            .from('plans')
-            .select('duration_days')
-            .ilike('type', `%${normalizedRole}%`)
-            .maybeSingle();
-
-          if (planRow?.duration_days) planDuration = Number(planRow.duration_days);
-        } catch { }
-
-        if (userData.expires_at) {
-          const expiresAt = new Date(userData.expires_at);
-          const start = new Date(expiresAt);
-          start.setDate(start.getDate() - planDuration);
-          packageStartDate = start.toISOString();
-        }
-      } catch (e) {
-        console.error('package-remaining: error in fallback calculation', e);
+      if (userData.expires_at) {
+        const expiresAt = new Date(userData.expires_at);
+        const start = new Date(expiresAt);
+        start.setDate(start.getDate() - planDuration);
+        packageStartDate = start.toISOString();
       }
     }
 
-    // 5) عدّ الإعلانات الحالية (pending + approved + any non-expired ads)
+    // 5) Count only shop ads published through the package quota.
     let currentAdsCount = 0;
     if (packageStartDate) {
-      try {
-        const { data: adsList, error: countErr } = await supabase
-          .from('ads_payment')
-          .select('id, status, upload_date')
-          .eq('user_id', userId)
-          .gte('upload_date', packageStartDate);
+      let adsQuery = supabase
+        .from('ads_payment')
+        .select('id, status, upload_date')
+        .eq('user_id', userId)
+        .eq('transaction', 'package_publish')
+        .gte('upload_date', packageStartDate);
+      if (packageEndDate) adsQuery = adsQuery.lt('upload_date', packageEndDate);
 
-        if (!countErr && Array.isArray(adsList)) {
-          currentAdsCount = adsList.filter(ad => ad.status === 'pending' || ad.status === 'approved').length;
-        }
-      } catch (e) {
-        console.error('package-remaining: error counting ads', e);
+      const { data: adsList, error: countErr } = await adsQuery;
+      if (countErr) throw countErr;
+      if (Array.isArray(adsList)) {
+        currentAdsCount = adsList.filter(ad => ad.status === 'pending' || ad.status === 'approved').length;
       }
     }
 
@@ -3494,8 +3445,7 @@ app.get('/api/ads/package-remaining', verifyJwtToken, async (req, res) => {
     let daysRemaining = 0;
     if (userData.expires_at) {
       const expiryDate = new Date(userData.expires_at);
-      const today = new Date();
-      const diffTime = expiryDate.getTime() - today.getTime();
+      const diffTime = expiryDate.getTime() - now.getTime();
       daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     }
 
@@ -3511,7 +3461,8 @@ app.get('/api/ads/package-remaining', verifyJwtToken, async (req, res) => {
       actualPublishedAdsCount: currentAdsCount,
       remainingAds,
       daysRemaining: Math.max(0, daysRemaining),
-      planType
+      planType,
+      monthlyQuotaRenewsAt
     });
   } catch (e) {
     console.error('Error in /api/ads/package-remaining:', e);
@@ -6655,6 +6606,8 @@ const checkRegisterLimit = async (userId, consumeBonusOnLimit = false) => {
       .eq('is_paid', true)
       .in('type', ['gold_business', 'silver_business'])
       .not('payment_date', 'is', null)
+      .or('transaction.is.null,transaction.neq.package_publish')
+      .gt('expires_at', new Date().toISOString())
       .order('payment_date', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -6697,6 +6650,8 @@ const checkRegisterLimit = async (userId, consumeBonusOnLimit = false) => {
       console.error('Plan query error:', planError);
       throw new Error('لم يتم العثور على تفاصيل الخطة لهذا النوع');
     }
+
+    await refreshPromoQuotaCycle(userId, userType, null);
 
     // 3. جلب الاستخدام الحالي
     const { data: usageData, error: usageError } = await supabase
@@ -8234,6 +8189,8 @@ async function checkUserLimit(userId, userEmail, type, consumeBonusOnLimit = fal
       .eq('is_paid', true)
       .in('type', ['gold_business', 'silver_business'])
       .not('payment_date', 'is', null)
+      .or('transaction.is.null,transaction.neq.package_publish')
+      .gt('expires_at', new Date().toISOString())
       .order('payment_date', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -8274,6 +8231,8 @@ async function checkUserLimit(userId, userEmail, type, consumeBonusOnLimit = fal
       console.error('Plan query error:', planError, planData);
       throw new Error('Plan details not found');
     }
+
+    await refreshPromoQuotaCycle(userId, userType, userEmail);
 
     // 3. جلب الاستخدام الحالي
     const { data: usageData, error: usageError } = await supabase
@@ -8466,6 +8425,8 @@ app.post('/api/increment-usage', verifyJwtToken, async (req, res) => {
     else if (type === 'print_history') rpcName = 'increment_print_history';
     else if (type === 'game') rpcName = 'increment_used_game';
     else return res.status(400).json({ error: 'Invalid type' });
+
+    await refreshPromoQuotaCycle(userId, req.user?.role, req.user?.email);
 
     const { error } = await supabase.rpc(rpcName, { p_user_id: userId });
 

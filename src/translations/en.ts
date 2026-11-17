@@ -1697,6 +1697,7 @@ export default {
   "store_qr_alt": "QR code for {{name}}",
   "store_package_ads": "Homepage advertisements",
   "store_package_summary": "Your package and ad usage summary",
+  "monthly_ads_quota_renews": "Your monthly ad quota renews on",
   "store_total_ads": "Total ads",
   "store_redemptions": "Offer redemptions",
   "store_redemptions_subtitle": "Confirmed transactions using points",
