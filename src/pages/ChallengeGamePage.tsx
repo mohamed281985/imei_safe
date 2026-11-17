@@ -148,6 +148,7 @@ const ChallengeGame: React.FC<ChallengeGameProps> = ({ onComplete }): JSX.Elemen
   const [targetTime, setTargetTime] = useState(10000); // 10 ثوانٍ بالمللي ثانية
   const [finalTime, setFinalTime] = useState<number | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const gameUsageCountedRef = useRef(false);
 
   const formatTime = (milliseconds: number) => {
     const seconds = Math.floor(milliseconds / 1000);
@@ -163,6 +164,12 @@ const ChallengeGame: React.FC<ChallengeGameProps> = ({ onComplete }): JSX.Elemen
     fetchUser();
   }, []);
 
+  const countGameUsage = () => {
+    if (!userId || gameUsageCountedRef.current) return;
+    gameUsageCountedRef.current = true;
+    void updateGameUsage(userId, t);
+  };
+
   const startTimer = () => {
     if (!userId) {
       // toast({ title: 'خطأ', description: 'يرجى تسجيل الدخول أولاً', variant: 'destructive' });
@@ -174,6 +181,7 @@ const ChallengeGame: React.FC<ChallengeGameProps> = ({ onComplete }): JSX.Elemen
         return;
       }
       const newTarget = 10000; // 10 ثوانٍ بالمللي ثانية
+      gameUsageCountedRef.current = false;
       setTargetTime(newTarget);
       setIsActive(true);
       setFinalTime(null);
@@ -185,9 +193,11 @@ const ChallengeGame: React.FC<ChallengeGameProps> = ({ onComplete }): JSX.Elemen
           if (newTime >= 15000) {
             if (intervalRef.current) {
               clearInterval(intervalRef.current);
+              intervalRef.current = null;
             }
             setIsActive(false);
             setFinalTime(newTime);
+            countGameUsage();
           }
           return newTime;
         });
@@ -203,9 +213,7 @@ const ChallengeGame: React.FC<ChallengeGameProps> = ({ onComplete }): JSX.Elemen
     setIsActive(false);
     const finalTimeValue = time;
     setFinalTime(finalTimeValue);
-    if (userId) {
-      updateGameUsage(userId, t);
-    }
+    countGameUsage();
     
     if (finalTimeValue === targetTime) {
       (async () => {

@@ -395,7 +395,7 @@ const TransferHistory: React.FC = () => {
 
       const isReported = await checkPhoneStatus(imei);
       setIsPhoneReported(isReported);
-      if (userId) {
+      if (userId && transferRecords.length > 0) {
         await updateSearchUsage(userId);
       }
       setExistingPhoneImage(null);

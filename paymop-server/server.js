@@ -1458,6 +1458,19 @@ const refreshPromoQuotaCycle = async (userId, planType, email, now = new Date())
   return cycle;
 };
 
+const FREE_SEARCH_QUOTA_ROLES = new Set(['free_user', 'free_business', 'user', 'customer']);
+
+const refreshFreeSearchQuota = async (userId, planType) => {
+  const normalizedRole = String(planType || '').trim().toLowerCase();
+  if (!userId || !FREE_SEARCH_QUOTA_ROLES.has(normalizedRole)) return;
+
+  const { error } = await supabase.rpc('refresh_free_search_imei_quota', {
+    p_user_id: userId,
+    p_role: normalizedRole
+  });
+  if (error) throw error;
+};
+
 const getOwnershipSchedule = (phone) => {
   const baseDate = phone.last_confirmed_at || phone.registration_date;
   const confirmationDueAt = addCalendarMonths(baseDate, OWNERSHIP_CONFIRMATION_MONTHS);
@@ -7354,7 +7367,6 @@ app.post('/api/register-phone', verifyJwtToken, async (req, res) => {
       .select();
 
     if (error) throw error;
-    await updateRegisterUsage(userId); // تحديث العداد بعد التسجيل
 
     const insertedPhone = Array.isArray(data) ? data[0] : data;
     let recoveryCard = null;
@@ -7799,9 +7811,6 @@ app.post('/api/create-phone', verifyJwtToken, async (req, res) => {
       console.error('Audit log failed for create-phone:', e);
     }
 
-    // Update usage counters
-    try { await updateRegisterUsage(userId); } catch (e) { console.error('updateRegisterUsage error:', e); }
-
     return res.json({ success: true, phone: data });
   } catch (error) {
     console.error('/api/create-phone error:', error && (error.stack || error.message || error));
@@ -8233,6 +8242,9 @@ async function checkUserLimit(userId, userEmail, type, consumeBonusOnLimit = fal
     }
 
     await refreshPromoQuotaCycle(userId, userType, userEmail);
+    if (type === 'search_imei') {
+      await refreshFreeSearchQuota(userId, userType);
+    }
 
     // 3. جلب الاستخدام الحالي
     const { data: usageData, error: usageError } = await supabase
@@ -8255,24 +8267,27 @@ async function checkUserLimit(userId, userEmail, type, consumeBonusOnLimit = fal
             used_register_phone: 0,
             used_search_history: 0,
             used_print_history: 0,
-            used_game: 0
+            used_game: 0,
+            search_imei_usage_date: type === 'search_imei' && FREE_SEARCH_QUOTA_ROLES.has(String(userType).trim().toLowerCase())
+              ? new Date().toISOString().slice(0, 10)
+              : null
           })
           .select()
           .single();
 
         if (insertError) {
           console.error('Insert usage error:', insertError);
-          return res.status(500).json({ error: 'Failed to initialize usage data' });
+          throw insertError;
         }
 
         const limitKey = `${type}_limit`;
         const limit = parseInt(planData[limitKey]);
-        return res.json({
+        return {
           allowed: true,
           limit,
           currentUsage: 0,
           isLastUsage: false
-        });
+        };
       }
       throw usageError;
     }
@@ -8425,6 +8440,10 @@ app.post('/api/increment-usage', verifyJwtToken, async (req, res) => {
     else if (type === 'print_history') rpcName = 'increment_print_history';
     else if (type === 'game') rpcName = 'increment_used_game';
     else return res.status(400).json({ error: 'Invalid type' });
+
+    if (type === 'search_imei') {
+      await checkUserLimit(userId, req.user?.email, type);
+    }
 
     await refreshPromoQuotaCycle(userId, req.user?.role, req.user?.email);
 
